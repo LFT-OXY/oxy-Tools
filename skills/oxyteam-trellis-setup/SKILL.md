@@ -17,7 +17,7 @@ disable-model-invocation: true
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
 - 团队 Skill 前缀：`oxyteam-`
 
-发现其他版本、其他平台或团队 Skill 混装时停止，不按相近结构猜测兼容性。
+发现其他 Trellis 版本、其他平台、来源混装或基础团队 Skills 标签不一致时停止，不按相近结构猜测兼容性。`oxyteam-trellis-setup` 使用独立 Overlay 标签，不要求与基础 Skill Pack 同版本。
 
 ## 启动例外
 
@@ -55,7 +55,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、Task Store 和 Context Loader 存在；
 4. `.omp/commands/trellis-continue.md`、`.omp/extensions/trellis/index.ts` 和三个 `trellis-*` Agent 存在；
 5. `skills-lock.json` 存在；
-6. 全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools` 并使用同一标签；
+6. 全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一标签，并单独记录 Setup 的 Overlay 标签；
 7. 没有原始上游工程 Skill 与团队版并存；
 8. 目标文件不存在无法解释的用户修改。
 

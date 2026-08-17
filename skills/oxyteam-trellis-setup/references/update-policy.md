@@ -7,9 +7,12 @@
 - Trellis `0.6.15`；
 - Oh My Pi；
 - 团队 Skill 来源 `LFT-OXY/oxy-Tools`；
-- 同一项目中的全部 `oxyteam-*` Skills 使用同一个 Git 标签。
+- 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Team Skill Pack 标签；
+- `oxyteam-trellis-setup` 使用独立 Overlay 标签，并声明它支持的 Team Skill Pack 版本。
 
-发现其他版本、其他平台或混装标签时停止，不按相近版本猜测兼容性。
+当前 Overlay 支持 Team Skill Pack `v0.2.0`。发现其他 Trellis 版本、其他平台、来源混装、基础团队 Skills 标签不一致或未声明兼容的 Team Skill Pack 时停止。
+
+Setup 标签与基础 Skill Pack 标签不同不是混装；预检报告必须分别列出 Team Skill Pack 版本和 Overlay 版本。
 
 ## 应用前检查
 
