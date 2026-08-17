@@ -1,0 +1,5 @@
+interface:
+  display_name: "Oxyteam Init"
+  short_description: "初始化一个仓库"
+policy:
+  allow_implicit_invocation: false
