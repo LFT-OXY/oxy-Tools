@@ -19,6 +19,20 @@ disable-model-invocation: true
 
 发现其他版本、其他平台或团队 Skill 混装时停止，不按相近结构猜测兼容性。
 
+## 启动例外
+
+本 Skill 正在替换 Trellis 的任务控制面，因此本次调用不能由旧任务模型管理：
+
+- 不询问是否创建 Trellis Task；
+- 不运行旧版 `task.py create` 或 `task.py start`；
+- 当前 `[workflow-state:no_task]` 或 `[workflow-state:planning]` 中关于任务创建、`prd.md`、`design.md`、`implement.md` 和旧 JSONL 的要求不适用于本次 Overlay 安装；
+- 使用当前会话的普通执行清单完成预检、确认、应用和验证。
+
+该例外只跳过旧任务控制面，不构成项目写入授权。任何 Overlay 文件写入仍须按第 3 步取得用户明确确认。
+
+Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
+
+
 ## 执行顺序
 
 ### 1. 读取规则

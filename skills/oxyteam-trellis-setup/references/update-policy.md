@@ -23,6 +23,11 @@
 6. 目标文件不存在未识别的用户改动；
 7. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存。
 
+Overlay 安装本身是任务控制面的引导过程，不创建 Trellis Task，也不运行旧版 `task.py create` 或 `task.py start`。当前工作流状态中关于旧规划 Artifact 的要求在本次安装中跳过；写入确认规则仍然有效。
+
+官方未修改的 `00-bootstrap-guidelines` 是已知初始化 Artifact。确认它没有用户进度后，可以将删除列入应用计划，由 `oxyteam-init` 在 Overlay 完成后接管初始化；不得在确认前删除。
+
+
 需要检查的原始上游名称至少包括：
 
 ```text
