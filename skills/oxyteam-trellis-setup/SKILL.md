@@ -59,12 +59,13 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 
 1. [`references/changeset.md`](references/changeset.md)：**权威逐文件改动清单**，Apply 与记账都以它为准；
 2. [`references/edits.md`](references/edits.md)：**只改几处的文件的逐字锚点替换表**，不要凭描述自己改；
-3. [`references/update-policy.md`](references/update-policy.md)：版本、基线记账、冲突和确认规则；
-4. [`references/workflow.md`](references/workflow.md)：团队五阶段工作流与 Skill 路由；
-5. [`references/task-model.md`](references/task-model.md)：任务目录、三层状态、票格式与远程同步；
-6. [`references/context-loading.md`](references/context-loading.md)：注入层、Turn 快照与 Manifest。
+3. [`references/contract-cheatsheet.md`](references/contract-cheatsheet.md)：**命令行、字段名、阶段名的逐字底座**——写任何内容前先对一遍，别自己发挥；
+4. [`references/update-policy.md`](references/update-policy.md)：版本、基线记账、冲突和确认规则；
+5. [`references/workflow.md`](references/workflow.md)：团队五阶段工作流与 Skill 路由；
+6. [`references/task-model.md`](references/task-model.md)：任务目录、三层状态、票格式与远程同步；
+7. [`references/context-loading.md`](references/context-loading.md)：注入层、Turn 快照与 Manifest。
 
-六份参考共同构成 Overlay 契约，不选择性跳过。`changeset.md` 与其他几份冲突时以 `changeset.md` 为准。
+七份参考共同构成 Overlay 契约，不选择性跳过。`changeset.md` 与其他几份冲突时以 `changeset.md` 为准。
 
 **改动一律拿现成件，不要现写**：`scripts/` 原样拷贝，`templates/` 整篇替换（路径镜像落点），`edits.md` 逐字锚点。三者都没覆盖的条目才按描述实现，且实现完应补成现成件。
 
@@ -117,12 +118,20 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 应用要求：
 
 - 先在临时目录生成全部结果，静态校验通过后再落盘，避免半途失败留下混合状态；
-- **`scripts/` 下两个文件原样拷进 `.trellis/scripts/`，不要即兴实现**；落盘后立刻各跑一次，不通过就回滚：
+- **apply 之前先跑 `write_overlay_state.py snapshot`**，清单逐条照 `changeset.md` 列全（用法见 `edits.md` 末尾）。漏掉的路径 = 记账里没有 = 以后 `verify` 管不着；
+- **`scripts/` 下四个文件原样拷进 `.trellis/scripts/`，不要即兴实现**；落盘后立刻各跑一次，不通过就回滚：
 
   ```bash
-  python3 .trellis/scripts/oxyteam_tickets.py selfcheck      # 票解析 + frontier + 环检测
-  python3 .trellis/scripts/verify_workflow.py                # workflow.md 结构（失败模式全是静默的）
-  python3 .trellis/scripts/hooks/github_sync.py selfcheck    # 依赖排序 + Issue 字段回填
+  python3 .trellis/scripts/oxyteam_tickets.py selfcheck        # 票解析 + frontier + 环检测
+  python3 .trellis/scripts/verify_workflow.py                  # workflow.md 结构（失败模式全是静默的）
+  python3 .trellis/scripts/hooks/github_sync.py selfcheck      # 依赖排序 + Issue 字段回填
+  python3 .trellis/scripts/write_overlay_state.py selfcheck    # 记账全流程 + 三种漂移
+  ```
+
+- **落盘前先在本 Skill 的 `templates/` 上跑一次模板验收**，抓残留旧引用、错子命令和三平台正文漂移：
+
+  ```bash
+  python3 scripts/verify_overlay_templates.py
   ```
 
 - 不保留兼容别名，不保留两套并行路由；
@@ -130,7 +139,7 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 - P1 的 `inject-workflow-state.py` 补丁在 Claude 和 Codex 是同一份（官方模板字节相同），写一份应用两次；
 - 重写 `.codex/agents/trellis-implement.toml` 时保留用户钉的 `model` / `model_reasoning_effort`；
 - 遇到旧任务或未知用户修改时按 `update-policy.md` 停止，不静默覆盖；
-- 落盘后立刻写 `.trellis/.oxyteam-overlay.json` 记账，**`files` 带平台维度**（格式见 `update-policy.md`）。
+- 落盘后跑 `write_overlay_state.py finalize --platforms <已装平台>` 补完记账，**不要手写这个 JSON**。
 
 ### 4.5 交给 `oxyteam-init`
 
@@ -153,6 +162,9 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
 10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，不多不少。
 
+11. `python3 .trellis/scripts/write_overlay_state.py verify` 通过 —— 记账里每个路径都对得上现场，
+    tombstone 路径没有被 `trellis update` 装回来。
+
 **第 10 条是 Overlay 是否可维护的唯一硬指标。** 曾经出现过 `dry-run` 报 12 个而实际改了 13 个的情况（`linear_sync.py` 被三轮审计漏掉），所以比对必须以 `.trellis/.oxyteam-overlay.json` 的记账为准，而不是以 `dry-run` 输出为准。
 
 报告实际执行的命令、输出和仍未验证的行为；没有观察到的结果不得声称通过。
@@ -166,9 +178,11 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 .trellis/config.yaml                  仅 hooks: 段
 .trellis/agents/implement.md
 .trellis/agents/check.md
-.trellis/scripts/oxyteam_tickets.py   新建
-.trellis/scripts/hooks/github_sync.py 新建
-.trellis/.oxyteam-overlay.json        新建，Installer 记账
+.trellis/scripts/oxyteam_tickets.py       新建
+.trellis/scripts/verify_workflow.py       新建
+.trellis/scripts/write_overlay_state.py   新建
+.trellis/scripts/hooks/github_sync.py     新建
+.trellis/.oxyteam-overlay.json            新建，由 write_overlay_state.py 生成
 AGENTS.md
 docs/agents/issue-tracker.md
 

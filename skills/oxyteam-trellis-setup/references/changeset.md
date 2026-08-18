@@ -77,7 +77,7 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 | A1 | `.trellis/scripts/oxyteam_tickets.py` | 解析 `issues/*.md`、算 Frontier、claim/done、summary；**claim 时把当前票路径写进 `<task>/implement.jsonl`**（见 P1 说明） |
 
 | A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步。**拷 `scripts/hooks/github_sync.py`**，票的解析复用 `oxyteam_tickets.py`，不是第二个解析器 |
-| A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone |
+| A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone。**由 `scripts/write_overlay_state.py` 生成，不要手写 JSON 手算 hash**（用法见 `edits.md` 末尾） |
 
 **A1 是拷贝，不是现写。** 源文件在本 Skill 的 `scripts/oxyteam_tickets.py`，原样复制到 `.trellis/scripts/`，**不要让模型即兴实现一个票解析器**——`task-model.md` 的三条硬校验（Blocker 不存在 / 成环 / claim 不在 frontier）和归档门禁全挂在它身上，每个项目一份不同的实现，那就不叫硬校验了。
 
@@ -100,8 +100,8 @@ A2 同样是拷贝，落盘后跑 `python3 .trellis/scripts/hooks/github_sync.py
 | B1 | `.trellis/workflow.md` | **拷 `templates/trellis/workflow.md`，整篇替换。** 拷完跑 `python3 .trellis/scripts/verify_workflow.py`，不通过就回滚 |
 | B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源 |
 | B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `after_create` / `after_archive`。**逐字改法见 `edits.md`** |
-| B4 | `.trellis/agents/implement.md` | channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
-| B5 | `.trellis/agents/check.md` | 读取列表同上；审查方法改成调 `oxyteam-code-review`，**去掉 self-fix** |
+| B4 | `.trellis/agents/implement.md` | **拷 `templates/trellis/agents/implement.md`，整篇替换。** channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
+| B5 | `.trellis/agents/check.md` | **拷 `templates/trellis/agents/check.md`，整篇替换。** 读取列表同上；审查方法改成提示用户运行 `/oxyteam-code-review`，**去掉 self-fix** |
 
 > **B2 的永久成本**：`AGENTS.md` 的 managed block 自己写着 "edits inside may be overwritten by a future `trellis update`"。每次升级后都要重改一次，必须进 Installer 的固定检查项。
 
@@ -112,6 +112,16 @@ A2 同样是拷贝，落盘后跑 `python3 .trellis/scripts/hooks/github_sync.py
 ## P 组：修改官方文件 · 平台层（每平台 8~9）
 
 **按角色编号，每个角色在各平台落到不同路径。** 只对已装平台执行。
+
+**P3–P6 整篇替换，拷 `templates/` 下的镜像路径**（`.omp/commands/trellis-continue.md` ←
+`templates/omp/commands/trellis-continue.md`，Codex 的 `.agents/skills/**` ←
+`templates/agents/skills/**`）。**P1 P2 P7–P10 只改几处，走 `edits.md` 的逐字锚点表**，
+不要整篇纳管 —— `inject-workflow-state.py` 475 行、`session-start.py` 949 行、
+`index.ts` 592 行，整篇纳管等于每次 `trellis update` 都要全文 diff。
+
+拷完跑 `python3 scripts/verify_overlay_templates.py`：抓残留旧引用、错子命令、
+未渲染变量，以及**三平台正文漂移**（同一份 continue 落三个地方，改了一处忘了另两处
+是静默失败）。
 
 | # | 角色 | OMP | Claude Code | Codex |
 |---|---|---|---|---|

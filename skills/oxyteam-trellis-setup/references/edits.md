@@ -104,49 +104,198 @@ TICKET=$(python3 .trellis/scripts/oxyteam_tickets.py summary | grep -o 'doing [^
 
 ---
 
-## P1 / P2 —— 对官方注入层打补丁
+## P1 —— 每轮状态注入
 
-这两项动的是官方 TypeScript 和 Python，锚点如下。**还没做成补丁文件**，见本文件末尾的「未完成」。
+**不整篇替换。** `inject-workflow-state.py` 475 行、`index.ts` 592 行，整篇纳管等于每次
+`trellis update` 都要全文 diff。这里只有两个锚点，逐字改。
 
-### P1 状态解析（三平台各一处）
+### P1-a 状态解析：`flow_stage` 优先（Claude / Codex）
 
-| 平台 | 文件 | 锚点 |
-|---|---|---|
-| OMP | `.omp/extensions/trellis/index.ts` | `resolveActiveTaskStatus()` 的返回值 |
-| Claude / Codex | `<平台>/hooks/inject-workflow-state.py` | `status = data.get("status", "")`（官方模板 179 行） |
+`<平台>/hooks/inject-workflow-state.py`。**这个文件在两个平台是字节相同的官方模板，同一份改动应用两次。**
 
-改成：先读 `task.json` 的 `meta.flow_stage`，落在 `discover|specify|slice|implement|finish` 里就用它，否则回退 `status`，无任务返回 `no_task`。
+找（官方模板 178–182 行，全文**只出现一次**，`_resolve_active_task` 之后）：
 
-Claude 和 Codex 的这个文件是**字节相同的官方模板**，同一份补丁应用两次。
-
-### P2 会话启动（Claude 独有）
-
-`.claude/hooks/session-start.py`，三个锚点（官方模板行号）：
-
-```text
-:482       "Next-Action: Load `trellis-brainstorm` and write `prd.md`. Stay in planning."
-:488-489   ("design.md", has_design) / ("implement.md", has_implement_plan)
-:513       "Implementation/check context order is jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`."
+```python
+    task_id = data.get("id") or task_dir.name
+    status = data.get("status", "")
+    if not isinstance(status, str) or not status:
+        return None
+    return task_id, status, active.source
 ```
 
-三处都要改掉：`trellis-brainstorm` 已删除，`design.md` / `implement.md` 本版不产生。
+换成：
 
-**`.codex/hooks/session-start.py` 不改** —— `.codex/hooks.json` 只注册了 `UserPromptSubmit` 和 `SubagentStart`，没有它，是死文件。
+```python
+    task_id = data.get("id") or task_dir.name
+    status = data.get("status", "")
+    if not isinstance(status, str) or not status:
+        return None
+    # Oxyteam Overlay：细挡位 meta.flow_stage 优先，非法或缺失时回退官方 status
+    meta = data.get("meta")
+    stage = meta.get("flow_stage") if isinstance(meta, dict) else None
+    if isinstance(stage, str) and stage in (
+        "discover", "specify", "slice", "implement", "finish"
+    ):
+        status = stage
+    return task_id, status, active.source
+```
+
+`meta` 不是 dict 时（老任务写坏过）也要能回退，所以先 `isinstance` 再 `.get`。
+
+### P1-b 状态解析：`flow_stage` 优先（OMP）
+
+`.omp/extensions/trellis/index.ts`，`resolveActiveTaskStatus()` 的返回语句（官方模板 243–247 行）。
+
+找：
+
+```typescript
+   return {
+      status: typeof taskData.status === "string" ? taskData.status : "planning",
+      taskDir,
+      taskTitle: typeof taskData.title === "string" ? taskData.title : null,
+   };
+```
+
+换成：
+
+```typescript
+   // Oxyteam Overlay：细挡位 meta.flow_stage 优先，非法或缺失时回退官方 status
+   const FLOW_STAGES = ["discover", "specify", "slice", "implement", "finish"];
+   const meta = taskData.meta as Record<string, unknown> | undefined;
+   const stage = meta && typeof meta.flow_stage === "string" ? meta.flow_stage : null;
+   const fallback = typeof taskData.status === "string" ? taskData.status : "planning";
+   return {
+      status: stage && FLOW_STAGES.includes(stage) ? stage : fallback,
+      taskDir,
+      taskTitle: typeof taskData.title === "string" ? taskData.title : null,
+   };
+```
+
+### P1-c 注入当前票（三平台各一处）
+
+`flow_stage=implement` 时，把 `oxyteam_tickets.py summary` 的输出附在状态块后面，
+让主会话每轮都确切知道当前票是哪张 —— 不依赖模型记住上一轮 claim 了什么。
+
+**复用已有脚本，不要在注入层里再写一个票解析器。** 失败一律静默：注入层挂掉比没有票摘要严重得多。
+
+**Python 侧**（Claude / Codex，同一份改两次）。找 `main()` 里这段（官方模板 435–440 行）：
+
+```python
+        task_id, status, source = task
+        status_key = resolve_breadcrumb_key(status, platform, config)
+        source_for_breadcrumb = None if platform == "codex" else source
+        breadcrumb = build_breadcrumb(
+            task_id, status, templates, source_for_breadcrumb, breadcrumb_key=status_key
+        )
+```
+
+在它下面**插入**（注意缩进是 8 空格，和上面的 `breadcrumb = ` 同级）：
+
+```python
+        # Oxyteam Overlay：实施阶段把当前票摘要附上，失败静默
+        if status == "implement":
+            try:
+                summary = subprocess.run(
+                    [sys.executable, str(root / ".trellis" / "scripts" / "oxyteam_tickets.py"),
+                     "summary"],
+                    capture_output=True, text=True, timeout=5, cwd=root,
+                )
+                if summary.returncode == 0 and summary.stdout.strip():
+                    breadcrumb += f"\n\n<oxyteam-tickets>\n{summary.stdout.strip()}\n</oxyteam-tickets>"
+            except Exception:
+                pass
+```
+
+`subprocess` 官方已经 import 了，`sys` 也是 —— 应用前确认一遍文件头，缺了就补 import。
+
+**OMP 侧**：`TurnContextCache.get()` 里，`this.workflowMsg = ` 那行之前插入同样逻辑，
+用已经 import 的 `spawnSync`（`buildSessionContext()` 在用），超时同样 5 秒，catch 掉一切。
+
+### 不加 `TurnContextCache.beginTurn()`
+
+`changeset.md` P1 原本要求 OMP 每轮先清缓存再重建。**实测后建议不加**：
+
+```text
+官方 TurnContextCache 已有 TTL_MS = 1500 的时间窗（index.ts:364）
+它的用途是同一轮内三个事件级联（input / before_agent_start / context）复用一份快照
+跨轮次自然过期，只有「两轮用户输入间隔 < 1.5 秒且期间状态变了」才会读到旧值
+而状态变更都要先跑命令（set-meta / claim），凑不出这个窗口
+```
+
+加 `beginTurn()` 要动 `TurnContextCache` 的类定义和扩展入口两处，换一个凑不出来的窗口。
+**这条与 `changeset.md` P1 的原文有出入，按本文件执行，改动方要么更新 changeset 要么给出反例。**
 
 ---
 
-## 未完成
+## P2 —— 会话启动注入（Claude 独有）
 
-以下还是「描述」，没有做成现成件：
+`.claude/hooks/session-start.py` 的 `_get_task_status()`（官方模板 424–514 行）。
+
+**整个函数替换**，不做三处碎锚点。原因：官方版 planning 分支的**判断基础是 artifact 存不存在**
+（`has_prd` / `has_design` / `has_implement_plan`），本版按 `meta.flow_stage` 判断，
+这套基础整个不成立了 —— 碎改会留下半新半旧的逻辑。
+
+保留不动的部分：无任务分支、stale pointer 分支、`task.json` 读取、`_has_curated_jsonl_entry`
+调用。要改的是从 `task_title = task_data.get(...)` 开始到函数结束。
+
+替换后的行为：
 
 ```text
-B4 / B5   .trellis/agents/{implement,check}.md    需要整篇模板
-P1 / P2   注入层补丁                              需要补丁文件或整篇模板
-P3        Codex trellis-start/SKILL.md            需要整篇模板
-P4 / P5   continue / finish-work                  需要整篇模板（三平台正文同、frontmatter 异）
-P6        trellis-implement 子 Agent              需要整篇模板 ×2（md / toml）
-A3        .oxyteam-overlay.json 生成逻辑           需要实现
+artifact_names   去掉 design.md / implement.md，加 issues/
+completed        保留，但 "return to Phase 3.4" 改成本版的 3.1 Finish
+planning 分支    改成读 meta.flow_stage 路由到 discover / specify / slice，
+                 缺 flow_stage 的老任务回退到按 prd.md 有无粗判并提示补 set-meta
+in_progress 分支 context order 改成「当前票（implement.jsonl）→ prd.md → .trellis/spec/」
+所有 Next-Action  提到 Team Skill 一律写「提示用户运行 /oxyteam-xxx」
 ```
 
-已完成：`A1` `A2`（`scripts/` 下三个文件，拷贝即可）、`B1`（`templates/trellis/workflow.md`）、
-`B3` `P7`–`P10`（本文件的锚点表）。
+三处必须消失的字符串（改完 grep 确认为 0）：
+
+```text
+Load `trellis-brainstorm` and write `prd.md`
+("design.md", has_design)
+`design.md if present` -> `implement.md if present`
+```
+
+**`.codex/hooks/session-start.py` 不改** —— `.codex/hooks.json` 只注册了 `UserPromptSubmit`
+和 `SubagentStart`，没有它，是死文件。改它是白改。
+
+### 两处已知残留，明确不改
+
+```text
+inject-workflow-state.py:428   注释里提到 trellis-brainstorm —— 注释不产生行为
+index.ts:388  TRELLIS_AGENTS 里留着 trellis-check / trellis-research —— agent 已按 C5/C6
+              删除，Set 里的名字永远不会命中，无害
+```
+
+两处都只影响可读性，改了就多两个 `trellis update` 冲突点，按定价表不划算。
+
+---
+
+## 现成件覆盖情况
+
+```text
+scripts/          A1 A2 A3   拷贝即可，落盘后各跑一次 selfcheck
+templates/        B1 B4 B5   共享层整篇替换
+                  P3 P4 P5 P6  平台层整篇替换（路径镜像落点）
+本文件的锚点表     B3 P1 P2 P7 P8 P9 P10
+```
+
+`A3` 的记账由 `scripts/write_overlay_state.py` 生成，不要手写 JSON、手算 hash：
+
+```bash
+# apply 之前 —— 清单从 changeset.md 逐条列出，三列：action layer path
+python3 .trellis/scripts/write_overlay_state.py snapshot <<'EOF'
+modify shared .trellis/workflow.md
+delete codex  .agents/skills/trellis-brainstorm
+EOF
+
+# apply 之后
+python3 .trellis/scripts/write_overlay_state.py finalize --platforms omp,claude-code
+
+# 任何时候
+python3 .trellis/scripts/write_overlay_state.py verify
+```
+
+`snapshot` 里没有的路径 = 记账里没有 = `verify` 管不着，所以清单必须**逐条照着
+`changeset.md` 列全**，不要凭印象挑。
