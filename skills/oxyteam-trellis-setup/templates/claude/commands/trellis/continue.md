@@ -1,3 +1,5 @@
+# Continue Current Task
+
 <!-- Oxyteam Overlay 版 continue —— 由 oxyteam-trellis-setup 整篇替换官方
      common/commands/continue.md 在本平台的渲染产物（不是补丁，是最终形态）。
 
@@ -16,12 +18,13 @@
      H1（OMP 渲染时会删掉 H1，所以 OMP 那份没有）、`--platform` 的值。
      改一份就要同步改另外两份。
 
+     H1 必须是本文件第一行，本注释块只能排在它后面 —— Claude Code 拿首个非空行
+     当命令描述，注释压在前面会让 skill 列表显示成 `<!-- Oxyteam Overlay 版…`。
+
      正文里提到 Team Skill 一律写「提示用户运行 /oxyteam-xxx」，不写祈使句——
      那些 Skill 带 disable-model-invocation，模型调不动，写成祈使句会让它绕过
      Skill 自己动手干。
 -->
-
-# Continue Current Task
 
 在当前任务上继续 —— 按 `.trellis/workflow.md` 里正确的阶段接着往下走。
 

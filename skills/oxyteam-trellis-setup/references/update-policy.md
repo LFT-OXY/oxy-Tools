@@ -10,7 +10,8 @@
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.3.0`**。
+本 Overlay 自身版本：**`v0.4.0`**（与 `SKILL.md` 的「支持范围」和 `write_overlay_state.py`
+的 `--overlay-version` 默认值三处必须一致，改一处三处都要改）。
 
 `oxyteam-trellis-setup` 允许钉在与基础 Skill Pack 不同的标签上——`skills-lock.json` 是逐 Skill 记 `ref` 的，仓库级标签线本来就支撑得住，**不需要单独的 Overlay 标签命名空间**。Setup 标签与基础 Skill Pack 标签不同**不是**混装；预检报告必须分别列出两个版本。
 
@@ -26,10 +27,27 @@ oxyteam-code-review/SKILL.md            固化 patch 契约 + spec 来源查 tra
 oxyteam-research/SKILL.md               spawn 前定路径
 ```
 
-**预检必须验 `skills-lock.json` 里这 4 个 Skill 的 `ref`，不能只验 `source`。** 任意一个 ref 早于 `v0.3.0` 就停止。四种失败模式全都不报错：
+**预检必须逐项验这五处的内容，不是验版本号。**
+
+早前这里写的是「验 `skills-lock.json` 里这 4 个 Skill 的 `ref` ≥ v0.3.0」——**实测执行不了**：
+`skills` CLI 的锁文件只记 `source` / `sourceType` / `computedHash`，**没有 `ref` 字段**，
+`skills add` 也没有 `--ref` 选项，装的永远是默认分支。按 ref 判版本这条路根本不存在。
+
+改成直接验内容，证据比 ref 更强——ref 对得上也可能是标签打错了，内容对得上就是真到位：
+
+```text
+oxyteam-init/issue-tracker-trellis.md   文件存在，且含 `## Wayfinding operations` 段
+oxyteam-init/SKILL.md                   Section A 的 tracker 选项里有 Trellis
+oxyteam-tickets/SKILL.md                发布路径是查 tracker 文档，不是硬编码 .scratch/
+oxyteam-code-review/SKILL.md            patch 契约已固化，spec 来源查 tracker
+oxyteam-research/SKILL.md               spawn 子代理前先定路径
+```
+
+任意一项不命中就停止。五种失败模式全都不报错：
 
 ```text
 缺 issue-tracker-trellis.md    oxyteam-init 给不出 Trellis 选项，只能落到 local
+缺 Wayfinding operations 段     oxyteam-map 悄悄退回 local-markdown tracker，写进 .scratch/
 缺 oxyteam-tickets 的改动       票写进 .scratch/，Trellis 完全看不到
 缺 oxyteam-code-review 的改动   审查静默漏掉本次未提交的实现，还报「通过」
 缺 oxyteam-research 的改动      后台 agent 把研究结果扔到它自己觉得合理的地方
@@ -46,7 +64,7 @@ oxyteam-research/SKILL.md               spawn 前定路径
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
 4. **已装平台已判定**（`.omp/` / `.claude/` / `.codex/`，至少一个），每个都对得上 `changeset.md`「平台落点对照」表的入口文件；表外的平台直接停；
 5. **Codex 专项**（装了才查）：`codex.dispatch_mode` 不是 `inline`（是就硬停）；用户级 `~/.codex/config.toml` 的 `[features].hooks` 已开（没开就提示用户去开，否则装完不注入）；
-6. `skills-lock.json` 中团队 Skills 来源一致，且 `oxyteam-init` / `oxyteam-tickets` / `oxyteam-code-review` / `oxyteam-research` 四个的 ref 都 `>= v0.3.0`；
+6. `skills-lock.json` 中团队 Skills 来源一致（**只验 `source`，锁文件没有 `ref` 字段**），D 组五项按上面的内容清单逐条命中；
 7. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存；
 8. `changeset.md` 每个目标路径的当前状态已分类（见下），按共享层 / 每个已装平台分组；
 9. `.trellis/config.yaml` 的活动 Lifecycle Hook 已列出。
@@ -125,10 +143,17 @@ C != A_old && C != U_new  → 本地有漂移，进冲突处理，不静默覆�
 ```text
 ✅ inspect    五值分类 + 漂移检测 + Hook 清单
 ✅ apply      按 changeset.md 落盘 + 写状态文件 + 撤销历史修改
+✅ bless      重拷模板后重新盖章 —— 只换 applied_hash，必须显式点名路径
 ❌ reconcile  升级后的自动三方合并 —— 未实现，遇漂移一律停下来问
 ```
 
 `reconcile` 落地之前，`trellis update` 之后的处理方式是：跑 inspect 拿到分类，人工决定每个漂移文件，再重跑 apply。**这是明确的能力上限，不要在报告里说成「已支持升级」。**
+
+**只有一种情形有现成出路**：Skill Pack 更新了 `templates/`，你把新模板重拷进已装项目——
+官方那一侧没变，不需要合并，跑 `write_overlay_state.py bless <路径>` 重新盖章即可（用法见
+`edits.md` 末尾）。这是实测踩出来的：不补 `bless`，重拷之后 `finalize` 防重入、`snapshot`
+会把 Overlay 后的内容误记成 upstream，两条路都堵死，只剩手改 JSON 或推倒重装。
+**`bless` 不是 `reconcile`**，它的前提是你已经确认现场内容正确，不做任何合并。
 
 ## 写入确认
 

@@ -68,7 +68,7 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 
 ---
 
-## A 组：新建自有文件（3，0 冲突）
+## A 组：新建自有文件（5，0 冲突）
 
 官方模板里没有这些路径，不会进 `changedFiles`，永远不冲突。与平台数无关，装几个平台都只建一次。
 
@@ -78,6 +78,12 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 
 | A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步。**拷 `scripts/hooks/github_sync.py`**，票的解析复用 `oxyteam_tickets.py`，不是第二个解析器 |
 | A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone。**由 `scripts/write_overlay_state.py` 生成，不要手写 JSON 手算 hash**（用法见 `edits.md` 末尾） |
+| A4 | `.trellis/scripts/verify_workflow.py` | 校验 B1 落盘后的 `workflow.md` 结构。**拷 `scripts/verify_workflow.py`** |
+| A5 | `.trellis/scripts/write_overlay_state.py` | 生成和校验 A3。**拷 `scripts/write_overlay_state.py`** |
+
+A4 / A5 是后加的，编号排在 A3 之后只是为了不动 A1–A3 的既有交叉引用，**不代表落盘顺序**：
+两个脚本都要在 A3 之前拷进去（A3 由 A5 生成）。四个脚本一个都不能少 ——
+应用计划里凑不齐 5 条就是漏了。
 
 **A1 是拷贝，不是现写。** 源文件在本 Skill 的 `scripts/oxyteam_tickets.py`，原样复制到 `.trellis/scripts/`，**不要让模型即兴实现一个票解析器**——`task-model.md` 的三条硬校验（Blocker 不存在 / 成环 / claim 不在 frontier）和归档门禁全挂在它身上，每个项目一份不同的实现，那就不叫硬校验了。
 
@@ -166,9 +172,14 @@ OMP 的 `index.ts` 很干净：只读 `prd.md` / `info.md` / jsonl，全文没�
 shared-hooks/session-start.py:482       "Next-Action: Load `trellis-brainstorm` and write `prd.md`."
                              :488-489   提示复杂任务补 design.md / implement.md
                              :513       "context order is jsonl -> prd.md -> design.md -> implement.md"
+                             :892-896   同一句话在 <guidelines> 段又写了一份 ← 在替换区间外
 common/commands/start.md:39-40,53-56    指路四个已删 Skill + design.md / implement.md
                                         （Codex 落到 .agents/skills/trellis-start/SKILL.md）
 ```
+
+**`:892-896` 是实测装完才发现的。** 前四处都落在 `_get_task_status()`（424–514）里，整函数替换一并解决；
+这一处在函数外，只做整函数替换会把它漏掉，而 `edits.md` 要求的「grep 确认为 0」正是靠它兜底。
+逐字改法见 `edits.md` 的 **P2-b**。
 
 `trellis-brainstorm` 在 C 组是被删掉的。**不改这两个文件，Claude Code 和 Codex 的每个新会话都会被指向一个不存在的 Skill，并被要求创建本版明确不再使用的 `design.md` / `implement.md`。**
 

@@ -118,6 +118,15 @@ TICKET=$(python3 .trellis/scripts/oxyteam_tickets.py summary | grep -o 'doing [^
 | 1 | `  --file "$TASK/design.md" \` | `  --file "$TASK/issues/$TICKET.md" \` |
 | 2 | `  --file "$TASK/implement.md" \` | **整行删除** |
 
+**这个文件也要补 `$TICKET` 定义**，和 P7 同一行，补在它自己示例的 `TASK=` 赋值后面：
+
+```bash
+TICKET=$(python3 .trellis/scripts/oxyteam_tickets.py summary | grep -o 'doing [^ |]*' | cut -d' ' -f2)
+```
+
+P7 和 P8 各有一份独立的示例脚本，`$TICKET` 不会从一个文件流到另一个。漏了不报错，
+是示例里留一个未定义变量，模型照抄就得到空路径。
+
 > **不要动 `- \`.trellis/agents/implement.md\` — coding worker for implementation runs.`**
 > 那是 worker 定义文件自己的路径，不是任务 artifact。`changeset.md` 早期版本写的「3 处」把它算进去了，实际只有 2 处。
 
@@ -304,6 +313,34 @@ Load `trellis-brainstorm` and write `prd.md`
 `design.md if present` -> `implement.md if present`
 ```
 
+### P2-b `<guidelines>` 段里还有一份，函数外（官方模板 892–896 行）
+
+第三条字符串在文件里出现**两次**：513 行在 `_get_task_status()` 内，整函数替换时一并没了；
+**892–896 行在 `<guidelines>` 段，不在替换区间内，必须单改**。只做整函数替换的话
+grep 永远归不了零 —— 这一处是实测装完之后才发现的。
+
+找（官方模板 892–896 行，`output.write("<guidelines>\n")` 紧后面）：
+
+```python
+    output.write(
+        "Task context order for implementation/check: jsonl entries -> `prd.md` -> "
+        "`design.md if present` -> `implement.md if present`. Missing optional artifacts "
+        "are skipped for lightweight tasks.\n\n"
+    )
+```
+
+换成：
+
+```python
+    output.write(
+        "Task context order for implementation/check: current ticket "
+        "(`implement.jsonl` -> `issues/NN-*.md`) -> `prd.md` -> `.trellis/spec/`.\n\n"
+    )
+```
+
+尾句「Missing optional artifacts are skipped」一并删掉：本版没有可选 artifact，
+`prd.md` 和当前票都是必到的。
+
 **`.codex/hooks/session-start.py` 不改** —— `.codex/hooks.json` 只注册了 `UserPromptSubmit`
 和 `SubagentStart`，没有它，是死文件。改它是白改。
 
@@ -350,3 +387,25 @@ python3 .trellis/scripts/write_overlay_state.py verify
 
 `snapshot` 里没有的路径 = 记账里没有 = `verify` 管不着，所以清单必须**逐条照着
 `changeset.md` 列全**，不要凭印象挑。
+
+### Skill Pack 更新了模板，已装项目怎么重新盖章
+
+`finalize` 有防重入，`snapshot` 会把 Overlay 后的内容误记成 `upstream_hash`（而且 C 组
+那些已删路径会直接撞上「不存在，但 action 是 delete」）。所以重拷模板之后**两条都走不通**，
+唯一出路是 `bless`：
+
+```bash
+cp <本 Skill>/templates/claude/commands/trellis/continue.md .claude/commands/trellis/
+python3 .trellis/scripts/write_overlay_state.py bless .claude/commands/trellis/continue.md
+python3 .trellis/scripts/write_overlay_state.py verify
+```
+
+`bless` 只换 `applied_hash`，**不动 `upstream_hash`** —— 动了就再也算不出「这个文件被
+`trellis update` 恢复成官方原样了」。
+
+**必须显式点名路径。** 不点名就是把真实的本地漂移一起盖掉，记账当场作废，所以脚本直接拒绝。
+先跑 `verify` 看清楚哪些路径漂了，确认每一条都是你自己重拷的，再逐条点名。
+
+这不是 `reconcile`。`bless` 的前提是**你已经知道现场内容是对的**；官方 `trellis update`
+改了同一个文件、需要把官方新内容和 Overlay 改动合到一起，那是三方合并，本版没有实现，
+遇到就停下来人工处理。

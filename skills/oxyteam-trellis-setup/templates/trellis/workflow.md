@@ -35,8 +35,16 @@ Trellis 提供运行时：Session、Active Task、跨会话恢复、Archive、Jo
 | Finish | Phase 3 | `completed` | finish-work 入口 → Archive + Journal |
 
 细挡位存在 `task.json.meta.flow_stage`（`discover|specify|slice|implement|finish`），
-粗挡位 `status` 保持官方语义不动。读用 `task.py current --json` 或直接读 `task.json`，
-写用 `task.py set-meta <task-dir> flow_stage <值>`。
+粗挡位 `status` 保持官方语义不动。写用 `task.py set-meta <task-dir> flow_stage <值>`。
+
+**读要两步。** `task.py current --json` 拿不到 `flow_stage` —— 它的输出是白名单拼出来的
+八个字段（`dir` / `id` / `title` / `status` / `parent` / `children` / `branch` / `base_branch`），
+`meta` 不在里面。所以先用它拿任务目录，再直接读那个目录下的 `task.json`：
+
+```bash
+DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_task"]["dir"])')
+python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
+```
 
 **Slice 是可选的。** 一个 Agent 会话内做得完的任务从 Specify 直接进 Implement，不要创建空的 `issues/`。
 

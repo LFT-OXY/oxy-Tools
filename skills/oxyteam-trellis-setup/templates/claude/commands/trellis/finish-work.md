@@ -1,3 +1,5 @@
+# Finish Work
+
 <!-- Oxyteam Overlay 版 finish-work —— 由 oxyteam-trellis-setup 整篇替换官方
      common/commands/finish-work.md。三个平台（OMP / Claude Code / Codex）正文一致，
      只有 frontmatter 和命令引用前缀不同。
@@ -16,9 +18,10 @@
      正文提到 Oxyteam Skill 一律写「提示用户运行 /oxyteam-xxx」，不写祈使句 ——
      那些 Skill 带 disable-model-invocation，模型调不动，写成祈使句会让它绕过
      Skill 自己动手干。
--->
 
-# Finish Work
+     H1 必须是本文件第一行，本注释块只能排在它后面 —— Claude Code 拿首个非空行
+     当命令描述，注释压在前面会让 skill 列表显示成 `<!-- Oxyteam Overlay 版…`。
+-->
 
 收尾当前会话：归档 Active Task（以及用户确认要一起清理的其他已完成任务），并记录 Session Journal。
 

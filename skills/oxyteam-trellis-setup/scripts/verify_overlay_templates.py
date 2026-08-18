@@ -119,8 +119,14 @@ def check_file(path: Path, rel: str) -> list[str]:
             for k in keys:
                 if not re.search(rf"^{k}:", fm.group(1), re.MULTILINE):
                     bad.append(f"{rel} 的 frontmatter 缺 `{k}:`")
-    if rel.startswith("claude/commands/") and fm is not None:
-        bad.append(f"{rel} 不该有 frontmatter —— Claude 的 command 是裸 Markdown")
+    if rel.startswith("claude/commands/"):
+        if fm is not None:
+            bad.append(f"{rel} 不该有 frontmatter —— Claude 的 command 是裸 Markdown")
+        # Claude 拿首个非空行当命令描述，说明注释压在 H1 前面会顶掉标题（用户可见）
+        first = next((l for l in raw.splitlines() if l.strip()), "")
+        if not first.startswith("# "):
+            bad.append(f"{rel} 首行不是 H1（现在是 `{first[:40]}`）—— "
+                       "Claude 拿它当命令描述，注释块只能排在 H1 后面")
 
     return bad
 
@@ -206,6 +212,12 @@ def selfcheck() -> int:
     assert any("不该有 frontmatter" in b
                for b in hits("claude/commands/c.md", "---\nname: c\n---\n# C\n")), \
         "Claude command 多余的 frontmatter 没被抓到"
+    # 实测踩出来的：注释压在 H1 前面，Claude 的 skill 列表显示成 `<!-- Oxyteam…`
+    assert any("首行不是 H1" in b
+               for b in hits("claude/commands/c.md", "<!-- 说明 -->\n\n# C\n")), \
+        "注释压 H1 没被抓到"
+    assert not hits("claude/commands/c.md", "# C\n\n<!-- 说明 -->\n\n正文\n"), \
+        "H1 在前、注释在后的正确形态被误报了"
 
     # 下面三条是实跑第一版时踩出来的误报，改动别把它们改回去
     assert not hits("a.md", "<!--\n② 删掉对 trellis-brainstorm / trellis-before-dev\n   的引用\n-->\n正文"), \
@@ -216,7 +228,7 @@ def selfcheck() -> int:
     # 规范化：三平台的合法差异应当被抹平
     omp = '---\ndescription: "x"\n---\n\n跑 `python3 x.py --platform omp`，用 /trellis:continue\n'
     codex = '---\nname: c\ndescription: "x"\n---\n\n# Continue\n\n跑 `python3 x.py --platform codex`，用 $continue\n'
-    claude = '<!-- 说明 -->\n\n# Continue\n\n跑 `python3 x.py --platform claude`，用 /trellis:continue\n'
+    claude = '# Continue\n\n<!-- 说明 -->\n\n跑 `python3 x.py --platform claude`，用 /trellis:continue\n'
     assert normalize(omp) == normalize(codex), \
         f"合法的平台差异没被抹平：\n{normalize(omp)!r}\n{normalize(codex)!r}"
     assert normalize(omp) == normalize(claude), \

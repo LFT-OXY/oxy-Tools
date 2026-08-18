@@ -239,12 +239,21 @@ def cmd_sync_tickets() -> None:
 
 
 def cmd_archive() -> None:
-    task, _, _ = read_task()
+    task, _, task_dir = read_task()
     number = source_ref(task)
     if not number:
         print("没有 meta.source_ref，没有远程 Issue 要关")
         return
     repo = require_gh()
+
+    # 先关子 issue 再关父 issue。归档门禁已保证所有票 Impl: done，
+    # 漏关的话镜像里会永久留下 N 个 OPEN 的票，几个任务之后 issue 列表全是噪音。
+    for t in load_tickets(task_dir / "issues"):
+        sub = read_issue_ref(t.path)
+        if sub:
+            gh("issue", "close", sub, "--repo", repo, "--comment", "任务已归档。")
+            print(f"{t.label} → 已关闭 Issue #{sub}")
+
     gh("issue", "close", number, "--repo", repo, "--comment", "任务已归档。")
     print(f"已关闭 Issue #{number}")
 
@@ -313,8 +322,13 @@ COMMANDS = {
     "archive": cmd_archive,
     "selfcheck": cmd_selfcheck,
 }
-# Hook 场景失败只警告，不能阻断建任务和归档
-HOOK_ACTIONS = {"create", "archive"}
+# 失败一律返回非零。官方 run_task_hooks（task_utils.py:275-291）用
+# capture_output=True 吞掉两个流，**只在非零退出时**才把 stderr 打出来 ——
+# 早前为了「不阻断建任务」返回 0，结果是钩子失败彻底无声：远程 Issue 没建、
+# 票没同步、归档没关，全都一声不吭。
+#
+# 而「非零会阻断」这个前提是错的：run_task_hooks 只打印 [WARN]，不抛异常，
+# task_store.py:506 调完继续往下走。返回非零既不阻断，又换回全部可观测性。
 
 
 def main(argv: list[str]) -> int:
@@ -326,9 +340,6 @@ def main(argv: list[str]) -> int:
         COMMANDS[action]()
         return 0
     except (SyncError, TicketError, FileNotFoundError) as e:
-        if action in HOOK_ACTIONS:
-            print(f"警告：远程同步跳过（{e}）", file=sys.stderr)
-            return 0
         print(f"错误：{e}", file=sys.stderr)
         return 1
 

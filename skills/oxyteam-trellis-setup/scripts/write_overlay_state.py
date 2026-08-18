@@ -127,6 +127,42 @@ def cmd_finalize(root: Path, overlay_version: str, trellis_version: str,
     return 0
 
 
+def cmd_bless(root: Path, rels: list[str], **_) -> int:
+    """重新盖章：把指定路径的 applied_hash 换成现场内容，upstream_hash 不动。
+
+    Skill Pack 更新了模板、已装项目重新拷了几个文件之后的唯一合法出路 ——
+    finalize 有防重入，重新 snapshot 会把 Overlay 后的内容误记成 upstream。
+    **必须显式点名路径**：不点名就等于把真实的本地漂移一起盖掉，那记账就没用了。
+    """
+    state_file = root / STATE_PATH
+    if not state_file.is_file():
+        raise SystemExit(f"没有 {STATE_PATH} —— 这个项目还没装过 Overlay")
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    if state.get("_stage") == "snapshot":
+        raise SystemExit("记账停在 snapshot 阶段 —— 先把 apply 跑完 finalize")
+    if not rels:
+        raise SystemExit("bless 要显式点名路径，例如 "
+                         "bless .claude/commands/trellis/continue.md（不点名 = 盖掉真漂移）")
+
+    for rel in rels:
+        entry = state["files"].get(rel)
+        if entry is None:
+            raise SystemExit(f"{rel} 不在记账里 —— 新增路径要走 snapshot + finalize，不是 bless")
+        if entry["action"] == "delete":
+            raise SystemExit(f"{rel} 记的是 delete，tombstone 没有 applied_hash 可盖")
+        h = digest(root / rel)
+        if h is None:
+            raise SystemExit(f"{rel} 磁盘上没有 —— 先把文件拷回去再 bless")
+        if h == entry["applied_hash"]:
+            print(f"{rel} 本来就一致，跳过")
+            continue
+        entry["applied_hash"] = h
+        print(f"{rel} 重新盖章")
+    state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+                          encoding="utf-8")
+    return 0
+
+
 def cmd_verify(root: Path, **_) -> int:
     state_file = root / STATE_PATH
     if not state_file.is_file():
@@ -224,6 +260,20 @@ def selfcheck() -> int:
         assert cmd_verify(root) == 0
         (root / ".claude/skills/trellis-brainstorm").mkdir(parents=True)
         assert cmd_verify(root) == 1, "被 update 装回来的已删目录没被抓到"
+        shutil.rmtree(root / ".claude/skills/trellis-brainstorm")
+
+        # bless：Skill Pack 更新模板后，已装项目重新盖章的唯一合法出路
+        (root / ".trellis/workflow.md").write_text("Overlay 版 v2", encoding="utf-8")
+        assert cmd_verify(root) == 1
+        fails(lambda: cmd_bless(root, []), "显式点名路径")
+        fails(lambda: cmd_bless(root, ["不在记账里.md"]), "不在记账里")
+        fails(lambda: cmd_bless(root, [".claude/skills/trellis-brainstorm"]),
+              "tombstone 没有 applied_hash")
+        assert cmd_bless(root, [".trellis/workflow.md"]) == 0
+        assert cmd_verify(root) == 0, "bless 之后应该重新一致"
+        assert json.loads((root / STATE_PATH).read_text(encoding="utf-8")
+                          )["files"][".trellis/workflow.md"]["upstream_hash"] == upstream, \
+            "bless 不该动 upstream_hash —— 动了就再也算不出「恢复成官方原样」"
 
     fails(lambda: parse_manifest("modify shared"), "不是三列")
     fails(lambda: parse_manifest("rename shared a.md"), "只允许")
@@ -237,11 +287,14 @@ def selfcheck() -> int:
 def main(argv: list[str]) -> int:
     import argparse
     p = argparse.ArgumentParser(description="Oxyteam Overlay 记账")
-    p.add_argument("command", choices=["snapshot", "finalize", "verify", "selfcheck"])
+    p.add_argument("command", choices=["snapshot", "finalize", "bless", "verify", "selfcheck"])
+    p.add_argument("paths", nargs="*", help="bless 专用：要重新盖章的路径")
     p.add_argument("--root", default=".", help="仓库根，缺省当前目录")
     p.add_argument("--overlay-version", default="v0.4.0")
     p.add_argument("--trellis-version", default="0.6.15")
-    p.add_argument("--skill-pack-ref", default="v0.3.0")
+    # skills-lock.json 没有 ref 字段，装的是默认分支 —— 默认值只能是「没验过」，
+    # 记一个没验过的版本号比不记更坏。传 computedHash 或真实 tag 才有意义。
+    p.add_argument("--skill-pack-ref", default="unverified")
     p.add_argument("--platforms", default="", help="逗号分隔，finalize 必填")
     a = p.parse_args(argv[1:])
 
@@ -250,6 +303,8 @@ def main(argv: list[str]) -> int:
     root = Path(a.root).resolve()
     if a.command == "snapshot":
         return cmd_snapshot(root, sys.stdin.read())
+    if a.command == "bless":
+        return cmd_bless(root, a.paths)
     if a.command == "verify":
         return cmd_verify(root)
     if not a.platforms:

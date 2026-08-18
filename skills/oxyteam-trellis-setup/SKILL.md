@@ -107,7 +107,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 确认后按 `changeset.md` 的分组顺序执行：
 
 ```text
-A 组  新建自有文件        3 个，0 冲突，与平台数无关
+A 组  新建自有文件        5 个（4 个脚本 + 记账 JSON），0 冲突，与平台数无关
 B 组  修改官方 · 共享层    5 个，改一次所有平台生效
 P 组  修改官方 · 平台层    每个已装平台 8~9 个（OMP 8 / Claude 9 / Codex 9）
 C 组  删除官方 · 平台层    每个已装平台 6 个
@@ -152,13 +152,18 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 应用后至少验证：
 
 1. 重复运行预检通过，且重复应用不产生额外差异；
-2. `python3 .trellis/scripts/task.py create` 只生成 `task.json` 和官方骨架 `prd.md`；
+2. `python3 .trellis/scripts/task.py create` 只生成 `task.json` 和官方骨架 `prd.md`。
+   **必须真跑一次，并且看它往 stderr 打了什么**——`contract-cheatsheet.md` 的「四个运行时坑」
+   全是静态检查漏掉的（中文标题需要 `--slug`、Next steps 指路 `design.md`、`start` 在会话外
+   只翻 status 不落指针、`current --json` 拿不到 `meta`）。只读文件验不出任何一条；
 3. `oxyteam-spec` 把 Spec 正文写进 `<task>/prd.md`（覆盖官方骨架）；
 4. `oxyteam-tickets` 把票写进 `<task>/issues/NN-*.md`，且带 `Impl:` 与 `Issue:` 两个字段；
 5. `python3 .trellis/scripts/oxyteam_tickets.py frontier` 能算出正确的可开工票，环引用与不存在的 Blocker 会校验失败；
 6. **每个已装平台各验一次**：新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；新会话的启动提示不再指向 `trellis-brainstorm` 或 `design.md` / `implement.md`；
 7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；**当前票是通过 `<task>/implement.jsonl` 送达子代理的，这条必须实测**——它是「不改 `inject-subagent-context.py`」的全部依据；
-8. 归档门禁拦得住「还有票不是 `Impl: done`」的任务；
+8. 归档门禁**两个方向都要验**：故意留一张票不是 `Impl: done`，确认 finish-work Step 0 拦住；
+   补完再跑一次，确认放行并触发 `after_archive` → `github_sync.py archive`（有远程时父子 Issue
+   全部 CLOSED）。只验放行不验拦截等于没验门禁。退回 `done` 只能手改票文件，票脚本没有 reopen；
 9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
 10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，**减去 B2**——不多不少。
 

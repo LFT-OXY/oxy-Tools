@@ -118,10 +118,24 @@ selfcheck      # 内置断言，不联网
 
 ```text
 create / archive          真 Hook，挂 .trellis/config.yaml 的 hooks: 段
-                          失败只警告，退出 0（不能因为同步失败就阻断建任务/归档）
 sync-spec / sync-tickets  显式调用，写在 workflow.md 的阶段完成条件里
-                          失败退出 1
 ```
+
+**四个子命令失败一律退出 1，不分场景。** 早前 Hook 场景退 0，理由是「不能因为同步失败
+就阻断建任务/归档」——**这个理由经实测是错的**：官方 `run_task_hooks`
+（`task_utils.py:275-291`）在非零退出时只 `print("[WARN] Hook failed …")`，不抛异常，
+`task_store.py:506` 调完继续往下走。非零根本不阻断。
+
+而退 0 的代价是**钩子失败彻底无声**：`run_task_hooks` 用 `capture_output=True` 吞掉两个流，
+只在非零时才把 stderr 打出来。退 0 → 什么都不打 → 远程 Issue 没建、票没同步、归档没关，
+你完全不会知道。实测过两轮：退 0 时输出干净得像成功；改成退 1 之后同一个失败打出
+
+```text
+[WARN] Hook failed (after_create): python3 .trellis/scripts/hooks/github_sync.py create
+  错误：gh repo view … 失败：Could not resolve to a Repository with the name '…'
+```
+
+任务照常创建。**别再把它改回退 0。**
 
 原因：**Trellis 只有四个 Lifecycle Hook 事件，全在任务生命周期转换时触发**，
 没有任何事件在 `prd.md` 或 `issues/*.md` 被写入时触发。"写完 Spec 自动同步"
@@ -155,6 +169,33 @@ python3 .trellis/scripts/get_context.py --mode record      # finish-work 用
 
 **这五个官方 Python 一个字不能改**：`task_store.py` / `task_utils.py` / `task_context.py` /
 `session_context.py` / `task.py`。要新逻辑就写进 `oxyteam_tickets.py`。
+
+### 四个运行时坑（读文件查不出来，只有跑命令才暴露）
+
+前三轮审计全漏了这四条，因为审计只 grep 文件内容，没人真跑一次命令看它的输出和副作用。
+
+**① 中文标题必须显式给 `--slug`。** `task_store.py:65` 的 `_slugify` 是
+`re.sub(r"[^a-z0-9]", "-", title.lower())`，非 ASCII 全被替换掉，纯中文标题 strip 完是空串，
+`create` 直接 `Error: could not generate slug from title` 退出 1。docstring 自己写着
+"only works with ASCII"。团队写中文标题，**等于每次建任务都会撞上**。
+
+**② `current --json` 拿不到 `flow_stage`。** `task.py:186-195` 是白名单拼出来的八个字段
+（`dir` / `id` / `title` / `status` / `parent` / `children` / `branch` / `base_branch`），
+`meta` 不在里面。读细挡位要两步：先 `current --json` 拿 `dir`，再读那个目录下的 `task.json`。
+
+**③ `create` 的 Next steps 输出指路本版不存在的产物。** `task_store.py:493-494` 往 stderr 打
+"Complex task: add design.md and implement.md before task.py start"。`task_store.py` 在禁止
+修改清单上，为一处提示文字破例不划算——**在提示词层面压掉它**：读到这句话时忽略，本版没有
+`design.md` / `implement.md`。危害等级同 `session-start.py:482`，都是把模型引向不存在的产物。
+
+**④ `task.py start` 必须在 AI 会话内跑。** 外部终端没有平台 Hook 注入的 `TRELLIS_CONTEXT_ID`，
+`task.py:108-122` 走 degraded 分支：只翻 `task.json` 的 status，**不落 active-task 指针**。
+指针没落盘，P1 的整条注入链就找不到当前任务。注释点名说这在 Claude Code 上 "common"。
+兜底是 `active_task.py:604-611` 的单会话回退（runtime 里恰好一个 session 文件时按它返回，
+0 个或 ≥2 个都拒绝猜）。
+
+另外 `oxyteam_tickets.py` **没有 reopen 子命令**，把 `done` 退回 `ready` 只能手改票文件里
+那行 `**Impl:**`。测归档门禁的拦截方向时会用到。按定价表不值得为它加第 7 个子命令。
 
 ---
 
