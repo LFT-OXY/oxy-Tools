@@ -280,7 +280,11 @@ B1 只写 6 个普通 [workflow-state:*] 块（5 阶段 + no_task），不写 in
 
 删除后必须扫一遍全项目，确保没有残留引用（continue、`workflow.md`、`trellis-session-insight`、Claude/Codex 的 `session-start.py` 与 `trellis-start` 都提过这些名字——后两个由 P2 / P3 负责）。
 
-> **Codex 的 C1–C4 落在共享层 `.agents/skills/`。** 项目里同时装了 **OMP** / Gemini CLI / Pi / Kimi Code / dsh 的话，这一删是全都删了。计划里要写明波及面，不要在 Codex 一栏轻描淡写。
+> **Codex 的 C1–C4 落在共享层 `.agents/skills/`。** 共读这一层的平台不止 Codex，这一删是全都删了。计划里要写明波及面，不要在 Codex 一栏轻描淡写。
+>
+> **别抄名单。** `trellis init` 配置 Codex 时自己会打印一份（0.6.15 打的是 Cursor /
+> Gemini CLI / GitHub Copilot / Amp / Kimi Code），但那份**漏了 OMP 和 Pi**；
+> `skills` CLI 又按自己那套算「universal」有 19 个。三处口径都不一样，以实跑输出为准。
 >
 > **OMP 两层都读**（自己的 `.omp/skills/` 和共享的 `.agents/skills/`），所以三平台全装时
 > C1–C4 对 OMP 是双删，结果正确。**危险的是缺一半的组合**：装了 OMP 和某个往
