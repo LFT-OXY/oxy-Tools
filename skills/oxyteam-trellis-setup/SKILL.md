@@ -1,6 +1,6 @@
 ---
 name: oxyteam-trellis-setup
-description: "在官方 Trellis 0.6.15 + Oh My Pi 项目中检查并应用 Oxyteam 本地 Overlay：改造工作流、任务模型、Context Loader、Continue 路由和 OMP Agent 包装。"
+description: "在官方 Trellis 0.6.15 + Oh My Pi 项目中安装 Oxyteam Overlay：五阶段工作流、prd.md/issues/ 任务模型、票解析脚本、远程 Issue 单向同步、Context 注入适配，并记录可追溯的应用基线。"
 disable-model-invocation: true
 ---
 
@@ -10,28 +10,46 @@ disable-model-invocation: true
 
 这是项目内 Overlay，不修改全局 Trellis npm 包或官方源码。
 
+## 设计契约来源
+
+本 Skill 实现的是《Oxyteam-Trellis-Overlay 大白话设计说明》第三版。核心主张：
+
+```text
+Trellis 任务目录就是权威正文，不是副本也不是指针
+两边能力一项不丢，重复实现合并成一个
+远程 Issue 是从任务目录单向同步出去的镜像
+```
+
+改动成本定价表（决定一切取舍）：
+
+```text
+不改官方文件 > 删掉不需要的官方入口 > 新建自有文件 > 修改官方文件
+                （update 尊重删除）    （0 冲突）   （每次 update 重付）
+```
+
 ## 支持范围
 
+- Overlay 版本：`v0.3.0`
 - Trellis：`0.6.15`
 - Agent 平台：Oh My Pi
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
 - 团队 Skill 前缀：`oxyteam-`
+- **Team Skill Pack：`>= v0.3.0`**（D 组的 5 项改动在这个版本落地，缺了 Overlay 装完也不工作）
 
-发现其他 Trellis 版本、其他平台、来源混装或基础团队 Skills 标签不一致时停止，不按相近结构猜测兼容性。`oxyteam-trellis-setup` 使用独立 Overlay 标签，不要求与基础 Skill Pack 同版本。
+发现其他 Trellis 版本、其他平台、来源混装或基础团队 Skills 标签不一致时停止，不按相近结构猜测兼容性。`oxyteam-trellis-setup` 可以钉在与基础 Skill Pack 不同的标签上，不要求同版本。
 
 ## 启动例外
 
 本 Skill 正在替换 Trellis 的任务控制面，因此本次调用不能由旧任务模型管理：
 
 - 不询问是否创建 Trellis Task；
-- 不运行旧版 `task.py create` 或 `task.py start`；
-- 当前 `[workflow-state:no_task]` 或 `[workflow-state:planning]` 中关于任务创建、`prd.md`、`design.md`、`implement.md` 和旧 JSONL 的要求不适用于本次 Overlay 安装；
+- 不运行 `task.py create` 或 `task.py start`；
+- 当前 `[workflow-state:*]` 块中关于任务创建、`design.md`、`implement.md` 和旧 JSONL 的要求不适用于本次 Overlay 安装；
 - 使用当前会话的普通执行清单完成预检、确认、应用和验证。
 
 该例外只跳过旧任务控制面，不构成项目写入授权。任何 Overlay 文件写入仍须按第 3 步取得用户明确确认。
 
 Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
-
 
 ## 执行顺序
 
@@ -39,87 +57,129 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 
 先读取：
 
-1. [`references/update-policy.md`](references/update-policy.md)：版本、所有权、冲突和确认规则；
-2. [`references/workflow.md`](references/workflow.md)：团队六阶段工作流与 Skill 路由；
-3. [`references/task-model.md`](references/task-model.md)：Spec、Tickets、状态和任务目录；
-4. [`references/context-loading.md`](references/context-loading.md)：Session Context、Manifest、OMP Extension 和 Agents。
+1. [`references/changeset.md`](references/changeset.md)：**权威逐文件改动清单**，Apply 与记账都以它为准；
+2. [`references/update-policy.md`](references/update-policy.md)：版本、基线记账、冲突和确认规则；
+3. [`references/workflow.md`](references/workflow.md)：团队五阶段工作流与 Skill 路由；
+4. [`references/task-model.md`](references/task-model.md)：任务目录、三层状态、票格式与远程同步；
+5. [`references/context-loading.md`](references/context-loading.md)：Extension、Turn 快照与 Manifest。
 
-四份参考共同构成 Overlay 契约，不选择性跳过。
+五份参考共同构成 Overlay 契约，不选择性跳过。`changeset.md` 与其他四份冲突时以 `changeset.md` 为准。
 
-### 2. 只读预检
+### 2. 只读预检（inspect）
 
 依次检查：
 
 1. 当前目录是 Git 仓库；
 2. `.trellis/.version` 精确为 `0.6.15`；
-3. `.trellis/workflow.md`、`.trellis/config.yaml`、Task Store 和 Context Loader 存在；
-4. `.omp/commands/trellis-continue.md`、`.omp/extensions/trellis/index.ts` 和三个 `trellis-*` Agent 存在；
-5. `skills-lock.json` 存在；
-6. 全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一标签，并单独记录 Setup 的 Overlay 标签；
-7. 没有原始上游工程 Skill 与团队版并存；
-8. 目标文件不存在无法解释的用户修改。
+3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 和 `.omp/extensions/trellis/index.ts` 存在；
+4. `.omp/commands/trellis-continue.md`、`trellis-finish-work.md` 和三个 `.omp/agents/trellis-*.md` 存在；
+5. `skills-lock.json` 存在，全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；
+6. 没有原始上游工程 Skill 与团队版并存（名单见 `update-policy.md`）；
+7. 读 `.trellis/.oxyteam-overlay.json`：不存在即首次安装；存在则按 `update-policy.md` 的基线判定逐文件分类；
+8. 读 `.trellis/config.yaml` 的 `hooks:` 段，列出已启用的 Lifecycle Hook；
+9. 对 `changeset.md` 里每个目标路径计算当前 hash，与官方模板 hash 比对，产出「未改 / 已是目标形态 / 存在本地漂移」三分类。
 
 任何检查失败时停止，不尝试修复缺失的官方 Trellis 文件。
+
+**已有 Lifecycle Hook 引用 `linear_sync.py` 时必须警告**：它会同步 `prd.md` 到 Linear，与本 Overlay 新增的 `github_sync.py` 是两套并行的远程写入，由用户决定保留哪个或都保留。
 
 ### 3. 给出应用计划
 
 写入前列出：
 
-- 将修改的确切路径；
+- 将新建、修改、删除的确切路径（直接引用 `changeset.md` 的条目编号）；
 - 每个文件的行为变化；
-- 将创建、迁移或停止使用的 Artifact；
-- 旧任务与未知修改冲突；
-- 明确保留不变的文件。
+- 需要**撤销**的历史修改（旧版 Overlay 改过、本版要求恢复官方原样的文件）；
+- 检测到的本地漂移与旧任务冲突；
+- 明确保留不变的文件；
+- `changeset.md` D 组的 Skill Pack 依赖是否满足（不满足就停，不要一边装 Overlay 一边让 Skill 往 `.scratch/` 写）。
 
 等待用户明确确认。确认只覆盖已列出的路径；实际范围扩大时重新确认。
 
-### 4. 应用 Overlay
+### 4. 应用 Overlay（apply）
 
-确认后按参考文件完成干净切换：
+确认后按 `changeset.md` 的分组顺序执行：
 
-1. 改造 `.trellis/workflow.md`；
-2. 改造 Task Store 与 Task Validation；
-3. 改造 Session Context 与 Task Context；
-4. 改造 `.omp/commands/trellis-continue.md`；
-5. 改造 `.omp/extensions/trellis/index.ts`；
-6. 把 `trellis-implement`、`trellis-check`、`trellis-research` 改成 Oxyteam 包装器；
-7. 清除已迁移调用中的旧 Artifact 和原始上游 Skill 名称。
+```text
+A 组  新建自有文件        3 个，0 冲突
+B 组  修改官方文件       13 个
+C 组  删除官方入口        6 个
+D 组  Team Skill 与 init 模板  不在此执行，随 Skill Pack 发布，预检只验版本
+E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
+```
 
-不保留兼容别名或两套并行路由。遇到旧任务或未知用户修改时按更新策略停止，不静默覆盖。
+应用要求：
+
+- 先在临时目录生成全部结果，静态校验通过后再落盘，避免半途失败留下混合状态；
+- 不保留兼容别名，不保留两套并行路由；
+- 遇到旧任务或未知用户修改时按 `update-policy.md` 停止，不静默覆盖；
+- 落盘后立刻写 `.trellis/.oxyteam-overlay.json` 记账（格式见 `update-policy.md`）。
+
+### 4.5 交给 `oxyteam-init`
+
+Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** 这个 tracker。
+
+`docs/agents/issue-tracker.md` 是所有 Team Skill 找路径的唯一配置锚点，由 `oxyteam-init` 从模板生成——**不要在这里手写它**。没有这一步，Overlay 装完了 `oxyteam-spec` / `oxyteam-tickets` / `oxyteam-map` 照样往 `.scratch/` 写，而且不报错。
+
+### 5. 验证
+
+应用后至少验证：
+
+1. 重复运行预检通过，且重复应用不产生额外差异；
+2. `python3 .trellis/scripts/task.py create` 只生成 `task.json` 和官方骨架 `prd.md`；
+3. `oxyteam-spec` 把 Spec 正文写进 `<task>/prd.md`（覆盖官方骨架）；
+4. `oxyteam-tickets` 把票写进 `<task>/issues/NN-*.md`，且带 `Impl:` 与 `Issue:` 两个字段；
+5. `python3 .trellis/scripts/oxyteam_tickets.py frontier` 能算出正确的可开工票，环引用与不存在的 Blocker 会校验失败；
+6. OMP 每个新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；
+7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；
+8. 归档门禁拦得住「还有票不是 `Impl: done`」的任务；
+9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用；
+10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组，不多不少。
+
+**第 10 条是 Overlay 是否可维护的唯一硬指标。** 曾经出现过 `dry-run` 报 12 个而实际改了 13 个的情况（`linear_sync.py` 被三轮审计漏掉），所以比对必须以 `.trellis/.oxyteam-overlay.json` 的记账为准，而不是以 `dry-run` 输出为准。
+
+报告实际执行的命令、输出和仍未验证的行为；没有观察到的结果不得声称通过。
 
 ## 所有权
 
 可以修改：
 
-- `.trellis/workflow.md`
-- `.trellis/config.yaml`（只有真实配置需要时）
-- `.trellis/scripts/**`
-- `.omp/commands/**`
-- `.omp/extensions/trellis/**`
-- `.omp/agents/trellis-*.md`
-- 项目级 Oxyteam 包装 Skills
+```text
+.trellis/workflow.md
+.trellis/config.yaml                  仅 hooks: 段
+.trellis/agents/implement.md
+.trellis/agents/check.md
+.trellis/scripts/oxyteam_tickets.py   新建
+.trellis/scripts/hooks/github_sync.py 新建
+.trellis/.oxyteam-overlay.json        新建，Installer 记账
+.omp/commands/**
+.omp/extensions/trellis/**
+.omp/agents/trellis-implement.md
+.omp/skills/trellis-channel/references/**
+.omp/skills/trellis-meta/SKILL.md
+AGENTS.md
+docs/agents/issue-tracker.md
+```
 
-禁止修改：
+可以删除：仅限 `changeset.md` C 组列出的 6 个路径，删除前必须逐条出现在应用计划里。
 
-- 全局 npm 安装目录；
-- `node_modules/@mindfoldhq/trellis/**`；
-- `node_modules/@mindfoldhq/trellis-core/**`；
-- `.trellis/.template-hashes.json`；
-- `.trellis/.runtime/**`；
-- 未启用平台的配置目录。
+**禁止修改**（改了就是在重走已证伪的死路）：
 
-## 验证
+```text
+全局 npm 安装目录
+node_modules/@mindfoldhq/trellis*/**
+.trellis/.template-hashes.json
+.trellis/.runtime/**
+.trellis/scripts/common/task_store.py
+.trellis/scripts/common/task_utils.py
+.trellis/scripts/common/task_context.py
+.trellis/scripts/common/session_context.py
+.trellis/scripts/task.py
+.trellis/scripts/hooks/linear_sync.py
+.trellis/scripts/common/active_task.py
+.trellis/scripts/get_context.py
+.trellis/spec/**
+未启用平台的配置目录
+```
 
-应用后至少验证：
-
-1. 重复预检通过且重复应用不产生额外差异；
-2. 创建任务只生成 `task.json` 和 `spec.md`；
-3. 单会话任务能从 Spec 进入 Implement、Review、Finish；
-4. 多会话任务能识别 Blocking、Frontier、Claim 和 Active Ticket；
-5. Continue 不再依赖 `prd.md`、`design.md` 或 `implement.md`；
-6. OMP 每轮注入 `meta.flow_stage` 对应的工作流状态；
-7. Implement、Review、Research Agent 只加载各自需要的 Context；
-8. 项目内没有原始上游工程 Skill 调用；
-9. `trellis update --dry-run` 明确报告 Overlay 文件为用户修改，不破坏项目文件。
-
-报告实际执行的命令、输出和仍未验证的行为；没有观察到的结果不得声称通过。
+五个官方 Python 一个字不动，是本版相对旧版省下的最大一块成本。需要解析票、算 Frontier 时新建 `oxyteam_tickets.py`，不要往官方 Python 里塞函数。

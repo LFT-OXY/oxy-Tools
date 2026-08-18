@@ -16,20 +16,42 @@ The issue tracker should have been provided to you. If `docs/agents/issue-tracke
 
 ### 1. Pin the fixed point
 
-Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
+Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it. Confirm it resolves (`git rev-parse <fixed-point>`) before going further — a bad ref should fail here, not inside two parallel sub-agents.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+Then **freeze one patch** covering everything under review, and hand that same patch to both sub-agents.
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
+Do **not** use `git diff <fixed-point>...HEAD`. Three-dot syntax compares two *commits*, so the working tree takes no part in it — and this skill is normally called from `oxyteam-implement` **before** the commit. The failure is silent, not loud: when the fixed point has earlier commits behind it, the diff is non-empty (it holds the *previous* ticket's already-reviewed code), the non-empty check passes, and the review reports "passed" without a single line of the new implementation ever being read.
+
+```bash
+base=$(git merge-base "$fixed_point" HEAD)
+patch=$(mktemp)   # bare mktemp — `mktemp -t review-patch` errors on GNU coreutils
+
+# ① committed changes + the current state of every tracked file
+git diff --binary "$base" -- > "$patch"
+
+# ② every untracked, non-ignored file — one at a time, NUL-safe
+git ls-files --others --exclude-standard -z |
+  while IFS= read -r -d '' f; do
+    git diff --no-index --binary -- /dev/null "$f" >> "$patch" || true
+  done
+```
+
+- `git ls-files --others` lists **files**, so no directory expansion is needed. (`git status --porcelain` reports a new directory as a single `?? newdir/` entry — that is why it isn't used here.)
+- `git diff --no-index` **exits 1 when it finds a difference**. That is the normal result, not a failure — hence the `|| true`.
+- Nothing writes to the index, so review stays read-only and never contends for `index.lock`.
+- Cap the size of any single untracked file you inline. `--binary` base64-encodes content, so one image or build artifact can swamp the patch and both sub-agents' context. Over the cap, record the path and skip the body, and leave a line in the patch saying so.
+
+Check that `$patch` is non-empty — this replaces the old "diff is non-empty" check. Also note the commit list via `git log <fixed-point>..HEAD --oneline`. If the patch is large, check its total size before spawning: both sub-agents receive it, so the token cost is doubled.
 
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
-2. A path the user passed as an argument.
-3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+1. A path the user passed as an argument.
+2. Wherever `docs/agents/issue-tracker.md` says specs live — its "When a skill says publish to the issue tracker" section names the location for this repo. Some trackers scope it to the current unit of work rather than a fixed directory; follow whatever resolution step it gives.
+3. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
+4. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
+5. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources
 
@@ -57,15 +79,17 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 ### 4. Spawn both sub-agents in parallel
 
+Both sub-agents read the **frozen patch from step 1** and run **no git commands of their own** — same input, no chance of one axis seeing a file the other missed, and no re-deriving the untracked list from memory.
+
 **Standards sub-agent prompt** — include:
 
-- The full diff command and commit list.
+- The path to the frozen patch, and the commit list. State plainly: this patch is the complete change under review, including uncommitted and untracked files; do not run git.
 - The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full — the sub-agent has no other access to it.
 - The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
-- The diff command and commit list.
+- The path to the frozen patch, and the commit list. Same instruction: the patch is complete; do not run git.
 - The path or fetched contents of the spec.
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
