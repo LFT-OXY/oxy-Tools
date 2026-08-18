@@ -78,7 +78,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
 4. **判定装了哪些平台**：`.omp/` / `.claude/` / `.codex/`。至少一个，且每个都要对齐 `changeset.md`「平台落点对照」表里的入口文件（OMP 的 `extensions/trellis/index.ts`、Claude 的 `hooks/` 三件套、Codex 的 `hooks.json` + `.agents/skills/`）；发现表外的平台（Cursor、Gemini 等）就停下来说明本版不支持，不按相近结构猜；
 5. **Codex 专项**（装了才查）：`.trellis/config.yaml` 的 `codex.dispatch_mode` 是 `inline` → **硬停**；用户级 `~/.codex/config.toml` 没开 `[features].hooks` → 提示用户去开并在 `/hooks` 批准，否则装完不注入；
-6. **`.agents/skills/` 波及面**（装了 Codex 才查）：列出项目里还装了哪些共读这一层的平台（Gemini CLI / Pi / Kimi Code / dsh），C 组删除对它们同样生效，必须写进计划；
+6. **`.agents/skills/` 波及面**：列出项目里还装了哪些共读这一层的平台（**OMP** / Gemini CLI / Pi / Kimi Code / dsh），C 组删除对它们同样生效，必须写进计划。**装了 OMP 但没装 Codex 时要反向查一遍**：`.agents/skills/` 里若有别的平台写进去的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop`，C 组不会碰它们（那是 Codex 那一栏），而 OMP 照样读得到——这时 C 组对 OMP 没删干净，必须在计划里点名；
 7. `skills-lock.json` 存在，全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；
 8. 没有原始上游工程 Skill 与团队版并存（名单见 `update-policy.md`）；
 9. 读 `.trellis/.oxyteam-overlay.json`：不存在即首次安装；存在则按 `update-policy.md` 的基线判定逐文件分类，并比对**已装平台清单**——记账里没有、磁盘上有的平台，走增量补装（只跑该平台的 P 组和 C 组，不重跑共享层）；
