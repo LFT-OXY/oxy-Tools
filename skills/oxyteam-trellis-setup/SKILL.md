@@ -77,7 +77,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 2. `.trellis/.version` 精确为 `0.6.15`；
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
 4. **判定装了哪些平台**：`.omp/` / `.claude/` / `.codex/`。至少一个，且每个都要对齐 `changeset.md`「平台落点对照」表里的入口文件（OMP 的 `extensions/trellis/index.ts`、Claude 的 `hooks/` 三件套、Codex 的 `hooks.json` + `.agents/skills/`）；发现表外的平台（Cursor、Gemini 等）就停下来说明本版不支持，不按相近结构猜；
-5. **Codex 专项**（装了才查）：`.trellis/config.yaml` 的 `codex.dispatch_mode` 是 `inline` → **硬停**；用户级 `~/.codex/config.toml` 没开 `[features].hooks` → 提示用户去开并在 `/hooks` 批准，否则装完不注入；
+5. **Codex 专项**（装了才查）：`.trellis/config.yaml` 的 `codex.dispatch_mode` 是 `inline` → **硬停**。hooks 开关**按 `codex --version` 分支，一律只提示不硬停**：0.147 实测不再需要 `[features].hooks`（`trellis init` 的警告文案停在 0.129 的行为上，别照抄），这时改为提示「项目要写进 `~/.codex/config.toml` 的 `[projects]` 并 `trust_level = "trusted"`」；更老的版本才提示去开 flag 并 `/hooks` 批准。**判定以装完开一个真 Codex 会话、看 `<workflow-state>` 进没进来为准**，读配置判不准（详见 `changeset.md`「Codex 的两个前置」）；
 6. **`.agents/skills/` 波及面**：列出项目里还装了哪些共读这一层的平台，C 组删除对它们同样生效，必须写进计划。**名单不要抄这里**——`trellis init` 配置 Codex 时会自己打印一份（0.6.15 打的是 Cursor / Gemini CLI / GitHub Copilot / Amp / Kimi Code），**再加上官方没算进去的 OMP 和 Pi**；以实跑输出为准。**装了 OMP 但没装 Codex 时要反向查一遍**：`.agents/skills/` 里若有别的平台写进去的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop`，C 组不会碰它们（那是 Codex 那一栏），而 OMP 照样读得到——这时 C 组对 OMP 没删干净，必须在计划里点名；
 7. `skills-lock.json` 存在，全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；
 8. 没有原始上游工程 Skill 与团队版并存（名单见 `update-policy.md`）；
@@ -170,7 +170,12 @@ python3 .trellis/scripts/write_overlay_state.py verify
 3. `oxyteam-spec` 把 Spec 正文写进 `<task>/prd.md`（覆盖官方骨架）；
 4. `oxyteam-tickets` 把票写进 `<task>/issues/NN-*.md`，且带 `Impl:` 与 `Issue:` 两个字段；
 5. `python3 .trellis/scripts/oxyteam_tickets.py frontier` 能算出正确的可开工票，环引用与不存在的 Blocker 会校验失败；
-6. **每个已装平台各验一次**：新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；新会话的启动提示不再指向 `trellis-brainstorm` 或 `design.md` / `implement.md`；
+6. **每个已装平台各开一个真会话验一次**：新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；新会话的启动提示不再指向 `trellis-brainstorm` 或 `design.md` / `implement.md`。
+
+   **手工执行 hook 脚本、或只确认补丁命中，都不算验过这一条。** 它验的是注入有没有接通，
+   不是补丁内容对不对——OMP 走 `extensions/trellis/index.ts` 的 TypeScript 路径，
+   Claude / Codex 走 Python hook 且各自有独立的信任与开关机制，三条链路互不代表。
+   真会话跑一句「你好」，看首轮上下文里有没有 `<workflow-state>` 块的正文即可；
 7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；**当前票是通过 `<task>/implement.jsonl` 送达子代理的，这条必须实测**——它是「不改 `inject-subagent-context.py`」的全部依据；
 8. 归档门禁**两个方向都要验**：故意留一张票不是 `Impl: done`，确认 finish-work Step 0 拦住；
    补完再跑一次，确认放行并触发 `after_archive` → `github_sync.py archive`（有远程时父子 Issue

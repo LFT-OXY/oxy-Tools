@@ -242,11 +242,32 @@ Installer 具备 reconcile 能力之后
 
 ## Codex 的两个前置（不是文件改动能解决的）
 
-### ① 用户级 hooks 开关
+### ① 用户级 hooks 开关 —— **随 Codex 版本变，别照抄 Trellis 的文案**
 
-`codex/config.toml:12-18` 写着：Codex 的 hooks 只有在用户级 `~/.codex/config.toml` 里开了 `[features].hooks = true`（0.129+；旧名 `codex_hooks = true`）、并在 `/hooks` TUI 里批准之后才会激活。
+`codex/config.toml:12-18` 和 `trellis init` 的警告都写着：hooks 要在用户级
+`~/.codex/config.toml` 开 `[features].hooks = true`（0.129+；旧名 `codex_hooks = true`）
+并在 `/hooks` TUI 批准。**Trellis 0.6.15 的这段文案停在 0.129 的行为上。**
 
-**没开的话 Codex 一个注入都拿不到**，只剩 `trellis-start` skill 这一条手动入口。项目里改不了，预检必须检测并提示用户去自己机器上开。
+**codex 0.147.0 实测：`[features]` 段里没有 `hooks` 键、也没有 `codex_hooks`，
+`/hooks` 一次没跑过，项目的 `.codex/hooks.json` 照样触发**，`UserPromptSubmit`
+注入了完整的 `<workflow-state>` 块。事后看 `~/.codex/config.toml`，`[hooks.state]` 里
+自动多了该项目 hooks.json 的两条 `trusted_hash`（`user_prompt_submit` / `subagent_start`
+——顺带印证 `session-start.py` 没被注册）。
+
+当时项目已经写进 `[projects]."<绝对路径>"` 且 `trust_level = "trusted"`。
+**没测过不信任的情况**，所以只能确定「0.147 不需要那个 feature flag」，
+不能断言「信任就够了」。
+
+预检怎么写：**按版本分支，不要硬拦**。
+
+```text
+codex < 0.147   查 [features].hooks / codex_hooks，缺了就提示用户去开 + /hooks 批准
+codex >= 0.147  那个 flag 已经不需要；改为提示「项目要在 ~/.codex/config.toml 的
+                [projects] 里 trust_level = "trusted"，否则 .codex/config.toml
+                这一层根本不合并」
+两种情况都只提示，不硬停 —— 装完开一个真会话看 <workflow-state> 进没进来，
+比读配置准。这条只有真跑会话能验，读文件验不出来。
+```
 
 ### ② `dispatch_mode` 必须是 `auto`
 
@@ -514,7 +535,7 @@ trellis-session-insight/                    ← 3 处低危，默认不改，见
 | 以为改 Oxyteam 写入路径必须改 Skill | `oxyteam-spec` 是纯配置驱动；只有 `oxyteam-tickets` 硬编码了 `.scratch/` |
 | **以为多支持一个平台只是「路径换个前缀」** | **Claude / Codex 的注入层是 Python Hook 拷贝，不是一个 TS 文件；`session-start.py` 和 `start.md` 还硬编码了已删的 `trellis-brainstorm` 和 `design.md` / `implement.md`，OMP 的 `index.ts` 里一处都没有** |
 | **以为 `.codex/hooks/session-start.py` 装了就会跑** | **`.codex/hooks.json` 只注册 `UserPromptSubmit` 和 `SubagentStart` 两项，`config.toml` 里也没有——死文件，改它是白改** |
-| **以为 Codex 装完 Hook 就生效** | **`codex/config.toml:12-18`：还要用户在 `~/.codex/config.toml` 开 `[features].hooks = true` 并在 `/hooks` TUI 批准。项目里改不了，只能预检提醒** |
+| **把 Trellis 的 Codex hooks 警告当成当前事实照抄** | **那段文案停在 codex 0.129 的行为上。0.147 实测不需要 `[features].hooks`、也没跑过 `/hooks`，注入照进。预检要按 `codex --version` 分支，且只提示不硬停——真会话看 `<workflow-state>` 才是判据** |
 | **以为 Codex 要给五个阶段各写一份 `-inline` 块** | **`resolve_breadcrumb_key()` 只在 `dispatch_mode: inline` 时查 `-inline` 标签，默认 `auto` 查普通标签。写 10 个块是为非默认模式付双倍维护费** |
 | **以为子代理拿当前票必须改 `inject-subagent-context.py`** | **它已经读 `implement.jsonl`，A1 的 `claim` 往里写一行即可。三平台同时成立，省两个 1174 行文件的永久冲突点** |
 | **以为 Codex 删 `trellis-brainstorm` 只影响 Codex** | **`.agents/skills/` 是 Codex / Gemini CLI / Pi / Kimi Code / dsh 共读层，一删全删** |
