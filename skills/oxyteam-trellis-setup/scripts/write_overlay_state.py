@@ -74,8 +74,24 @@ def parse_manifest(text: str) -> list[tuple[str, str, str]]:
 
 
 def cmd_snapshot(root: Path, manifest: str, **_) -> int:
-    files = {}
+    """首装记全量；已装项目补新平台时**只列新平台的路径**，老记账原样保留。
+
+    增量补装（记账里没有、磁盘上有的平台）没有别的出路：重新列全量会把 Overlay
+    之后的内容误记成 `upstream_hash`，而且 A 组那几个已建文件会撞上
+    「已经存在，但 action 是 create」，C 组那些已删路径会撞上「不存在，但 action 是 delete」。
+    """
+    state_file = root / STATE_PATH
+    prev = {}
+    if state_file.is_file():
+        prev = json.loads(state_file.read_text(encoding="utf-8"))
+        if prev.get("_stage") == "snapshot":
+            raise SystemExit("上一次 snapshot 还没 finalize —— 先把那次 apply 收尾，别叠加")
+    files = dict(prev.get("files") or {})
+    fresh = []
     for action, layer, rel in parse_manifest(manifest):
+        if rel in files:
+            raise SystemExit(f"{rel} 已经在记账里 —— 补装清单只列新平台的路径；"
+                             "要重装老平台就先把记账删掉从头来")
         h = digest(root / rel)
         if action in ("modify", "delete") and h is None:
             raise SystemExit(f"{rel} 不存在，但 action 是 {action} —— 清单和现场对不上，停下来查")
@@ -83,11 +99,15 @@ def cmd_snapshot(root: Path, manifest: str, **_) -> int:
             raise SystemExit(f"{rel} 已经存在，但 action 是 create —— 可能是重复安装，停下来查")
         files[rel] = {"action": action, "layer": layer,
                       "upstream_hash": h, "applied_hash": None}
+        fresh.append(rel)
     state = {"overlay_version": None, "trellis_version": None, "skill_pack_ref": None,
-             "applied_at": None, "platforms": [], "files": files, "_stage": "snapshot"}
-    (root / STATE_PATH).write_text(
+             "applied_at": None, "platforms": [], **prev,
+             "files": files, "_stage": "snapshot", "_fresh": fresh}
+    state_file.write_text(
         json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"snapshot 记下 {len(files)} 个路径的 upstream_hash → {STATE_PATH}")
+    carried = len(files) - len(fresh)
+    print(f"snapshot 记下 {len(fresh)} 个路径的 upstream_hash"
+          f"{f'（另有 {carried} 个老记账原样带过来）' if carried else ''} → {STATE_PATH}")
     return 0
 
 
@@ -105,7 +125,11 @@ def cmd_finalize(root: Path, overlay_version: str, trellis_version: str,
         if p not in LAYERS[1:]:
             raise SystemExit(f"未知平台 {p!r}，只允许 {'/'.join(LAYERS[1:])}")
 
-    for rel, entry in state["files"].items():
+    # 只盖本次 snapshot 新加的路径。补装时重算老路径 = 把真实漂移静默盖掉，
+    # 那正是 bless 要求显式点名的原因。
+    fresh = state.pop("_fresh", None) or list(state["files"])
+    for rel in fresh:
+        entry = state["files"][rel]
         h = digest(root / rel)
         if entry["action"] == "delete":
             if h is not None:
@@ -116,14 +140,15 @@ def cmd_finalize(root: Path, overlay_version: str, trellis_version: str,
         entry["applied_hash"] = h
 
     state.update(overlay_version=overlay_version, trellis_version=trellis_version,
-                 skill_pack_ref=skill_pack_ref, platforms=plats,
+                 skill_pack_ref=skill_pack_ref,
+                 platforms=sorted(set(state.get("platforms") or []) | set(plats)),
                  applied_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     state.pop("_stage")
     state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n",
                           encoding="utf-8")
-    changed = sum(1 for e in state["files"].values() if e["action"] != "delete")
-    print(f"finalize：{changed} 改/建 + {len(state['files']) - changed} 删，"
-          f"平台 {'、'.join(plats)}")
+    changed = sum(1 for r in fresh if state["files"][r]["action"] != "delete")
+    print(f"finalize：本次 {changed} 改/建 + {len(fresh) - changed} 删，"
+          f"记账共 {len(state['files'])} 个路径，平台 {'、'.join(state['platforms'])}")
     return 0
 
 
@@ -274,6 +299,33 @@ def selfcheck() -> int:
         assert json.loads((root / STATE_PATH).read_text(encoding="utf-8")
                           )["files"][".trellis/workflow.md"]["upstream_hash"] == upstream, \
             "bless 不该动 upstream_hash —— 动了就再也算不出「恢复成官方原样」"
+
+        # 增量补装：项目已装 claude-code，现在磁盘上多出 codex，只列 codex 的路径
+        (root / ".codex/hooks").mkdir(parents=True)
+        (root / ".codex/hooks/inject-workflow-state.py").write_text("官方注入", encoding="utf-8")
+        (root / ".agents/skills/trellis-brainstorm").mkdir(parents=True)
+        (root / ".agents/skills/trellis-brainstorm/SKILL.md").write_text("y", encoding="utf-8")
+
+        fails(lambda: cmd_snapshot(root, "modify shared .trellis/workflow.md\n"),
+              "已经在记账里")
+        assert cmd_snapshot(root, "modify codex .codex/hooks/inject-workflow-state.py\n"
+                                  "delete codex .agents/skills/trellis-brainstorm\n") == 0
+        state = json.loads((root / STATE_PATH).read_text(encoding="utf-8"))
+        assert len(state["files"]) == 5 and len(state["_fresh"]) == 2, "老记账没带过来"
+        assert state["files"][".trellis/workflow.md"]["applied_hash"] is not None, \
+            "补装的 snapshot 不该把老路径的 applied_hash 抹掉"
+
+        # 老路径此刻是漂的：finalize 只准盖本次新加的，不准顺手把它盖平
+        (root / ".trellis/workflow.md").write_text("补装期间有人手改了", encoding="utf-8")
+        (root / ".codex/hooks/inject-workflow-state.py").write_text("Overlay 注入", encoding="utf-8")
+        shutil.rmtree(root / ".agents/skills/trellis-brainstorm")
+        assert cmd_finalize(root, "v0.4.0", "0.6.15", "unverified", "codex") == 0
+        state = json.loads((root / STATE_PATH).read_text(encoding="utf-8"))
+        assert state["platforms"] == ["claude-code", "codex"], "平台该并集，不是覆盖"
+        assert "_fresh" not in state
+        assert cmd_verify(root) == 1, "finalize 把老路径的漂移顺手盖掉了"
+        (root / ".trellis/workflow.md").write_text("Overlay 版 v2", encoding="utf-8")
+        assert cmd_verify(root) == 0
 
     fails(lambda: parse_manifest("modify shared"), "不是三列")
     fails(lambda: parse_manifest("rename shared a.md"), "只允许")

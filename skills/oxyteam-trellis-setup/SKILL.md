@@ -118,7 +118,7 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 应用要求：
 
 - 先在临时目录生成全部结果，静态校验通过后再落盘，避免半途失败留下混合状态；
-- **apply 之前先跑 `write_overlay_state.py snapshot`**，清单逐条照 `changeset.md` 列全（用法见 `edits.md` 末尾）。漏掉的路径 = 记账里没有 = 以后 `verify` 管不着；
+- **apply 之前先跑 `write_overlay_state.py snapshot`**，清单逐条照 `changeset.md` 列全（用法见 `edits.md` 末尾）。漏掉的路径 = 记账里没有 = 以后 `verify` 管不着。**走增量补装时清单只列新平台的 P 组和 C 组**，共享层和老平台一个字不写，列了会直接报错；
 - **`scripts/` 下四个文件原样拷进 `.trellis/scripts/`，不要即兴实现**；落盘后立刻各跑一次，不通过就回滚：
 
   ```bash

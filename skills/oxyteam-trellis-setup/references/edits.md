@@ -388,6 +388,24 @@ python3 .trellis/scripts/write_overlay_state.py verify
 `snapshot` 里没有的路径 = 记账里没有 = `verify` 管不着，所以清单必须**逐条照着
 `changeset.md` 列全**，不要凭印象挑。
 
+**增量补装（已装项目多出一个平台）只列新平台的 P 组和 C 组**，共享层和老平台一个字不写：
+
+```bash
+# 已装 claude-code，磁盘上多出 .codex/ —— 清单只有 codex 那一列
+python3 .trellis/scripts/write_overlay_state.py snapshot <<'EOF'
+modify codex .codex/hooks/inject-workflow-state.py
+delete codex .agents/skills/trellis-brainstorm
+EOF
+python3 .trellis/scripts/write_overlay_state.py finalize --platforms codex
+```
+
+`snapshot` 认得已有记账：老路径原样带过来，`platforms` 在 `finalize` 时取并集，
+`finalize` 只盖本次新加的路径。**列进已经记过账的路径会直接报错**——那是重装，
+不是补装，重装要先把 `.oxyteam-overlay.json` 删掉从头来。
+
+这条限制不是洁癖：补装期间老路径可能正漂着，`finalize` 顺手重算就等于无声 `bless`，
+把真实漂移盖平。
+
 ### Skill Pack 更新了模板，已装项目怎么重新盖章
 
 `finalize` 有防重入，`snapshot` 会把 Overlay 后的内容误记成 `upstream_hash`（而且 C 组
