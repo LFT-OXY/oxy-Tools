@@ -147,6 +147,17 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 
 `docs/agents/issue-tracker.md` 是所有 Team Skill 找路径的唯一配置锚点，由 `oxyteam-init` 从模板生成——**不要在这里手写它**。没有这一步，Overlay 装完了 `oxyteam-spec` / `oxyteam-tickets` / `oxyteam-map` 照样往 `.scratch/` 写，而且不报错。
 
+`oxyteam-init` 会往 `AGENTS.md` 追加 `## Agent skills` 段（managed block 外），所以它跑完
+**`verify` 必然报一次 `AGENTS.md 被本地改动漂移了`**。这是合法追加，不是冲突：
+
+```bash
+python3 .trellis/scripts/write_overlay_state.py bless AGENTS.md
+python3 .trellis/scripts/write_overlay_state.py verify
+```
+
+`trellis update --dry-run` 那边不受影响——`mergeManagedBlockContent()` 把 block 外的内容
+原样带进「期望内容」，B2 照样不出现在「Modified by you」里。两次三平台实测都是这个结果。
+
 ### 5. 验证
 
 应用后至少验证：
