@@ -145,6 +145,8 @@ P1 / P2   注入层补丁                              需要补丁文件或整�
 P3        Codex trellis-start/SKILL.md            需要整篇模板
 P4 / P5   continue / finish-work                  需要整篇模板（三平台正文同、frontmatter 异）
 P6        trellis-implement 子 Agent              需要整篇模板 ×2（md / toml）
-A2        github_sync.py                          需要实现
 A3        .oxyteam-overlay.json 生成逻辑           需要实现
 ```
+
+已完成：`A1` `A2`（`scripts/` 下三个文件，拷贝即可）、`B1`（`templates/trellis/workflow.md`）、
+`B3` `P7`–`P10`（本文件的锚点表）。

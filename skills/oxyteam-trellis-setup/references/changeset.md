@@ -76,7 +76,7 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 |---|---|---|
 | A1 | `.trellis/scripts/oxyteam_tickets.py` | 解析 `issues/*.md`、算 Frontier、claim/done、summary；**claim 时把当前票路径写进 `<task>/implement.jsonl`**（见 P1 说明） |
 
-| A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步 |
+| A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步。**拷 `scripts/hooks/github_sync.py`**，票的解析复用 `oxyteam_tickets.py`，不是第二个解析器 |
 | A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone |
 
 **A1 是拷贝，不是现写。** 源文件在本 Skill 的 `scripts/oxyteam_tickets.py`，原样复制到 `.trellis/scripts/`，**不要让模型即兴实现一个票解析器**——`task-model.md` 的三条硬校验（Blocker 不存在 / 成环 / claim 不在 frontier）和归档门禁全挂在它身上，每个项目一份不同的实现，那就不叫硬校验了。
@@ -87,7 +87,7 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 python3 .trellis/scripts/oxyteam_tickets.py selfcheck   # 输出「selfcheck 通过」
 ```
 
-A2 目前还没有实体，仍需按 `task-model.md` 的契约实现；实现后同样进 `scripts/` 走拷贝。A3 的格式见 `update-policy.md`——**本版起 `files` 里必须带平台维度**，否则装了新平台后分不清「这个路径没改过」和「这个平台还没装」。
+A2 同样是拷贝，落盘后跑 `python3 .trellis/scripts/hooks/github_sync.py selfcheck`。A3 的格式见 `update-policy.md`——**本版起 `files` 里必须带平台维度**，否则装了新平台后分不清「这个路径没改过」和「这个平台还没装」。
 
 ---
 

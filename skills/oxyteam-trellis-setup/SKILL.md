@@ -120,8 +120,9 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 - **`scripts/` 下两个文件原样拷进 `.trellis/scripts/`，不要即兴实现**；落盘后立刻各跑一次，不通过就回滚：
 
   ```bash
-  python3 .trellis/scripts/oxyteam_tickets.py selfcheck   # 票解析 + frontier + 环检测
-  python3 .trellis/scripts/verify_workflow.py             # workflow.md 结构（失败模式全是静默的）
+  python3 .trellis/scripts/oxyteam_tickets.py selfcheck      # 票解析 + frontier + 环检测
+  python3 .trellis/scripts/verify_workflow.py                # workflow.md 结构（失败模式全是静默的）
+  python3 .trellis/scripts/hooks/github_sync.py selfcheck    # 依赖排序 + Issue 字段回填
   ```
 
 - 不保留兼容别名，不保留两套并行路由；
