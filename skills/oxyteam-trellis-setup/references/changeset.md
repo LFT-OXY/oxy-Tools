@@ -8,6 +8,18 @@
 > 编号随之重排：原来的 B 组拆成 **B（共享层）** 和 **P（平台层）**，C 组改成按角色编号、每平台各有落点。
 > 设计依据见《Oxyteam-Trellis-Overlay 大白话设计说明》第 16 节。
 
+> **改动一律拿现成件，不要现写。** 本 Skill 目录下：
+>
+> ```text
+> scripts/       可执行文件，原样拷进 .trellis/scripts/
+> templates/     整篇替换的文件，路径镜像落点（templates/trellis/ → .trellis/）
+> references/edits.md   只改几处的：逐字锚点替换表
+> ```
+>
+> 让模型照描述现写的后果已经踩过一次：`workers.md` 那「3 处」里有一处是 worker 自己的
+> 文件路径，按描述改会把 worker 定义指向不存在的路径。**已有现成件的条目，本文件只写
+> 「拷哪个」，不再复述内容。** 哪些还没做成现成件，见 `edits.md` 末尾的「未完成」。
+
 ## 总账
 
 ```text
@@ -85,9 +97,9 @@ A2 目前还没有实体，仍需按 `task-model.md` 的契约实现；实现后
 
 | # | 路径 | 改什么 |
 |---|---|---|
-| B1 | `.trellis/workflow.md` | 换成五阶段 + **六对** `[workflow-state:*]` 块（五阶段 + `no_task`）+ 路由到 `oxyteam-*`；discover 块写明研究结果存 `<task>/research/`。**不写 `-inline` 变体**（见「Codex 的两个前置」）。块正文的两条措辞要求见 `workflow.md`「块正文的措辞要求」——写成祈使句会让模型绕过 Skill 自己干，压掉 `no_task` 的条件分支会让它一律建任务 |
+| B1 | `.trellis/workflow.md` | **拷 `templates/trellis/workflow.md`，整篇替换。** 拷完跑 `python3 .trellis/scripts/verify_workflow.py`，不通过就回滚 |
 | B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源 |
-| B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `create` / `archive` |
+| B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `after_create` / `after_archive`。**逐字改法见 `edits.md`** |
 | B4 | `.trellis/agents/implement.md` | channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
 | B5 | `.trellis/agents/check.md` | 读取列表同上；审查方法改成调 `oxyteam-code-review`，**去掉 self-fix** |
 
@@ -172,7 +184,11 @@ Codex 上这两个是 skill 不是 command（Codex 没有命令层），frontmat
 
 ### P7–P9 channel 三个 reference
 
-命令示例里 `design.md` / `implement.md` → `issues/<当前票>.md`（实测 workflows 5 处、workers 3 处、forum 1 处），纯文本替换。
+命令示例里 `design.md` / `implement.md` → `issues/<当前票>.md`。**逐字锚点见 `edits.md`，不要凭描述自己改。**
+
+实测 workflows 5 处、workers **2** 处、forum 1 处，**合计 8 处**（每平台一份，三平台 24 处）。
+
+> **早期版本写的「workers 3 处」是错的。** 那第 3 处是 `.trellis/agents/implement.md` —— worker 定义**文件自己的路径**，不是任务 artifact。一句「把 `implement.md` 换成当前票」会把它一起换掉，worker 就指向不存在的路径了。这正是这类改动必须用逐字锚点、不能用散文描述的原因。
 
 `--file "$TASK/prd.md"` 和 `--jsonl "$TASK/check.jsonl"` 这两种示例**本来就是对的，不要动**。
 

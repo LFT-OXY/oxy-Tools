@@ -58,12 +58,15 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 先读取：
 
 1. [`references/changeset.md`](references/changeset.md)：**权威逐文件改动清单**，Apply 与记账都以它为准；
-2. [`references/update-policy.md`](references/update-policy.md)：版本、基线记账、冲突和确认规则；
-3. [`references/workflow.md`](references/workflow.md)：团队五阶段工作流与 Skill 路由；
-4. [`references/task-model.md`](references/task-model.md)：任务目录、三层状态、票格式与远程同步；
-5. [`references/context-loading.md`](references/context-loading.md)：Extension、Turn 快照与 Manifest。
+2. [`references/edits.md`](references/edits.md)：**只改几处的文件的逐字锚点替换表**，不要凭描述自己改；
+3. [`references/update-policy.md`](references/update-policy.md)：版本、基线记账、冲突和确认规则；
+4. [`references/workflow.md`](references/workflow.md)：团队五阶段工作流与 Skill 路由；
+5. [`references/task-model.md`](references/task-model.md)：任务目录、三层状态、票格式与远程同步；
+6. [`references/context-loading.md`](references/context-loading.md)：注入层、Turn 快照与 Manifest。
 
-五份参考共同构成 Overlay 契约，不选择性跳过。`changeset.md` 与其他四份冲突时以 `changeset.md` 为准。
+六份参考共同构成 Overlay 契约，不选择性跳过。`changeset.md` 与其他几份冲突时以 `changeset.md` 为准。
+
+**改动一律拿现成件，不要现写**：`scripts/` 原样拷贝，`templates/` 整篇替换（路径镜像落点），`edits.md` 逐字锚点。三者都没覆盖的条目才按描述实现，且实现完应补成现成件。
 
 ### 2. 只读预检（inspect）
 
@@ -114,7 +117,13 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 应用要求：
 
 - 先在临时目录生成全部结果，静态校验通过后再落盘，避免半途失败留下混合状态；
-- **A1 从本 Skill 的 `scripts/oxyteam_tickets.py` 原样拷贝，不要即兴实现**；落盘后立刻跑 `python3 .trellis/scripts/oxyteam_tickets.py selfcheck`，不通过就回滚；
+- **`scripts/` 下两个文件原样拷进 `.trellis/scripts/`，不要即兴实现**；落盘后立刻各跑一次，不通过就回滚：
+
+  ```bash
+  python3 .trellis/scripts/oxyteam_tickets.py selfcheck   # 票解析 + frontier + 环检测
+  python3 .trellis/scripts/verify_workflow.py             # workflow.md 结构（失败模式全是静默的）
+  ```
+
 - 不保留兼容别名，不保留两套并行路由；
 - **P / C 组只对已装平台执行**，不给没装的平台预建目录；
 - P1 的 `inject-workflow-state.py` 补丁在 Claude 和 Codex 是同一份（官方模板字节相同），写一份应用两次；
