@@ -98,6 +98,13 @@ def check_file(path: Path, rel: str) -> list[str]:
         for p in DEAD_ARTIFACT_PATHS:
             if p in line:
                 bad.append(f"{rel}:{lineno} 残留旧 artifact 路径 `{p}`")
+        # `current --json` 是 task.py:177-201 的八字段白名单，meta 不在里面。
+        # 拿它读 flow_stage / implementation_base_sha 不报错、只是永远读不到，
+        # 静态审计看不出来。合法形态只有两种：管道进两步读法，或反引号里的说明文字。
+        s = line.strip()
+        if "current --json" in s and s.startswith("python3") and "|" not in s:
+            bad.append(f"{rel}:{lineno} 裸的 `task.py current --json` —— 它是白名单八字段、"
+                       "不含 meta，读 flow_stage / implementation_base_sha 必须走两步")
 
     for regex, valid, what in ((RE_TICKET_CALL, TICKET_CMDS, "票脚本"),
                                (RE_SYNC_CALL, SYNC_CMDS, "同步脚本")):
@@ -218,6 +225,15 @@ def selfcheck() -> int:
         "注释压 H1 没被抓到"
     assert not hits("claude/commands/c.md", "# C\n\n<!-- 说明 -->\n\n正文\n"), \
         "H1 在前、注释在后的正确形态被误报了"
+    # 三平台模板里曾有 10 处拿 current --json 读 meta，读不到也不报错
+    assert any("裸的" in b for b in hits(
+        "a.md", "```bash\npython3 .trellis/scripts/task.py current --json\n```\n")), \
+        "裸的 current --json 没被抓到"
+    assert not hits("a.md", '```bash\nDIR=$(python3 .trellis/scripts/task.py current --json '
+                            '| python3 -c \'import json,sys\')\n```\n'), \
+        "两步读法的第一步被误报了"
+    assert not hits("a.md", "`task.py current --json` 是白名单八字段，不含 meta\n"), \
+        "说明文字里的 current --json 被误报了"
 
     # 下面三条是实跑第一版时踩出来的误报，改动别把它们改回去
     assert not hits("a.md", "<!--\n② 删掉对 trellis-brainstorm / trellis-before-dev\n   的引用\n-->\n正文"), \

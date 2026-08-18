@@ -69,7 +69,9 @@ developer_instructions = """
 `task.json.meta.implementation_base_sha` 在主会话 `claim` 这张票时就已经写好了，它是**本票的变更基线**：
 
 ```bash
-python3 .trellis/scripts/task.py current --json     # 读 meta.implementation_base_sha
+# `current --json` 是白名单拼出来的八个字段，不含 meta —— 读细挡位要两步
+TASK=$(python3 .trellis/scripts/task.py current)
+python3 -c "import json;print(json.load(open('$TASK/task.json')).get('meta',{}).get('implementation_base_sha',''))"
 ```
 
 把它当作 diff 的固定点交给后面的 code-review（审这个 sha 到 HEAD 之间的改动）。不要自己另挑基线，也不要重写这个 meta。

@@ -30,7 +30,9 @@ argument-hint: "[task-name]"
 ## Step 0: 归档门禁
 
 ```bash
-python3 .trellis/scripts/task.py current --json
+# `current --json` 是白名单八字段，不含 meta —— 读 flow_stage 要两步
+DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_task"]["dir"])')
+python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
 python3 .trellis/scripts/oxyteam_tickets.py summary
 ```
 

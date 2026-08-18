@@ -50,7 +50,9 @@ python3 ./.trellis/scripts/get_context.py --mode phase
 **判断依据只有 `task.json.meta.flow_stage`，不要凭任务目录里有没有某个文件来判断。**
 
 ```bash
-python3 .trellis/scripts/task.py current --json
+# `current --json` 是白名单八字段，不含 meta —— 读 flow_stage 要两步
+DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_task"]["dir"])')
+python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
 ```
 
 | flow_stage | 接着走 | 本轮该做什么 |

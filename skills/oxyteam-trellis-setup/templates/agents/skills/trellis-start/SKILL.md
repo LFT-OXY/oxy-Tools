@@ -67,7 +67,9 @@ index 文件列出真正开始写代码时该读哪些规范文档。
 Step 1 已经给出当前任务。**路由依据是 `task.json.meta.flow_stage`，不是任务目录里有没有某个文件。**
 
 ```bash
-python3 .trellis/scripts/task.py current --json
+# `current --json` 是白名单八字段，不含 meta —— 读 flow_stage 要两步
+DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_task"]["dir"])')
+python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
 ```
 
 | flow_stage | 接着走 | 本轮该做什么 |
