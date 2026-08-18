@@ -4,71 +4,181 @@
 
 存在的理由：曾经出现过没有任何人说得清 Overlay 到底改了哪些文件的情况——`trellis update --dry-run` 报 12 个，实际改了 13 个，多出来的 `linear_sync.py` 被三轮审计加一次外部复核全部漏掉。
 
+> **2026-08-18 改版：支持范围从 Oh My Pi 一个平台扩到 OMP + Claude Code + Codex 三个。**
+> 编号随之重排：原来的 B 组拆成 **B（共享层）** 和 **P（平台层）**，C 组改成按角色编号、每平台各有落点。
+> 设计依据见《Oxyteam-Trellis-Overlay 大白话设计说明》第 16 节。
+
 ## 总账
 
 ```text
-A 新建自有        3    0 冲突点
-B 修改官方       13    每次 trellis update 各付一次冲突
-C 删除官方        6    永久，update 尊重删除
-D Team Skill 与 init 模板   5    随 Skill Pack v0.3.0 发布，不在 Overlay 安装时改
-E 撤销历史修改    7    仅当预检发现旧版 Overlay 痕迹
+A 新建自有                  3        0 冲突点，与平台数无关
+B 修改官方 · 共享层          5        改一次，所有平台都生效
+P 修改官方 · 平台层     每平台 8~9    每个已装平台各改一套
+C 删除官方 · 平台层     每平台 6      永久，update 尊重删除
+D Team Skill 与 init 模板    5        随 Skill Pack v0.3.0 发布，不在 Overlay 安装时改
+E 撤销历史修改               7        仅当预检发现旧版 Overlay 痕迹
 ```
+
+按已装平台数展开：
+
+```text
+                只装 OMP   +Claude   三平台全装
+A 新建               3         3          3
+B 共享层改           5         5          5
+P 平台层改           8        17         26      OMP 8 / Claude 9 / Codex 9
+───────────────────────────────────────────
+改官方合计          13        22         31
+C 删                 6        12         18
+```
+
+Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平台 -1 改 + 24 删：三平台全装变成 **28 改 / 90 删**。
+
+**平台数是乘数。** 只对项目里实际装了的平台执行 P 组和 C 组，不要给没装的平台预建目录。
 
 ---
 
-## A 组：新建自有文件（0 冲突）
+## 平台落点对照
 
-官方模板里没有这些路径，不会进 `changedFiles`，永远不冲突。
+来源是 Trellis `dist/types/ai-tools.js` 的 `AI_TOOLS` 注册表；下面的路径由 `collectPlatformTemplates()` 实跑导出，不是从文档抄的。
+
+| | OMP | Claude Code | Codex |
+|---|---|---|---|
+| CLI flag | `--omp` | `--claude` | `--codex` |
+| 官方装了几个文件 | 49 | 52 | 54 |
+| 主目录 | `.omp/` | `.claude/` | `.codex/` |
+| Skill 目录 | `.omp/skills/` | `.claude/skills/` | **`.agents/skills/`（跨工具共享层）** |
+| 命令 | `.omp/commands/trellis-*.md` | `.claude/commands/trellis/*.md` | **没有命令，全部当 skill** |
+| 子 Agent | `.omp/agents/trellis-*.md` | `.claude/agents/trellis-*.md` | **`.codex/agents/trellis-*.toml`（TOML）** |
+| 注入机制 | `extensions/trellis/index.ts`（1 个 TS 文件） | `.claude/hooks/*.py`（3 个，`settings.json` 全注册） | `.codex/hooks/*.py`（装 3 个，`hooks.json` **只注册 2 个**） |
+| 多出来的入口 | 无 | 无 | `.agents/skills/trellis-start/` |
+
+**`.agents/skills/` 要单独留意**：Codex、Gemini CLI、Pi、Kimi Code、dsh 共读这一层。在这儿删 `trellis-brainstorm/` 是把这几个工具一起删了，不是只对 Codex 生效。预检必须列出项目里还装了哪些读这一层的平台，并在计划里写明波及面。
+
+---
+
+## A 组：新建自有文件（3，0 冲突）
+
+官方模板里没有这些路径，不会进 `changedFiles`，永远不冲突。与平台数无关，装几个平台都只建一次。
 
 | # | 路径 | 职责 |
 |---|---|---|
-| A1 | `.trellis/scripts/oxyteam_tickets.py` | 解析 `issues/*.md`、算 Frontier、claim/done、summary |
-| A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步 |
-| A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + 逐文件 hash + tombstone |
+| A1 | `.trellis/scripts/oxyteam_tickets.py` | 解析 `issues/*.md`、算 Frontier、claim/done、summary；**claim 时把当前票路径写进 `<task>/implement.jsonl`**（见 P1 说明） |
 
-A1、A2 的命令契约见 `task-model.md`。A3 的格式见 `update-policy.md`。
+| A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步 |
+| A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone |
+
+**A1 是拷贝，不是现写。** 源文件在本 Skill 的 `scripts/oxyteam_tickets.py`，原样复制到 `.trellis/scripts/`，**不要让模型即兴实现一个票解析器**——`task-model.md` 的三条硬校验（Blocker 不存在 / 成环 / claim 不在 frontier）和归档门禁全挂在它身上，每个项目一份不同的实现，那就不叫硬校验了。
+
+拷完立刻验一次，它不依赖仓库状态、Active Task 或 git：
+
+```bash
+python3 .trellis/scripts/oxyteam_tickets.py selfcheck   # 输出「selfcheck 通过」
+```
+
+A2 目前还没有实体，仍需按 `task-model.md` 的契约实现；实现后同样进 `scripts/` 走拷贝。A3 的格式见 `update-policy.md`——**本版起 `files` 里必须带平台维度**，否则装了新平台后分不清「这个路径没改过」和「这个平台还没装」。
 
 ---
 
-## B 组：修改官方文件（13）
+## B 组：修改官方文件 · 共享层（5）
 
-### B-核心（7）
+这五个在 `.trellis/` 和仓库根，跟平台无关，**改一次所有平台都生效**。
 
 | # | 路径 | 改什么 |
 |---|---|---|
-| B1 | `.trellis/workflow.md` | 换成五阶段 + 五对 `[workflow-state:*]` 块 + 路由到 `oxyteam-*`；discover 块写明研究结果存 `<task>/research/` |
+| B1 | `.trellis/workflow.md` | 换成五阶段 + **六对** `[workflow-state:*]` 块（五阶段 + `no_task`）+ 路由到 `oxyteam-*`；discover 块写明研究结果存 `<task>/research/`。**不写 `-inline` 变体**（见「Codex 的两个前置」）。块正文的两条措辞要求见 `workflow.md`「块正文的措辞要求」——写成祈使句会让模型绕过 Skill 自己干，压掉 `no_task` 的条件分支会让它一律建任务 |
 | B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源 |
-| B3 | `.omp/extensions/trellis/index.ts` | `resolveActiveTaskStatus()` 优先读 `meta.flow_stage`；注入当前票；每个新用户输入建一次快照 |
-| B4 | `.omp/commands/trellis-continue.md` | 路由改成按 `flow_stage` + frontier 判断，不再按 `prd.md`/`design.md`/`implement.md` 是否存在判断 |
-| B5 | `.omp/commands/trellis-finish-work.md` | 归档门禁加「所有票 `Impl: done`」 |
-| B6 | `.omp/agents/trellis-implement.md` | 加载当前票 + 读 `.trellis/spec/` 对应层 + 传 `implementation_base_sha`；改成 `oxyteam-implement` 的薄包装 |
-| B7 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `create` / `archive` |
+| B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `create` / `archive` |
+| B4 | `.trellis/agents/implement.md` | channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
+| B5 | `.trellis/agents/check.md` | 读取列表同上；审查方法改成调 `oxyteam-code-review`，**去掉 self-fix** |
 
 > **B2 的永久成本**：`AGENTS.md` 的 managed block 自己写着 "edits inside may be overwritten by a future `trellis update`"。每次升级后都要重改一次，必须进 Installer 的固定检查项。
 
-### B-Channel 适配（5）
+> `.trellis/agents/implement.md` 原文就写着「读 `.trellis/spec/` 项目规范（只加载与本次 diff 相关的）」——这正是把 `trellis-before-dev` 的能力并进 implement 前置的做法，照抄即可，不用新设计。
 
-Channel 是 Trellis 独有的多 agent 运行时，Oxyteam 无等价物，保留并适配。worker 定位为**辅助路径**，票实施的正式路径是 `trellis-implement` → `oxyteam-implement`。
+---
 
-| # | 路径 | 改什么 |
-|---|---|---|
-| B8 | `.omp/skills/trellis-channel/references/workflows.md` | 命令示例里 `design.md` / `implement.md` → `issues/<当前票>.md`（实测 5 处，纯文本替换） |
-| B9 | `.omp/skills/trellis-channel/references/workers.md` | 同上（实测 3 处） |
-| B10 | `.omp/skills/trellis-channel/references/forum.md` | 同上（实测 1 处） |
-| B11 | `.trellis/agents/implement.md` | 读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
-| B12 | `.trellis/agents/check.md` | 读取列表同上；审查方法改成调 `oxyteam-code-review`，**去掉 self-fix** |
+## P 组：修改官方文件 · 平台层（每平台 8~9）
+
+**按角色编号，每个角色在各平台落到不同路径。** 只对已装平台执行。
+
+| # | 角色 | OMP | Claude Code | Codex |
+|---|---|---|---|---|
+| P1 | 每轮状态注入 | `.omp/extensions/trellis/index.ts` | `.claude/hooks/inject-workflow-state.py` | `.codex/hooks/inject-workflow-state.py` |
+| P2 | 会话启动注入 | *（P1 同一文件，不另计）* | `.claude/hooks/session-start.py` | — |
+| P3 | 会话引导入口 | — | — | `.agents/skills/trellis-start/SKILL.md` |
+| P4 | continue 路由 | `.omp/commands/trellis-continue.md` | `.claude/commands/trellis/continue.md` | `.agents/skills/trellis-continue/SKILL.md` |
+| P5 | finish 门禁 | `.omp/commands/trellis-finish-work.md` | `.claude/commands/trellis/finish-work.md` | `.agents/skills/trellis-finish-work/SKILL.md` |
+| P6 | implement 子 Agent | `.omp/agents/trellis-implement.md` | `.claude/agents/trellis-implement.md` | `.codex/agents/trellis-implement.toml` |
+| P7 | channel workflows | `.omp/skills/trellis-channel/references/workflows.md` | `.claude/skills/…/workflows.md` | `.agents/skills/…/workflows.md` |
+| P8 | channel workers | `.omp/skills/trellis-channel/references/workers.md` | `.claude/skills/…/workers.md` | `.agents/skills/…/workers.md` |
+| P9 | channel forum | `.omp/skills/trellis-channel/references/forum.md` | `.claude/skills/…/forum.md` | `.agents/skills/…/forum.md` |
+| P10 | trellis-meta 声明 | `.omp/skills/trellis-meta/SKILL.md` | `.claude/skills/trellis-meta/SKILL.md` | `.agents/skills/trellis-meta/SKILL.md` |
+| | **合计** | **8** | **9** | **9** |
+
+### P1 每轮状态注入
+
+两处改动：
+
+```text
+① 解析当前状态
+   现在：只返回 task.json.status（三档）
+   改成：优先读 meta.flow_stage，不合法或不存在时回退 status，无任务返回 no_task
+
+② 注入当前票
+   主会话侧：读 issues/ 下 Impl: doing 的那张，连同 frontier 摘要一起注入
+```
+
+改点位置：OMP 是 `resolveActiveTaskStatus()`；Python 是 `inject-workflow-state.py:179` 的 `status = data.get("status", "")`。
+
+**OMP 还要加一条**：每个新用户输入 `TurnContextCache.beginTurn()` 先清旧 key 再重建快照。Claude / Codex 不需要——`inject-workflow-state.py` 每次用户输入都是全新 Python 进程，读完就退出，没有缓存可以过期。
+
+**`inject-subagent-context.py` 不改**（Claude 和 Codex 各有一份，1174 行）。子代理拿当前票走 `<task>/implement.jsonl`，由 A1 的 `claim` 负责写入和切票时换行。这条三个平台同时成立（OMP `index.ts:303`、Python hook 都读它），等于用官方 manifest 这一个已有机制统一了「子代理怎么拿到当前票」，省下两个平台各一个永久冲突点。
+
+**`inject-workflow-state.py` 在 Claude 和 Codex 是字节相同的官方模板**——Overlay 的补丁写一份、应用两次。A3 的记账模型（每个 path 一组 `upstream_hash` / `applied_hash`）天然支持，不用改结构。
+
+### P2 / P3 会话启动：Claude 和 Codex 各多一个必改项，但不是同一个文件
+
+OMP 的 `index.ts` 很干净：只读 `prd.md` / `info.md` / jsonl，全文没提过 `design.md`、`implement.md` 或任何 bundled skill 名。Python 侧不是：
+
+```text
+shared-hooks/session-start.py:482       "Next-Action: Load `trellis-brainstorm` and write `prd.md`."
+                             :488-489   提示复杂任务补 design.md / implement.md
+                             :513       "context order is jsonl -> prd.md -> design.md -> implement.md"
+common/commands/start.md:39-40,53-56    指路四个已删 Skill + design.md / implement.md
+                                        （Codex 落到 .agents/skills/trellis-start/SKILL.md）
+```
+
+`trellis-brainstorm` 在 C 组是被删掉的。**不改这两个文件，Claude Code 和 Codex 的每个新会话都会被指向一个不存在的 Skill，并被要求创建本版明确不再使用的 `design.md` / `implement.md`。**
+
+**`.codex/hooks/session-start.py` 不用改。** 实测 `.codex/hooks.json` 只注册两个事件——`UserPromptSubmit` → `inject-workflow-state.py`、`SubagentStart` → `inject-subagent-context.py`，全文没有 session-start，`config.toml` 里也没有。它是躺在磁盘上的死文件，里面 `:277,286,296` 那三处旧引用不产生任何行为。**留着不动，也不要花力气去修它。**
+
+### P4 / P5 continue 与 finish
+
+改法三平台一致，只是落点不同：
+
+```text
+P4  路由改成按 flow_stage + frontier 判断
+    不再按 prd.md / design.md / implement.md 是否存在判断
+P5  归档门禁加「所有票 Impl: done」
+```
+
+Codex 上这两个是 skill 不是 command（Codex 没有命令层），frontmatter 按 skill 格式写。
+
+### P6 implement 子 Agent
+
+加载当前票 + 读 `.trellis/spec/` 对应层 + 传 `implementation_base_sha`；改成 `oxyteam-implement` 的薄包装。
+
+**Codex 是 TOML，且有用户配置要保留**：`configurators/codex.js` 的 `applyCodexAgentModelKeys` 会把用户在 `.codex/agents/trellis-*.toml` 里钉的 `model` / `model_reasoning_effort` 保留下来再写模板。Installer 重写这个文件时必须照做，否则用户的模型钉选被静默吹掉。
+
+### P7–P9 channel 三个 reference
+
+命令示例里 `design.md` / `implement.md` → `issues/<当前票>.md`（实测 workflows 5 处、workers 3 处、forum 1 处），纯文本替换。
 
 `--file "$TASK/prd.md"` 和 `--jsonl "$TASK/check.jsonl"` 这两种示例**本来就是对的，不要动**。
 
-`.omp/skills/trellis-channel/SKILL.md` 与 `references/command-reference.md`、`references/progress-debugging.md` **零过时引用，不改**。
+`trellis-channel/SKILL.md` 与 `references/command-reference.md`、`references/progress-debugging.md` **零过时引用，不改**。
 
-> `.trellis/agents/implement.md` 原文就写着「读 `.trellis/spec/` 项目规范（只加载与本次 diff 相关的）」——这正是把 `trellis-before-dev` 的能力并进 implement 前置的做法，照抄即可，不用新设计。
-
-### B-过渡（1）
-
-| # | 路径 | 改什么 |
-|---|---|---|
-| B13 | `.omp/skills/trellis-meta/SKILL.md` | 顶部加声明（内容见下） |
+### P10 trellis-meta 顶部声明（过渡措施）
 
 ```markdown
 > ⚠ 本项目已应用 Oxyteam Overlay。
@@ -78,43 +188,68 @@ Channel 是 Trellis 独有的多 agent 运行时，Oxyteam 无等价物，保留
 > 要改 Overlay，请走 oxyteam-trellis-setup，不要直接手改这些文件。
 ```
 
-**这是过渡措施，有明确的退役条件。** `trellis-meta` 的用途是「改 Trellis 自身的项目级文件」，而那批文件正是 Installer 用基线管着的——两个工具改同一批文件、谁都不知道对方改了什么，是本设计一路在消灭的「双权威」。
+**有明确的退役条件。** `trellis-meta` 的用途是「改 Trellis 自身的项目级文件」，而那批文件正是 Installer 用基线管着的——两个工具改同一批文件、谁都不知道对方改了什么，是本设计一路在消灭的「双权威」。
 
 ```text
 现在（Installer 还只会 apply + 记账）
-  → 只加声明，1 个冲突点。这期间仍需要一份「Trellis 项目级文件长什么样」的知识源
+  → 只加声明，每平台 1 个冲突点。这期间仍需要一份「Trellis 项目级文件长什么样」的知识源
 
 Installer 具备 reconcile 能力之后
-  → 删掉整个 trellis-meta（24 文件），B13 一并作废
-    改动面变成 12 改 / 30 删
+  → 删掉整个 trellis-meta（每平台 24 文件），P10 一并作废
+    三平台全装的改动面变成 28 改 / 90 删
 ```
 
 **这一条要进 Installer 的验收清单**，不要留到以后忘掉。
 
 ---
 
-## C 组：删除官方入口（6）
+## Codex 的两个前置（不是文件改动能解决的）
+
+### ① 用户级 hooks 开关
+
+`codex/config.toml:12-18` 写着：Codex 的 hooks 只有在用户级 `~/.codex/config.toml` 里开了 `[features].hooks = true`（0.129+；旧名 `codex_hooks = true`）、并在 `/hooks` TUI 里批准之后才会激活。
+
+**没开的话 Codex 一个注入都拿不到**，只剩 `trellis-start` skill 这一条手动入口。项目里改不了，预检必须检测并提示用户去自己机器上开。
+
+### ② `dispatch_mode` 必须是 `auto`
+
+`inject-workflow-state.py` 的 `resolve_breadcrumb_key()` 对 Codex 有特殊分支：`dispatch_mode: inline` 时查的是 `<status>-inline` 标签。官方 `workflow.md` 因此给 planning / in_progress 各备了两份块（`:205`、`:237`）。
+
+默认值是 `auto`，查普通标签。所以：
+
+```text
+B1 只写 6 个普通 [workflow-state:*] 块（5 阶段 + no_task），不写 inline 变体
+预检发现 .trellis/config.yaml 里 codex.dispatch_mode: inline → 停下来问用户
+```
+
+写 12 个块是为一个非默认模式付双倍维护费。而且查不到标签不会报错，只会静默降级成一句 "Refer to workflow.md for current step."——路由直接失效且没有任何提示，所以预检必须**硬拦**，不是警告。
+
+---
+
+## C 组：删除官方入口（每平台 6）
 
 这六个各有 hash，删除会走 `userDeletedFiles` 分支被尊重，`trellis update` 不会装回来。**删比改 frontmatter 禁用更干净。**
 
-| # | 路径 | 能力由谁承接 |
-|---|---|---|
-| C1 | `.omp/skills/trellis-brainstorm/` | `oxyteam-askme` / `interview` / `askme-with-docs` / `map` |
-| C2 | `.omp/skills/trellis-before-dev/` | 并进 implement 前置（B6、B11） |
-| C3 | `.omp/skills/trellis-check/` | `oxyteam-code-review` |
-| C4 | `.omp/skills/trellis-break-loop/` | `oxyteam-diagnosing-bugs` |
-| C5 | `.omp/agents/trellis-check.md` | `oxyteam-code-review` 自己 spawn 的两个子代理 |
-| C6 | `.omp/agents/trellis-research.md` | `oxyteam-research` 自己 spawn 后台 agent |
+| # | 角色 | OMP | Claude Code | Codex | 能力由谁承接 |
+|---|---|---|---|---|---|
+| C1 | brainstorm | `.omp/skills/trellis-brainstorm/` | `.claude/skills/trellis-brainstorm/` | `.agents/skills/trellis-brainstorm/` | `oxyteam-askme` / `interview` / `askme-with-docs` / `map` |
+| C2 | before-dev | `.omp/skills/trellis-before-dev/` | `.claude/skills/trellis-before-dev/` | `.agents/skills/trellis-before-dev/` | 并进 implement 前置（P6、B4） |
+| C3 | check skill | `.omp/skills/trellis-check/` | `.claude/skills/trellis-check/` | `.agents/skills/trellis-check/` | `oxyteam-code-review` |
+| C4 | break-loop | `.omp/skills/trellis-break-loop/` | `.claude/skills/trellis-break-loop/` | `.agents/skills/trellis-break-loop/` | `oxyteam-diagnosing-bugs` |
+| C5 | check agent | `.omp/agents/trellis-check.md` | `.claude/agents/trellis-check.md` | `.codex/agents/trellis-check.toml` | `oxyteam-code-review` 自己 spawn 的两个子代理 |
+| C6 | research agent | `.omp/agents/trellis-research.md` | `.claude/agents/trellis-research.md` | `.codex/agents/trellis-research.toml` | `oxyteam-research` 自己 spawn 后台 agent |
 
 **删的是重复实现，不是能力。** 六项能力全部有承接方，一项没少。
 
-删除后必须扫一遍全项目，确保没有残留引用（`trellis-continue.md`、`workflow.md`、`trellis-session-insight` 都提过这些名字）。
+删除后必须扫一遍全项目，确保没有残留引用（continue、`workflow.md`、`trellis-session-insight`、Claude/Codex 的 `session-start.py` 与 `trellis-start` 都提过这些名字——后两个由 P2 / P3 负责）。
+
+> **Codex 的 C1–C4 落在共享层 `.agents/skills/`。** 项目里同时装了 Gemini CLI / Pi / Kimi Code / dsh 的话，这一删是全都删了。计划里要写明波及面，不要在 Codex 一栏轻描淡写。
 
 ---
 
 ## D 组：Team Skill 与 init 模板（5，已完成）
 
-**这一组不是 Overlay 安装时改的，是 Skill Pack 里已经改好、随版本发布的。** 预检验 `skills-lock.json` 的 ref 就是在验这一组到位没有。
+**这一组不是 Overlay 安装时改的，是 Skill Pack 里已经改好、随版本发布的。跟平台数无关。** 预检验 `skills-lock.json` 的 ref 就是在验这一组到位没有。
 
 配置架构（决定了改法）：
 
@@ -129,7 +264,7 @@ oxyteam-spec / oxyteam-tickets / oxyteam-map / oxyteam-code-review
 | # | 路径 | 改什么 |
 |---|---|---|
 | D1 | `oxyteam-init/issue-tracker-trellis.md` | **新建**。第 4 个 tracker 模板，实现模板契约的全部四段：Conventions / publish / fetch / **Wayfinding operations** |
-| D2 | `oxyteam-init/SKILL.md` | Explore 加 `.trellis/` 检测；Section A 加 Trellis 选项并置顶；模板清单加一行 |
+| D2 | `oxyteam-init/SKILL.md` | Explore 加 `.trellis/` 检测；Section A 加 Trellis 选项并置顶；模板清单加一行；**Write 段加「`##` 标题逐字保留，不得翻译」**——实测中文会话里 8 个标题全被翻译，`oxyteam-map` 随即静默退回写 `.scratch/` |
 | D3 | `oxyteam-tickets/SKILL.md` | 第 5 步的 `.scratch/<feature-slug>/issues/` 是**硬编码路径**，改成查 tracker 文档；追加「tracker 定义了额外字段就加上」 |
 | D4 | `oxyteam-code-review/SKILL.md` | 第 1 步换成「主流程固化 patch」（见下）；第 2 步 spec 来源加一条查 tracker 文档，并提到**前面**（原来只找 `docs/`/`specs/`/`.scratch/`，找不到任务目录）；两个子代理提示词改成消费 patch，不执行 git |
 | D5 | `oxyteam-research/SKILL.md` | 原文是 "Save it where the repo already keeps such notes"，**没有任何锚点**。改成 spawn 前先定路径并写进 spawn 提示词——它 spawn 的是后台 agent，未必继承会话上下文 |
@@ -151,7 +286,7 @@ oxyteam-spec / oxyteam-tickets / oxyteam-map / oxyteam-code-review
 
 ### D4 的五步契约
 
-**这是 P0，跟 Trellis 无关，没装 Trellis 的普通项目里一样存在。**
+**这是 P0，跟 Trellis 和平台都无关，没装 Trellis 的普通项目里一样存在。**
 
 问题：`oxyteam-implement` 的闭环是「先 code-review 再 commit」，而 `git diff A...HEAD` 三点语法两端都是「提交」，工作区完全不参与。**危险在于这不是硬失败，是静默漏审**——固定点前面已有 commit 时 diff 非空，检查照样通过，但这次写的实现一行都没进审查，还报告「审查通过」。
 
@@ -234,7 +369,9 @@ Map 的 decision ticket 放 `$TASK/map-issues/`，跟实施票的 `$TASK/issues/
 |---|---|---|
 | E1–E5 | `.trellis/scripts/common/{task_store,task_utils,task_context,session_context}.py`、`.trellis/scripts/task.py` | 恢复官方原样 |
 | E6 | `.trellis/scripts/hooks/linear_sync.py` | 恢复官方原样。**`trellis update --dry-run` 不报这个文件**，只能靠记账或 hash 比对发现 |
-| E7 | `.omp/agents/trellis-research.md` | 旧版把它改成了包装器，本版直接删（等同 C6） |
+| E7 | `.omp/agents/trellis-research.md` | 旧版把它改成了包装器，本版直接删（等同 C6 的 OMP 落点） |
+
+E1–E6 是共享层，与平台数无关。E7 只在 OMP 上存在——旧版 Overlay 只支持 OMP，不会有 Claude / Codex 的历史痕迹。
 
 官方模板位置：
 
@@ -244,16 +381,25 @@ $(npm root -g)/@mindfoldhq/trellis/dist/templates/
   trellis/scripts/hooks/linear_sync.py
   trellis/workflow.md
   trellis/agents/{implement,check}.md
+  shared-hooks/*.py                              → .claude/hooks/、.codex/hooks/
   common/commands/{continue,finish-work}.md      → .omp/commands/trellis-*.md
-  common/skills/*.md                             → .omp/skills/trellis-*/SKILL.md
-  common/bundled-skills/                         → .omp/skills/
+                                                   .claude/commands/trellis/*.md
+  common/commands/start.md                       → .agents/skills/trellis-start/SKILL.md
+  common/skills/*.md                             → <平台>/skills/trellis-*/SKILL.md
+  common/bundled-skills/                         → <平台>/skills/
   omp/agents/trellis-*.md
+  claude/agents/trellis-*.md
+  codex/agents/trellis-*.toml、codex/hooks/session-start.py
   omp/extensions/trellis/index.ts.txt            ← 注意是 .txt，find -name '*.ts' 找不到
 ```
+
+比对官方原样时不要手抄路径，用 `collectPlatformTemplates(<platformId>)` 实跑导出——`claude-code` 52 个、`codex` 54 个、`omp` 49 个，数字对不上说明平台版本或安装范围有出入。
 
 ---
 
 ## 明确保持官方原样
+
+### 共享层
 
 ```text
 .trellis/scripts/common/task_store.py       ← 旧版改过，本版从头不碰
@@ -265,9 +411,23 @@ $(npm root -g)/@mindfoldhq/trellis/dist/templates/
 .trellis/scripts/common/active_task.py
 .trellis/scripts/get_context.py
 .trellis/spec/**                            ← 无 Oxyteam 等价物，保留
-.omp/skills/trellis-spec-bootstrap/         ← 实测 0 处过时引用
-.omp/skills/trellis-update-spec/            ← 实测 0 处过时引用
-.omp/skills/trellis-channel/SKILL.md        ← 索引本身干净
+```
+
+### 平台层（每个已装平台）
+
+```text
+trellis-spec-bootstrap/                     ← 实测 0 处过时引用
+trellis-update-spec/                        ← 实测 0 处过时引用
+trellis-channel/SKILL.md                    ← 索引本身干净，只有 3 个 reference 要改
+trellis-session-insight/                    ← 3 处低危，默认不改，见下
+
+.claude/settings.json                       ← 只注册 hook，不用动
+.claude/hooks/inject-subagent-context.py    ← 当前票走 implement.jsonl，不改（P1）
+.codex/hooks/inject-subagent-context.py     ← 同上
+.codex/hooks/session-start.py               ← 死文件，hooks.json 没注册它（P2）
+.codex/hooks.json
+.codex/config.toml
+未启用平台的配置目录                          ← 不预建、不预改
 ```
 
 ### `.trellis/spec/` 为什么保留
@@ -284,7 +444,7 @@ $(npm root -g)/@mindfoldhq/trellis/dist/templates/
 :43  「把 mem 挖出来的决策写进 <task>/prd.md」        本版是正确行为
 ```
 
-全是低危，改不改都不会造成错误行为。**默认不改**（省 1 个冲突点）。如果因为别的原因要动这个文件，就一并改掉——`trellis update` 的冲突成本是按文件算的，不是按行算的。
+全是低危，改不改都不会造成错误行为。**默认不改**（每平台省 1 个冲突点）。如果因为别的原因要动这个文件，就一并改掉——`trellis update` 的冲突成本是按文件算的，不是按行算的。
 
 ---
 
@@ -305,3 +465,9 @@ $(npm root -g)/@mindfoldhq/trellis/dist/templates/
 | 以为 `git status --porcelain` 能交代清楚 untracked | 实测对新目录只输出 `?? newdir/`，`git ls-files --others -z` 才直接给文件 |
 | 以为归档会让 Spec 变得难找 | `add_session.py` 每条日记记 `**Task**`，自动维护 Session History 表，归档内容进 git |
 | 以为改 Oxyteam 写入路径必须改 Skill | `oxyteam-spec` 是纯配置驱动；只有 `oxyteam-tickets` 硬编码了 `.scratch/` |
+| **以为多支持一个平台只是「路径换个前缀」** | **Claude / Codex 的注入层是 Python Hook 拷贝，不是一个 TS 文件；`session-start.py` 和 `start.md` 还硬编码了已删的 `trellis-brainstorm` 和 `design.md` / `implement.md`，OMP 的 `index.ts` 里一处都没有** |
+| **以为 `.codex/hooks/session-start.py` 装了就会跑** | **`.codex/hooks.json` 只注册 `UserPromptSubmit` 和 `SubagentStart` 两项，`config.toml` 里也没有——死文件，改它是白改** |
+| **以为 Codex 装完 Hook 就生效** | **`codex/config.toml:12-18`：还要用户在 `~/.codex/config.toml` 开 `[features].hooks = true` 并在 `/hooks` TUI 批准。项目里改不了，只能预检提醒** |
+| **以为 Codex 要给五个阶段各写一份 `-inline` 块** | **`resolve_breadcrumb_key()` 只在 `dispatch_mode: inline` 时查 `-inline` 标签，默认 `auto` 查普通标签。写 10 个块是为非默认模式付双倍维护费** |
+| **以为子代理拿当前票必须改 `inject-subagent-context.py`** | **它已经读 `implement.jsonl`，A1 的 `claim` 往里写一行即可。三平台同时成立，省两个 1174 行文件的永久冲突点** |
+| **以为 Codex 删 `trellis-brainstorm` 只影响 Codex** | **`.agents/skills/` 是 Codex / Gemini CLI / Pi / Kimi Code / dsh 共读层，一删全删** |

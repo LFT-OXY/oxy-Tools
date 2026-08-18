@@ -1,6 +1,6 @@
 ---
 name: oxyteam-trellis-setup
-description: "在官方 Trellis 0.6.15 + Oh My Pi 项目中安装 Oxyteam Overlay：五阶段工作流、prd.md/issues/ 任务模型、票解析脚本、远程 Issue 单向同步、Context 注入适配，并记录可追溯的应用基线。"
+description: "在官方 Trellis 0.6.15 项目（Oh My Pi / Claude Code / Codex）中安装 Oxyteam Overlay：五阶段工作流、prd.md/issues/ 任务模型、票解析脚本、远程 Issue 单向同步、Context 注入适配，并记录可追溯的应用基线。"
 disable-model-invocation: true
 ---
 
@@ -29,9 +29,9 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.3.0`
+- Overlay 版本：`v0.4.0`
 - Trellis：`0.6.15`
-- Agent 平台：Oh My Pi
+- Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
 - 团队 Skill 前缀：`oxyteam-`
 - **Team Skill Pack：`>= v0.3.0`**（D 组的 5 项改动在这个版本落地，缺了 Overlay 装完也不工作）
@@ -71,13 +71,15 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 
 1. 当前目录是 Git 仓库；
 2. `.trellis/.version` 精确为 `0.6.15`；
-3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 和 `.omp/extensions/trellis/index.ts` 存在；
-4. `.omp/commands/trellis-continue.md`、`trellis-finish-work.md` 和三个 `.omp/agents/trellis-*.md` 存在；
-5. `skills-lock.json` 存在，全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；
-6. 没有原始上游工程 Skill 与团队版并存（名单见 `update-policy.md`）；
-7. 读 `.trellis/.oxyteam-overlay.json`：不存在即首次安装；存在则按 `update-policy.md` 的基线判定逐文件分类；
-8. 读 `.trellis/config.yaml` 的 `hooks:` 段，列出已启用的 Lifecycle Hook；
-9. 对 `changeset.md` 里每个目标路径计算当前 hash，与官方模板 hash 比对，产出「未改 / 已是目标形态 / 存在本地漂移」三分类。
+3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
+4. **判定装了哪些平台**：`.omp/` / `.claude/` / `.codex/`。至少一个，且每个都要对齐 `changeset.md`「平台落点对照」表里的入口文件（OMP 的 `extensions/trellis/index.ts`、Claude 的 `hooks/` 三件套、Codex 的 `hooks.json` + `.agents/skills/`）；发现表外的平台（Cursor、Gemini 等）就停下来说明本版不支持，不按相近结构猜；
+5. **Codex 专项**（装了才查）：`.trellis/config.yaml` 的 `codex.dispatch_mode` 是 `inline` → **硬停**；用户级 `~/.codex/config.toml` 没开 `[features].hooks` → 提示用户去开并在 `/hooks` 批准，否则装完不注入；
+6. **`.agents/skills/` 波及面**（装了 Codex 才查）：列出项目里还装了哪些共读这一层的平台（Gemini CLI / Pi / Kimi Code / dsh），C 组删除对它们同样生效，必须写进计划；
+7. `skills-lock.json` 存在，全部 `oxyteam-*` Skills 来自 `LFT-OXY/oxy-Tools`；
+8. 没有原始上游工程 Skill 与团队版并存（名单见 `update-policy.md`）；
+9. 读 `.trellis/.oxyteam-overlay.json`：不存在即首次安装；存在则按 `update-policy.md` 的基线判定逐文件分类，并比对**已装平台清单**——记账里没有、磁盘上有的平台，走增量补装（只跑该平台的 P 组和 C 组，不重跑共享层）；
+10. 读 `.trellis/config.yaml` 的 `hooks:` 段，列出已启用的 Lifecycle Hook；
+11. 对 `changeset.md` 里每个目标路径计算当前 hash，与官方模板 hash 比对，产出「未改 / 已是目标形态 / 存在本地漂移」三分类。官方模板不要手抄路径，用 `collectPlatformTemplates(<platformId>)` 实跑导出（`claude-code` 52 / `codex` 54 / `omp` 49，数字对不上说明版本或安装范围有出入）。
 
 任何检查失败时停止，不尝试修复缺失的官方 Trellis 文件。
 
@@ -87,7 +89,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 
 写入前列出：
 
-- 将新建、修改、删除的确切路径（直接引用 `changeset.md` 的条目编号）；
+- 将新建、修改、删除的确切路径（直接引用 `changeset.md` 的条目编号），**按共享层 / 每个平台分组列出**；
 - 每个文件的行为变化；
 - 需要**撤销**的历史修改（旧版 Overlay 改过、本版要求恢复官方原样的文件）；
 - 检测到的本地漂移与旧任务冲突；
@@ -101,9 +103,10 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 确认后按 `changeset.md` 的分组顺序执行：
 
 ```text
-A 组  新建自有文件        3 个，0 冲突
-B 组  修改官方文件       13 个
-C 组  删除官方入口        6 个
+A 组  新建自有文件        3 个，0 冲突，与平台数无关
+B 组  修改官方 · 共享层    5 个，改一次所有平台生效
+P 组  修改官方 · 平台层    每个已装平台 8~9 个（OMP 8 / Claude 9 / Codex 9）
+C 组  删除官方 · 平台层    每个已装平台 6 个
 D 组  Team Skill 与 init 模板  不在此执行，随 Skill Pack 发布，预检只验版本
 E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 ```
@@ -111,9 +114,13 @@ E 组  撤销历史修改        仅当预检发现旧版 Overlay 痕迹
 应用要求：
 
 - 先在临时目录生成全部结果，静态校验通过后再落盘，避免半途失败留下混合状态；
+- **A1 从本 Skill 的 `scripts/oxyteam_tickets.py` 原样拷贝，不要即兴实现**；落盘后立刻跑 `python3 .trellis/scripts/oxyteam_tickets.py selfcheck`，不通过就回滚；
 - 不保留兼容别名，不保留两套并行路由；
+- **P / C 组只对已装平台执行**，不给没装的平台预建目录；
+- P1 的 `inject-workflow-state.py` 补丁在 Claude 和 Codex 是同一份（官方模板字节相同），写一份应用两次；
+- 重写 `.codex/agents/trellis-implement.toml` 时保留用户钉的 `model` / `model_reasoning_effort`；
 - 遇到旧任务或未知用户修改时按 `update-policy.md` 停止，不静默覆盖；
-- 落盘后立刻写 `.trellis/.oxyteam-overlay.json` 记账（格式见 `update-policy.md`）。
+- 落盘后立刻写 `.trellis/.oxyteam-overlay.json` 记账，**`files` 带平台维度**（格式见 `update-policy.md`）。
 
 ### 4.5 交给 `oxyteam-init`
 
@@ -130,11 +137,11 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 3. `oxyteam-spec` 把 Spec 正文写进 `<task>/prd.md`（覆盖官方骨架）；
 4. `oxyteam-tickets` 把票写进 `<task>/issues/NN-*.md`，且带 `Impl:` 与 `Issue:` 两个字段；
 5. `python3 .trellis/scripts/oxyteam_tickets.py frontier` 能算出正确的可开工票，环引用与不存在的 Blocker 会校验失败；
-6. OMP 每个新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；
-7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；
+6. **每个已装平台各验一次**：新用户输入注入 `meta.flow_stage` 对应的 `[workflow-state:*]` 块，切票后当前票随之刷新；新会话的启动提示不再指向 `trellis-brainstorm` 或 `design.md` / `implement.md`；
+7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；**当前票是通过 `<task>/implement.jsonl` 送达子代理的，这条必须实测**——它是「不改 `inject-subagent-context.py`」的全部依据；
 8. 归档门禁拦得住「还有票不是 `Impl: done`」的任务；
-9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用；
-10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组，不多不少。
+9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
+10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，不多不少。
 
 **第 10 条是 Overlay 是否可维护的唯一硬指标。** 曾经出现过 `dry-run` 报 12 个而实际改了 13 个的情况（`linear_sync.py` 被三轮审计漏掉），所以比对必须以 `.trellis/.oxyteam-overlay.json` 的记账为准，而不是以 `dry-run` 输出为准。
 
@@ -152,16 +159,25 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 .trellis/scripts/oxyteam_tickets.py   新建
 .trellis/scripts/hooks/github_sync.py 新建
 .trellis/.oxyteam-overlay.json        新建，Installer 记账
-.omp/commands/**
-.omp/extensions/trellis/**
-.omp/agents/trellis-implement.md
-.omp/skills/trellis-channel/references/**
-.omp/skills/trellis-meta/SKILL.md
 AGENTS.md
 docs/agents/issue-tracker.md
+
+以下按已装平台展开（落点见 changeset.md 的 P 组表）：
+  OMP     .omp/commands/**
+          .omp/extensions/trellis/**
+          .omp/agents/trellis-implement.md
+          .omp/skills/trellis-{channel/references,meta}/**
+  Claude  .claude/hooks/{session-start,inject-workflow-state}.py
+          .claude/commands/trellis/**
+          .claude/agents/trellis-implement.md
+          .claude/skills/trellis-{channel/references,meta}/**
+  Codex   .codex/hooks/inject-workflow-state.py
+          .codex/agents/trellis-implement.toml
+          .agents/skills/trellis-{start,continue,finish-work}/SKILL.md
+          .agents/skills/trellis-{channel/references,meta}/**
 ```
 
-可以删除：仅限 `changeset.md` C 组列出的 6 个路径，删除前必须逐条出现在应用计划里。
+可以删除：仅限 `changeset.md` C 组的 6 个角色在**已装平台**上的落点，删除前必须逐条出现在应用计划里。
 
 **禁止修改**（改了就是在重走已证伪的死路）：
 
@@ -180,6 +196,10 @@ node_modules/@mindfoldhq/trellis*/**
 .trellis/scripts/get_context.py
 .trellis/spec/**
 未启用平台的配置目录
+<平台>/hooks/inject-subagent-context.py   ← 当前票走 implement.jsonl，不改
+.codex/hooks/session-start.py            ← 死文件，hooks.json 没注册它，改它是白改
+.codex/hooks.json / .codex/config.toml
+.claude/settings.json
 ```
 
 五个官方 Python 一个字不动，是本版相对旧版省下的最大一块成本。需要解析票、算 Frontier 时新建 `oxyteam_tickets.py`，不要往官方 Python 里塞函数。

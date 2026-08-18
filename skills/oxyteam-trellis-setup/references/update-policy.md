@@ -43,11 +43,13 @@ oxyteam-research/SKILL.md               spawn 前定路径
 
 1. 当前目录是 Git 仓库；
 2. `.trellis/.version` 精确为 `0.6.15`；
-3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/`、`.omp/extensions/trellis/index.ts` 存在；
-4. `skills-lock.json` 中团队 Skills 来源一致，且 `oxyteam-init` / `oxyteam-tickets` / `oxyteam-code-review` / `oxyteam-research` 四个的 ref 都 `>= v0.3.0`；
-5. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存；
-6. `changeset.md` 每个目标路径的当前状态已分类（见下）；
-7. `.trellis/config.yaml` 的活动 Lifecycle Hook 已列出。
+3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
+4. **已装平台已判定**（`.omp/` / `.claude/` / `.codex/`，至少一个），每个都对得上 `changeset.md`「平台落点对照」表的入口文件；表外的平台直接停；
+5. **Codex 专项**（装了才查）：`codex.dispatch_mode` 不是 `inline`（是就硬停）；用户级 `~/.codex/config.toml` 的 `[features].hooks` 已开（没开就提示用户去开，否则装完不注入）；
+6. `skills-lock.json` 中团队 Skills 来源一致，且 `oxyteam-init` / `oxyteam-tickets` / `oxyteam-code-review` / `oxyteam-research` 四个的 ref 都 `>= v0.3.0`；
+7. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存；
+8. `changeset.md` 每个目标路径的当前状态已分类（见下），按共享层 / 每个已装平台分组；
+9. `.trellis/config.yaml` 的活动 Lifecycle Hook 已列出。
 
 Overlay 安装本身是任务控制面的引导过程，不创建 Trellis Task，也不运行 `task.py create` / `task.py start`。当前工作流状态中关于旧规划 Artifact 的要求在本次安装中跳过；写入确认规则仍然有效。
 
@@ -80,13 +82,15 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.3.0",
+  "overlay_version": "v0.4.0",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
+  "platforms": ["omp", "claude-code", "codex"],
   "files": {
     "<path>": {
       "action": "modify | delete | create",
+      "layer": "shared | <platformId>",
       "upstream_hash": "<应用时官方模板的 hash>",
       "applied_hash": "<应用完成后本地文件的 hash>"
     }
@@ -95,6 +99,8 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 ```
 
 `action: "delete"` 的条目只有 `upstream_hash`，没有 `applied_hash`——这是 **tombstone**。它的作用是让上游以后重命名旧 Skill、或在已删目录里新增文件时，Installer 还能正确识别。
+
+`platforms` 和 `layer` 是本版新增的，**没有它们就分不清「这个路径没改过」和「这个平台还没装」**。用户后来跑 `trellis init --claude` 会装进一整套官方文件，Installer 要能只对新平台补跑 P 组和 C 组，不重跑共享层——**平台是可以事后加的，只有一次性全量 apply 不够用。**
 
 ### 五值判定模型
 
@@ -187,13 +193,28 @@ $(npm root -g)/@mindfoldhq/trellis/dist/templates/
   trellis/config.yaml
   trellis/scripts/**
   trellis/agents/{implement,check}.md
-  common/commands/{continue,finish-work,start}.md   → .omp/commands/trellis-*.md
-  common/skills/*.md                                 → .omp/skills/trellis-*/SKILL.md
-  common/bundled-skills/**                           → .omp/skills/**
+  shared-hooks/*.py                                  → .claude/hooks/、.codex/hooks/
+  common/commands/{continue,finish-work}.md          → .omp/commands/trellis-*.md
+                                                       .claude/commands/trellis/*.md
+                                                       .agents/skills/trellis-*/SKILL.md（Codex）
+  common/commands/start.md                           → .agents/skills/trellis-start/SKILL.md（仅 Codex）
+  common/skills/*.md                                 → <平台>/skills/trellis-*/SKILL.md
+  common/bundled-skills/**                           → <平台>/skills/**
   omp/agents/trellis-*.md
   omp/extensions/trellis/index.ts.txt                ← 是 .txt，find -name '*.ts' 找不到
+  claude/agents/trellis-*.md、claude/settings.json
+  codex/agents/trellis-*.toml、codex/hooks/session-start.py、codex/hooks.json
 ```
 
 **永远从这里读官方原版，不要拿项目里被改写过的文件反推官方契约。** 项目 `workflow.md` 179 行，官方模板 709 行——差了 4 倍。
 
-OMP 平台只安装 `continue.md` 和 `finish-work.md` 两个 command，`start.md` 不落地。换平台时这条要重新核实。
+**逐平台清单不要手抄，用 `collectPlatformTemplates(<platformId>)` 实跑导出**：`omp` 49 个、`claude-code` 52 个、`codex` 54 个。数字对不上说明 Trellis 版本或安装范围有出入，停下来查清楚再动。
+
+各平台命令层的差异（已实测）：
+
+```text
+OMP     只装 continue.md + finish-work.md 两个 command，start.md 不落地（有 Extension）
+Claude  同上，落在 .claude/commands/trellis/ 下（有 hooks）
+Codex   没有命令层，三个全部当 skill 落进 .agents/skills/，含 start——
+        它是 Codex 的会话引导入口，因为 Codex 拿不到完整的 SessionStart 概览
+```

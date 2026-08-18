@@ -23,7 +23,19 @@ Session Identity、Trusted Roots、Manifest Context、压缩后重注入这些�
 .trellis/scripts/get_context.py              不改
 ```
 
-旧版改过前两个，本版从头不碰。所有 Overlay 需要的行为差异都能在 `index.ts` 这一个文件里做完——这是「改一个文件」和「改三个文件」的差别，按定价表就是每次 `trellis update` 少付两次冲突。
+旧版改过前两个，本版从头不碰。所有 Overlay 需要的行为差异都在各平台自己的注入层里做完，`.trellis/` 下的官方 Python 一个字不动——按定价表这是省下的最大一块。
+
+## 注入层在三个平台不是同一个东西
+
+```text
+OMP          .omp/extensions/trellis/index.ts            1 个 TS 文件包了全部
+Claude Code  .claude/hooks/inject-workflow-state.py      每轮
+             .claude/hooks/session-start.py              会话启动
+Codex        .codex/hooks/inject-workflow-state.py       每轮
+             .agents/skills/trellis-start/SKILL.md       会话引导
+```
+
+下面按 OMP 的 `index.ts` 描述改法，**Claude / Codex 的等价改点见每节末尾的「Python 侧」小注**，落点编号见 `changeset.md` 的 P 组表。
 
 ## `.omp/extensions/trellis/index.ts` 要改三处
 
@@ -40,6 +52,8 @@ Session Identity、Trusted Roots、Manifest Context、压缩后重注入这些�
 
 `status` 返回值直接被 `TurnContextCache` 拿去匹配 `[workflow-state:X]` 块，所以枚举值必须和 `.trellis/workflow.md` 里的块名逐字对应。
 
+> **Python 侧（Claude / Codex）**：同一处改动在 `inject-workflow-state.py:179` 的 `status = data.get("status", "")`。两个平台的这个文件是**字节相同的官方模板**，补丁写一份、应用两次。
+
 ### ② `buildTaskContext()` 注入当前票
 
 `buildTaskContext()` 现在始终读 `prd.md` 和 `info.md`，再按 `agentType` 决定读哪些 jsonl。改动只是加一段：
@@ -54,7 +68,15 @@ issues/ 不存在时跳过（单会话任务的正常状态）
 
 `info.md` 是官方一直在读的另一个文件，本 Overlay 不产生它，也不用管。
 
-### ③ 每个新用户输入建一次快照
+> **Python 侧（Claude / Codex）**：主会话的当前票注入同样在 `inject-workflow-state.py` 里加。
+>
+> **子代理侧三个平台都不改注入代码**——`inject-subagent-context.py`（1174 行，Claude 和 Codex 各一份）已经读 `implement.jsonl`，让 `oxyteam_tickets.py claim` 把当前票路径写进 `<task>/implement.jsonl` 即可，切票时换掉那一行。OMP 的 `index.ts:303` 也读同一个文件，所以这一个机制统一了三平台的「子代理怎么拿到当前票」，省下两个 1174 行文件的永久冲突点。
+>
+> **Claude / Codex 还各多一个 OMP 上不存在的必改项**：`session-start.py:482` 写着 "Load `trellis-brainstorm` and write `prd.md`"、`start.md:53-56` 指路四个已删 Skill。不改的话每个新会话都被指向不存在的 Skill。详见 `changeset.md` 的 P2 / P3。
+
+### ③ 每个新用户输入建一次快照（**只适用于 OMP**）
+
+> Claude Code 和 Codex 没有这个问题：`inject-workflow-state.py` 每次用户输入都是一个全新的 Python 进程，读完文件就退出，压根没有缓存可以过期。本节整节只对 OMP 的 `TurnContextCache` 有效。
 
 当前 `TurnContextCache` 的缓存键只有 `projectRoot + contextKey`，TTL 1500ms，`context` 事件在没发生压缩时走 fast path 不重新解析。**所以任务状态在同一会话里变了（切票、切阶段），Agent 可能还拿着旧的。**
 
@@ -119,9 +141,16 @@ CONTEXT.md / CONTEXT-MAP.md
 
 所有 Manifest 路径继续经过官方的仓库根目录和可信目录校验，不得绕过。
 
-## OMP Agent
+## 子 Agent 定义
 
-`.omp/agents/` 下只剩一个需要改：
+每个平台的 agent 目录下都只剩一个需要改：
+
+```text
+OMP          .omp/agents/trellis-implement.md
+Claude Code  .claude/agents/trellis-implement.md
+Codex        .codex/agents/trellis-implement.toml     ← TOML，且要保留用户钉的
+                                                        model / model_reasoning_effort
+```
 
 ### `trellis-implement`（改）
 

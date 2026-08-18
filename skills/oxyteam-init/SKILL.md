@@ -114,6 +114,18 @@ Then write the docs files using the seed templates in this skill folder as a sta
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
+**Keep every `##` heading verbatim from the template — do not translate them.** The prose under a heading may be written in whatever language the user works in, but the headings themselves are lookup keys that other skills match on literally:
+
+| Skill | Heading it looks for |
+|---|---|
+| `oxyteam-map` | `## Wayfinding operations` |
+| `oxyteam-tickets` | `## When a skill says "publish to the issue tracker"` |
+| `oxyteam-code-review` | `## When a skill says "publish to the issue tracker"` |
+
+A translated heading fails **silently**: `oxyteam-map` says "if no tracker has been provided, default to the local-markdown tracker", so it quietly falls back to writing under `.scratch/` instead of reporting an error. This has been observed in practice in a Chinese-language session, where all eight headings were translated.
+
+The same rule covers everything else other tooling matches literally: `[workflow-state:*]` tag names, `flow_stage` values, file names, command names, and skill names all stay in English.
+
 ### 5. Done
 
 Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.

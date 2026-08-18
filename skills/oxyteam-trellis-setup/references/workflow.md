@@ -159,6 +159,37 @@ Extension 侧的匹配规则：
 
 状态名只允许字母、数字、下划线和连字符。官方原有的 `planning` / `in_progress` / `completed` / `*-inline` 块在本 Overlay 中被五阶段块替换，不保留两套并行路由。
 
+### 块正文的措辞要求（两条，都是实测出来的）
+
+**① 提到 Team Skill 时写「提示用户运行 `/xxx`」，不写「运行 `xxx`」。**
+
+主干的 `oxyteam-spec` / `oxyteam-tickets` / `oxyteam-implement` / `oxyteam-map` / `oxyteam-askme` / `oxyteam-askme-with-docs` 全部带 `disable-model-invocation: true`。OMP 把它映射成 `hide: true`，再用 `filter((h) => h.hide !== true)` 把它们从**模型可见清单里整个过滤掉**——用户打 `/` 能补全，模型自己调不动。
+
+写成祈使句「运行 `oxyteam-spec`」会怎样：**实测模型绕过 Skill 机制，照着块正文的散文自己动手干。** 产出可能碰巧对（一次实测里 `prd.md` 的章节确实和模板对上了），但跳过了 Skill 内部的接缝检查和用户确认环节，且每次结果不可复现。
+
+```text
+✅ 提示用户运行 `/oxyteam-spec`，把权威 Spec 写入当前任务的 prd.md
+❌ 运行 `oxyteam-spec`，把权威 Spec 写入当前任务的 prd.md
+```
+
+**② 官方块里的条件分支必须保留，不能压缩成祈使句。**
+
+改写官方块时容易把「分情况判断」压成一句话，那会拿掉模型的判断锚点。`no_task` 是最典型的一个，官方原文（`templates/trellis/workflow.md:176-180`）是三句、二选一结构：
+
+```text
+No active task. First classify the current turn and ask for task-creation consent before creating any Trellis task.
+Simple conversation / small task: ask only whether this turn should create a Trellis task. If the user says no, skip Trellis for this session.
+Complex task: ask the user if you can create a Trellis task and enter the planning phase. If the user says no, explain, clarify scope, or suggest a smaller split.
+```
+
+三样东西一个都不能丢：**先分类**（简单对话 / 复杂任务）、**征求同意**、**用户拒绝后的两条出路**（本会话跳过 Trellis ／ 解释、澄清范围、建议拆小）。
+
+实测把它压缩成「先判断本轮是否需要 Trellis Task；写入任务前取得用户同意」之后，模型少了「这轮可能根本不该建任务」这个锚点，**倾向于一律建任务**——用户只想聊两句也会被建出一个任务目录来。
+
+Overlay 版可以换语言、可以改路由目标（`--meta flow_stage=discover`、不回退 `.scratch/`），但**结构分支照搬**。
+
+Claude Code 和 Codex 侧解析这些块的是 `inject-workflow-state.py`（正则等价），不是 Extension。**Codex 有个额外分支**：`resolve_breadcrumb_key()` 在 `dispatch_mode: inline` 时查的是 `<status>-inline` 标签。本 Overlay 只写 5 个普通块，所以 **Codex 必须留在默认的 `auto`**——预检硬拦 `inline`（见 `changeset.md`「Codex 的两个前置」）。查不到标签不报错，只会静默降级成 "Refer to workflow.md for current step."，路由失效且无提示。
+
 ## `.trellis/workflow.md` 转换要求
 
 1. 官方 Plan / Execute / Finish 三阶段换成团队五阶段；
@@ -167,7 +198,7 @@ Extension 侧的匹配规则：
 4. Continue 路由不再根据 `prd.md` / `design.md` / `implement.md` 是否存在作判断，改为按 `meta.flow_stage` + frontier；
 5. 不调用未安装的 `workflow-guide`；
 6. 不调用原始上游 Skill 名称，也不调用已删除的 `trellis-brainstorm` / `trellis-before-dev` / `trellis-check` / `trellis-break-loop`；
-7. 保留 Trellis 的平台标记语法，第一版只编写 OMP 分支；
+7. 保留 Trellis 的平台标记语法；`workflow.md` 是共享层，一份供 OMP / Claude Code / Codex 三个平台读，不为某个平台单写分支；
 8. 不修改 `.trellis/.template-hashes.json`。
 
 ## 硬限制与软限制

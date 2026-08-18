@@ -24,7 +24,11 @@
 └── sessions/
 ```
 
-创建任务时 `task.py create` 只生成 `task.json` 和官方骨架 `prd.md`。其他按需产生。
+创建任务时 `task.py create` 生成 `task.json`、官方骨架 `prd.md`，以及 `implement.jsonl` / `check.jsonl` 两个官方 seed manifest。`issues/`、`research/`、`sessions/` 按需产生。
+
+> **两个 jsonl 是官方无条件行为，不要当成异常。** `task_store.py:117` 把 `.omp` / `.claude` / `.codex` 等平台配置目录列为 "Config directories of platforms that consume implement.jsonl / check.jsonl"，`:398-408` 检测到任一目录存在就调 `_write_seed_jsonl` 写这两个文件。装了 OMP 就必然有它们。
+>
+> 验收「最小产物」时按这四个文件算，不是两个。报成「不符合契约」是**读文档读错了**，不是实现有问题。
 
 ## Spec 文件为什么仍然叫 `prd.md`
 
@@ -204,10 +208,14 @@ Frontier 票必须同时满足：
 ```text
 list        列出所有票 + Impl 状态
 frontier    算出「Impl: ready + Blocked by 全部 done」的票
-claim <NN>  校验它在 frontier 里，然后标记 Impl: doing
+claim <NN>  校验它在 frontier 里 → 标记 Impl: doing
+            → 记 implementation_base_sha
+            → 把该票路径写进 <task>/implement.jsonl（切票时换掉上一张的那行）
 done <NN>   标记 Impl: done
 summary     汇总一行，给 workflow-state 用
 ```
+
+**`claim` 写 `implement.jsonl` 这一步不能省。** 它是子代理拿到当前票的唯一通路，也是「三个平台都不改 `inject-subagent-context.py`」的全部依据（见 `context-loading.md`）。省了它，Claude 和 Codex 的 implement 子代理会在完全不知道要做哪张票的情况下开工。
 
 硬校验（代码直接拒绝）：
 
