@@ -12,6 +12,53 @@
 
 ---
 
+## B2 `AGENTS.md` —— 追加在 managed block **外面**
+
+**不要改 `<!-- TRELLIS:START -->` 和 `<!-- TRELLIS:END -->` 之间的内容。** 那一段官方
+自己写着「edits inside may be overwritten by a future `trellis update`」——改进去等于
+每次升级重付一次。
+
+实跑确认过官方的实现（`commands/update.js`）：
+
+```text
+buildAgentsMdTemplate()  读磁盘上的 AGENTS.md
+  → mergeManagedBlockContent() 只替换 START..END 之间，slice 保留前后
+  → 产出的「期望内容」也包含 block 外的东西
+  → hash 比对一致，不报 "modified by you"
+```
+
+所以追加在 `<!-- TRELLIS:END -->` **之后**是零冲突的，`trellis update` 一次都不用重改。
+
+找（文件末尾那一行，逐字）：
+
+```markdown
+<!-- TRELLIS:END -->
+```
+
+在它**之后**追加（前面留一个空行）：
+
+```markdown
+
+## Oxyteam Overlay
+
+本项目在 Trellis 之上应用了 Oxyteam Overlay，任务目录里的文件含义与原版不同：
+
+- `.trellis/tasks/<任务>/prd.md` —— **Oxyteam Spec 正文**，不是简版 PRD。由 `/oxyteam-spec` 整篇写入
+- `.trellis/tasks/<任务>/issues/NN-*.md` —— **实施票**，由 `/oxyteam-tickets` 拆出。
+  `**Impl:** ready|doing|done` 驱动实施路由，`python3 .trellis/scripts/oxyteam_tickets.py frontier` 算可开工的票
+- `.trellis/spec/` —— **编码规范与代码审查 Standards 的唯一来源**。写代码前读对应层，
+  `/oxyteam-code-review` 也以它为准
+- `design.md` / `implement.md` —— **本版不再产生**，既不要读也不要新建
+
+阶段由 `task.json` 的 `meta.flow_stage` 决定（`discover|specify|slice|implement|finish`），
+不要凭任务目录里有没有某个文件来判断当前进度。完整流程见 `.trellis/workflow.md`。
+```
+
+> **落在 block 外面，所以这一段归你所有**，`trellis update` 不会碰。反过来说，
+> 官方以后往 block 里加的内容也不会自动跟这段对齐——两边说法冲突时以这段为准。
+
+---
+
 ## B3 `.trellis/config.yaml` —— 启用 github_sync Hook
 
 官方那段整块是注释状态。把下面这段注释块**整段替换**成启用版：
@@ -275,11 +322,15 @@ index.ts:388  TRELLIS_AGENTS 里留着 trellis-check / trellis-research —— a
 ## 现成件覆盖情况
 
 ```text
-scripts/          A1 A2 A3   拷贝即可，落盘后各跑一次 selfcheck
-templates/        B1 B4 B5   共享层整篇替换
-                  P3 P4 P5 P6  平台层整篇替换（路径镜像落点）
-本文件的锚点表     B3 P1 P2 P7 P8 P9 P10
+scripts/          A1 A2 A3      拷贝即可，落盘后各跑一次 selfcheck
+templates/        B1 B4 B5      共享层整篇替换
+                  P3 P4 P5 P6   平台层整篇替换（路径镜像落点）
+本文件的锚点表     B2 B3         共享层只改几处
+                  P1 P2 P7 P8 P9 P10   平台层只改几处
 ```
+
+C 组是删除、E 组是恢复官方原样，都不需要现成件 —— 路径清单在 `changeset.md`，
+内容从官方模板目录直接拷。D 组不在本 Skill 执行。
 
 `A3` 的记账由 `scripts/write_overlay_state.py` 生成，不要手写 JSON、手算 hash：
 

@@ -160,7 +160,11 @@ Overlay 落盘后**必须提示用户运行 `oxyteam-init`**，选 **Trellis** �
 7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；**当前票是通过 `<task>/implement.jsonl` 送达子代理的，这条必须实测**——它是「不改 `inject-subagent-context.py`」的全部依据；
 8. 归档门禁拦得住「还有票不是 `Impl: done`」的任务；
 9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
-10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，不多不少。
+10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，**减去 B2**——不多不少。
+
+    **B2 不该出现在这个集合里。** `AGENTS.md` 的改动落在 managed block 外面，官方
+    `mergeManagedBlockContent()` 算「期望内容」时会把 block 外的内容原样带上，hash 因此一致。
+    B2 一旦出现在 dry-run 里，说明有人把它写进 block 内了，回去按 `edits.md` 改。
 
 11. `python3 .trellis/scripts/write_overlay_state.py verify` 通过 —— 记账里每个路径都对得上现场，
     tombstone 路径没有被 `trellis update` 装回来。

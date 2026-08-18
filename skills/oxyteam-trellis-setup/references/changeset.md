@@ -98,12 +98,12 @@ A2 同样是拷贝，落盘后跑 `python3 .trellis/scripts/hooks/github_sync.py
 | # | 路径 | 改什么 |
 |---|---|---|
 | B1 | `.trellis/workflow.md` | **拷 `templates/trellis/workflow.md`，整篇替换。** 拷完跑 `python3 .trellis/scripts/verify_workflow.py`，不通过就回滚 |
-| B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源 |
+| B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源。**追加在 managed block 外面，逐字改法见 `edits.md`** |
 | B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `after_create` / `after_archive`。**逐字改法见 `edits.md`** |
 | B4 | `.trellis/agents/implement.md` | **拷 `templates/trellis/agents/implement.md`，整篇替换。** channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
 | B5 | `.trellis/agents/check.md` | **拷 `templates/trellis/agents/check.md`，整篇替换。** 读取列表同上；审查方法改成提示用户运行 `/oxyteam-code-review`，**去掉 self-fix** |
 
-> **B2 的永久成本**：`AGENTS.md` 的 managed block 自己写着 "edits inside may be overwritten by a future `trellis update`"。每次升级后都要重改一次，必须进 Installer 的固定检查项。
+> **B2 没有永久成本 —— 前提是写在 block 外面。** managed block 自己写着 "edits inside may be overwritten by a future `trellis update`"，但 `commands/update.js` 的 `mergeManagedBlockContent()` 只替换 `START..END` 之间，slice 保留前后，产出的「期望内容」也含 block 外的东西，hash 比对因此一致。**追加在 `<!-- TRELLIS:END -->` 之后，零冲突、零重付**；改进 block 里才是每次升级重付一次。逐字改法见 `edits.md`。
 
 > `.trellis/agents/implement.md` 原文就写着「读 `.trellis/spec/` 项目规范（只加载与本次 diff 相关的）」——这正是把 `trellis-before-dev` 的能力并进 implement 前置的做法，照抄即可，不用新设计。
 
