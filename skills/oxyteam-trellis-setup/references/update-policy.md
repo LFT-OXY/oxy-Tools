@@ -2,15 +2,15 @@
 
 ## 支持矩阵
 
-第一版只支持：
+本版支持：
 
 - Trellis `0.6.15`；
-- Oh My Pi；
+- Agent 平台：Oh My Pi / Claude Code / Codex（装了哪几个就对哪几个执行平台层）；
 - 团队 Skill 来源 `LFT-OXY/oxy-Tools`；
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.4.0`**（与 `SKILL.md` 的「支持范围」和 `write_overlay_state.py`
+本 Overlay 自身版本：**`v0.4.1`**（与 `SKILL.md` 的「支持范围」和 `write_overlay_state.py`
 的 `--overlay-version` 默认值三处必须一致，改一处三处都要改）。
 
 `oxyteam-trellis-setup` 允许钉在与基础 Skill Pack 不同的标签上——`skills-lock.json` 是逐 Skill 记 `ref` 的，仓库级标签线本来就支撑得住，**不需要单独的 Overlay 标签命名空间**。Setup 标签与基础 Skill Pack 标签不同**不是**混装；预检报告必须分别列出两个版本。
@@ -63,7 +63,7 @@ oxyteam-research/SKILL.md               spawn 子代理前先定路径
 2. `.trellis/.version` 精确为 `0.6.15`；
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
 4. **已装平台已判定**（`.omp/` / `.claude/` / `.codex/`，至少一个），每个都对得上 `changeset.md`「平台落点对照」表的入口文件；表外的平台直接停；
-5. **Codex 专项**（装了才查）：`codex.dispatch_mode` 不是 `inline`（是就硬停）；用户级 `~/.codex/config.toml` 的 `[features].hooks` 已开（没开就提示用户去开，否则装完不注入）；
+5. **Codex 专项**（装了才查）：`codex.dispatch_mode` 不是 `inline`（是就硬停）；hooks 开关按 `codex --version` 分支且只提示不硬停——0.147 实测不再需要 `[features].hooks`，改提示项目要在 `~/.codex/config.toml` 的 `[projects]` 里 `trust_level = "trusted"`（详见 `changeset.md`）；
 6. `skills-lock.json` 中团队 Skills 来源一致（**只验 `source`，锁文件没有 `ref` 字段**），D 组五项按上面的内容清单逐条命中；
 7. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存；
 8. `changeset.md` 每个目标路径的当前状态已分类（见下），按共享层 / 每个已装平台分组；
@@ -100,7 +100,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.4.0",
+  "overlay_version": "v0.4.1",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
