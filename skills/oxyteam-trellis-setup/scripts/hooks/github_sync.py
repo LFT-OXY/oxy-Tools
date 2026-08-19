@@ -50,6 +50,9 @@ RE_ISSUE = field_pattern("Issue")
 
 # 「已经建过这条边」这类错误是幂等重跑的正常结果，不当失败
 ALREADY_EXISTS = ("already", "must be unique", "duplicate")
+# 没有 GitHub 远程不是故障，是「这个仓库不走镜像」。三个 cmd_* 据此优雅跳过，
+# 否则 Specify / Slice 的完成条件在纯本地仓库里永远满足不了，流程直接死锁。
+NO_REMOTE_HINTS = ("no git remotes found", "not a git repository")
 
 
 class SyncError(Exception):
@@ -125,6 +128,21 @@ def require_gh() -> str:
         raise SyncError("找不到 gh 命令。装一个 GitHub CLI，或者把这个 Hook 从 config.yaml 里去掉")
 
 
+def is_no_remote_error(msg: str) -> bool:
+    """区分「这仓库没有远程」和「gh 真的出错了」。"""
+    return any(h in msg.lower() for h in NO_REMOTE_HINTS)
+
+
+def remote_repo() -> str | None:
+    """有 GitHub 远程返回 owner/repo，纯本地仓库返回 None，其余照常抛错。"""
+    try:
+        return require_gh()
+    except SyncError as e:
+        if is_no_remote_error(str(e)):
+            return None
+        raise
+
+
 def issue_db_id(repo: str, number: str) -> str:
     """依赖边要的是 database id，不是 #number 也不是 node_id。"""
     return gh("api", f"repos/{repo}/issues/{number}", "--jq", ".id")
@@ -169,7 +187,10 @@ def cmd_create() -> None:
         print(f"已有远程 Issue #{source_ref(task)}，不重复创建")
         return
 
-    repo = require_gh()
+    repo = remote_repo()
+    if repo is None:
+        print("本仓库没有 GitHub 远程，跳过 Issue 创建")
+        return
     title = task.get("title") or task.get("id") or task_dir.name
     # 建任务时 prd.md 还是官方骨架，推上去是噪声。先占位，等 sync-spec 推正文。
     url = gh("issue", "create", "--repo", repo, "--title", str(title),
@@ -185,6 +206,9 @@ def cmd_sync_spec() -> None:
     task, _, task_dir = read_task()
     number = source_ref(task)
     if not number:
+        if remote_repo() is None:
+            print("本仓库没有 GitHub 远程，跳过 Spec 同步")
+            return
         raise SyncError("meta.source_ref 是空的。先跑 create，或者手工填上已有的 Issue 号")
 
     prd = task_dir / "prd.md"
@@ -200,6 +224,9 @@ def cmd_sync_tickets() -> None:
     task, _, task_dir = read_task()
     parent = source_ref(task)
     if not parent:
+        if remote_repo() is None:
+            print("本仓库没有 GitHub 远程，跳过票同步")
+            return
         raise SyncError("meta.source_ref 是空的。先跑 create")
 
     tickets = load_tickets(task_dir / "issues")
@@ -311,6 +338,12 @@ def cmd_selfcheck() -> None:
             pass
         else:
             raise AssertionError("缺 **Issue:** 字段本该报错")
+
+    # 无远程仓库要能和真故障区分开，否则纯本地项目会卡死在 Specify
+    assert is_no_remote_error("gh repo view 失败：no git remotes found")
+    assert is_no_remote_error("fatal: not a git repository")
+    assert not is_no_remote_error("gh issue create 失败：HTTP 403 权限不足")
+    assert not is_no_remote_error("找不到 gh 命令")
 
     print("selfcheck 通过")
 

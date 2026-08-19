@@ -98,7 +98,7 @@ Map 不是单独的任务类型，是 Discover 的长驻模式：已有 Map 材�
 答案得跑起来才知道，提示 `/oxyteam-prototype`。通往目的地的路本身看不清（要先定一串决策才知道做什么），提示 `/oxyteam-map` —— 只是量大而路清楚的不要用 map，往下走到 Slice 切票。
 用户明确要一份带引用的调研文件时才提示 `/oxyteam-research`（结果写 `<task>/research/`）；一般的环境事实 interview 会自己派子代理查，不用提示。
 已有 Map 材料就继续 work the map，不要重开一轮探索。
-问清楚了执行 `task.py set-meta <task-dir> flow_stage specify`。
+问清楚了执行 `task.py set-meta <task-dir> flow_stage specify` —— 改完挡位这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里继续往下做。
 [/workflow-state:discover]
 
 #### 1.2 Specify
@@ -125,10 +125,11 @@ TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sy
 阶段 Specify：Spec 由 `/oxyteam-spec` 产出，不由你凭空写。
 用户还没调起它：停下来提示用户运行 `/oxyteam-spec`，然后等。不要自己动手写 `prd.md`，不要照本段散文编一份 Spec 出来。
 用户调起了 `/oxyteam-spec`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文走完流程，把 Spec 写进 `<task>/prd.md` —— 这时候写 `prd.md` 正是你该做的，上一句的禁令到此为止。
-Spec 落地之后再做三件事：
+Spec 落地之后再做四件事：
 ① 确认 `prd.md` 在任务目录里（不是 `.scratch/`）、验收条件可观察、测试 Seam 已确认；
-② 执行远程同步 `TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec` —— 报错就停下来告诉用户，不要跳过；
-③ 一个会话内做得完就 `set-meta flow_stage implement`；做不完先走 Slice。
+② 执行远程同步 `TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec` —— 报错就停下来告诉用户，不要跳过（本仓库没有 GitHub 远程时它自己会打印跳过并正常返回，那不是报错）；
+③ **把 Spec 摘要报给用户，停下来等确认。用户认可之前不要切挡位，更不要开始写实现代码。** 这一步不能省：Spec 对不对是用户的判断，不是你的。
+④ 用户确认后，一个会话内做得完就 `set-meta flow_stage implement`，做不完先走 Slice —— 改完挡位这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里继续往下做。
 [/workflow-state:specify]
 
 #### 1.3 Slice（可选）
@@ -150,8 +151,8 @@ Spec 落地之后再做三件事：
 用户还没调起它：停下来提示用户运行 `/oxyteam-tickets`，然后等。不要自己动手写 `issues/NN-*.md`。
 用户调起了 `/oxyteam-tickets`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文把票写进 `<task>/issues/NN-*.md` —— 这时候写票正是你该做的，上一句的禁令到此为止。
 票落地之后：校验 `python3 .trellis/scripts/oxyteam_tickets.py frontier` —— 无环、无悬空 Blocker，且至少返回一张票。
-远程同步 `github_sync.py sync-tickets`，票文件回填 `**Issue:**`。
-用户确认拆分后 `set-meta flow_stage implement`。
+远程同步 `github_sync.py sync-tickets`，票文件回填 `**Issue:**`（本仓库没有 GitHub 远程时它自己会打印跳过并正常返回）。
+用户确认拆分后 `set-meta flow_stage implement` —— 改完挡位这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里继续往下做。
 [/workflow-state:slice]
 
 #### 1.4 Activate
@@ -197,12 +198,12 @@ oxyteam_tickets.py done <NN>     → Impl: done，回 frontier 挑下一张
 
 [workflow-state:implement]
 阶段 Implement：先看有没有票 —— `ls <task>/issues/`。
-没有 `issues/` 目录：这是单会话任务，直接照 `prd.md` 干，不要跑 frontier / claim / done，做完 `set-meta flow_stage finish`。
+没有 `issues/` 目录：这是单会话任务，直接照 `prd.md` 干，不要跑 frontier / claim / done，做完 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
 有票：票默认串行，一次只推进一张。
 挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing`、`implementation_base_sha`，并把当前票写进 `implement.jsonl`）。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
 派 `trellis-implement` 子代理干活，派发提示词第一行写 `Active task: <task.py current 的路径>`。它是薄包装，内部调完整的 `oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。
 读取顺序：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → `implement.jsonl` → 真实源码。
-做完一张 `oxyteam_tickets.py done <NN>`，回 frontier 挑下一张。全部 done 后 `set-meta flow_stage finish`。
+做完一张 `oxyteam_tickets.py done <NN>`，回 frontier 挑下一张。全部 done 后 `set-meta flow_stage finish` —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**。
 [/workflow-state:implement]
 
 ## Phase 3: Finish

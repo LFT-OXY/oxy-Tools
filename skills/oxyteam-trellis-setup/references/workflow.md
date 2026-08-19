@@ -93,8 +93,11 @@ map 的工单本身也调这些 Skill：`interview` / `research` / `prototype` /
 - 验收条件可观察；
 - 测试 Seam 已确认；
 - **已执行远程同步**：`TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec`
+- **用户已确认 Spec**——摘要报给用户、等到认可之后才切挡位进 Implement。
 
 > 同步必须写成阶段完成条件，不能指望 Hook——Trellis 没有「prd.md 被写入」这个事件。
+>
+> 没有 GitHub 远程的仓库里 `sync-spec` / `sync-tickets` / `create` 会自己打印「跳过」并返回 0，不是报错。这是 v0.4.5 修的：在那之前无 remote → `create` 拿不到 repo → `meta.source_ref` 空 → `sync-spec` 抛 `SyncError` 退出 1，而块正文又要求「报错就停下来」，**纯本地仓库的 Specify 完成条件永远满足不了，流程直接死锁**。判据是 `is_no_remote_error()`（`no git remotes found` / `not a git repository`），权限错、`gh` 没装这些照旧抛错。
 
 ### Slice
 
@@ -108,7 +111,7 @@ map 的工单本身也调这些 Skill：`interview` / `research` / `prototype` /
 - Blocking Edges 已声明，`oxyteam_tickets.py` 校验通过（无环、无悬空引用）；
 - 用户已确认拆分；
 - `oxyteam_tickets.py frontier` 至少返回一张票；
-- **已执行远程同步**：`github_sync.py sync-tickets`，票文件回填 `**Issue:**`
+- **已执行远程同步**：`github_sync.py sync-tickets`，票文件回填 `**Issue:**`（无 GitHub 远程时自己跳过，见 Specify 下的说明）
 
 ### Implement
 
@@ -171,7 +174,7 @@ Extension 侧的匹配规则：
 
 状态名只允许字母、数字、下划线和连字符。官方原有的 `planning` / `in_progress` / `completed` / `*-inline` 块在本 Overlay 中被五阶段块替换，不保留两套并行路由。
 
-### 块正文的措辞要求（三条，都是实测出来的）
+### 块正文的措辞要求（五条，都是实测出来的）
 
 **① 提到 Team Skill 时写「提示用户运行 `/xxx`」，不写「运行 `xxx`」。**
 
@@ -233,6 +236,28 @@ Overlay 版可以换语言、可以改路由目标（`--meta flow_stage=discover
 `no_task` / `finish` 没有这个病：它们的解除条件是「用户同意」这种对话事件，模型判断得了，且后文明确写了确认之后该干什么。
 
 产出可能碰巧对（那次的 `prd.md`、`CONTEXT.md`、ADR、7 个测试都合理），但 Skill 内部的接缝检查和用户确认环节整个被跳过，且不可复现。归档尤其要停：不可逆，且「这活算干完了」是用户的验收判断。
+
+**④ 每处 `set-meta flow_stage` 后面都要写「改完挡位这一轮就结束」。**
+
+块是**每轮 `UserPromptSubmit` 按当前 `flow_stage` 注入一次**的，但模型能在一轮里跨越多个阶段——**挡位一改，下一阶段的规则要等下一轮才注入，这一轮它读不到。**
+
+v0.4.5 实测：Implement 干完后模型跑了
+
+```bash
+set-meta flow_stage finish && oxyteam_tickets.py summary && task.py archive
+```
+
+三条串在一个 `&&` 链里一次跑完。Finish 块里那句写死的「不要跑 `task.py archive`」**完全没起作用——它那一轮读到的是 Implement 块**，而 Implement 块的收尾正是「做完 `set-meta flow_stage finish`」。
+
+所以这类失效**不是措辞问题，加硬禁令也拦不住**：文字得出现在模型当轮能读到的块里。修法是把「改挡位」本身变成收轮点，四处 `set-meta flow_stage`（discover→specify、specify→implement、slice→implement、implement→finish）统一加上，并在风险最高的 implement 块把下一步的禁止动作直接点名（`task.py archive`）。
+
+同理，凡是「本阶段的最后一个动作」都要留意：模型倾向一口气做完，阶段边界必须显式写成停顿，否则它只是一个变量赋值。
+
+**⑤ Spec 落地后必须停下来让用户确认，再切挡位。**
+
+Spec 对不对是用户的判断。v0.4.5 之前 specify 块的收尾是「一个会话内做得完就 `set-meta flow_stage implement`」，模型写完 `prd.md` 直接就进实现了，用户没有插话的机会。加一步：把 Spec 摘要报给用户 → 等确认 → 才切挡位。
+
+（不走「用户手动调 `/oxyteam-implement`」那条路：`oxyteam-implement` 由 `trellis-implement` 子代理调用，用户直接调会绕过它的上下文装配——当前票、`.trellis/spec/` 对应层、`implementation_base_sha`。）
 
 ### Codex 侧实测到的三件事（v0.4.4 轮）
 

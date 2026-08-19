@@ -10,7 +10,7 @@
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.4.5`**（与 `SKILL.md` 的「支持范围」和 `write_overlay_state.py`
+本 Overlay 自身版本：**`v0.4.6`**（与 `SKILL.md` 的「支持范围」和 `write_overlay_state.py`
 的 `--overlay-version` 默认值三处必须一致，改一处三处都要改）。
 
 `oxyteam-trellis-setup` 允许钉在与基础 Skill Pack 不同的标签上——`skills-lock.json` 是逐 Skill 记 `ref` 的，仓库级标签线本来就支撑得住，**不需要单独的 Overlay 标签命名空间**。Setup 标签与基础 Skill Pack 标签不同**不是**混装；预检报告必须分别列出两个版本。
@@ -100,7 +100,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.4.5",
+  "overlay_version": "v0.4.6",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
