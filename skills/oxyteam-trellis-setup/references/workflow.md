@@ -147,6 +147,13 @@ N 次交互，换来的是 `oxyteam-code-review` 的两轴一定是一级子代�
 `claim` 仍然会往里写（脚本行为，无害），官方 `inject-subagent-context.py` 也仍然读它——
 哪天要派子代理，这条通路还在。
 
+**已知的恒定假发现（v0.4.9 实测，不修）**：`implement.jsonl` / `check.jsonl` 由官方
+`task.py create` 生成，占位行自带一句 `Delete this line once real entries are added`。
+单会话任务永远没有 real entries，占位行就永远删不掉，于是 `oxyteam-code-review` 的
+Spec 轴每一轮都把它当成「未按其自述清理」的验收缺口报一次。**这条要人工驳回**：修它
+得改官方 `task.py create` 或 `oxyteam-code-review`，两个都不在 Overlay 的改动面里，
+为一条噪音去动它们不划算。
+
 ### Finish
 
 Trellis Runtime 负责：归档 Task、写 Journal、Hook 同步 `gh issue close`。
@@ -260,6 +267,10 @@ set-meta flow_stage finish && oxyteam_tickets.py summary && task.py archive
 所以这类失效**不是措辞问题，加硬禁令也拦不住**：文字得出现在模型当轮能读到的块里。修法是把「改挡位」本身变成收轮点，四处 `set-meta flow_stage`（discover→specify、specify→implement、slice→implement、implement→finish）统一加上，并在风险最高的 implement 块把下一步的禁止动作直接点名（`task.py archive`）。
 
 同理，凡是「本阶段的最后一个动作」都要留意：模型倾向一口气做完，阶段边界必须显式写成停顿，否则它只是一个变量赋值。
+
+v0.4.9 实测补一条反向的：**收轮点写成了停顿，模型却把它读成了选择题。** implement 块结尾原文是「等它 commit 落地后再 `set-meta flow_stage finish`」，模型 commit 之后停下来问用户「下一步敲 `/trellis:finish-work` 归档，还是我先切 `flow_stage=finish`？」——还把会被门禁拦下的那个选项摆在了前面。它确实停了（条 ④ 的目标达成），但停错了地方：**该自己做的动作被拿去问用户，而下一轮该问用户的事被提前预告了。**
+
+「等……再……」这种时序连接词在模型眼里是软的，它读出了「时机」却没读出「必做」。改成「commit 一落地，你就自己跑 `set-meta flow_stage finish` —— 这是个动作不是选择题，别反过来问用户」。**判据：块里每个动词都要能回答「这件事该谁做」**，凡是主会话自己做的就写「你自己跑」，凡是要用户拍板的就写「停下来问」，两者之间没有第三档。
 
 **⑤ Spec 落地后必须停下来让用户确认，再切挡位。**
 

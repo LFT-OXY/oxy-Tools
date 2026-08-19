@@ -211,11 +211,11 @@ trellis-implement 子代理」），换来的只有主会话上下文干净。
 先看有没有票 —— `ls <task>/issues/`。
 没有 `issues/` 目录：这是单会话任务，不跑 frontier / claim / done。先记一次变更基线（有票时这步由 `claim` 代劳，单会话任务没人写，code-review 会没有 diff 起点）：
 `python3 .trellis/scripts/task.py set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`
-然后请用户跑 `/oxyteam-implement`，实现依据是 `prd.md`。等它 commit 落地后再 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
+然后请用户跑 `/oxyteam-implement`，实现依据是 `prd.md`。commit 一落地，你就自己跑 `set-meta flow_stage finish` —— 这是个动作不是选择题，别反过来问用户「切挡位还是直接归档」。改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive` 或 finish-work**。
 有票：票默认串行，一次只推进一张，**每张票请用户敲一次 `/oxyteam-implement`**。
 挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing` 和 `implementation_base_sha`）→ 请用户跑 `/oxyteam-implement` → 它 commit 之后回来 `oxyteam_tickets.py done <NN>` → 回 frontier 挑下一张。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
 请用户敲之前你自己先读一遍，好把依据交代清楚：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → 真实源码。
-全部 done 后 `set-meta flow_stage finish` —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**。
+全部 done 后自己跑 `set-meta flow_stage finish`，不用问用户 —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive` 或 finish-work**。
 [/workflow-state:implement]
 
 ## Phase 3: Finish

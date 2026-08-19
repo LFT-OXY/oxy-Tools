@@ -11,6 +11,7 @@
 
     snapshot   apply 之前跑：记 upstream_hash，产出半成品
     finalize   apply 之后跑：补 applied_hash 和元数据
+    bless      升级已装项目：重拷模板后重新盖章，带 --overlay-version 时顺带升版本号
     verify     任何时候跑：重算 hash 跟记账比对，报漂移
     selfcheck  内置断言，不碰真实仓库
 
@@ -37,6 +38,7 @@ from pathlib import Path
 STATE_PATH = Path(".trellis/.oxyteam-overlay.json")
 ACTIONS = ("create", "modify", "delete")
 LAYERS = ("shared", "omp", "claude-code", "codex")
+OVERLAY_VERSION = "v0.4.10"
 
 
 def digest(path: Path) -> str | None:
@@ -152,12 +154,16 @@ def cmd_finalize(root: Path, overlay_version: str, trellis_version: str,
     return 0
 
 
-def cmd_bless(root: Path, rels: list[str], **_) -> int:
+def cmd_bless(root: Path, rels: list[str], overlay_version: str | None = None, **_) -> int:
     """重新盖章：把指定路径的 applied_hash 换成现场内容，upstream_hash 不动。
 
     Skill Pack 更新了模板、已装项目重新拷了几个文件之后的唯一合法出路 ——
     finalize 有防重入，重新 snapshot 会把 Overlay 后的内容误记成 upstream。
     **必须显式点名路径**：不点名就等于把真实的本地漂移一起盖掉，那记账就没用了。
+
+    带 `--overlay-version` 时顺带升版本号并刷 applied_at。升级路径除此之外
+    没有别的出路：finalize 防重入进不去，bless 本身又只碰 applied_hash，
+    结果就是记账里的版本号和时间戳一起停在上一版说谎（v0.4.9 实测）。
     """
     state_file = root / STATE_PATH
     if not state_file.is_file():
@@ -183,6 +189,11 @@ def cmd_bless(root: Path, rels: list[str], **_) -> int:
             continue
         entry["applied_hash"] = h
         print(f"{rel} 重新盖章")
+    if overlay_version:
+        old = state.get("overlay_version")
+        state["overlay_version"] = overlay_version
+        state["applied_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        print(f"版本号 {old} → {overlay_version}，applied_at 已刷新")
     state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n",
                           encoding="utf-8")
     return 0
@@ -300,6 +311,19 @@ def selfcheck() -> int:
                           )["files"][".trellis/workflow.md"]["upstream_hash"] == upstream, \
             "bless 不该动 upstream_hash —— 动了就再也算不出「恢复成官方原样」"
 
+        # 升级路径：不传版本号一个字不动，传了才升并刷 applied_at。
+        # applied_at 精度是秒，selfcheck 跑得比一秒快 —— 先把它设成个明显的过去值才验得出来。
+        st = json.loads((root / STATE_PATH).read_text(encoding="utf-8"))
+        assert st["overlay_version"] == "v0.4.0", "bless 不传版本号时不该动它"
+        st["applied_at"] = "2000-01-01T00:00:00+00:00"
+        (root / STATE_PATH).write_text(json.dumps(st, indent=2, ensure_ascii=False) + "\n",
+                                       encoding="utf-8")
+        assert cmd_bless(root, [".trellis/workflow.md"], "v0.4.1") == 0
+        st = json.loads((root / STATE_PATH).read_text(encoding="utf-8"))
+        assert st["overlay_version"] == "v0.4.1", "bless --overlay-version 没升版本号"
+        assert st["applied_at"] != "2000-01-01T00:00:00+00:00", "升版本号时没刷 applied_at"
+        assert cmd_verify(root) == 0, "只升版本号不该动 hash"
+
         # 增量补装：项目已装 claude-code，现在磁盘上多出 codex，只列 codex 的路径
         (root / ".codex/hooks").mkdir(parents=True)
         (root / ".codex/hooks/inject-workflow-state.py").write_text("官方注入", encoding="utf-8")
@@ -342,7 +366,9 @@ def main(argv: list[str]) -> int:
     p.add_argument("command", choices=["snapshot", "finalize", "bless", "verify", "selfcheck"])
     p.add_argument("paths", nargs="*", help="bless 专用：要重新盖章的路径")
     p.add_argument("--root", default=".", help="仓库根，缺省当前目录")
-    p.add_argument("--overlay-version", default="v0.4.9")
+    # 默认 None 是为了让 bless 分得清「显式要升版本」和「argparse 塞的默认值」
+    p.add_argument("--overlay-version", default=None,
+                   help=f"缺省 {OVERLAY_VERSION}；bless 传了才升版本号并刷 applied_at")
     p.add_argument("--trellis-version", default="0.6.15")
     # skills-lock.json 没有 ref 字段，装的是默认分支 —— 默认值只能是「没验过」，
     # 记一个没验过的版本号比不记更坏。传 computedHash 或真实 tag 才有意义。
@@ -356,12 +382,12 @@ def main(argv: list[str]) -> int:
     if a.command == "snapshot":
         return cmd_snapshot(root, sys.stdin.read())
     if a.command == "bless":
-        return cmd_bless(root, a.paths)
+        return cmd_bless(root, a.paths, a.overlay_version)
     if a.command == "verify":
         return cmd_verify(root)
     if not a.platforms:
         raise SystemExit("finalize 要 --platforms，例如 --platforms omp,claude-code")
-    return cmd_finalize(root, a.overlay_version, a.trellis_version,
+    return cmd_finalize(root, a.overlay_version or OVERLAY_VERSION, a.trellis_version,
                         a.skill_pack_ref, a.platforms)
 
 
