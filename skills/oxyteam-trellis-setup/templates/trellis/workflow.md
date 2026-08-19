@@ -28,7 +28,7 @@ Trellis 提供运行时：Session、Active Task、跨会话恢复、Archive、Jo
 
 | 团队阶段 | 归属 Phase | `task.json.status` | 入口 |
 |---|---|---|---|
-| Discover | Phase 1 | `planning` | `/oxyteam-askme` / `interview` / `askme-with-docs` / `map` / `research` / `prototype` |
+| Discover | Phase 1 | `planning` | 默认 `/oxyteam-askme-with-docs`；`askme` / `map` / `prototype` 按需 |
 | Specify | Phase 1 | `planning` | `/oxyteam-spec` → `<task>/prd.md` |
 | Slice（可选） | Phase 1 | `planning` | `/oxyteam-tickets` → `<task>/issues/NN-*.md` |
 | Implement | Phase 2 | `in_progress` | `trellis-implement` 子代理 → 完整的 `oxyteam-implement` |
@@ -57,7 +57,10 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
 [workflow-state:no_task]
 当前没有 Active Task。先判断本轮属于哪一类，并在创建任何 Trellis 任务之前征得用户同意。
 简单对话 / 小改动：只问一句本轮要不要建 Trellis 任务。用户说不用，本会话就跳过 Trellis。
-复杂任务：征得同意后 `python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=discover`，进入 Discover。用户拒绝时说明理由、澄清范围，或建议拆小再来。
+复杂任务：征得同意后建任务。标题从本轮对话里提炼，用用户自己的说法，不要自创术语；`--slug` 是对应的英文小写连字符短名，不带 `MM-DD` 前缀（目录名由 `task.py` 拼成 `MM-DD-<slug>`；`_slugify` 只吃 ASCII，中文标题不显式给 `--slug` 会直接报错退出）。标题和 slug 一起报给用户确认后再执行：
+`python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=<挡位>`
+挡位取决于本轮之前聊到哪一步：需求还没问清楚写 `discover`；本会话里已经聊清楚了（比如刚跑完 `/oxyteam-askme-with-docs`）直接写 `specify`，不要把用户塞回 Discover 再追问一遍。
+用户拒绝时说明理由、澄清范围，或建议拆小再来。
 [/workflow-state:no_task]
 
 ## Phase 1: Plan
@@ -68,13 +71,20 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
 
 | 情况 | 提示用户运行 |
 |---|---|
-| 需要严格追问计划或设计 | `/oxyteam-askme` |
-| 需要结构化收集信息 | `/oxyteam-interview` |
-| 需要追问并同步领域文档 | `/oxyteam-askme-with-docs` |
-| 存在跨会话 Fog of War | `/oxyteam-map` |
-| 存在外部事实未知项 | `/oxyteam-research`（结果写 `<task>/research/`） |
-| 需要低成本验证行为或界面 | `/oxyteam-prototype` |
 | 需求已经清楚 | 直接进 1.2 |
+| 目的地看得见，只是一个会话做不完 | 照常往下走，到 1.3 用 `/oxyteam-tickets` 切票 |
+| 通往目的地的路本身看不清（要先定一串决策才知道做什么） | `/oxyteam-map` |
+| 答案得跑起来才知道 | `/oxyteam-prototype` |
+| 以上都不是（默认） | `/oxyteam-askme-with-docs`；不需要落 ADR 和术语表时用 `/oxyteam-askme` |
+
+`askme` 就是 `interview`（SKILL.md 正文一行转发），不是两个入口，别当成两种情况列。
+`askme-with-docs` 只比它多一个 `domain-modeling`（写根 `CONTEXT.md` 和 `docs/adr/`）——这是两者唯一的差别。
+
+`research` 不单独列：`interview` 遇到需要环境事实的问题会自己派子代理去查。只有用户明确要
+一份带引用的调研文件时，才提示 `/oxyteam-research`（结果写 `<task>/research/`）。
+
+`map` 的判据是「大」**且**「路看不清」两个条件，光是量大该走 Slice 切票。拿不准就让它跑：
+它第 2 步广度优先扫一遍，扫不出 fog 会自己叫停并说明不需要 map，成本是两轮对话。
 
 Map 不是单独的任务类型，是 Discover 的长驻模式：已有 Map 材料就继续 work the map，不要重开一轮探索。
 
@@ -84,7 +94,9 @@ Map 不是单独的任务类型，是 Discover 的长驻模式：已有 Map 材�
 
 [workflow-state:discover]
 阶段 Discover：先把问题、范围和成功标准问清楚，不要开始写实现代码。
-按情况提示用户运行 `/oxyteam-askme`（追问计划或设计）、`/oxyteam-interview`（结构化收集）、`/oxyteam-askme-with-docs`（追问并同步领域文档）、`/oxyteam-map`（跨会话 Fog of War）、`/oxyteam-research`（外部事实未知，结果写 `<task>/research/`）、`/oxyteam-prototype`（低成本验证）。
+默认提示用户运行 `/oxyteam-askme-with-docs`（追问并顺带落 ADR 和术语表）；不需要落文档时用 `/oxyteam-askme`。两者内部是同一个 interview，别当成两个入口来回推荐。
+答案得跑起来才知道，提示 `/oxyteam-prototype`。通往目的地的路本身看不清（要先定一串决策才知道做什么），提示 `/oxyteam-map` —— 只是量大而路清楚的不要用 map，往下走到 Slice 切票。
+用户明确要一份带引用的调研文件时才提示 `/oxyteam-research`（结果写 `<task>/research/`）；一般的环境事实 interview 会自己派子代理查，不用提示。
 已有 Map 材料就继续 work the map，不要重开一轮探索。
 问清楚了执行 `task.py set-meta <task-dir> flow_stage specify`。
 [/workflow-state:discover]
@@ -179,8 +191,10 @@ oxyteam_tickets.py done <NN>     → Impl: done，回 frontier 挑下一张
      都是 in_progress，所以这一块要覆盖从实施到 commit 的全部必需步骤。 -->
 
 [workflow-state:implement]
-阶段 Implement：票默认串行，一次只推进一张。
-挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing`、`implementation_base_sha`，并把当前票写进 `implement.jsonl`）。
+阶段 Implement：先看有没有票 —— `ls <task>/issues/`。
+没有 `issues/` 目录：这是单会话任务，直接照 `prd.md` 干，不要跑 frontier / claim / done，做完 `set-meta flow_stage finish`。
+有票：票默认串行，一次只推进一张。
+挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing`、`implementation_base_sha`，并把当前票写进 `implement.jsonl`）。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
 派 `trellis-implement` 子代理干活，派发提示词第一行写 `Active task: <task.py current 的路径>`。它是薄包装，内部调完整的 `oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。
 读取顺序：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → `implement.jsonl` → 真实源码。
 做完一张 `oxyteam_tickets.py done <NN>`，回 frontier 挑下一张。全部 done 后 `set-meta flow_stage finish`。

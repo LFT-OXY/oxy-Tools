@@ -28,7 +28,7 @@ Finish
 路由：
 
 ```text
-Discover  → oxyteam-askme / interview / askme-with-docs / map / research / prototype
+Discover  → oxyteam-askme-with-docs（默认）/ askme / map / prototype
 Specify   → oxyteam-spec       写 <task>/prd.md
 Slice     → oxyteam-tickets    写 <task>/issues/*.md
 Implement → trellis-implement 薄包装 → 完整的 oxyteam-implement
@@ -61,13 +61,25 @@ Map 不单独成一种任务类型：它是 Discover 阶段的长驻模式，`[w
 
 | 情况 | Skill |
 |---|---|
-| 需要严格追问计划或设计 | `oxyteam-askme` |
-| 需要结构化收集信息 | `oxyteam-interview` |
-| 需要追问并同步领域文档 | `oxyteam-askme-with-docs` |
-| 存在跨会话 Fog of War | `oxyteam-map` |
-| 存在外部事实未知项 | `oxyteam-research`（结果写 `<task>/research/`） |
-| 需要低成本验证行为或界面 | `oxyteam-prototype` |
 | 需求已经清楚 | 直接进 Specify |
+| 目的地看得见，只是一个会话做不完 | 照常往下走，到 Slice 用 `oxyteam-tickets` 切票 |
+| 通往目的地的路本身看不清 | `oxyteam-map` |
+| 答案得跑起来才知道 | `oxyteam-prototype` |
+| 以上都不是（默认） | `oxyteam-askme-with-docs`；不需要落 ADR 和术语表时用 `oxyteam-askme` |
+
+`askme` 的 SKILL.md 正文只有一行 `Call the Skill tool with "oxyteam-interview"` —— 它就是
+`interview`，不是两个入口。`askme-with-docs` 只比它多一个 `domain-modeling`（写根
+`CONTEXT.md` 和 `docs/adr/`），这是两者唯一的差别。
+
+`research` 不进这张表：`interview` 自己写了「When a frontier question needs a fact from the
+environment, dispatch a sub-agent to find it — don't ask the user」，它会自己去查。只有用户
+明确要一份带引用的调研文件时才走 `oxyteam-research`。
+
+`map` 的判据是「大」**且**「路看不清」两个条件（SKILL.md：`too big for one agent session,
+and wrapped in fog`），光是量大该走 Slice。它第 2 步 breadth-first 扫完若无 fog 会自己叫停
+（`If this surfaces no fog... you don't need a map`），所以拿不准时让它跑，成本两轮对话。
+map 的工单本身也调这些 Skill：`interview` / `research` / `prototype` / `task` 四种 label ——
+它是 Discover 诸 Skill 的调度器，不跟它们竞争。
 
 完成条件：问题、范围和成功标准清楚；关键术语或 ADR 已按需记录；技术未知项已研究或原型验证。
 
