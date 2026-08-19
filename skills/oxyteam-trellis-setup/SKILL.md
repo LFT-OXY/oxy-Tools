@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.11`
+- Overlay 版本：`v0.4.12`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
@@ -193,7 +193,7 @@ python3 .trellis/scripts/write_overlay_state.py verify
 
    **「所有票 done」这个条件截至 v0.4.10 连续八轮没被观测到**：前七轮走 `票 0 张` 的空真放行，
    第八轮票是真的做完了，可 Step 0 放行时不留痕，汇报里只有「Step 1–2 通过」——门禁查没查过票
-   看不出来。票 `done` 是 Implement 阶段自己标的，**跟门禁读没读它是两回事**。v0.4.11 已要求
+   看不出来。票 `done` 是 Implement 阶段自己标的，**跟门禁读没读它是两回事**。v0.4.12 已要求
    放行分支也把 `summary` 原样报出来；验这一条时先看有没有那一行，没有就是没跑；
 9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
 10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，**减去 B2**——不多不少。

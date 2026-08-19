@@ -10,7 +10,14 @@
      ② 步骤号对齐新的 workflow.md：1.1 / 1.2 / 1.3 / 1.4 / 2.1 / 3.1，
         官方那套 2.2 / 3.3 / 3.4 已经不存在了。
      ③ `design.md` / `implement.md` 本版不产生，相关判断分支整段删除。
-     ④ `flow_stage=implement` 多一层票级路由，走 `oxyteam_tickets.py summary` / `frontier`。
+     ④ `flow_stage=implement` 多一节跨会话恢复，只处理「上个会话 claim 了一张没做完」
+        这一种入口状态。
+
+     Step 3 的表格**只做 flow_stage → 阶段编号的映射，不复述各阶段该干什么**。
+     v0.4.11 起这样定：复述过一版，v0.4.9 / v0.4.10 / v0.4.11 三轮改动全漏了这份文件，
+     一口气漂出六处假指令。阶段细节的唯一出处是 `.trellis/workflow.md` 的块正文，
+     Step 4 的 `--step <X.X>` 也是实时从它读的。**往这里加流程说明之前先想清楚：
+     改 workflow.md 的人不会被提醒回来改这里。**
 
      Step 1 / 2 / 4 的 get_context.py 调用是官方运行时能力，原样保留。
 
@@ -56,13 +63,22 @@ DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,
 python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
 ```
 
-| flow_stage | 接着走 | 本轮该做什么 |
-|---|---|---|
-| `discover` | 1.1 Discover | 问题、范围、成功标准还没清楚。按情况提示用户运行 `/oxyteam-askme`（追问计划或设计）、`/oxyteam-interview`（结构化收集）、`/oxyteam-askme-with-docs`（追问并同步领域文档）、`/oxyteam-map`（跨会话 Fog of War）、`/oxyteam-research`（外部事实未知）、`/oxyteam-prototype`（低成本验证）。清楚了 `set-meta flow_stage specify` |
-| `specify` | 1.2 Specify | 提示用户运行 `/oxyteam-spec`，把权威 Spec 写进 `<task>/prd.md`。然后 `TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec`。一个会话内做得完就 `set-meta flow_stage implement`，做不完先走 Slice |
-| `slice` | 1.3 Slice | 提示用户运行 `/oxyteam-tickets`，把票写进 `<task>/issues/NN-*.md`。`python3 .trellis/scripts/oxyteam_tickets.py frontier` 校验通过（无环、无悬空 Blocker、至少一张票）、`github_sync.py sync-tickets` 回填 `**Issue:**` 后 `set-meta flow_stage implement` |
-| `implement` | 2.1 Implement | 先做下面的「票级路由」 |
-| `finish` | 3.1 Finish | 跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 确认所有票 `Impl: done`，工作区干净后走 finish-work 入口归档并写 Journal |
+| flow_stage | 接着走 |
+|---|---|
+| `discover` | 1.1 Discover |
+| `specify` | 1.2 Specify |
+| `slice` | 1.3 Slice |
+| `implement` | 2.1 Implement（跨会话恢复另见下面一节） |
+| `finish` | 3.1 Finish |
+
+**本轮具体该做什么，读 `.trellis/workflow.md` 里对应的 `[workflow-state:<flow_stage>]` 块**——
+那是权威，也正是每轮自动注入给你的那一份；Step 4 的 `--step <X.X>` 打印的同样是它。
+这张表只负责把你送回正确的阶段。
+
+**这里不复述各阶段的流程，是故意的。** 复述过一版，结果 v0.4.9 / v0.4.10 / v0.4.11 三轮改动
+全漏了这份文件，一口气漂出六处假指令（还写着派 `trellis-implement` 子代理、票全 done 要
+「提示用户确认后」才切挡位、归档判据是「工作区干净」而不是「`.trellis/tasks/` 以外干净」）。
+改 `workflow.md` 的人没有任何机制会被提醒回来改这里 —— 少写一遍，就少一个会说谎的地方。
 
 `flow_stage` 已经是 `implement` 但 `status` 还停在 `planning` 的，先补 1.4 Activate：
 `python3 .trellis/scripts/task.py start <task-dir>`。
@@ -70,28 +86,22 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
 没有 Active Task 时不要直接建任务：先判断本轮属于哪一类，征得用户同意后才
 `python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=discover`。
 
-### flow_stage=implement 的票级路由
+### flow_stage=implement 的跨会话恢复
+
+`[workflow-state:implement]` 块是从 `frontier` 挑票起步的。跨会话恢复多一种入口状态：
+**上一个会话已经 `claim` 了一张票，做了一半。** 先看清楚再动手：
 
 ```bash
 python3 .trellis/scripts/oxyteam_tickets.py summary
 ```
 
-按输出分四种情况：
+输出里有 `doing <label>` → **接着推那一张**，不要回 `frontier` 挑新的。
 
-- 输出里有 `doing <label>` → **接着推那一张票，不要 claim 新的**（票默认串行，一次只推进一张）；
-- 有票但 `doing` 为空 → `python3 .trellis/scripts/oxyteam_tickets.py frontier` 挑下一张，
-  `python3 .trellis/scripts/oxyteam_tickets.py claim <NN>`，然后派 `trellis-implement` 子代理；
-- 输出是 `票 0 张` → 这是没走 Slice 的单会话任务，直接读 `<task>/prd.md` 实施；
-- 票全部 `done` → 提示用户确认后 `python3 .trellis/scripts/task.py set-meta <task-dir> flow_stage finish`。
+其余情况（`doing` 为空、`票 0 张`、票全 `done`）按 implement 块走，这里不复述。
 
-`claim <NN>` 已经一并写了 `**Impl:** doing`、`meta.implementation_base_sha` 和
-`<task>/implement.jsonl`，不要在别处重复做这三件事。
-
-派发 `trellis-implement` 的提示词第一行必须是
-`Active task: <task.py current 输出的路径>`。它是薄包装，内部调完整的
-`oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。
-
-一张票做完 `python3 .trellis/scripts/oxyteam_tickets.py done <NN>`，回 `frontier` 挑下一张。
+脚本本身拦得住误操作——`claim` 同一张是空操作，`claim` 另一张会直接报
+`还在 doing。票默认串行，先 done 它再 claim 下一张`。先看一眼只是省一次报错，
+不是防数据损坏。
 
 ### flow_stage 缺失时（Overlay 之前建的老任务）
 

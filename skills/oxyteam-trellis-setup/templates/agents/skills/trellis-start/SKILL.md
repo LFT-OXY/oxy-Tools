@@ -12,7 +12,9 @@ description: "初始化一个 Trellis 管理的开发会话：读 .trellis/ 的�
      相对官方版改了三处：
 
      ① Step 4 的路由依据从「`status` + `prd.md` 是否存在」换成
-        `task.json.meta.flow_stage`，指向新的五阶段。
+        `task.json.meta.flow_stage`，指向新的五阶段。表**只做 flow_stage → 阶段编号的
+        映射，不复述各阶段该干什么**（v0.4.12 起）——阶段细节的唯一出处是
+        `.trellis/workflow.md` 的块正文。
      ② 删掉对 trellis-brainstorm / trellis-before-dev / trellis-check /
         trellis-break-loop 的引用（本版已删除），换成对应的 Oxyteam Skill。
      ③ 删掉「复杂任务需要 design.md + implement.md」那条——本版不产生这两个产物。
@@ -72,13 +74,19 @@ DIR=$(python3 .trellis/scripts/task.py current --json | python3 -c 'import json,
 python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).get('flow_stage','(未设置)'))"
 ```
 
-| flow_stage | 接着走 | 本轮该做什么 |
-|---|---|---|
-| `discover` | 1.1 Discover | 问题、范围、成功标准还没清楚，不要开始写实现代码。按情况提示用户运行 `/oxyteam-askme`、`/oxyteam-interview`、`/oxyteam-askme-with-docs`、`/oxyteam-map`、`/oxyteam-research`、`/oxyteam-prototype` |
-| `specify` | 1.2 Specify | 提示用户运行 `/oxyteam-spec`，把权威 Spec 写进 `<task>/prd.md`，然后执行 `github_sync.py sync-spec` |
-| `slice` | 1.3 Slice | 提示用户运行 `/oxyteam-tickets` 写 `<task>/issues/NN-*.md`，用 `python3 .trellis/scripts/oxyteam_tickets.py frontier` 校验 |
-| `implement` | 2.1 Implement | 先 `python3 .trellis/scripts/oxyteam_tickets.py summary`：有票在 `doing` 就接着推那张，没有就 `frontier` 挑下一张 `claim <NN>` |
-| `finish` | 3.1 Finish | `summary` 确认所有票 `Impl: done`，然后读 `trellis-finish-work` skill 归档 |
+| flow_stage | 接着走 |
+|---|---|
+| `discover` | 1.1 Discover |
+| `specify` | 1.2 Specify |
+| `slice` | 1.3 Slice |
+| `implement` | 2.1 Implement |
+| `finish` | 3.1 Finish |
+
+**本轮具体该做什么，读 `.trellis/workflow.md` 里对应的 `[workflow-state:<flow_stage>]` 块**——
+那是权威，也正是每轮自动注入给你的那一份。这张表只负责把你送回正确的阶段。
+
+**这里不复述各阶段的流程，是故意的。** 同一套流程写在两个文件里，改 `workflow.md` 的人不会被
+提醒回来改这里 —— 三份 `continue` 模板就是这么漂了六处假指令，一直漂到 v0.4.11 才被发现。
 
 拉某一步的细节：
 

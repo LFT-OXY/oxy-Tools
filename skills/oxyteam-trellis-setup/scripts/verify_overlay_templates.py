@@ -102,6 +102,14 @@ def check_file(path: Path, rel: str) -> list[str]:
         # 拿它读 flow_stage / implementation_base_sha 不报错、只是永远读不到，
         # 静态审计看不出来。合法形态只有两种：管道进两步读法，或反引号里的说明文字。
         s = line.strip()
+        # 阶段路由表只做 flow_stage → 阶段编号的映射。第三列（「本轮该做什么」）是
+        # v0.4.12 删的：同一套流程复述在入口文件里，改 workflow.md 的人不会被提醒
+        # 回来改它 —— 三份 continue 就这么漂了六处假指令（还写着派 trellis-implement
+        # 子代理），一路漂到第一个真敲 /trellis:continue 的人头上才会炸。
+        if s.startswith("| flow_stage |") and s.count("|") > 3:
+            bad.append(f"{rel}:{lineno} 阶段路由表多了一列 —— 只做 flow_stage → 阶段编号"
+                       "的映射，各阶段该做什么一律指向 .trellis/workflow.md 的块正文，"
+                       "复述必漂")
         if "current --json" in s and s.startswith("python3") and "|" not in s:
             bad.append(f"{rel}:{lineno} 裸的 `task.py current --json` —— 它是白名单八字段、"
                        "不含 meta，读 flow_stage / implementation_base_sha 必须走两步")
@@ -225,6 +233,11 @@ def selfcheck() -> int:
         "注释压 H1 没被抓到"
     assert not hits("claude/commands/c.md", "# C\n\n<!-- 说明 -->\n\n正文\n"), \
         "H1 在前、注释在后的正确形态被误报了"
+    # 洞 Q：入口文件复述阶段流程 → 改 workflow.md 时漏改，假指令一漂三个版本
+    assert any("多了一列" in b for b in hits(
+        "a.md", "| flow_stage | 接着走 | 本轮该做什么 |\n")), "三列路由表没被抓到"
+    assert not hits("a.md", "| flow_stage | 接着走 |\n|---|---|\n| `discover` | 1.1 |\n"), \
+        "两列映射表被误报了"
     # 三平台模板里曾有 10 处拿 current --json 读 meta，读不到也不报错
     assert any("裸的" in b for b in hits(
         "a.md", "```bash\npython3 .trellis/scripts/task.py current --json\n```\n")), \
