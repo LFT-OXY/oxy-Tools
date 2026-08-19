@@ -129,6 +129,10 @@ trellis-implement 薄包装器
 oxyteam_tickets.py done → Impl: done → 回 frontier 挑下一张（串行）
 ```
 
+**单会话任务（没有 `issues/`）走同一条闭环**，只是跳过 frontier / claim / done，改为自己记一次
+`set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`。票只决定怎么分批，不决定要不要
+review 和 commit——把「派子代理」写进「有票」分支是 v0.4.6 的实测缺陷，见措辞要求 ⑦。
+
 读取顺序：
 
 1. Active Task；
@@ -174,7 +178,7 @@ Extension 侧的匹配规则：
 
 状态名只允许字母、数字、下划线和连字符。官方原有的 `planning` / `in_progress` / `completed` / `*-inline` 块在本 Overlay 中被五阶段块替换，不保留两套并行路由。
 
-### 块正文的措辞要求（五条，都是实测出来的）
+### 块正文的措辞要求（七条，都是实测出来的）
 
 **① 提到 Team Skill 时写「提示用户运行 `/xxx`」，不写「运行 `xxx`」。**
 
@@ -258,6 +262,25 @@ set-meta flow_stage finish && oxyteam_tickets.py summary && task.py archive
 Spec 对不对是用户的判断。v0.4.5 之前 specify 块的收尾是「一个会话内做得完就 `set-meta flow_stage implement`」，模型写完 `prd.md` 直接就进实现了，用户没有插话的机会。加一步：把 Spec 摘要报给用户 → 等确认 → 才切挡位。
 
 （不走「用户手动调 `/oxyteam-implement`」那条路：`oxyteam-implement` 由 `trellis-implement` 子代理调用，用户直接调会绕过它的上下文装配——当前票、`.trellis/spec/` 对应层、`implementation_base_sha`。）
+
+**⑥ 「问用户一句」必须写成「问完停下来等回答」，否则模型会先做完再补问。**
+
+v0.4.6 实测（Claude Code，同一句需求跑两次都复现）：`no_task` 块的「简单对话 / 小改动：只问一句本轮要不要建 Trellis 任务」被逐字执行了——模型**先把功能实现完**（约 60 行、3 个文件、17 条测试），然后在末尾补一句「另外没建 Trellis 任务——这轮改动小，要走 Trellis 流程的话说一声」。
+
+它没违反任何一条规则：没建任务，也问了。块从头到尾只约束了「建任务**之前**要同意」，**没有一个字说过「动代码之前要先问」**。同一份块正文，Codex 和 OMP 把需求判成「复杂任务」走了第三行，那行的「征得同意后建任务」天然要求先停，所以它们表现正常——**分支判断的差异会把措辞漏洞放大成完全不同的行为**。
+
+写法：把停顿绑在「问」这个动作上（「问完停下来等用户回答」），而不是绑在「建任务」上；同时按条 ③ 给禁令配解除条件（「用户说不用就直接干活，上一句的禁令到此为止」），否则用户拒绝 Trellis 之后模型会不敢动代码。
+
+**⑦ 块必须自足：该阶段的必需动作只有写在块里才会发生，共同步骤不能塞进条件分支下面。**
+
+每轮注入的**只有块**，块外的散文正文模型根本读不到。两个实测：
+
+- `task.py start` 只写在 `#### 1.4 Activate` 的正文里，不在任何块里。结果三个任务连续三次全部漏跑，`status` 一路停在 `planning`（`flow_stage` 照常推进，因为注入脚本用 `meta.flow_stage` 覆盖了 `status`，所以症状被完全掩盖）。修法是把这条命令并进 `no_task` 块的 `create` 后面——`cmd_start` 是幂等的（`if status == "planning"` 才翻转），重复执行无害。
+- 「派 `trellis-implement` 子代理」原先写在 `implement` 块的**「有票」分支下面**，而「不跑 frontier / claim / done」写在「没有 `issues/`」分支里。票管理和实现闭环是两件不相干的事，被并进了同一个分支。结果三平台的单会话任务**全部没走 `oxyteam-tdd` 和 `oxyteam-code-review`**，模型自己写代码自己写测试，代码也没 commit。子代理自己是支持单会话任务的（`trellis-implement.md` 读取顺序第 2 条专门写了「单会话任务读 `<task>/prd.md`」），漏的只是主会话这一侧的派发指令。
+
+修法是把共同步骤提到分支之外先说，分支只留真正不同的部分。这个缺陷有安全网兜住（`trellis-finish-work` 的门禁拦住未提交代码，三平台一致），所以没造成实际损失，但每次都要多绕一轮 `/oxyteam-implement`——而且 OMP 那轮的 `oxyteam-code-review` 当场抓出一个真 bug（`--output ""` 被误判成未传参），说明前两轮跳过 review 的任务里很可能留着同类问题。
+
+单会话任务派子代理还要补一步基线：`implementation_base_sha` 平时由 `claim` 写，没票时没人写，`oxyteam-code-review` 会没有 diff 起点（实测它会停下来问用户要基线，不会崩，但多一轮交互）。
 
 ### Codex 侧实测到的三件事（v0.4.4 轮）
 

@@ -55,11 +55,13 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
      拒绝后给两条出路。压缩成一句会让模型一律建任务。 -->
 
 [workflow-state:no_task]
-当前没有 Active Task。先判断本轮属于哪一类，并在创建任何 Trellis 任务之前征得用户同意。
-简单对话 / 小改动：只问一句本轮要不要建 Trellis 任务。用户说不用，本会话就跳过 Trellis。
+当前没有 Active Task。先判断本轮属于哪一类，问完停下来等用户回答 —— **这一轮先别动代码，也不要改完再补问一句**。
+简单对话 / 小改动：只问一句本轮要不要建 Trellis 任务。用户说不用就直接干活，本会话跳过 Trellis，上一句的禁令到此为止。
 复杂任务：征得同意后建任务。标题从本轮对话里提炼，用用户自己的说法，不要自创术语；`--slug` 是对应的英文小写连字符短名，不带 `MM-DD` 前缀（目录名由 `task.py` 拼成 `MM-DD-<slug>`；`_slugify` 只吃 ASCII，中文标题不显式给 `--slug` 会直接报错退出）。标题和 slug 一起报给用户确认后再执行：
 `python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=<挡位>`
+`python3 .trellis/scripts/task.py start <task-dir>` —— 紧接着执行，`status` 从 `planning` 转 `in_progress`。漏了这条任务全程停在 `planning`，报表和 `task.py list --status` 全是错的。
 挡位取决于本轮之前聊到哪一步：需求还没问清楚写 `discover`；本会话里已经聊清楚了（比如刚跑完 `/oxyteam-askme-with-docs`）直接写 `specify`，不要把用户塞回 Discover 再追问一遍。
+建完任务这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里接着写 Spec 或改代码。
 用户拒绝时说明理由、澄清范围，或建议拆小再来。
 [/workflow-state:no_task]
 
@@ -180,6 +182,10 @@ oxyteam_tickets.py done <NN>     → Impl: done，回 frontier 挑下一张
 
 派发提示词第一行必须是 `Active task: <task.py current 输出的路径>`。
 
+单会话任务（没有 `issues/`）跳过 frontier / claim / done，改为自己记一次基线
+`task.py set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`，其余完全相同 ——
+**代码一样由子代理走完整闭环，票只决定怎么分批，不决定要不要 review 和 commit。**
+
 **不要告诉 `oxyteam-implement`「别 review 别 commit」。** 它是完整闭环，拆开会产生两份直接冲突的指令。
 不设独立 Review 阶段：`oxyteam-code-review` 自己 spawn 两个干净上下文的子代理（Standards 一轴、Spec 一轴）。
 
@@ -197,11 +203,13 @@ oxyteam_tickets.py done <NN>     → Impl: done，回 frontier 挑下一张
      都是 in_progress，所以这一块要覆盖从实施到 commit 的全部必需步骤。 -->
 
 [workflow-state:implement]
-阶段 Implement：先看有没有票 —— `ls <task>/issues/`。
-没有 `issues/` 目录：这是单会话任务，直接照 `prd.md` 干，不要跑 frontier / claim / done，做完 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
+阶段 Implement：**代码由 `trellis-implement` 子代理写，有票没票都一样**，你自己不要直接上手写实现。它是薄包装，内部调完整的 `oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。派发提示词第一行写 `Active task: <task.py current 的路径>`。
+再看有没有票 —— `ls <task>/issues/`。
+没有 `issues/` 目录：这是单会话任务，不跑 frontier / claim / done。派子代理之前先记一次变更基线（有票时这步由 `claim` 代劳，单会话任务没人写，code-review 会没有 diff 起点）：
+`python3 .trellis/scripts/task.py set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`
+子代理照 `prd.md` 干完就 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
 有票：票默认串行，一次只推进一张。
 挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing`、`implementation_base_sha`，并把当前票写进 `implement.jsonl`）。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
-派 `trellis-implement` 子代理干活，派发提示词第一行写 `Active task: <task.py current 的路径>`。它是薄包装，内部调完整的 `oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。
 读取顺序：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → `implement.jsonl` → 真实源码。
 做完一张 `oxyteam_tickets.py done <NN>`，回 frontier 挑下一张。全部 done 后 `set-meta flow_stage finish` —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**。
 [/workflow-state:implement]
@@ -226,6 +234,7 @@ Codex               trellis-finish-work skill
 [workflow-state:finish]
 阶段 Finish：归档不可逆，且「这活算干完了」是用户的验收判断，不是你的。
 你只做只读的事：跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 报门禁状态（`flow_stage=finish` 且所有票 `Impl: done`），报工作区干不干净，然后停下来问用户能不能归档。
+`.trellis/tasks/` 以外还有未提交改动就先别归档 —— 归档不管业务代码的 commit，那是 Implement 阶段 `oxyteam-implement` 闭环的收尾。让用户运行 `/oxyteam-implement` 走完 review 和 commit 再回来。
 用户明确说可以之前：不要走 finish-work，不要跑 `task.py archive`，不要跑 `add_session.py`。
 用户确认后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill），归档任务并写 Journal。
 归档会触发 Hook 关闭远程 Issue。
