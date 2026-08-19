@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.15`
+- Overlay 版本：`v0.4.16`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
@@ -221,7 +221,8 @@ python3 .trellis/scripts/write_overlay_state.py verify
 这正是本 Overlay 反复要求模型做的那件事（`references/workflow.md` 措辞要求 ⑨：判断的地方
 必须把判据摊出来），而写这套东西的人自己没做。
 
-**修完之后确有复测的，只有这三处：**
+**判据只有一条：有没有一句描述实际运行结果的话** —— 跑了什么、输出是什么、在哪个项目上。
+「修了 X」「为测 Y 而改」都不算。按这条筛下来只剩四处：
 
 ```text
 洞 F  问必停（v0.4.7 修）
@@ -235,6 +236,11 @@ python3 .trellis/scripts/write_overlay_state.py verify
 洞 L / N  升级路径能升版本号 / 切挡位不再问用户（v0.4.10 修）
       v0.4.11 轮升级实测确认：状态文件只动了该动的 4 行
       （overlay_version + applied_at + 2 个 applied_hash），没有手改 JSON
+
+github_sync 的 Hook 失败不该阻塞建任务（gl:6498cf9 修）
+      原文 "Verified live: the warning now names the failing repo and
+      the task is still created." —— 修法和验证写在同一个 commit 里，
+      验证句带具体可观察输出。全仓唯一一处用英文写的复测记录
 ```
 
 **除这三处之外，其余全部是「已修未复测」** —— 修完就发版，没人回头跑。它们和「从没出过问题」

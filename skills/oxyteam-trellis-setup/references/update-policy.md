@@ -10,7 +10,7 @@
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.4.15`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
+本 Overlay 自身版本：**`v0.4.16`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
 本文「升级收尾」的 `bless` 示例命令、以及 `write_overlay_state.py` 顶部的 `OVERLAY_VERSION`
 常量五处必须一致，改一处五处都要改。`--overlay-version` 的默认值是 `None`，不是版本号 ——
 那是留给 `bless` 分辨「显式要升版本」用的，别把它当成第六处去改）。
@@ -110,7 +110,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.4.15",
+  "overlay_version": "v0.4.16",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
@@ -128,10 +128,13 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 **`skill_pack_ref` 是唯一一个无从校验的字段，别把它当判据。** 上面「对 Skill Pack 版本的硬
 依赖」那节已经论证过：`skills-lock.json` 没有 `ref` 字段，`skills add` 也没有 `--ref` 选项，
-按 ref 判版本这条路不存在，预检验的是 D 组五项的**内容**。所以这里填什么全凭人工，
-`write_overlay_state.py --skill-pack-ref` 也没有默认值（不传就是 `None`）。**确认不了就填
-`"unverified"`**（实测项目里就是这个值），不要为了让 JSON 好看编一个版本号 —— 编进去之后
-它长得跟真的一样，而没有任何一步会发现它是假的。
+按 ref 判版本这条路不存在，预检验的是 D 组五项的**内容**。
+
+所以这里填什么全凭人工 —— 而 `write_overlay_state.py` 的 `--skill-pack-ref` **默认值就是
+`"unverified"`**（`scripts/write_overlay_state.py:375`），不传就是它，实测项目里也正是这个值。
+**这是有意的：不确定时的默认答案必须是「不知道」，不能是一个看起来像真的版本号。** 编一个
+进去，它长得跟真的一样，而后续没有任何一步会发现它是假的 —— 其他字段都有 `verify` 兜底，
+只有这个没有。上面示例里的 `"v0.3.0"` 是「你真核过内容」时才该填的形态。
 
 `action: "delete"` 的条目只有 `upstream_hash`，没有 `applied_hash`——这是 **tombstone**。它的作用是让上游以后重命名旧 Skill、或在已删目录里新增文件时，Installer 还能正确识别。
 
@@ -179,7 +182,7 @@ C != A_old && C != U_new  → 本地有漂移，进冲突处理，不静默覆�
 ```bash
 python3 .trellis/scripts/write_overlay_state.py bless \
   .trellis/workflow.md .claude/agents/trellis-implement.md \
-  --overlay-version v0.4.15
+  --overlay-version v0.4.16
 ```
 
 不传就一个字不动（免得日常盖章顺手改了版本号）。这是 v0.4.9 升级实测补的：当时
