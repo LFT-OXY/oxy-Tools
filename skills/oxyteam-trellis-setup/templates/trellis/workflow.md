@@ -122,10 +122,11 @@ TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sy
 <!-- flow_stage=specify 时的每轮提示 -->
 
 [workflow-state:specify]
-阶段 Specify：停下来，提示用户运行 `/oxyteam-spec`，然后等。
-这一步你不能代做 —— 不要自己编辑 `prd.md`，不要照本段散文自己写 Spec。
-用户跑完 `/oxyteam-spec` 回到主会话后，你再做下面三件事：
-① 确认 `prd.md` 落在任务目录里（不是 `.scratch/`）、验收条件可观察、测试 Seam 已确认；
+阶段 Specify：Spec 由 `/oxyteam-spec` 产出，不由你凭空写。
+用户还没调起它：停下来提示用户运行 `/oxyteam-spec`，然后等。不要自己动手写 `prd.md`，不要照本段散文编一份 Spec 出来。
+用户调起了 `/oxyteam-spec`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文走完流程，把 Spec 写进 `<task>/prd.md` —— 这时候写 `prd.md` 正是你该做的，上一句的禁令到此为止。
+Spec 落地之后再做三件事：
+① 确认 `prd.md` 在任务目录里（不是 `.scratch/`）、验收条件可观察、测试 Seam 已确认；
 ② 执行远程同步 `TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec` —— 报错就停下来告诉用户，不要跳过；
 ③ 一个会话内做得完就 `set-meta flow_stage implement`；做不完先走 Slice。
 [/workflow-state:specify]
@@ -145,8 +146,10 @@ TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sy
 <!-- flow_stage=slice 时的每轮提示 -->
 
 [workflow-state:slice]
-阶段 Slice：提示用户运行 `/oxyteam-tickets`，把票写进 `<task>/issues/NN-*.md`。
-校验 `python3 .trellis/scripts/oxyteam_tickets.py frontier` —— 无环、无悬空 Blocker，且至少返回一张票。
+阶段 Slice：票由 `/oxyteam-tickets` 产出，不由你凭空写。
+用户还没调起它：停下来提示用户运行 `/oxyteam-tickets`，然后等。不要自己动手写 `issues/NN-*.md`。
+用户调起了 `/oxyteam-tickets`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文把票写进 `<task>/issues/NN-*.md` —— 这时候写票正是你该做的，上一句的禁令到此为止。
+票落地之后：校验 `python3 .trellis/scripts/oxyteam_tickets.py frontier` —— 无环、无悬空 Blocker，且至少返回一张票。
 远程同步 `github_sync.py sync-tickets`，票文件回填 `**Issue:**`。
 用户确认拆分后 `set-meta flow_stage implement`。
 [/workflow-state:slice]

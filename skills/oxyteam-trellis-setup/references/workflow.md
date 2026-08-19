@@ -213,13 +213,32 @@ Overlay 版可以换语言、可以改路由目标（`--meta flow_stage=discover
 
 整段读起来像「我这一阶段的操作清单」，第一句就被当成清单的一部分执行掉了：**模型自己编辑了 `prd.md`，从没调 `/oxyteam-spec`**，然后一路 `set-meta implement` → 派子代理写码 → `set-meta finish` → `task.py archive`，中途 `sync-spec` 报错（`meta.source_ref 是空的`）也没停。`finish` 块同理，三句全是祈使句，模型自己读了 `trellis-finish-work` 的 SKILL.md 就把任务归档了。
 
-写法要求三样：
+写法要求四样：
 
 - **停顿写在段首**，不要埋在句子中段；
-- 用「用户跑完 `/xxx` 回到主会话后，你再做下面…」把两段**显式隔开**；
-- **把禁止代做的动作逐个列出来**。只写「提示用户运行」不够，得写「不要自己编辑 `prd.md`」「不要跑 `task.py archive`」——模型跳过的是 Skill 调用，不是产出，光说该调什么拦不住它自己动手产出同样的东西。
+- 用「用户还没调起它：… / 用户调起了 `/xxx`：…」把两段**显式隔开**；
+- **把禁止代做的动作逐个列出来**。只写「提示用户运行」不够，得写「不要自己动手写 `prd.md`」「不要跑 `task.py archive`」——模型跳过的是 Skill 调用，不是产出，光说该调什么拦不住它自己动手产出同样的东西；
+- **禁令必须带解除条件，而且解除后要明说「这时候做 X 正是你该做的」。**
+
+第四条是 v0.4.4 实测补的，代价是把流程从「不停」改成了「停死」。v0.4.4 的 specify 块写的是：
+
+```text
+这一步你不能代做 —— 不要自己编辑 `prd.md`
+```
+
+用户在 Codex 里 `$oxyteam-spec` 调起了 Skill，**正文确实进了上下文**（实测让模型复述，它念得出第一句 `This skill takes the current conversation context...`），但模型仍然拒绝执行，回答「无法实际调度 disable-model-invocation 的 Skill，因此不能代替该步骤编辑规格文件」——**它把「执行用户点名的 Skill 时写 `prd.md`」也归进了「自己编辑 `prd.md`」**。禁令没有出口，流程死在这里。
+
+模型分不清「我凭空写」和「我作为 Skill 的执行者写」，**必须在块里替它分**：写清 Skill 正文进上下文之后它的角色变了，此时产出正是本职，前一句的禁令到此为止。`specify` 和 `slice` 两个块同构（都是「提示用户运行 X，X 往任务目录写文件」），要一起改。
+
+`no_task` / `finish` 没有这个病：它们的解除条件是「用户同意」这种对话事件，模型判断得了，且后文明确写了确认之后该干什么。
 
 产出可能碰巧对（那次的 `prd.md`、`CONTEXT.md`、ADR、7 个测试都合理），但 Skill 内部的接缝检查和用户确认环节整个被跳过，且不可复现。归档尤其要停：不可逆，且「这活算干完了」是用户的验收判断。
+
+### Codex 侧实测到的三件事（v0.4.4 轮）
+
+1. **`$skill-name` 会把 SKILL.md 正文注入上下文**，机制正常。Codex 的显式调用就是 `$` 前缀，或打 `$` 触发选择器后选。
+2. `disable-model-invocation: true` 被 skills CLI 转译成 skill 目录下 `agents/openai.yaml` 的 `policy.allow_implicit_invocation: false`（不带这个字段的 skill 只有 `interface` 段）。它**只挡隐式调用（模型按 description 自动匹配），不挡用户的显式 `$`** ——语义与 Claude Code 一致，不是跨平台差异。
+3. **Codex 侧 `<workflow-state>` 注入正常**，块正文一字不差地进 `UserPromptSubmit` 的 `additionalContext`（`inject-workflow-state.py` 用的是追加，不替换 prompt）。
 
 Claude Code 和 Codex 侧解析这些块的是 `inject-workflow-state.py`（正则等价），不是 Extension。**Codex 有个额外分支**：`resolve_breadcrumb_key()` 在 `dispatch_mode: inline` 时查的是 `<status>-inline` 标签。本 Overlay 只写 5 个普通块，所以 **Codex 必须留在默认的 `auto`**——预检硬拦 `inline`（见 `changeset.md`「Codex 的两个前置」）。查不到标签不报错，只会静默降级成 "Refer to workflow.md for current step."，路由失效且无提示。
 
