@@ -171,7 +171,7 @@ Extension 侧的匹配规则：
 
 状态名只允许字母、数字、下划线和连字符。官方原有的 `planning` / `in_progress` / `completed` / `*-inline` 块在本 Overlay 中被五阶段块替换，不保留两套并行路由。
 
-### 块正文的措辞要求（两条，都是实测出来的）
+### 块正文的措辞要求（三条，都是实测出来的）
 
 **① 提到 Team Skill 时写「提示用户运行 `/xxx`」，不写「运行 `xxx`」。**
 
@@ -199,6 +199,27 @@ Complex task: ask the user if you can create a Trellis task and enter the planni
 实测把它压缩成「先判断本轮是否需要 Trellis Task；写入任务前取得用户同意」之后，模型少了「这轮可能根本不该建任务」这个锚点，**倾向于一律建任务**——用户只想聊两句也会被建出一个任务目录来。
 
 Overlay 版可以换语言、可以改路由目标（`--meta flow_stage=discover`、不回退 `.scratch/`），但**结构分支照搬**。
+
+**③ 一段块正文里不能混「该停的」和「该做的」，混了「该停」会被同化。**
+
+条 ① 只管了措辞（写「提示用户运行 `/xxx`」而不是「运行 `xxx`」），但那句话周围如果全是给模型的祈使句，它照样失效。v0.4.3 实测（Codex 侧，记账 CLI）：`specify` 块四句里三句是模型的操作清单——
+
+```text
+阶段 Specify：提示用户运行 `/oxyteam-spec`，...        ← 唯一该停的
+完成条件：验收条件可观察、测试 Seam 已确认。            ← 给模型
+然后执行远程同步：`github_sync.py sync-spec`。         ← 给模型
+一个会话内做得完就 `set-meta flow_stage implement`。   ← 给模型
+```
+
+整段读起来像「我这一阶段的操作清单」，第一句就被当成清单的一部分执行掉了：**模型自己编辑了 `prd.md`，从没调 `/oxyteam-spec`**，然后一路 `set-meta implement` → 派子代理写码 → `set-meta finish` → `task.py archive`，中途 `sync-spec` 报错（`meta.source_ref 是空的`）也没停。`finish` 块同理，三句全是祈使句，模型自己读了 `trellis-finish-work` 的 SKILL.md 就把任务归档了。
+
+写法要求三样：
+
+- **停顿写在段首**，不要埋在句子中段；
+- 用「用户跑完 `/xxx` 回到主会话后，你再做下面…」把两段**显式隔开**；
+- **把禁止代做的动作逐个列出来**。只写「提示用户运行」不够，得写「不要自己编辑 `prd.md`」「不要跑 `task.py archive`」——模型跳过的是 Skill 调用，不是产出，光说该调什么拦不住它自己动手产出同样的东西。
+
+产出可能碰巧对（那次的 `prd.md`、`CONTEXT.md`、ADR、7 个测试都合理），但 Skill 内部的接缝检查和用户确认环节整个被跳过，且不可复现。归档尤其要停：不可逆，且「这活算干完了」是用户的验收判断。
 
 Claude Code 和 Codex 侧解析这些块的是 `inject-workflow-state.py`（正则等价），不是 Extension。**Codex 有个额外分支**：`resolve_breadcrumb_key()` 在 `dispatch_mode: inline` 时查的是 `<status>-inline` 标签。本 Overlay 只写 5 个普通块，所以 **Codex 必须留在默认的 `auto`**——预检硬拦 `inline`（见 `changeset.md`「Codex 的两个前置」）。查不到标签不报错，只会静默降级成 "Refer to workflow.md for current step."，路由失效且无提示。
 

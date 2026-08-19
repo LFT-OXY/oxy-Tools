@@ -122,10 +122,12 @@ TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sy
 <!-- flow_stage=specify 时的每轮提示 -->
 
 [workflow-state:specify]
-阶段 Specify：提示用户运行 `/oxyteam-spec`，把权威 Spec 写进当前任务的 `prd.md`（不是 `.scratch/`）。
-完成条件：验收条件可观察、测试 Seam 已确认。
-然后执行远程同步：`TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec`。
-一个会话内做得完就 `set-meta flow_stage implement`；做不完先走 Slice。
+阶段 Specify：停下来，提示用户运行 `/oxyteam-spec`，然后等。
+这一步你不能代做 —— 不要自己编辑 `prd.md`，不要照本段散文自己写 Spec。
+用户跑完 `/oxyteam-spec` 回到主会话后，你再做下面三件事：
+① 确认 `prd.md` 落在任务目录里（不是 `.scratch/`）、验收条件可观察、测试 Seam 已确认；
+② 执行远程同步 `TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sync-spec` —— 报错就停下来告诉用户，不要跳过；
+③ 一个会话内做得完就 `set-meta flow_stage implement`；做不完先走 Slice。
 [/workflow-state:specify]
 
 #### 1.3 Slice（可选）
@@ -218,8 +220,10 @@ Codex               trellis-finish-work skill
 <!-- flow_stage=finish 时的每轮提示 -->
 
 [workflow-state:finish]
-阶段 Finish：门禁是 `flow_stage=finish` 且所有票 `Impl: done` —— 先跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 确认。
-工作区干净后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill）归档任务并写 Journal。
+阶段 Finish：归档不可逆，且「这活算干完了」是用户的验收判断，不是你的。
+你只做只读的事：跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 报门禁状态（`flow_stage=finish` 且所有票 `Impl: done`），报工作区干不干净，然后停下来问用户能不能归档。
+用户明确说可以之前：不要走 finish-work，不要跑 `task.py archive`，不要跑 `add_session.py`。
+用户确认后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill），归档任务并写 Journal。
 归档会触发 Hook 关闭远程 Issue。
 [/workflow-state:finish]
 
