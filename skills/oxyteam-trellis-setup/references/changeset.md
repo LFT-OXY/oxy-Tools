@@ -23,7 +23,7 @@
 ## 总账
 
 ```text
-A 新建自有                  3        0 冲突点，与平台数无关
+A 新建自有                  5        0 冲突点，与平台数无关
 B 修改官方 · 共享层          5        改一次，所有平台都生效
 P 修改官方 · 平台层     每平台 8~9    每个已装平台各改一套
 C 删除官方 · 平台层     每平台 6      永久，update 尊重删除
@@ -35,7 +35,7 @@ E 撤销历史修改               7        仅当预检发现旧版 Overlay 痕
 
 ```text
                 只装 OMP   +Claude   三平台全装
-A 新建               3         3          3
+A 新建               5         5          5
 B 共享层改           5         5          5
 P 平台层改           8        17         26      OMP 8 / Claude 9 / Codex 9
 ───────────────────────────────────────────
@@ -75,7 +75,6 @@ Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平�
 | # | 路径 | 职责 |
 |---|---|---|
 | A1 | `.trellis/scripts/oxyteam_tickets.py` | 解析 `issues/*.md`、算 Frontier、claim/done、summary；**claim 时把当前票路径写进 `<task>/implement.jsonl`**（见 P1 说明） |
-
 | A2 | `.trellis/scripts/hooks/github_sync.py` | 任务目录 → 远程 GitHub 单向同步。**拷 `scripts/hooks/github_sync.py`**，票的解析复用 `oxyteam_tickets.py`，不是第二个解析器 |
 | A3 | `.trellis/.oxyteam-overlay.json` | Installer 记账：Overlay 版本 + **已装平台清单** + 逐文件 hash + tombstone。**由 `scripts/write_overlay_state.py` 生成，不要手写 JSON 手算 hash**（用法见 `edits.md` 末尾） |
 | A4 | `.trellis/scripts/verify_workflow.py` | 校验 B1 落盘后的 `workflow.md` 结构。**拷 `scripts/verify_workflow.py`** |
