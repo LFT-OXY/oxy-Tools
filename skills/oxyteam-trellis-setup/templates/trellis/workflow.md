@@ -237,8 +237,9 @@ Codex               trellis-finish-work skill
 
 [workflow-state:finish]
 阶段 Finish：归档不可逆，且「这活算干完了」是用户的验收判断，不是你的。
-你只做只读的事：跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 报门禁状态（`flow_stage=finish` 且所有票 `Impl: done`），报工作区干不干净，然后停下来问用户能不能归档。
-`.trellis/tasks/` 以外还有未提交改动就先别归档 —— 归档不管业务代码的 commit，那是 Implement 阶段 `oxyteam-implement` 闭环的收尾。让用户运行 `/oxyteam-implement` 走完 review 和 commit 再回来。
+你只做只读的事：跑 `python3 .trellis/scripts/oxyteam_tickets.py summary` 报门禁状态（`flow_stage=finish` 且所有票 `Impl: done`），再报 `.trellis/tasks/` **以外**干不干净，然后停下来问用户能不能归档。
+判据是「`.trellis/tasks/` 以外」，别把 `git status` 的原始输出直接摊给用户 —— `task.json`、`implement.jsonl`、票的 `Impl:` 行本来就会因为归档流程自己的动作而显脏，它们由 `task.py archive` 和 `add_session.py` 管。这类脏文件明说一句「都在 `.trellis/tasks/` 下，不算数」，不然用户会以为该先 commit 它们，反倒是在抢脚本的活（v0.4.10 实测被问住过）。
+`.trellis/tasks/` 以外还有未提交改动才是真拦住 —— 归档不管业务代码的 commit，那是 Implement 阶段 `oxyteam-implement` 闭环的收尾。让用户运行 `/oxyteam-implement` 走完 review 和 commit 再回来。
 用户明确说可以之前：不要走 finish-work，不要跑 `task.py archive`，不要跑 `add_session.py`。
 用户确认后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill），归档任务并写 Journal。
 归档会触发 Hook 关闭远程 Issue。

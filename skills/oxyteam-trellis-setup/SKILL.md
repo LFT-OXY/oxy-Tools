@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.10`
+- Overlay 版本：`v0.4.11`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
@@ -182,12 +182,19 @@ python3 .trellis/scripts/write_overlay_state.py verify
    `isinstance(day, int)` 放行 `True` 这类自审报不出的边界 bug。**日志里有两行 Agent 不等于
    两轴独立——要看它们报出来的东西**，刚写完代码的人自审是拿不到这种发现的。
 
-   有票任务另验 `claim` → 敲 → `done` 的串行推进，**这条路径至今没实测过**：测试项目里任何需求
-   都是「一个会话做得完」，按 `workflow.md` 的 Slice 可选规则永远走不到切票。要验只能在 Spec
-   认可后显式敲 `/oxyteam-tickets` 强制切；
+   有票任务另验 `claim` → 敲 → `done` 的串行推进。v0.4.10 已实测通过（Claude Code，两张票）：
+   `frontier` 给出 01，02 `Blocked by: 01`，两张票各落一个 commit 且顺序与依赖图一致。
+   **要走到这条路只能在 Spec 认可后显式敲 `/oxyteam-tickets` 强制切**——测试项目里任何需求都是
+   「一个会话做得完」，按 `workflow.md` 的 Slice 可选规则模型每次都会合理地跳过切票，靠加大
+   需求去撞是撞不出来的；
 8. 归档门禁**两个方向都要验**：故意留一张票不是 `Impl: done`，确认 finish-work Step 0 拦住；
    补完再跑一次，确认放行并触发 `after_archive` → `github_sync.py archive`（有远程时父子 Issue
-   全部 CLOSED）。只验放行不验拦截等于没验门禁。退回 `done` 只能手改票文件，票脚本没有 reopen；
+   全部 CLOSED）。只验放行不验拦截等于没验门禁。退回 `done` 只能手改票文件，票脚本没有 reopen。
+
+   **「所有票 done」这个条件截至 v0.4.10 连续八轮没被观测到**：前七轮走 `票 0 张` 的空真放行，
+   第八轮票是真的做完了，可 Step 0 放行时不留痕，汇报里只有「Step 1–2 通过」——门禁查没查过票
+   看不出来。票 `done` 是 Implement 阶段自己标的，**跟门禁读没读它是两回事**。v0.4.11 已要求
+   放行分支也把 `summary` 原样报出来；验这一条时先看有没有那一行，没有就是没跑；
 9. 项目内没有原始上游工程 Skill 调用，也没有已删除的 `trellis-brainstorm` / `before-dev` / `check` / `break-loop` 引用（**含 Claude 的 `session-start.py` 和 Codex 的 `trellis-start/SKILL.md`**）；
 10. `trellis update --dry-run` 报告的「Modified by you」集合等于 `changeset.md` B 组 + 全部已装平台的 P 组，**减去 B2**——不多不少。
 

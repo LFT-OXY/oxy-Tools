@@ -11,7 +11,8 @@ description: "Wrap up the current session: verify quality gate passed, remind us
 
      ① 新增 Step 0 归档门禁：`flow_stage=finish` 且所有票 `Impl: done` 才放行。
         判据取 `oxyteam_tickets.py summary` 的输出。`票 0 张` 是合法的放行情况 ——
-        单会话任务不走 Slice，压根没有 `issues/`，别误判成「票没做完」。
+        单会话任务不走 Slice，压根没有 `issues/`，别误判成「票没做完」。放行分支同样
+        要把 `summary` 报出来（v0.4.11 补）—— 只在拦住时留痕，门禁跑没跑过就没人验得了。
      ② 官方文案把 commit 指向工作流里一个本版已不存在的旧步骤号。本版 commit 发生在
         Implement 阶段（`oxyteam-implement` 自带 commit），脏工作区的出路是回 Implement。
      ③ 脏路径分类里的 artifact 名对齐本版：只留 `prd.md` / `implement.jsonl` /
@@ -51,11 +52,11 @@ python3 .trellis/scripts/oxyteam_tickets.py summary
 
 没有票时输出 `票 0 张`。
 
-按输出路由：
+按输出路由（**不论走哪条，都先把 summary 那一行原样报给用户**再往下走 —— 门禁跑没跑过得看得见；只在拦住时才报，等于放行时没人知道它到底查过没有）：
 
 - **`票 0 张`** —— 放行，继续 Step 1。单会话任务不走 Slice，压根没有 `issues/`，这是正常形态，不是「票没做完」。
 - **张数和 `done` 数相等**（例如 `票 3 张 | done 3`）—— 放行，继续 Step 1。
-- **还有票没 done** —— 拦住，不要归档，把 summary 原样报给用户：
+- **还有票没 done** —— 拦住，不要归档：
   > "还有票没做完：`<summary 输出>`。回 Implement 阶段（workflow.md `#### 2.1 Implement`），用 `oxyteam_tickets.py frontier` / `claim <NN>` / `done <NN>` 把剩下的票推完，再 `python3 .trellis/scripts/task.py set-meta <task-dir> flow_stage finish`，然后重新运行 `$finish-work`。"
 - **`flow_stage` 不是 `finish`** —— 同样拦住，提示用户先回到 `flow_stage` 对应的阶段走完，不要跳过阶段直接归档。
 

@@ -10,10 +10,10 @@
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.4.10`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
-以及 `write_overlay_state.py` 顶部的 `OVERLAY_VERSION` 常量四处必须一致，改一处四处都要改。
-`--overlay-version` 的默认值是 `None`，不是版本号 —— 那是留给 `bless` 分辨「显式要升版本」
-用的，别把它当成第五处去改）。
+本 Overlay 自身版本：**`v0.4.11`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
+本文「升级收尾」的 `bless` 示例命令、以及 `write_overlay_state.py` 顶部的 `OVERLAY_VERSION`
+常量五处必须一致，改一处五处都要改。`--overlay-version` 的默认值是 `None`，不是版本号 ——
+那是留给 `bless` 分辨「显式要升版本」用的，别把它当成第六处去改）。
 
 `oxyteam-trellis-setup` 允许钉在与基础 Skill Pack 不同的标签上——`skills-lock.json` 是逐 Skill 记 `ref` 的，仓库级标签线本来就支撑得住，**不需要单独的 Overlay 标签命名空间**。Setup 标签与基础 Skill Pack 标签不同**不是**混装；预检报告必须分别列出两个版本。
 
@@ -102,7 +102,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.4.10",
+  "overlay_version": "v0.4.11",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
@@ -164,7 +164,7 @@ C != A_old && C != U_new  → 本地有漂移，进冲突处理，不静默覆�
 ```bash
 python3 .trellis/scripts/write_overlay_state.py bless \
   .trellis/workflow.md .claude/agents/trellis-implement.md \
-  --overlay-version v0.4.10
+  --overlay-version v0.4.11
 ```
 
 不传就一个字不动（免得日常盖章顺手改了版本号）。这是 v0.4.9 升级实测补的：当时
