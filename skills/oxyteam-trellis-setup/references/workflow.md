@@ -411,7 +411,7 @@ v0.4.4 时代，**六处与现行流程正面冲突**：
 
 修法是删复述：`Step 3` 的表只做 `flow_stage` → 阶段编号的映射，具体做什么一律指向
 `.trellis/workflow.md` 的块正文。删得掉的前提是细节本来就不缺 —— `Step 4` 的
-`get_context.py --mode phase --step <X.X>` 是**实时从 `workflow.md` 读**的，v0.4.11 实跑
+`get_context.py --mode phase --step <X.X>` 是**实时从 `workflow.md` 读**的，v0.4.12 实跑
 `--step 2.1` 打印出来的正是含「不派 `trellis-implement` 子代理」的最新正文。复述从第一天
 起就是纯冗余，只不过它冗余的时候是对的，所以没人看得出来。
 

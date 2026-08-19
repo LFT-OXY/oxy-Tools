@@ -38,7 +38,7 @@ from pathlib import Path
 STATE_PATH = Path(".trellis/.oxyteam-overlay.json")
 ACTIONS = ("create", "modify", "delete")
 LAYERS = ("shared", "omp", "claude-code", "codex")
-OVERLAY_VERSION = "v0.4.12"
+OVERLAY_VERSION = "v0.4.13"
 
 
 def digest(path: Path) -> str | None:

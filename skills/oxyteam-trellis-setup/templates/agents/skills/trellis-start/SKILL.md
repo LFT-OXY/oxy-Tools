@@ -109,14 +109,17 @@ python3 ./.trellis/scripts/get_context.py --mode phase --step 2.1 --platform cod
 
 | 用户意图 | 怎么走 |
 |---|---|
-| 新功能 / 需求不清楚 | 提示用户运行 `/oxyteam-askme`、`/oxyteam-interview`、`/oxyteam-askme-with-docs` 或 `/oxyteam-map` |
-| 有外部事实未知项 | 提示用户运行 `/oxyteam-research`（结果写 `<task>/research/`） |
-| 需要低成本验证行为或界面 | 提示用户运行 `/oxyteam-prototype` |
-| 准备开始写代码 | 走 Implement 前置：`oxyteam_tickets.py frontier` → `claim <NN>` → 派 `trellis-implement` 子代理（薄包装，内部调完整的 `oxyteam-implement`） |
+| 新功能 / 需求不清楚（默认） | 提示用户运行 `/oxyteam-askme-with-docs`；不需要落 ADR 和术语表时用 `/oxyteam-askme`（它就是 `interview`，不是两个入口） |
+| 路本身看不清，要先定一串决策才知道做什么 | 提示用户运行 `/oxyteam-map` |
+| 答案得跑起来才知道 | 提示用户运行 `/oxyteam-prototype` |
+| 明确要一份带引用的调研文件 | 提示用户运行 `/oxyteam-research`（结果写 `<task>/research/`）—— 一般的环境事实不用它，`interview` 会自己派子代理去查 |
+| 准备开始写代码 | `oxyteam_tickets.py frontier` → `claim <NN>` → **请用户敲 `/oxyteam-implement`**，这一轮到此为止 |
 | 写完了要做质量检查 | 提示用户运行 `/oxyteam-code-review`（它自己 spawn 两个干净上下文的子代理：Standards 一轴、Spec 一轴） |
 | 卡住了 / 同一个 bug 反复修 | 提示用户运行 `/oxyteam-diagnosing-bugs` |
 | 学到值得沉淀的东西 | `trellis-update-spec` |
 
-派发 `trellis-implement` 的提示词第一行必须是 `Active task: <task.py current 输出的路径>`。
+**不派 `trellis-implement` 子代理**（v0.4.9 决策）：`oxyteam-implement` 是 skill 不是 agent，
+加载进谁的上下文就在谁那里跑；起点落进子代理，`oxyteam-code-review` 的两轴就成了二级，
+平台不支持嵌套时静默退化成自审、还照样报两轴全绿。理由全文在 `references/workflow.md`。
 
 完整规则在 `.trellis/workflow.md`。

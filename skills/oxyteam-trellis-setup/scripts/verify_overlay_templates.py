@@ -31,6 +31,14 @@ DELETED_SKILLS = (
 # 「已删除 / 换成 X」这类说明句里提到旧名是允许的，正文当入口用才算残留
 ALLOW_MARKERS = ("已删除", "不再使用", "已被替换", "换成", "改成", "→", "本版没有")
 
+# v0.4.9 起 Implement 在主会话里跑，不派 trellis-implement 子代理（起点落进子代理，
+# oxyteam-code-review 的两轴就成了二级，平台不支持嵌套时静默退化成自审）。模板里再
+# 出现「派 trellis-implement」就是洞 Q 复发。
+RE_DISPATCH_IMPL = re.compile(r"派发?\s*`?trellis-implement`?")
+# 「凡是说」那条是 trellis-implement 三份 agent 模板里的递归护栏，它在**引用**这条指令
+# 来解释「你的存在就是那条指令的结果」，不是在下达它。
+DISPATCH_OK = ("不派", "不要派", "还写着", "曾经", "已删", "凡是说")
+
 # 「当成路径去读写」才算残留
 DEAD_ARTIFACT_PATHS = (
     "$TASK/design.md", "<task>/design.md", "taskDir/design.md", "$TASK/implement.md",
@@ -110,6 +118,11 @@ def check_file(path: Path, rel: str) -> list[str]:
             bad.append(f"{rel}:{lineno} 阶段路由表多了一列 —— 只做 flow_stage → 阶段编号"
                        "的映射，各阶段该做什么一律指向 .trellis/workflow.md 的块正文，"
                        "复述必漂")
+        # 上一条只认 `| flow_stage |` 表头。v0.4.12 在 trellis-start 的「Skill 路由」表里
+        # 又抓到同一个洞 —— 那张表长得完全不一样，靠表头查不到，得直接查这个动作本身。
+        if RE_DISPATCH_IMPL.search(s) and not any(m in s for m in DISPATCH_OK):
+            bad.append(f"{rel}:{lineno} 还写着派 `trellis-implement` 子代理 —— v0.4.9 起 "
+                       "Implement 在主会话里跑，改成「请用户敲 `/oxyteam-implement`」")
         if "current --json" in s and s.startswith("python3") and "|" not in s:
             bad.append(f"{rel}:{lineno} 裸的 `task.py current --json` —— 它是白名单八字段、"
                        "不含 meta，读 flow_stage / implementation_base_sha 必须走两步")
@@ -233,6 +246,15 @@ def selfcheck() -> int:
         "注释压 H1 没被抓到"
     assert not hits("claude/commands/c.md", "# C\n\n<!-- 说明 -->\n\n正文\n"), \
         "H1 在前、注释在后的正确形态被误报了"
+    # 洞 Q 的第二种形态：不在路由表里，是散在正文里的派发指令
+    assert any("还写着派" in b for b in hits(
+        "a.md", "claim <NN> → 派 `trellis-implement` 子代理\n")), "派发指令没被抓到"
+    assert not hits("a.md", "**不派 `trellis-implement` 子代理**（v0.4.9 决策）\n"), \
+        "「不派」的说明被误报了"
+    assert not hits("a.md", "六处假指令（还写着派 `trellis-implement` 子代理）\n"), \
+        "讲历史的说明句被误报了"
+    assert not hits("a.md", "凡是说「派 trellis-implement 子代理」的，都是写给主会话的\n"), \
+        "递归护栏里引用这条指令的说明被误报了"
     # 洞 Q：入口文件复述阶段流程 → 改 workflow.md 时漏改，假指令一漂三个版本
     assert any("多了一列" in b for b in hits(
         "a.md", "| flow_stage | 接着走 | 本轮该做什么 |\n")), "三列路由表没被抓到"
