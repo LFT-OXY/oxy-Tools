@@ -342,7 +342,7 @@ def main(argv: list[str]) -> int:
     p.add_argument("command", choices=["snapshot", "finalize", "bless", "verify", "selfcheck"])
     p.add_argument("paths", nargs="*", help="bless 专用：要重新盖章的路径")
     p.add_argument("--root", default=".", help="仓库根，缺省当前目录")
-    p.add_argument("--overlay-version", default="v0.4.1")
+    p.add_argument("--overlay-version", default="v0.4.2")
     p.add_argument("--trellis-version", default="0.6.15")
     # skills-lock.json 没有 ref 字段，装的是默认分支 —— 默认值只能是「没验过」，
     # 记一个没验过的版本号比不记更坏。传 computedHash 或真实 tag 才有意义。

@@ -291,9 +291,25 @@ def cmd_claim(tickets: list[Ticket], root: Path, task: Path, num: str, **_) -> i
 
 def cmd_done(tickets: list[Ticket], root: Path, task: Path, num: str, **_) -> int:
     target = pick(tickets, num)
+    if target.impl == "done":
+        print(f"{target.label} 已经是 done")
+        return 0
+    # ready 直接跳 done 会绕过 claim，implementation_base_sha 停在上一张票，
+    # 之后的 code-review 会拿错基线去 diff —— 状态看着对，审的范围是错的。
+    if target.impl != "doing":
+        raise TicketError(
+            f"{target.label} 的 Impl 是 {target.impl}，不是 doing。"
+            f"先 claim {num} 再 done —— 跳过 claim 会让 implementation_base_sha "
+            "停在上一张票，code-review 的 diff 基线就错了"
+        )
     set_impl(target, "done")
     rewrite_manifest(root, task, None)
     left = frontier(tickets)
+    if not left and all(t.impl == "done" for t in tickets):
+        # 实测过一次：三张票全 done，但没人推挡位，归档门禁卡住且没人知道为什么
+        print(f"{target.label} → Impl: done。全部票已完成 —— "
+              f"下一步 `task.py set-meta {task} flow_stage finish`")
+        return 0
     nxt = "、".join(f"{t.num:02d}" for t in left) or "无（全部完成或被阻塞）"
     print(f"{target.label} → Impl: done。下一批可开工：{nxt}")
     return 0
@@ -360,6 +376,18 @@ def cmd_selfcheck(**_) -> int:
         # doing 的票不算 frontier —— 否则会被重复认领
         set_impl(ts[1], "doing")
         assert [t.num for t in frontier(load_tickets(tmp))] == [3]
+
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        # ready 直接 done 必须被拒 —— 绕过 claim 就没写 implementation_base_sha
+        ts = build(tmp, [(1, "ready", "none"), (2, "doing", "none")])
+        fails(lambda: cmd_done(ts, tmp, tmp, "01"), "不是 doing")
+        assert load_tickets(tmp)[0].impl == "ready", "被拒之后不该改动票"
+        # doing 的票正常收掉
+        assert cmd_done(ts, tmp, tmp, "02") == 0
+        assert load_tickets(tmp)[1].impl == "done"
+        # 重复 done 幂等，不报错
+        assert cmd_done(load_tickets(tmp), tmp, tmp, "02") == 0
 
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
