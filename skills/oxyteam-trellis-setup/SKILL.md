@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.7`
+- Overlay 版本：`v0.4.8`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`

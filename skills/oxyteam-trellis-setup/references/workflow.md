@@ -282,6 +282,14 @@ v0.4.6 实测（Claude Code，同一句需求跑两次都复现）：`no_task` �
 
 单会话任务派子代理还要补一步基线：`implementation_base_sha` 平时由 `claim` 写，没票时没人写，`oxyteam-code-review` 会没有 diff 起点（实测它会停下来问用户要基线，不会崩，但多一轮交互）。
 
+### 平台 agent 文件：说明注释不能压在 frontmatter 前面（v0.4.7 实测）
+
+Overlay 版 `trellis-implement` 在文件开头加了一段 `<!-- ... -->` 说明注释，把 frontmatter 推到了第二块。Claude Code 要求 agent 文件**第一行就是 `---`**，结果整个 `.claude/agents/` 目录一个都没注册——实测报 `Agent type 'trellis-implement' not found`，可用列表里只剩用户全局的 agent。主会话只好退用 `general-purpose` 顶替，`oxyteam-implement` 闭环走不全。
+
+官方原版（`@mindfoldhq/trellis/dist/templates/{claude,omp}/agents/trellis-implement.md`）首行就是 `---`。修法：注释挪到 frontmatter 之后。Codex 版是 TOML，`#` 注释首行合法，不受影响。
+
+这个洞是修完 ⑦ 之后才暴露的——在那之前三平台压根没派过子代理，文件能不能加载根本走不到。**一个缺陷挡住另一个缺陷的验证，是这类适配层的常态：每修好一层，都要重跑一遍全流程。**
+
 ### Codex 侧实测到的三件事（v0.4.4 轮）
 
 1. **`$skill-name` 会把 SKILL.md 正文注入上下文**，机制正常。Codex 的显式调用就是 `$` 前缀，或打 `$` 触发选择器后选。

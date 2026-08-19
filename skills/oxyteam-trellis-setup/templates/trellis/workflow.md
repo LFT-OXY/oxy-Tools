@@ -57,7 +57,7 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
 [workflow-state:no_task]
 当前没有 Active Task。先判断本轮属于哪一类，问完停下来等用户回答 —— **这一轮先别动代码，也不要改完再补问一句**。
 简单对话 / 小改动：只问一句本轮要不要建 Trellis 任务。用户说不用就直接干活，本会话跳过 Trellis，上一句的禁令到此为止。
-复杂任务：征得同意后建任务。标题从本轮对话里提炼，用用户自己的说法，不要自创术语；`--slug` 是对应的英文小写连字符短名，不带 `MM-DD` 前缀（目录名由 `task.py` 拼成 `MM-DD-<slug>`；`_slugify` 只吃 ASCII，中文标题不显式给 `--slug` 会直接报错退出）。标题和 slug 一起报给用户确认后再执行：
+复杂任务：征得同意后建任务。标题从本轮对话里提炼，用用户自己的说法，不要自创术语；`--slug` 是对应的英文小写连字符短名，不带 `MM-DD` 前缀（目录名由 `task.py` 拼成 `MM-DD-<slug>`；`_slugify` 把非 ASCII 全换成连字符，中文标题**一律显式给 `--slug`** —— 不给的话半中半英的标题会静默用残余 ASCII 拼出一个和标题基本无关的目录名，纯中文标题才会因空 slug 报错）。标题和 slug 一起报给用户确认后再执行：
 `python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=<挡位>`
 `python3 .trellis/scripts/task.py start <task-dir>` —— 紧接着执行，`status` 从 `planning` 转 `in_progress`。漏了这条任务全程停在 `planning`，报表和 `task.py list --status` 全是错的。
 挡位取决于本轮之前聊到哪一步：需求还没问清楚写 `discover`；本会话里已经聊清楚了（比如刚跑完 `/oxyteam-askme-with-docs`）直接写 `specify`，不要把用户塞回 Discover 再追问一遍。

@@ -1,3 +1,11 @@
+---
+name: trellis-implement
+description: |
+  Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
+tools: read, write, edit, bash, find, search, ast_grep, lsp
+model: pi/task
+---
+
 <!-- Oxyteam Overlay 版 trellis-implement 子代理 —— 由 oxyteam-trellis-setup 整篇替换官方
      templates/omp/agents/trellis-implement.md，落到项目里的 .omp/agents/trellis-implement.md。
 
@@ -17,14 +25,6 @@
      frontmatter 是 OMP 专有的：`tools` 值全小写，且多一行 `model: pi/task`。
      不要跨平台抄 Claude 版的大写 tools。
 -->
-
----
-name: trellis-implement
-description: |
-  Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
-tools: read, write, edit, bash, find, search, ast_grep, lsp
-model: pi/task
----
 
 # Implement Agent（Oxyteam Overlay）
 

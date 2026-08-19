@@ -1,3 +1,10 @@
+---
+name: trellis-implement
+description: |
+  Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
+tools: Read, Write, Edit, Bash, Glob, Grep
+---
+
 <!-- Oxyteam Overlay 版 trellis-implement 子代理 —— 由 oxyteam-trellis-setup 整篇替换官方
      templates/claude/agents/trellis-implement.md，落到项目里的 .claude/agents/trellis-implement.md。
 
@@ -17,13 +24,6 @@
      frontmatter 是 Claude Code 专有的：`tools` 值首字母大写，且**没有** `model:` 这一行。
      不要跨平台抄 OMP 版的小写 tools 和 `model: pi/task`。
 -->
-
----
-name: trellis-implement
-description: |
-  Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
-tools: Read, Write, Edit, Bash, Glob, Grep
----
 
 # Implement Agent（Oxyteam Overlay）
 
