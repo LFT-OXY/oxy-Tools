@@ -31,7 +31,7 @@ Trellis 提供运行时：Session、Active Task、跨会话恢复、Archive、Jo
 | Discover | Phase 1 | `planning` | 默认 `/oxyteam-askme-with-docs`；`askme` / `map` / `prototype` 按需 |
 | Specify | Phase 1 | `planning` | `/oxyteam-spec` → `<task>/prd.md` |
 | Slice（可选） | Phase 1 | `planning` | `/oxyteam-tickets` → `<task>/issues/NN-*.md` |
-| Implement | Phase 2 | `in_progress` | `trellis-implement` 子代理 → 完整的 `oxyteam-implement` |
+| Implement | Phase 2 | `in_progress` | 用户敲 `/oxyteam-implement`（主会话内跑完整闭环） |
 | Finish | Phase 3 | `completed` | finish-work 入口 → Archive + Journal |
 
 细挡位存在 `task.json.meta.flow_stage`（`discover|specify|slice|implement|finish`），
@@ -171,47 +171,51 @@ Spec 落地之后再做四件事：
 oxyteam_tickets.py frontier      → 看哪些票可开工
 oxyteam_tickets.py claim <NN>    → Impl: doing
                                    + 记 meta.implementation_base_sha
-                                   + 把当前票写进 <task>/implement.jsonl
   ↓
-派 trellis-implement 子代理
-  → 它是薄包装，内部调完整的 oxyteam-implement
-    → oxyteam-tdd → 跑测试 → oxyteam-code-review → commit
+请用户敲 /oxyteam-implement       → 在主会话里走完整闭环
+  → oxyteam-tdd → 跑测试 → oxyteam-code-review → commit
   ↓
 oxyteam_tickets.py done <NN>     → Impl: done，回 frontier 挑下一张
 ```
 
-派发提示词第一行必须是 `Active task: <task.py current 输出的路径>`。
-
 单会话任务（没有 `issues/`）跳过 frontier / claim / done，改为自己记一次基线
 `task.py set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`，其余完全相同 ——
-**代码一样由子代理走完整闭环，票只决定怎么分批，不决定要不要 review 和 commit。**
+票只决定怎么分批，不决定要不要 review 和 commit。
+
+**代码在主会话里写，不派 `trellis-implement` 子代理。** `oxyteam-implement` 是 skill 不是
+agent，加载进谁的上下文就在谁那里跑；起点在主会话，`oxyteam-code-review` 派的两轴才是一级
+子代理。起点放进子代理，两轴就成了二级——平台不支持嵌套时会静默退化成「刚写完代码的人自审」，
+汇报照样两轴全绿。这条路实测踩了五个洞（见 `references/workflow.md` 的「为什么不派
+trellis-implement 子代理」），换来的只有主会话上下文干净。
+
+`oxyteam-implement` 带 `disable-model-invocation: true`，**模型调不动，必须用户显式敲**。
+不要用 Read 把它的 SKILL.md 当文档照做绕过去——那样 code-review 就在已装满实现细节的上下文里跑了。
 
 **不要告诉 `oxyteam-implement`「别 review 别 commit」。** 它是完整闭环，拆开会产生两份直接冲突的指令。
 不设独立 Review 阶段：`oxyteam-code-review` 自己 spawn 两个干净上下文的子代理（Standards 一轴、Spec 一轴）。
 
-读取顺序：
+请用户敲之前主会话自己先读一遍，好把依据交代清楚：
 
 1. Active Task；
 2. 当前票（单会话任务读 `prd.md`）；
 3. `.trellis/spec/` 对应层的编码规范；
 4. 相关 `CONTEXT.md` / `CONTEXT-MAP.md` 与 `docs/adr/`；
-5. `implement.jsonl` 列出的材料；
-6. Research 或 Prototype 结果；
-7. 真实源码、调用者和数据流。
+5. Research 或 Prototype 结果；
+6. 真实源码、调用者和数据流。
 
 <!-- flow_stage=implement 时的每轮提示。status 从 task.py start 一直到 archive
      都是 in_progress，所以这一块要覆盖从实施到 commit 的全部必需步骤。 -->
 
 [workflow-state:implement]
-阶段 Implement：**代码由 `trellis-implement` 子代理写，有票没票都一样**，你自己不要直接上手写实现。它是薄包装，内部调完整的 `oxyteam-implement`（自带 tdd → 测试 → code-review → commit）——不要指示它跳过 review 或 commit。派发提示词第一行写 `Active task: <task.py current 的路径>`。
-再看有没有票 —— `ls <task>/issues/`。
-没有 `issues/` 目录：这是单会话任务，不跑 frontier / claim / done。派子代理之前先记一次变更基线（有票时这步由 `claim` 代劳，单会话任务没人写，code-review 会没有 diff 起点）：
+阶段 Implement：代码走 `oxyteam-implement` 的完整闭环（tdd → 测试 → code-review → commit），别自己另发明流程，也别跳过 review 或 commit。它带 `disable-model-invocation: true`，你调不动 —— 上下文备齐之后**请用户敲 `/oxyteam-implement`，这一轮就到此为止**。不要自己 Read 它的 SKILL.md 照着做，那样 `oxyteam-code-review` 会在你这个已经装满实现细节的上下文里跑，两轴退化成自审。
+先看有没有票 —— `ls <task>/issues/`。
+没有 `issues/` 目录：这是单会话任务，不跑 frontier / claim / done。先记一次变更基线（有票时这步由 `claim` 代劳，单会话任务没人写，code-review 会没有 diff 起点）：
 `python3 .trellis/scripts/task.py set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`
-子代理照 `prd.md` 干完就 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
-有票：票默认串行，一次只推进一张。
-挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing`、`implementation_base_sha`，并把当前票写进 `implement.jsonl`）。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
-读取顺序：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → `implement.jsonl` → 真实源码。
-做完一张 `oxyteam_tickets.py done <NN>`，回 frontier 挑下一张。全部 done 后 `set-meta flow_stage finish` —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**。
+然后请用户跑 `/oxyteam-implement`，实现依据是 `prd.md`。等它 commit 落地后再 `set-meta flow_stage finish`（改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**）。
+有票：票默认串行，一次只推进一张，**每张票请用户敲一次 `/oxyteam-implement`**。
+挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing` 和 `implementation_base_sha`）→ 请用户跑 `/oxyteam-implement` → 它 commit 之后回来 `oxyteam_tickets.py done <NN>` → 回 frontier 挑下一张。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
+请用户敲之前你自己先读一遍，好把依据交代清楚：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → 真实源码。
+全部 done 后 `set-meta flow_stage finish` —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive`**。
 [/workflow-state:implement]
 
 ## Phase 3: Finish

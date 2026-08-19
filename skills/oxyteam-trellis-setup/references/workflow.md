@@ -31,7 +31,7 @@ Finish
 Discover  → oxyteam-askme-with-docs（默认）/ askme / map / prototype
 Specify   → oxyteam-spec       写 <task>/prd.md
 Slice     → oxyteam-tickets    写 <task>/issues/*.md
-Implement → trellis-implement 薄包装 → 完整的 oxyteam-implement
+Implement → 提示用户敲 /oxyteam-implement（主会话内跑完整闭环）
 Finish    → Trellis Archive + Journal
 ```
 
@@ -120,28 +120,32 @@ oxyteam_tickets.py frontier → 挑一张 → claim → Impl: doing
   ↓
 记录 task.json.meta.implementation_base_sha = 当前 HEAD
   ↓
-trellis-implement 薄包装器
-  → 传入 Active Task、当前票、implementation_base_sha、当前 branch
-  → 读 .trellis/spec/ 对应层的编码规范
-  → 调完整的 oxyteam-implement
-    → oxyteam-tdd → 跑测试 → oxyteam-code-review → commit
+主会话读齐上下文，请用户敲 /oxyteam-implement
+  → oxyteam-tdd → 跑测试 → oxyteam-code-review（两个并行子代理）→ commit
   ↓
 oxyteam_tickets.py done → Impl: done → 回 frontier 挑下一张（串行）
 ```
 
 **单会话任务（没有 `issues/`）走同一条闭环**，只是跳过 frontier / claim / done，改为自己记一次
 `set-meta <task-dir> implementation_base_sha $(git rev-parse HEAD)`。票只决定怎么分批，不决定要不要
-review 和 commit——把「派子代理」写进「有票」分支是 v0.4.6 的实测缺陷，见措辞要求 ⑦。
+review 和 commit——把这件事写进「有票」分支是 v0.4.6 的实测缺陷，见措辞要求 ⑦。
 
-读取顺序：
+**每张票各敲一次 `/oxyteam-implement`。** `oxyteam-implement` 带 `disable-model-invocation: true`，
+模型调不动，只能由用户显式触发；主会话不许用 Read 把它的 SKILL.md 当文档照做绕过去。代价是 N 张票
+N 次交互，换来的是 `oxyteam-code-review` 的两轴一定是一级子代理，见下面一节。
+
+读取顺序（**主会话自己读**，在请用户敲之前，好把依据交代清楚）：
 
 1. Active Task；
 2. 当前票，或单会话任务的 `prd.md`；
 3. `.trellis/spec/` 对应层（编码规范）；
 4. 相关 `CONTEXT.md` / `CONTEXT-MAP.md` 与 ADR；
-5. `implement.jsonl` 列出的材料；
-6. Research 或 Prototype 结果；
-7. 真实源码、调用者和数据流。
+5. Research 或 Prototype 结果；
+6. 真实源码、调用者和数据流。
+
+`implement.jsonl` 不在这个清单里：它是**专门给子代理传当前票**的通路，主会话自己知道当前票。
+`claim` 仍然会往里写（脚本行为，无害），官方 `inject-subagent-context.py` 也仍然读它——
+哪天要派子代理，这条通路还在。
 
 ### Finish
 
@@ -178,7 +182,7 @@ Extension 侧的匹配规则：
 
 状态名只允许字母、数字、下划线和连字符。官方原有的 `planning` / `in_progress` / `completed` / `*-inline` 块在本 Overlay 中被五阶段块替换，不保留两套并行路由。
 
-### 块正文的措辞要求（七条，都是实测出来的）
+### 块正文的措辞要求（八条，都是实测出来的）
 
 **① 提到 Team Skill 时写「提示用户运行 `/xxx`」，不写「运行 `xxx`」。**
 
@@ -261,7 +265,7 @@ set-meta flow_stage finish && oxyteam_tickets.py summary && task.py archive
 
 Spec 对不对是用户的判断。v0.4.5 之前 specify 块的收尾是「一个会话内做得完就 `set-meta flow_stage implement`」，模型写完 `prd.md` 直接就进实现了，用户没有插话的机会。加一步：把 Spec 摘要报给用户 → 等确认 → 才切挡位。
 
-（不走「用户手动调 `/oxyteam-implement`」那条路：`oxyteam-implement` 由 `trellis-implement` 子代理调用，用户直接调会绕过它的上下文装配——当前票、`.trellis/spec/` 对应层、`implementation_base_sha`。）
+（v0.4.9 起「用户手动敲 `/oxyteam-implement`」**就是**正规路径。这里原先写的是反话——理由是「子代理会装配上下文，用户直接调会绕过」，但那套装配主会话自己做同样能做，而多出来的一层引入了五个洞，见「为什么不派 `trellis-implement` 子代理」。）
 
 **⑥ 「问用户一句」必须写成「问完停下来等回答」，否则模型会先做完再补问。**
 
@@ -282,6 +286,18 @@ v0.4.6 实测（Claude Code，同一句需求跑两次都复现）：`no_task` �
 
 单会话任务派子代理还要补一步基线：`implementation_base_sha` 平时由 `claim` 写，没票时没人写，`oxyteam-code-review` 会没有 diff 起点（实测它会停下来问用户要基线，不会崩，但多一轮交互）。
 
+**⑧ 派发提示词是夹心的中间层，被官方尾巴反向禁止的动作必须在块里显式压制。**
+
+`inject-subagent-context.py` 的 `build_implement_prompt()` 把主会话写的内容夹在中间，官方的 `## Workflow` 和 `## Important Constraints` 追加在**后面**，其中一条是 `Do NOT execute git commit, only code modifications`——而 Overlay 的整个 Implement 设计以 commit 收尾。
+
+Overlay 早就意识到这个冲突：三份 agent 模板的注释 ③ 白纸黑字写着「删掉 Forbidden 里的 `git commit`——保留这条会产生两份直接冲突的指令」。**但删的只是 agent 定义文件里那份。** hook 注入的那份没删，也不打算删（`inject-subagent-context.py` 1174 行，Overlay 明确决定一个字不改）。实测那轮子代理照样 commit 了，选对了——但夹心结构里后来的指令位置更靠后，选对是运气，不是设计。
+
+**「决定不改某个官方文件」的论证要按维度逐条检查覆盖面。** 「不改 `inject-subagent-context.py`」当初的论证只回答了「子代理怎么拿到当前票」（答案：走 `implement.jsonl`，确实不用改），却顺带把「它给每次派发追加什么约束」这一维一起豁免了。前一维成立不蕴含后一维成立，中间没人重新论证过。
+
+修法是块里加一句显式压制，把冲突挑明交给子代理，而不是赌它怎么排序两份指令。
+
+（v0.4.9 起 Implement 阶段不派子代理，这个具体冲突当场消失——但**这条要求本身仍然成立**：只要还有任何一处派子代理，派发提示词就还是夹心的中间层。后半段那个「按维度检查覆盖面」的教训与派不派子代理无关。）
+
 ### 平台 agent 文件：说明注释不能压在 frontmatter 前面（v0.4.7 实测）
 
 Overlay 版 `trellis-implement` 在文件开头加了一段 `<!-- ... -->` 说明注释，把 frontmatter 推到了第二块。Claude Code 要求 agent 文件**第一行就是 `---`**，结果整个 `.claude/agents/` 目录一个都没注册——实测报 `Agent type 'trellis-implement' not found`，可用列表里只剩用户全局的 agent。主会话只好退用 `general-purpose` 顶替，`oxyteam-implement` 闭环走不全。
@@ -289,6 +305,60 @@ Overlay 版 `trellis-implement` 在文件开头加了一段 `<!-- ... -->` 说�
 官方原版（`@mindfoldhq/trellis/dist/templates/{claude,omp}/agents/trellis-implement.md`）首行就是 `---`。修法：注释挪到 frontmatter 之后。Codex 版是 TOML，`#` 注释首行合法，不受影响。
 
 这个洞是修完 ⑦ 之后才暴露的——在那之前三平台压根没派过子代理，文件能不能加载根本走不到。**一个缺陷挡住另一个缺陷的验证，是这类适配层的常态：每修好一层，都要重跑一遍全流程。**
+
+### `tools` 白名单要覆盖子代理**间接**用到的工具（v0.4.9 实测）
+
+修完 v0.4.8 的 frontmatter 问题，`trellis-implement` 第一次真正派起来了，闭环也走完了——但汇报里有一行：
+
+> Code Review（**本 agent 上下文没有 Task 工具**，两轴由我对冻结 patch 分别自审，非并行子代理）
+
+`oxyteam-code-review/SKILL.md:11` 写的是「Both axes run as **parallel sub-agents** so they don't pollute each other's context」，`:80` 是「Spawn both sub-agents in parallel」。而三平台的 agent 模板 `tools` 全是官方那一套 `Read, Write, Edit, Bash, Glob, Grep`——官方三个 agent 一个都不带 `Task`，因为官方流程里子代理确实不需要再派子代理。Overlay 把 `oxyteam-implement` 塞进子代理之后，这个前提就不成立了，但 `tools` 没跟着改。
+
+**自审恰好毁掉那句 "don't pollute each other's context"。** 子代理刚写完这份代码，上下文里全是它自己的实现决策，再拿同一份 patch 审两轴，报「0 处硬违规 / 10 条全覆盖」是结构使然，不是质量证明。对照组是 OMP 那轮——主会话直接跑 `/oxyteam-implement`，主会话有 Task，两轴是真并行子代理，当场抓出 `--output ""` 那个真 bug。
+
+Overlay 自己的 agent 模板第 78 行早就写明了预期（「`oxyteam-code-review` 自己会 spawn 两个干净上下文的子代理，你不需要再安排」）——**文档说对了，工具给错了**。而且同一份文件的递归护栏还有一条「需要更多并行工作……不要自己派」，本意是防 `trellis-implement` 自我递归，措辞却写成了全面禁止，把这两个审查子代理一并禁掉。
+
+直接修法是给 `tools` 补上派发工具：Claude 版补 `Task`，OMP 版补 `task`（小写，据 `omp.sh/docs/subagents` 的「`task` spawns one or more subagents in parallel」和 `omp.sh/docs/subagent-authoring` 的字段表——后者还有一条：`spawns` 默认 none，但 `tools` 含 `task` 时默认变成 `*`，所以不用另写 `spawns`；另外 OMP frontmatter 里本来就有的 `model: pi/task` 是**模型名**，和 `task` **工具**同名但毫无关系，别当成重复删掉一个）。递归护栏三平台一起收窄成只禁再派 `trellis-implement` 自己。
+
+这些改动都留在模板里了。但它们只是把嵌套变成可能——**真正的决定是不再走这条路**，理由见下一节。
+
+### 为什么不派 `trellis-implement` 子代理（v0.4.9 决策）
+
+`oxyteam-implement` 是 **skill 不是 agent**，12 行文字，加载进谁的上下文就在谁那里跑，它自己不派任何子代理。派子代理的是它末尾调的 `oxyteam-code-review`。所以那两轴落在第几层，只取决于谁是链条起点：
+
+```text
+用户敲 /oxyteam-implement          主会话派 trellis-implement
+主会话                              主会话
+ └─ code-review 两轴（一级）         └─ trellis-implement（一级）
+                                         └─ code-review 两轴（二级，要平台支持嵌套）
+```
+
+右边那条路多出来的一层，实测账单是**五个洞，全部由它引入**：
+
+| 洞 | 只在派子代理这条路上存在 |
+|---|---|
+| D 派发指令写错分支，三平台全跳过 tdd 和 review | ✅ |
+| G agent 文件 frontmatter 被注释推到第二块，整个目录不注册 | ✅ |
+| H `tools` 缺派发工具，review 静默退化成自审 | ✅ |
+| I hook 尾部 `Do NOT execute git commit` 与派发提示词冲突 | ✅ |
+| J 子代理猜 `~/.claude/skills/` 扑空，花四轮才找到 SKILL.md | ✅ |
+
+同期修的 B / E / F / K 四个洞与这一层无关。而左边那条路——OMP 那轮用户手动敲 `/oxyteam-implement`——一个洞没出，两轴是真并行子代理，当场抓出 `--output ""` 那个真 bug。
+
+**洞 H 尤其说明问题：这一层损坏的正是它想保护的东西。** 它的全部收益是「主会话上下文干净」（实测一次实现烧 49.5k token / 33 个工具调用，确实全留在了子代理里），代价却是把 code-review 的独立性压没了——而独立 review 恰恰是这套方法论里最贵的一环。
+
+所以 Implement 阶段改成：主会话读齐上下文，**请用户敲 `/oxyteam-implement`**，这一轮结束。`oxyteam-implement` 带 `disable-model-invocation: true`，模型本来就调不动它，用户显式触发是它设计上的正规路径；子代理此前那套「Read SKILL.md 当文档照做」是绕过去的野路子，也正是洞 J 的来源。
+
+代价两条，都接受：
+
+- 实现细节进主会话上下文；
+- 有票任务每张票各敲一次 `/oxyteam-implement`，N 张票 N 次交互。有票路径至今没实测过（`SKILL.md` 验证第 7 条一直空着），没数据之前不为它加复杂度。
+
+三份 `trellis-implement` 模板**保留不删**：它们是官方文件的整篇替换版，删掉 `trellis update` 会把官方版装回来，那版还带着 `No git commit allowed`，比留着更糟。`inject-subagent-context.py` 的 implement 分支随之空转，本来也不归 Overlay 管。哪天单票大到主会话撑不住，这条路整套都还在。
+
+**通用的一条：多加一层隔离，就多一层每个平台都要各自验一遍的接口。** 这五个洞没有一个是逻辑错误，全是「层与层之间的约定在某个平台上不成立」——frontmatter 格式、工具白名单、提示词拼接顺序、skill 安装路径。隔离的收益是线性的（省一点上下文），跨平台接口的成本是乘性的（平台数 × 接口数）。
+
+一条通用的：**当你把一个「会自己派子代理」的 skill 塞进子代理时，`tools` 白名单必须覆盖它间接需要的工具。** 缺了不会报错，只会静默降级成一个看起来跑完了的假闭环。
 
 ### Codex 侧实测到的三件事（v0.4.4 轮）
 

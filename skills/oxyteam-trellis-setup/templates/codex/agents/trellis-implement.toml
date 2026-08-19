@@ -41,7 +41,8 @@ developer_instructions = """
 
 - 不要再 spawn 一个 `trellis-implement` 子代理。
 - 注入的 SessionStart 上下文、workflow-state 提示块、`.trellis/workflow.md` 里凡是说「派 trellis-implement 子代理」的，都是写给**主会话**的。你的存在就是那条指令的结果，不要照着再派一次。
-- 需要更多并行工作，就在最终汇报里建议主会话去派，不要自己派。
+- 这条只禁 `trellis-implement` 自己。`oxyteam-code-review` 要派的那两个审查子代理（Standards 一轴、Spec 一轴）**照派不误**，它们是闭环的一部分，见下面「实施」一节。派不出来（工具不可用）就在汇报里写明「两轴为自审」，不要默默退化 —— 你刚写完这份代码，自审拿到的两轴全绿是结构使然，不是质量证明。
+- 除此之外还需要并行工作，在最终汇报里建议主会话去派。
 
 ## 上下文加载
 

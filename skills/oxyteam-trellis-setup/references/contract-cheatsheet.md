@@ -209,7 +209,7 @@ python3 .trellis/scripts/get_context.py --mode record      # finish-work 用
 
 写模板时不要另发明"把票内容贴进提示词"之类的第二条通路。
 
-派发 `trellis-implement` 的提示词**第一行必须是**：
+真要派 `trellis-implement`（v0.4.9 起 Implement 阶段已不走这条路，模板仍在）时，提示词**第一行必须是**：
 
 ```text
 Active task: <task.py current 输出的路径>
@@ -262,6 +262,12 @@ implement.md            → 同上
 ```
 
 `trellis-implement` 本来就定义成 `oxyteam-implement` 的薄包装，让它"提示用户"是死路。
+
+**但 v0.4.9 起 Implement 阶段不派它了**——主会话读齐上下文，按上面第一种写法提示用户敲
+`/oxyteam-implement`。派子代理那条路实测引入五个洞，其中一个正好毁掉 `oxyteam-code-review`
+的两轴独立性（详见 `workflow.md` 的「为什么不派 `trellis-implement` 子代理」）。第二种写法
+现在只适用于 `.trellis/agents/**` 的 channel worker，以及将来真要派子代理的场合——三份
+`trellis-implement` 模板保留不删，那条路整套都还在。
 
 ## git commit 的权限两边相反，别抄串
 

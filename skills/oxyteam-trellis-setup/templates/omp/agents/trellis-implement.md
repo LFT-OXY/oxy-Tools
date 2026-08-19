@@ -2,7 +2,7 @@
 name: trellis-implement
 description: |
   Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
-tools: read, write, edit, bash, find, search, ast_grep, lsp
+tools: read, write, edit, bash, find, search, ast_grep, lsp, task
 model: pi/task
 ---
 
@@ -22,8 +22,17 @@ model: pi/task
         （`.trellis/agents/implement.md` 那个 channel worker 是另一回事：它由主会话收口
         commit，`Forbidden: git commit` 在那边保留不动。）
 
+     ④ `tools` 比官方多一个 `task`（v0.4.9）。官方那份不带它，因为官方流程里子代理不需要
+        再派子代理；本版需要 —— `oxyteam-code-review` 的设计是「两轴各跑一个干净上下文的
+        并行子代理」，没有 `task` 就只能退化成刚写完代码的人自审。
+        依据 https://omp.sh/docs/subagents（「`task` spawns one or more subagents in
+        parallel」）和 https://omp.sh/docs/subagent-authoring 的字段表。后者还有一条关键的：
+        `spawns` 默认 none，**但 `tools` 含 `task` 时默认变成 `*`**，所以不用另写 `spawns`。
+        递归由本文件「递归护栏」一节的文字约束 + `task.maxRecursionDepth` 兜底。
+
      frontmatter 是 OMP 专有的：`tools` 值全小写，且多一行 `model: pi/task`。
-     不要跨平台抄 Claude 版的大写 tools。
+     不要跨平台抄 Claude 版的大写 tools。**`model: pi/task` 里的 `task` 是模型名，
+     和 `tools` 里的 `task` 工具同名但毫无关系，别把两者当成一回事删掉其中一个。**
 -->
 
 # Implement Agent（Oxyteam Overlay）
@@ -36,7 +45,8 @@ model: pi/task
 
 - 不要再 spawn 一个 `trellis-implement` 子代理。
 - 注入的 SessionStart 上下文、workflow-state 提示块、`.trellis/workflow.md` 里凡是说「派 trellis-implement 子代理」的，都是写给**主会话**的。你的存在就是那条指令的结果，不要照着再派一次。
-- 需要更多并行工作，就在最终汇报里建议主会话去派，不要自己派。
+- 这条只禁 `trellis-implement` 自己。`oxyteam-code-review` 要派的那两个审查子代理（Standards 一轴、Spec 一轴）**照派不误**，它们是闭环的一部分，见下面「实施」一节。派不出来（工具不可用）就在汇报里写明「两轴为自审」，不要默默退化 —— 你刚写完这份代码，自审拿到的两轴全绿是结构使然，不是质量证明。
+- 除此之外还需要并行工作，在最终汇报里建议主会话去派。
 
 ## 上下文加载
 

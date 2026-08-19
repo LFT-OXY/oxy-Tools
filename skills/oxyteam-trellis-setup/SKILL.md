@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.8`
+- Overlay 版本：`v0.4.9`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
@@ -176,7 +176,7 @@ python3 .trellis/scripts/write_overlay_state.py verify
    不是补丁内容对不对——OMP 走 `extensions/trellis/index.ts` 的 TypeScript 路径，
    Claude / Codex 走 Python hook 且各自有独立的信任与开关机制，三条链路互不代表。
    真会话跑一句「你好」，看首轮上下文里有没有 `<workflow-state>` 块的正文即可；
-7. `trellis-implement` 能拿到 Active Task、当前票和 `implementation_base_sha`；**当前票是通过 `<task>/implement.jsonl` 送达子代理的，这条必须实测**——它是「不改 `inject-subagent-context.py`」的全部依据；
+7. Implement 阶段主会话**停下来提示用户敲 `/oxyteam-implement`**，不自己写实现，也不用 Read 读 SKILL.md 绕过去；跑完看 `oxyteam-code-review` 的汇报里**两轴是不是各跑了一个并行子代理**——起点一旦落进子代理，两轴就成了二级，平台不支持嵌套时会静默退化成自审，两轴照样报全绿，不专门看这一句分辨不出来。有票任务另验 `claim` → 敲 → `done` 的串行推进，**这条路径至今没实测过**；
 8. 归档门禁**两个方向都要验**：故意留一张票不是 `Impl: done`，确认 finish-work Step 0 拦住；
    补完再跑一次，确认放行并触发 `after_archive` → `github_sync.py archive`（有远程时父子 Issue
    全部 CLOSED）。只验放行不验拦截等于没验门禁。退回 `done` 只能手改票文件，票脚本没有 reopen；

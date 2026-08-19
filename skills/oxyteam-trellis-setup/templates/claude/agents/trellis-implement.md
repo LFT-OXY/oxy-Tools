@@ -2,7 +2,7 @@
 name: trellis-implement
 description: |
   Code implementation expert. Loads the active ticket and the matching spec layer, then runs the full oxyteam-implement loop.
-tools: Read, Write, Edit, Bash, Glob, Grep
+tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
 
 <!-- Oxyteam Overlay 版 trellis-implement 子代理 —— 由 oxyteam-trellis-setup 整篇替换官方
@@ -20,6 +20,10 @@ tools: Read, Write, Edit, Bash, Glob, Grep
         `git push` / `git merge` 和破坏性 git 操作仍然禁止。
         （`.trellis/agents/implement.md` 那个 channel worker 是另一回事：它由主会话收口
         commit，`Forbidden: git commit` 在那边保留不动。）
+     ④ `tools` 比官方多一个 `Task`（v0.4.9）。官方三个 agent 一个都不带它，因为官方流程里
+        子代理不需要再派子代理；本版需要 —— `oxyteam-code-review` 的设计是「两轴各跑一个
+        干净上下文的并行子代理」，没有 Task 就只能退化成刚写完代码的人自审，而自审恰好
+        毁掉 skill 里那句 "so they don't pollute each other's context"。
 
      frontmatter 是 Claude Code 专有的：`tools` 值首字母大写，且**没有** `model:` 这一行。
      不要跨平台抄 OMP 版的小写 tools 和 `model: pi/task`。
@@ -35,7 +39,8 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 
 - 不要再 spawn 一个 `trellis-implement` 子代理。
 - 注入的 SessionStart 上下文、workflow-state 提示块、`.trellis/workflow.md` 里凡是说「派 trellis-implement 子代理」的，都是写给**主会话**的。你的存在就是那条指令的结果，不要照着再派一次。
-- 需要更多并行工作，就在最终汇报里建议主会话去派，不要自己派。
+- 这条只禁 `trellis-implement` 自己。`oxyteam-code-review` 要派的那两个审查子代理（Standards 一轴、Spec 一轴）**照派不误**，它们是闭环的一部分，见下面「实施」一节。派不出来（工具不可用）就在汇报里写明「两轴为自审」，不要默默退化 —— 你刚写完这份代码，自审拿到的两轴全绿是结构使然，不是质量证明。
+- 除此之外还需要并行工作，在最终汇报里建议主会话去派。
 
 ## 上下文加载
 
