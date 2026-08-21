@@ -61,6 +61,7 @@ python3 -c "import json;print(json.load(open('$DIR/task.json')).get('meta',{}).g
 `python3 .trellis/scripts/task.py create "<标题>" --slug <name> --meta flow_stage=<挡位>`
 `python3 .trellis/scripts/task.py start <task-dir>` —— 紧接着执行，`status` 从 `planning` 转 `in_progress`。漏了这条任务全程停在 `planning`，报表和 `task.py list --status` 全是错的。
 挡位取决于本轮之前聊到哪一步：需求还没问清楚写 `discover`；本会话里已经聊清楚了（比如刚跑完 `/oxyteam-askme-with-docs`）直接写 `specify`，不要把用户塞回 Discover 再追问一遍。
+写 `specify` 之前先过一道准入，**把结果说出来**：本会话里**你自己提过、而用户没有回答的问题，一个一个列出来**；一条都没有才算聊清楚了，否则一律写 `discover`。「我问过了」不等于「聊清楚了」——实测有一轮据此跳过 Discover，补跑 interview 后问出 6 个新问题，其中一个直接决定了 Spec 少不少掉一整个能力。
 建完任务这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里接着写 Spec 或改代码。
 用户拒绝时说明理由、澄清范围，或建议拆小再来。
 [/workflow-state:no_task]
@@ -96,11 +97,13 @@ Map 不是单独的任务类型，是 Discover 的长驻模式：已有 Map 材�
 
 [workflow-state:discover]
 阶段 Discover：先把问题、范围和成功标准问清楚，不要开始写实现代码。
+**本轮的活跟当前 Active Task 无关时，本块整个不适用** —— 说明一句「这一轮跟 `<任务名>` 无关，不走它的阶段约束」，然后照常干。判据摊开说：用户这一轮要的东西，**写不写得进当前任务的 `prd.md`**；写不进就是无关（常见的是装 Overlay 时留下的验证任务、以及用户临时插进来的另一件事）。**这句出路必须用，不要憋着违规干** —— 一条永远为真的禁令被绕过一次，下次真该拦的时候也拦不住了。
 默认提示用户运行 `/oxyteam-askme-with-docs`（追问并顺带落 ADR 和术语表）；不需要落文档时用 `/oxyteam-askme`。两者内部是同一个 interview，别当成两个入口来回推荐。
 答案得跑起来才知道，提示 `/oxyteam-prototype`。通往目的地的路本身看不清（要先定一串决策才知道做什么），提示 `/oxyteam-map` —— 只是量大而路清楚的不要用 map，往下走到 Slice 切票。
 用户明确要一份带引用的调研文件时才提示 `/oxyteam-research`（结果写 `<task>/research/`）；一般的环境事实 interview 会自己派子代理查，不用提示。
 已有 Map 材料就继续 work the map，不要重开一轮探索。
-问清楚了执行 `task.py set-meta <task-dir> flow_stage specify` —— 改完挡位这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里继续往下做。
+切到 specify 之前先过一道准入，**把结果说出来**：本会话里**你自己提过、而用户没有回答的问题，一个一个列出来**；一条都没有才算问清楚了。列得出来就**不许前进** —— 先把它们问完，或者让用户明说这几条不用管。「我问过了」不等于「聊清楚了」：实测有一轮把待定项和「需求已聊清楚所以跳过 Discover」写在了同一段汇报里，两句不可能同时为真，而没人拦住它。
+过了准入再执行 `task.py set-meta <task-dir> flow_stage specify` —— 改完挡位这一轮就结束，把下一步交给下一轮注入的阶段块，不要在同一轮里继续往下做。
 [/workflow-state:discover]
 
 #### 1.2 Specify
@@ -125,6 +128,8 @@ TASK_JSON_PATH=<task>/task.json python3 .trellis/scripts/hooks/github_sync.py sy
 
 [workflow-state:specify]
 阶段 Specify：Spec 由 `/oxyteam-spec` 产出，不由你凭空写。
+本轮的活跟当前 Active Task 无关时（判据同 Discover：写不写得进这个任务的 `prd.md`），说明一句然后照常干，本块不适用于这一轮。
+**不要提议用户跳过这一格。**「或者直接说『跳过 spec 开写』」这类话一句都不要说 —— 用户主动要跳是他的决定，你主动递台阶是在拆自己的门。实测有一轮递了这个台阶，而它当时手上的方案跟九行之外自己写的注释直接冲突（那条注释写着「不做先查再插——那是竞态」），是 Spec 这一格把方案纠了回来。
 用户还没调起它：停下来提示用户运行 `/oxyteam-spec`，然后等。不要自己动手写 `prd.md`，不要照本段散文编一份 Spec 出来。
 用户调起了 `/oxyteam-spec`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文走完流程，把 Spec 写进 `<task>/prd.md` —— 这时候写 `prd.md` 正是你该做的，上一句的禁令到此为止。
 Spec 落地之后再做四件事：
@@ -150,6 +155,8 @@ Spec 落地之后再做四件事：
 
 [workflow-state:slice]
 阶段 Slice：票由 `/oxyteam-tickets` 产出，不由你凭空写。
+本轮的活跟当前 Active Task 无关时（判据同 Discover：写不写得进这个任务的 `prd.md`），说明一句然后照常干，本块不适用于这一轮。
+不要提议用户跳过这一格，理由同 Specify。
 用户还没调起它：停下来提示用户运行 `/oxyteam-tickets`，然后等。不要自己动手写 `issues/NN-*.md`。
 用户调起了 `/oxyteam-tickets`（它的正文会进你的上下文）：你就是它的执行者，按 skill 正文把票写进 `<task>/issues/NN-*.md` —— 这时候写票正是你该做的，上一句的禁令到此为止。
 票落地之后：校验 `python3 .trellis/scripts/oxyteam_tickets.py frontier` —— 无环、无悬空 Blocker，且至少返回一张票。
