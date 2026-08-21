@@ -27,6 +27,7 @@ A 新建自有                  5        0 冲突点，与平台数无关
 B 修改官方 · 共享层          5        改一次，所有平台都生效
 P 修改官方 · 平台层     每平台 8~9    每个已装平台各改一套
 C 删除官方 · 平台层     每平台 6      永久，update 尊重删除
+                    +Claude 条件 1   C7 statusLine，仅当 init 时开了 opt-in
 D Team Skill 与 init 模板    5        随 Skill Pack v0.3.0 发布，不在 Overlay 安装时改
 E 撤销历史修改               7        仅当预检发现旧版 Overlay 痕迹
 ```
@@ -42,6 +43,10 @@ P 平台层改           8        17         26      OMP 8 / Claude 9 / Codex 9
 改官方合计          13        22         31
 C 删                 6        12         18
 ```
+
+**装 Claude 时 `trellis init` 那句 "Install Trellis statusLine for Claude Code?" 答 `n`。**
+答了 `y` 的话上表两处各 +1（`.claude/settings.json` 进 P 组、`statusline.py` 进 C 组），
+三平台全装的记账条目数从 53 变 55。见 C7。
 
 Installer 落地 reconcile 能力后 `trellis-meta` 由声明转删除，每平台 -1 改 + 24 删：三平台全装变成 **28 改 / 90 删**。
 
@@ -283,7 +288,7 @@ B1 只写 6 个普通 [workflow-state:*] 块（5 阶段 + no_task），不写 in
 
 ---
 
-## C 组：删除官方入口（每平台 6）
+## C 组：删除官方入口（每平台 6 + Claude 条件性 1）
 
 这六个各有 hash，删除会走 `userDeletedFiles` 分支被尊重，`trellis update` 不会装回来。**删比改 frontmatter 禁用更干净。**
 
@@ -295,8 +300,52 @@ B1 只写 6 个普通 [workflow-state:*] 块（5 阶段 + no_task），不写 in
 | C4 | break-loop | `.omp/skills/trellis-break-loop/` | `.claude/skills/trellis-break-loop/` | `.agents/skills/trellis-break-loop/` | `oxyteam-diagnosing-bugs` |
 | C5 | check agent | `.omp/agents/trellis-check.md` | `.claude/agents/trellis-check.md` | `.codex/agents/trellis-check.toml` | `oxyteam-code-review` 自己 spawn 的两个子代理 |
 | C6 | research agent | `.omp/agents/trellis-research.md` | `.claude/agents/trellis-research.md` | `.codex/agents/trellis-research.toml` | `oxyteam-research` 自己 spawn 后台 agent |
+| C7 | statusLine（**条件性**） | 无此事件 | `.claude/hooks/statusline.py` + `.claude/settings.json` 的 `statusLine` 键 | 无此事件 | 用户自己的状态栏（全局 `~/.claude/settings.json`） |
 
 **删的是重复实现，不是能力。** 六项能力全部有承接方，一项没少。
+
+### C7：statusLine 是 opt-in，最省的做法是装的时候就别装
+
+**`trellis init` 默认不装它。** `dist/cli/index.js` 的 `--with-statusline` 写着 "off by default"，
+不带这个 flag 时 `maybePromptStatuslineOptIn()` 弹一个 `default: false` 的确认框
+（`-y` 模式直接跳过 = 不装）。**所以干净安装里这两样根本不存在，C7 是空操作。**
+装 Trellis 时那句 "Install Trellis statusLine for Claude Code?" 答 **n**，C7 就永远不用跑。
+
+**只有装的时候答了 y 的项目才需要清理**，两处都要动，缺一不可：
+
+```bash
+# ① 摘掉 settings.json 的 statusLine 键（决定跑不跑的是这个键，不是文件在不在）
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path('.claude/settings.json')
+d = json.loads(p.read_text(encoding='utf-8'))
+d.pop('statusLine', None)
+p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+PY
+# ② 删脚本
+rm .claude/hooks/statusline.py
+```
+
+**只删文件不摘键是坏状态** —— Claude Code 会去跑一个不存在的脚本，而全局状态栏也不会接管，
+因为项目级 `statusLine` 仍然定义着。
+
+`trellis update` 尊重这个清理，两条源码依据：
+
+- `templates/claude/index.js` 的 `getStatuslineHook()` 注释原话——「is intentionally NOT part of
+  `collectTemplates` — `trellis update` must never force-install it on opted-out projects」；
+- `commands/update.js` 的 `preserveExistingClaudeStatusLine()` 第一个分支是
+  `if (!hasOwnProperty(existingSettings, 'statusLine')) return;` —— **键摘掉了它就直接返回**，
+  新模板里不会凭空长出 `statusLine`。
+
+**为什么删**：它显示的是官方 `task.json.status`（`statusline.py:132` 取 `task_data.get("status")`），
+只有 `planning` / `in_progress` / `completed` 三档，**读不到 Overlay 的 `meta.flow_stage`**。
+一个任务从 Specify 走到 Implement 再到 Finish，状态栏一动不动，反而误导。占着 Claude Code
+唯一的 `statusLine` 槽位，还挤掉用户自己的状态栏。
+
+**这条只有 Claude Code 有。** `statusLine` 是 Claude-only 事件——Trellis 0.5.0-beta.15 的 manifest
+用 8 条 `safe-file-delete` 把 Cursor / Codex / Gemini / Qoder / Copilot / CodeBuddy / Droid 的
+`statusline.py` 全删了，理由逐条写着「has no statusLine event; shared-hooks/statusline.py was
+never invoked」。OMP 和 Codex 那一栏什么都不用做。
 
 删除后必须扫一遍全项目，确保没有残留引用（continue、`workflow.md`、`trellis-session-insight`、Claude/Codex 的 `session-start.py` 与 `trellis-start` 都提过这些名字——后两个由 P2 / P3 负责）。
 
@@ -488,7 +537,7 @@ trellis-update-spec/                        ← 实测 0 处过时引用
 trellis-channel/SKILL.md                    ← 索引本身干净，只有 3 个 reference 要改
 trellis-session-insight/                    ← 3 处低危，默认不改，见下
 
-.claude/settings.json                       ← 只注册 hook，不用动
+.claude/settings.json                       ← 只注册 hook，不用动；例外见 C7（init 开了 statusLine opt-in 时要摘键）
 .claude/hooks/inject-subagent-context.py    ← 当前票走 implement.jsonl，不改（P1）
 .codex/hooks/inject-subagent-context.py     ← 同上
 .codex/hooks/session-start.py               ← 死文件，hooks.json 没注册它（P2）

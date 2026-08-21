@@ -29,7 +29,7 @@ Trellis 任务目录就是权威正文，不是副本也不是指针
 
 ## 支持范围
 
-- Overlay 版本：`v0.4.16`
+- Overlay 版本：`v0.4.17`
 - Trellis：`0.6.15`
 - Agent 平台：**Oh My Pi / Claude Code / Codex**（装了哪几个就对哪几个执行平台层）
 - 团队 Skill 来源：`LFT-OXY/oxy-Tools`
@@ -84,6 +84,7 @@ Overlay 完成后，后续项目工作恢复使用新的团队任务模型。
 9. 读 `.trellis/.oxyteam-overlay.json`：不存在即首次安装；存在则按 `update-policy.md` 的基线判定逐文件分类，并比对**已装平台清单**——记账里没有、磁盘上有的平台，走增量补装（只跑该平台的 P 组和 C 组，不重跑共享层）；
 10. 读 `.trellis/config.yaml` 的 `hooks:` 段，列出已启用的 Lifecycle Hook；
 11. 对 `changeset.md` 里每个目标路径计算当前 hash，与官方模板 hash 比对，产出「未改 / 已是目标形态 / 存在本地漂移」三分类。官方模板不要手抄路径，用 `collectPlatformTemplates(<platformId>)` 实跑导出（`claude-code` 52 / `codex` 54 / `omp` 49，数字对不上说明版本或安装范围有出入）。
+12. **Claude 专项**（装了才查）：`.claude/settings.json` 里有没有 `statusLine` 键、`.claude/hooks/statusline.py` 在不在。**两个都没有是正常状态**，跳过 C7；有则说明 `trellis init` 时开了 opt-in，按 C7 清理并在计划里点名。
 
 任何检查失败时停止，不尝试修复缺失的官方 Trellis 文件。
 
