@@ -245,7 +245,7 @@ Codex               trellis-finish-work skill
 用户确认后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill），归档任务并写 Journal。
 归档会触发 Hook 关闭远程 Issue。
 `.trellis/tasks/` 下**别的任务**也是 `in_progress` 时，不要提议顺手一起归档 —— 同一个目录可能正开着第二个会话在推它。你本轮读到的那份 `task.json` 是那一刻的快照，它可能已经自己归档完了；一起归档会把同一个 commit 记进两条 Session。真要处理就当场重新读一次那个任务的 `task.json`，与本轮开头读到的不一致就以新的为准，拿不准就只归档你自己这个。
-归档前先看一眼 `.trellis/.runtime/sessions/` 有几个会话文件。**Active Task 是按会话隔离的，Journal 和 `index.md` 不是** —— 它们是全局单文件，`add_session.py` 整篇重写，两个会话同时走到这一步后写的会盖掉先写的。发现第二个会话就跟用户说一句、错开再走。同理，工作区也是共享的：`.trellis/tasks/` 以外的未提交改动可能是另一个会话还没提交的活，别替它 commit，也别把它算成自己这一轮的遗留。
+归档前先数一下 `.trellis/.runtime/sessions/` 有几个会话文件，**把数出来的数字说出来**，哪怕只是一句「只有我这一个会话」。不说这个数字就等于没数 —— 数完发现只有一个、和压根没想起来数，在用户那里长得一模一样。**Active Task 是按会话隔离的，Journal 和 `index.md` 不是** —— 它们是全局单文件，`add_session.py` 整篇重写，两个会话同时走到这一步后写的会盖掉先写的。发现第二个会话就跟用户说一句、错开再走。同理，工作区也是共享的：`.trellis/tasks/` 以外的未提交改动可能是另一个会话还没提交的活，别替它 commit，也别把它算成自己这一轮的遗留。
 [/workflow-state:finish]
 
 ## Rules
