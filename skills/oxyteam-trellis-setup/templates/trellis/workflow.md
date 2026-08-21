@@ -216,6 +216,7 @@ trellis-implement 子代理」），换来的只有主会话上下文干净。
 挑票 `python3 .trellis/scripts/oxyteam_tickets.py frontier` → `claim <NN>`（自动写 `Impl: doing` 和 `implementation_base_sha`）→ 请用户跑 `/oxyteam-implement` → 它 commit 之后回来 `oxyteam_tickets.py done <NN>` → 回 frontier 挑下一张。`frontier` 打印 `(frontier 为空)` 有两种含义：还有票没做完但全被 blocked，或全部 done —— 用 `summary` 区分，不要猜。
 请用户敲之前你自己先读一遍，好把依据交代清楚：当前票（单会话任务读 `prd.md`）→ `.trellis/spec/` 对应层 → `CONTEXT.md` / ADR → 真实源码。
 全部 done 后自己跑 `set-meta flow_stage finish`，不用问用户 —— 改完挡位这一轮就结束，归档的事交给下一轮注入的 Finish 块，**不要在同一轮里接着跑 `task.py archive` 或 finish-work**。
+`/oxyteam-implement` 跑完，**两轴各自报了什么，你必须原样说出来** —— 哪怕只是一句「查完了，没发现问题」。收不到审查报告不等于审查通过：子代理的最终文本不会自动回主会话，「报告没送到」「子代理没起来」「真的没发现问题」这三种情况在你这里长得一模一样。**没有那一句就按没跑处理**，重跑或跟用户说清楚，别拿沉默当全绿。
 [/workflow-state:implement]
 
 ## Phase 3: Finish
@@ -243,6 +244,8 @@ Codex               trellis-finish-work skill
 用户明确说可以之前：不要走 finish-work，不要跑 `task.py archive`，不要跑 `add_session.py`。
 用户确认后走 finish-work 入口（OMP / Claude Code 是 `/trellis:finish-work`，Codex 读 `trellis-finish-work` skill），归档任务并写 Journal。
 归档会触发 Hook 关闭远程 Issue。
+`.trellis/tasks/` 下**别的任务**也是 `in_progress` 时，不要提议顺手一起归档 —— 同一个目录可能正开着第二个会话在推它。你本轮读到的那份 `task.json` 是那一刻的快照，它可能已经自己归档完了；一起归档会把同一个 commit 记进两条 Session。真要处理就当场重新读一次那个任务的 `task.json`，与本轮开头读到的不一致就以新的为准，拿不准就只归档你自己这个。
+归档前先看一眼 `.trellis/.runtime/sessions/` 有几个会话文件。**Active Task 是按会话隔离的，Journal 和 `index.md` 不是** —— 它们是全局单文件，`add_session.py` 整篇重写，两个会话同时走到这一步后写的会盖掉先写的。发现第二个会话就跟用户说一句、错开再走。同理，工作区也是共享的：`.trellis/tasks/` 以外的未提交改动可能是另一个会话还没提交的活，别替它 commit，也别把它算成自己这一轮的遗留。
 [/workflow-state:finish]
 
 ## Rules
