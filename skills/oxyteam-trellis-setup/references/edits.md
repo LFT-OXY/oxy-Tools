@@ -61,7 +61,24 @@ buildAgentsMdTemplate()  读磁盘上的 AGENTS.md
 
 ## B3 `.trellis/config.yaml` —— 启用 github_sync Hook
 
-官方那段整块是注释状态。把下面这段注释块**整段替换**成启用版：
+**先判断该不该启用，把判据和结论说出来**：
+
+```bash
+git remote get-url origin 2>/dev/null
+```
+
+**只有输出是 GitHub 地址时才做这一步。** 没有远程、或者远程不是 GitHub —— 保持官方的注释状态，
+并告诉用户：镜像默认关着，以后要开照 `issue-tracker-trellis-local.md` 的
+`## Re-enabling the GitHub mirror` 那节做。这时 Section A 的 tracker 该选
+**Trellis (local only)**，两处要一致。
+
+不加这道判断的后果不是「hook 空转」那么轻：`github_sync.py` 在没有远程时打一行警告就
+退出 0，看着无害，**但哪天有人给这个仓库加了 remote，它会不问一声就开始建 GitHub Issue**。
+用户读的是 tracker 文档，而那份文档不会因为 `git remote add` 改一个字 ——
+说好的「纯本地」在配置里从来就不是真的（v0.4.23 实测：一个用户按「纯本地」理解装完，
+撞上自动建 Issue，只能装完自己回头改文档 + 关 hook）。
+
+判断为「要启用」之后，官方那段整块是注释状态。把下面这段注释块**整段替换**成启用版：
 
 找（官方原文，`config.yaml` 里紧跟在「Hook failures print a warning」那行之后）：
 

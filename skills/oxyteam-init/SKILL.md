@@ -40,9 +40,10 @@ Lead each section with the recommended answer so the user can accept it in a wor
 
 > Explainer: The "issue tracker" is where issues live for this repo. Skills like `oxyteam-tickets`, `oxyteam-triage`, and `oxyteam-spec` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
 
-Default posture: if exploration found the Oxyteam Trellis Overlay installed, propose Trellis — the Overlay only works with it. Otherwise these skills were designed for GitHub: if a `git remote` points at GitHub, propose that; if it points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
+Default posture: if exploration found the Oxyteam Trellis Overlay installed, propose Trellis — the Overlay only works with it. **Which of the two Trellis variants you propose is decided by `git remote get-url origin`**: a GitHub remote → the mirrored variant; no remote, or a non-GitHub one → **Trellis (local only)**. Don't propose the mirror to a repo that has nothing to mirror to — the sync hooks would sit there printing "no GitHub remote, skipping" on every task, and would silently start filing real issues the day someone adds a remote. Otherwise these skills were designed for GitHub: if a `git remote` points at GitHub, propose that; if it points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
 
 - **Trellis** — the spec and tickets for the current task live in the active Trellis task directory and sync one-way out to GitHub Issues; issues other people raise stay in GitHub Issues (only valid with the Oxyteam Trellis Overlay installed)
+- **Trellis (local only)** — same task directory, **no remote mirror at all**: nothing is synced, and no GitHub Issue is created. Propose this one when the repo has no `git remote` (also valid for a solo/private repo, or a team that deliberately keeps planning artifacts out of the issue tracker)
 - **GitHub** — issues live in the repo's GitHub Issues (uses the `gh` CLI)
 - **GitLab** — issues live in the repo's GitLab Issues (uses the [`glab`](https://gitlab.com/gitlab-org/cli) CLI)
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
@@ -106,6 +107,7 @@ Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.
 Then write the docs files using the seed templates in this skill folder as a starting point:
 
 - [issue-tracker-trellis.md](./issue-tracker-trellis.md) — Trellis task directory + GitHub mirror
+- [issue-tracker-trellis-local.md](./issue-tracker-trellis-local.md) — Trellis task directory, no mirror. Also carries a `## Re-enabling the GitHub mirror` section, so picking it is reversible
 - [issue-tracker-github.md](./issue-tracker-github.md) — GitHub issue tracker
 - [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
 - [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker

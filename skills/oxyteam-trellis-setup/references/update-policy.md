@@ -10,7 +10,7 @@
 - **Team Skill Pack `>= v0.3.0`**；
 - 除 `oxyteam-trellis-setup` 外的基础团队 Skills 使用同一个 Skill Pack 标签。
 
-本 Overlay 自身版本：**`v0.4.22`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
+本 Overlay 自身版本：**`v0.4.23`**（与 `SKILL.md` 的「支持范围」、本文「状态文件」示例、
 本文「升级收尾」的 `bless` 示例命令、以及 `write_overlay_state.py` 顶部的 `OVERLAY_VERSION`
 常量五处必须一致，改一处五处都要改。`--overlay-version` 的默认值是 `None`，不是版本号 ——
 那是留给 `bless` 分辨「显式要升版本」用的，别把它当成第六处去改）。
@@ -27,17 +27,19 @@
 
 ### 对 Skill Pack 版本的硬依赖
 
-Overlay 依赖 `changeset.md` D 组的五项修改，**它们在 `v0.3.0` 随 Skill Pack 发布，不由本 Skill 应用**：
+Overlay 依赖 `changeset.md` D 组的六项修改，**它们随 Skill Pack 发布，不由本 Skill 应用**
+（前五项在 `v0.3.0`，第六项 `issue-tracker-trellis-local.md` 在 `v0.4.23`）：
 
 ```text
-oxyteam-init/issue-tracker-trellis.md   第 4 个 tracker 模板（新建）
-oxyteam-init/SKILL.md                   Section A 提供 Trellis 选项
-oxyteam-tickets/SKILL.md                发布路径改成查 tracker 文档
-oxyteam-code-review/SKILL.md            固化 patch 契约 + spec 来源查 tracker
-oxyteam-research/SKILL.md               spawn 前定路径
+oxyteam-init/issue-tracker-trellis.md         第 4 个 tracker 模板（新建）
+oxyteam-init/issue-tracker-trellis-local.md   第 5 个 tracker 模板，无镜像版（v0.4.23 新建）
+oxyteam-init/SKILL.md                         Section A 提供 Trellis 的两个选项
+oxyteam-tickets/SKILL.md                      发布路径改成查 tracker 文档
+oxyteam-code-review/SKILL.md                  固化 patch 契约 + spec 来源查 tracker
+oxyteam-research/SKILL.md                     spawn 前定路径
 ```
 
-**预检必须逐项验这五处的内容，不是验版本号。**
+**预检必须逐项验这六处的内容，不是验版本号。**
 
 早前这里写的是「验 `skills-lock.json` 里这 4 个 Skill 的 `ref` ≥ v0.3.0」——**实测执行不了**：
 `skills` CLI 的锁文件只记 `source` / `sourceType` / `computedHash`，**没有 `ref` 字段**，
@@ -46,24 +48,27 @@ oxyteam-research/SKILL.md               spawn 前定路径
 改成直接验内容，证据比 ref 更强——ref 对得上也可能是标签打错了，内容对得上就是真到位：
 
 ```text
-oxyteam-init/issue-tracker-trellis.md   文件存在，且含 `## Wayfinding operations` 段
-oxyteam-init/SKILL.md                   Section A 的 tracker 选项里有 Trellis
-oxyteam-tickets/SKILL.md                发布路径是查 tracker 文档，不是硬编码 .scratch/
-oxyteam-code-review/SKILL.md            patch 契约已固化，spec 来源查 tracker
-oxyteam-research/SKILL.md               spawn 子代理前先定路径
+oxyteam-init/issue-tracker-trellis.md         文件存在，且含 `## Wayfinding operations` 段
+oxyteam-init/issue-tracker-trellis-local.md   文件存在，同样含 `## Wayfinding operations` 段
+oxyteam-init/SKILL.md                         Section A 的 tracker 选项里有 Trellis 和 Trellis (local only)
+oxyteam-tickets/SKILL.md                      发布路径是查 tracker 文档，不是硬编码 .scratch/
+oxyteam-code-review/SKILL.md                  patch 契约已固化，spec 来源查 tracker
+oxyteam-research/SKILL.md                     spawn 子代理前先定路径
 ```
 
-任意一项不命中就停止。五种失败模式全都不报错：
+任意一项不命中就停止。六种失败模式全都不报错：
 
 ```text
-缺 issue-tracker-trellis.md    oxyteam-init 给不出 Trellis 选项，只能落到 local
-缺 Wayfinding operations 段     oxyteam-map 悄悄退回 local-markdown tracker，写进 .scratch/
-缺 oxyteam-tickets 的改动       票写进 .scratch/，Trellis 完全看不到
-缺 oxyteam-code-review 的改动   审查静默漏掉本次未提交的实现，还报「通过」
-缺 oxyteam-research 的改动      后台 agent 把研究结果扔到它自己觉得合理的地方
+缺 issue-tracker-trellis.md          oxyteam-init 给不出 Trellis 选项，只能落到 local
+缺 issue-tracker-trellis-local.md    没有远程的仓库只能选带镜像那版，装完自动建 GitHub Issue
+                                     的 hook 就挂上了 —— 加 remote 那天开始静默建 issue
+缺 Wayfinding operations 段           oxyteam-map 悄悄退回 local-markdown tracker，写进 .scratch/
+缺 oxyteam-tickets 的改动             票写进 .scratch/，Trellis 完全看不到
+缺 oxyteam-code-review 的改动         审查静默漏掉本次未提交的实现，还报「通过」
+缺 oxyteam-research 的改动            后台 agent 把研究结果扔到它自己觉得合理的地方
 ```
 
-另一条同样重要：`oxyteam-map` 自己写着「没拿到 tracker 就默认用 local-markdown tracker」。所以 `issue-tracker-trellis.md` **必须带 `## Wayfinding operations` 段**——漏了不是报错，是 map 悄悄退回 `.scratch/`。
+另一条同样重要：`oxyteam-map` 自己写着「没拿到 tracker 就默认用 local-markdown tracker」。所以 `issue-tracker-trellis.md` **必须带 `## Wayfinding operations` 段**——漏了不是报错，是 map 悄悄退回 `.scratch/`。**这条对两个 Trellis 模板都成立**，`-local` 那份不是简版，四段契约一段都不能少。
 
 ## 应用前检查
 
@@ -74,7 +79,7 @@ oxyteam-research/SKILL.md               spawn 子代理前先定路径
 3. `.trellis/workflow.md`、`.trellis/config.yaml`、`.trellis/scripts/` 存在；
 4. **已装平台已判定**（`.omp/` / `.claude/` / `.codex/`，至少一个），每个都对得上 `changeset.md`「平台落点对照」表的入口文件；表外的平台直接停；
 5. **Codex 专项**（装了才查）：`codex.dispatch_mode` 不是 `inline`（是就硬停）；hooks 开关按 `codex --version` 分支且只提示不硬停——0.147 实测不再需要 `[features].hooks`，改提示项目要在 `~/.codex/config.toml` 的 `[projects]` 里 `trust_level = "trusted"`（详见 `changeset.md`）；
-6. `skills-lock.json` 中团队 Skills 来源一致（**只验 `source`，锁文件没有 `ref` 字段**），D 组五项按上面的内容清单逐条命中；
+6. `skills-lock.json` 中团队 Skills 来源一致（**只验 `source`，锁文件没有 `ref` 字段**），D 组六项按上面的内容清单逐条命中；
 7. 项目中没有原始上游工程 Skill 与 `oxyteam-*` 并存；
 8. `changeset.md` 每个目标路径的当前状态已分类（见下），按共享层 / 每个已装平台分组；
 9. `.trellis/config.yaml` 的活动 Lifecycle Hook 已列出。
@@ -110,7 +115,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 ```json
 {
-  "overlay_version": "v0.4.22",
+  "overlay_version": "v0.4.23",
   "trellis_version": "0.6.15",
   "skill_pack_ref": "v0.3.0",
   "applied_at": "<ISO 8601>",
@@ -128,7 +133,7 @@ Trellis 只维护**官方模板**这一层基线。它能判断「当前文件�
 
 **`skill_pack_ref` 是唯一一个无从校验的字段，别把它当判据。** 上面「对 Skill Pack 版本的硬
 依赖」那节已经论证过：`skills-lock.json` 没有 `ref` 字段，`skills add` 也没有 `--ref` 选项，
-按 ref 判版本这条路不存在，预检验的是 D 组五项的**内容**。
+按 ref 判版本这条路不存在，预检验的是 D 组六项的**内容**。
 
 所以这里填什么全凭人工 —— 而 `write_overlay_state.py` 的 `--skill-pack-ref` **默认值就是
 `"unverified"`**（`scripts/write_overlay_state.py:375`），不传就是它，实测项目里也正是这个值。
@@ -182,7 +187,7 @@ C != A_old && C != U_new  → 本地有漂移，进冲突处理，不静默覆�
 ```bash
 python3 .trellis/scripts/write_overlay_state.py bless \
   .trellis/workflow.md .claude/agents/trellis-implement.md \
-  --overlay-version v0.4.22
+  --overlay-version v0.4.23
 ```
 
 不传就一个字不动（免得日常盖章顺手改了版本号）。这是 v0.4.9 升级实测补的：当时

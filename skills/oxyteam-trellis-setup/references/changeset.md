@@ -109,7 +109,7 @@ A2 同样是拷贝，落盘后跑 `python3 .trellis/scripts/hooks/github_sync.py
 |---|---|---|
 | B1 | `.trellis/workflow.md` | **拷 `templates/trellis/workflow.md`，整篇替换。** 拷完跑 `python3 .trellis/scripts/verify_workflow.py`，不通过就回滚 |
 | B2 | `AGENTS.md` | 声明 `prd.md` 装的是 Oxyteam Spec、`issues/` 是实施票；加一行指向 `.trellis/spec/` 作为编码规范与审查 Standards 源。**追加在 managed block 外面，逐字改法见 `edits.md`** |
-| B3 | `.trellis/config.yaml` | `hooks:` 段取消注释，挂 `github_sync.py` 的 `after_create` / `after_archive`。**逐字改法见 `edits.md`** |
+| B3 | `.trellis/config.yaml` | **有条件**：`git remote get-url origin` 是 GitHub 地址才做 —— `hooks:` 段取消注释，挂 `github_sync.py` 的 `after_create` / `after_archive`。**没有远程 / 非 GitHub 就保持注释状态，并让 Section A 选 Trellis (local only)**。逐字改法与理由见 `edits.md` |
 | B4 | `.trellis/agents/implement.md` | **拷 `templates/trellis/agents/implement.md`，整篇替换。** channel worker，读取列表换成 `prd.md` + 当前票 + `implement.jsonl` + `.trellis/spec/`；**保留「Forbidden: git commit」**——它是受主会话监管的并行工人，主会话负责收口 |
 | B5 | `.trellis/agents/check.md` | **拷 `templates/trellis/agents/check.md`，整篇替换。** 读取列表同上；审查方法改成提示用户运行 `/oxyteam-code-review`，**去掉 self-fix** |
 
@@ -370,22 +370,25 @@ never invoked」。OMP 和 Codex 那一栏什么都不用做。
 配置架构（决定了改法）：
 
 ```text
-oxyteam-init  →  写 docs/agents/issue-tracker.md（从 4 个模板里选一个）
+oxyteam-init  →  写 docs/agents/issue-tracker.md（从 5 个模板里选一个）
                      ↓ 被读
 oxyteam-spec / oxyteam-tickets / oxyteam-map / oxyteam-code-review
 ```
 
-所以**不手写 `docs/agents/issue-tracker.md`**——给 `oxyteam-init` 加第 4 个模板，让它按正常初始化流程生成。
+所以**不手写 `docs/agents/issue-tracker.md`**——给 `oxyteam-init` 加 Trellis 的两个模板，让它按正常初始化流程生成。
 
 | # | 路径 | 改什么 |
 |---|---|---|
 | D1 | `oxyteam-init/issue-tracker-trellis.md` | **新建**。第 4 个 tracker 模板，实现模板契约的全部四段：Conventions / publish / fetch / **Wayfinding operations** |
-| D2 | `oxyteam-init/SKILL.md` | Explore 加 `.trellis/` 检测；Section A 加 Trellis 选项并置顶；模板清单加一行；**Write 段加「`##` 标题逐字保留，不得翻译」**——实测中文会话里 8 个标题全被翻译，`oxyteam-map` 随即静默退回写 `.scratch/` |
+| D1b | `oxyteam-init/issue-tracker-trellis-local.md` | **新建（v0.4.23）**。第 5 个模板，Trellis 无镜像版：去掉 `Issue:` 字段与两条 sync 命令，另加 `## Re-enabling the GitHub mirror` 一节让选择可逆。**四段契约一段不少** |
+| D2 | `oxyteam-init/SKILL.md` | Explore 加 `.trellis/` 检测；Section A 加 Trellis 两个选项并置顶，**选哪个由 `git remote get-url origin` 判**；模板清单加两行；**Write 段加「`##` 标题逐字保留，不得翻译」**——实测中文会话里 8 个标题全被翻译，`oxyteam-map` 随即静默退回写 `.scratch/` |
 | D3 | `oxyteam-tickets/SKILL.md` | 第 5 步的 `.scratch/<feature-slug>/issues/` 是**硬编码路径**，改成查 tracker 文档；追加「tracker 定义了额外字段就加上」 |
 | D4 | `oxyteam-code-review/SKILL.md` | 第 1 步换成「主流程固化 patch」（见下）；第 2 步 spec 来源加一条查 tracker 文档，并提到**前面**（原来只找 `docs/`/`specs/`/`.scratch/`，找不到任务目录）；两个子代理提示词改成消费 patch，不执行 git |
 | D5 | `oxyteam-research/SKILL.md` | 原文是 "Save it where the repo already keeps such notes"，**没有任何锚点**。改成 spawn 前先定路径并写进 spawn 提示词——它 spawn 的是后台 agent，未必继承会话上下文 |
 
 `Impl:` / `Issue:` 两个字段**只写进 D1 的 Trellis 模板**，不进 `oxyteam-tickets` 的通用票模板——非 Trellis 项目里没有 `oxyteam_tickets.py` 读它们，加了就是噪声。
+D1b 只带 `Impl:`：`Issue:` 存的是远程 Issue 号，没有远程就没有值可填，而 `oxyteam_tickets.py`
+**唯一必需的字段是 `Impl:`**（`load_tickets` 缺它才报错，`Issue:` 从头到尾不被读），所以去掉是安全的。
 
 ### 明确不用改的
 
