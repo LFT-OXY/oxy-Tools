@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "archify",
+      "version": "2.16",
+      "path": "skills/archify",
+      "description": {
+        "zh": "生成架构图、流程图、时序图、数据流图，输出可交互的独立 HTML",
+        "en": "Generate architecture, workflow, sequence and data-flow diagrams as standalone interactive HTML"
+      }
+    },
+    {
+      "name": "explanation",
+      "version": "1.0.0",
+      "path": "skills/explanation",
+      "description": {
+        "zh": "把任何内容改写到聪明的 12 岁孩子也能看懂",
+        "en": "Rewrite any content so a smart 12-year-old can follow it"
+      }
+    },
+    {
+      "name": "if5",
+      "version": "1.0.0",
+      "path": "skills/if5",
+      "description": {
+        "zh": "像给 5 岁小孩那样解释一个话题，配极简图解",
+        "en": "Explain a topic as if to a five-year-old, with very simple diagrams"
+      }
+    },
+    {
+      "name": "onetake",
+      "version": "1.0.0",
+      "path": "skills/onetake",
+      "description": {
+        "zh": "制作 10–60 秒的产品动效短片（体积约 70MB，仅限非商业使用）",
+        "en": "Make 10–60 s product motion videos (about 70 MB, noncommercial use only)"
+      }
+    },
+    {
+      "name": "oxy-learning-hub",
+      "version": "1.0.0",
+      "path": "skills/oxy-learning-hub",
+      "description": {
+        "zh": "总结或教学链接、文档、代码和长文本，可生成互动式 HTML 课程",
+        "en": "Summarize or teach from links, documents, code and long text, up to interactive HTML lessons"
+      }
+    },
+    {
+      "name": "pr",
+      "version": "1.0.0",
+      "path": "skills/pr",
+      "description": {
+        "zh": "撰写 PR（合并请求）描述",
+        "en": "Write a pull request description"
+      }
+    },
+    {
+      "name": "retro",
+      "version": "1.0.0",
+      "path": "skills/retro",
+      "description": {
+        "zh": "对一次编码会话做复盘",
+        "en": "Run a retrospective on a coding session"
+      }
+    },
+    {
+      "name": "show-me",
+      "version": "1.0.0",
+      "path": "skills/show-me",
+      "description": {
+        "zh": "用图表、代码草图和 HTML 构件把当前话题讲直观",
+        "en": "Explain the current topic visually with diagrams, code sketches and focused HTML"
+      }
+    },
+    {
+      "name": "unlazy",
+      "version": "2.1.0",
+      "path": "skills/unlazy",
+      "description": {
+        "zh": "长任务的完成纪律：先定验收标准，汇报前逐项核对证据",
+        "en": "Completion discipline for long tasks: acceptance gates first, verified evidence before reporting"
+      }
+    },
+    {
+      "name": "wizard",
+      "version": "1.0.0",
+      "path": "skills/wizard",
+      "description": {
+        "zh": "生成交互式 bash 向导，带人走完只能由人完成的步骤",
+        "en": "Generate an interactive bash wizard for steps only a human can perform"
+      }
+    },
+    {
+      "name": "writing-for-agents",
+      "version": "1.0.0",
+      "path": "skills/writing-for-agents",
+      "description": {
+        "zh": "编写 skill、AGENTS.md、CLAUDE.md 等给 AI 读的文档的写作指南",
+        "en": "Guidance for writing skills, AGENTS.md and CLAUDE.md that agents follow well"
+      }
+    }
+  ]
+}
