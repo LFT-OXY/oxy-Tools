@@ -78,7 +78,7 @@
     ".claude/skills/atw-meta/references/platform-files/skills-and-commands.md": "299272e02f5f9479374ee19fc50de6a3c92c66fb657387ba38b96b9b603305ef",
     ".claude/skills/atw-meta/SKILL.md": "a53f221174ac3f1a542884b01cc74af3af5f42fa546e55017acd8ff382ff291f",
     ".claude/skills/atw-noob-mode/agents/openai.yaml": "8075ece4becf5503d17a76882fe636f5ca726d26ac8e2586cdf52e699eccc772",
-    ".claude/skills/atw-noob-mode/SKILL.md": "91781fb27bfde43ad27e744eeb6cc44a176650fe0fea0df59456220ef673aa7e",
+    ".claude/skills/atw-noob-mode/SKILL.md": "8ae6ce45f7e2c48707e068ca8a1829d2a21aee70d215766c0928f61d4feb5a88",
     ".claude/skills/atw-prototype/agents/openai.yaml": "81fd1de6d21317e87702641cf39d5cd43548c710d2c9ab5673dffdf2c4f66d92",
     ".claude/skills/atw-prototype/assets/style-explorer.html": "91077edcdf6cf58ee49cc84bdb94339d0c06d51a2ae5e5146178e7fbf42ec2e5",
     ".claude/skills/atw-prototype/LOGIC.md": "9f60fc02e2f1796a823cd33adf1ce26578552a41d897f870f41cbb8009e2a57a",
@@ -197,7 +197,7 @@
     ".agents/skills/atw-meta/references/platform-files/skills-and-commands.md": "299272e02f5f9479374ee19fc50de6a3c92c66fb657387ba38b96b9b603305ef",
     ".agents/skills/atw-meta/SKILL.md": "a53f221174ac3f1a542884b01cc74af3af5f42fa546e55017acd8ff382ff291f",
     ".agents/skills/atw-noob-mode/agents/openai.yaml": "8075ece4becf5503d17a76882fe636f5ca726d26ac8e2586cdf52e699eccc772",
-    ".agents/skills/atw-noob-mode/SKILL.md": "91781fb27bfde43ad27e744eeb6cc44a176650fe0fea0df59456220ef673aa7e",
+    ".agents/skills/atw-noob-mode/SKILL.md": "8ae6ce45f7e2c48707e068ca8a1829d2a21aee70d215766c0928f61d4feb5a88",
     ".agents/skills/atw-prototype/agents/openai.yaml": "81fd1de6d21317e87702641cf39d5cd43548c710d2c9ab5673dffdf2c4f66d92",
     ".agents/skills/atw-prototype/assets/style-explorer.html": "91077edcdf6cf58ee49cc84bdb94339d0c06d51a2ae5e5146178e7fbf42ec2e5",
     ".agents/skills/atw-prototype/LOGIC.md": "9f60fc02e2f1796a823cd33adf1ce26578552a41d897f870f41cbb8009e2a57a",
@@ -278,6 +278,6 @@
     ".atw/scripts/noob_mode.py": "2354f0d97f38af2b4b5219ec6b71ab9d7865296654001c8fb09d5567aa504a44",
     ".atw/scripts/task.py": "99e187d08d13cd9cfd7a4a66cf30db71d35daf452cfd417c940201f58a310826",
     ".atw/scripts/tickets.py": "120c57cedfe654379e1212a9df0a711d98c7ee8a0574a081e0eb8ce837c5939d",
-    ".atw/workflow.md": "305c89ead673dd2192f1ff55dea724530702161f1b3ed44e49c3446d0a3fb24a"
+    ".atw/workflow.md": "18ec33896a66c69a7238ec5511394814d4849ea0305ac4d4b1bf99e00b91d184"
   }
 }
