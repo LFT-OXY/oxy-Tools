@@ -8,3 +8,4 @@
 {"file": "docs/adr/0002-catalog-fetched-at-runtime.md", "reason": "目录运行时拉取的决定、格式版本号与对 A Team Workflow 的承诺"}
 {"file": "GLOSSARY.md", "reason": "领域术语：安装器、目录、组件、应用项目、skill 清单、宿主、工具"}
 {"file": ".atw/tasks/10-09-oxy-tools-installer/ui-direction.md", "reason": "选定的视觉方向「账本」与交互库：颜色与符号的含义、状态的写法、横线与分区、各画面的版式要点；涉及界面的工单和视觉评审都对照它"}
+{"file": ".atw/tasks/10-09-oxy-tools-installer/issues/12-release-readiness.md", "reason": "ATW current ticket"}
