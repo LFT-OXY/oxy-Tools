@@ -1,0 +1,32 @@
+{
+  "name": "oxy-tools",
+  "version": "0.1.0",
+  "description": "Curated AI toolchain installer: pick skills, MCP servers and tools from the oxy-Tools catalog and install them into Claude Code or Codex",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "oxy-tools": "dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=23.5.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "npm run build && node dist/bin.js",
+    "preview": "node --experimental-strip-types scripts/preview.ts"
+  },
+  "dependencies": {
+    "@inquirer/select": "^5.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@xterm/headless": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

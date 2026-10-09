@@ -21,6 +21,7 @@
 | `skills/oxy-learning-hub/assets/` | [`scripts/html-assets.md`](../scripts/html-assets.md) “验证”一节 | `skills/oxy-learning-hub/SKILL.md` 要求生成的 HTML 通过校验 |
 | `skills/wizard/template.sh` | `bash -n skills/wizard/template.sh`，装了 `shellcheck` 再跑一遍 | `skills/wizard/SKILL.md` 步骤 4 对生成物的要求 |
 | 上游整包 | [上游整包](./vendored-skills.md) “在本仓库里能跑的检查”一表 | 各整包自带 |
+| `cli/` 下的任何文件 | [CLI 层](../cli/index.md) “Quality Check”一表 | `cli/package.json` 的脚本 |
 
 只改 Markdown 正文的改动没有对应的自动校验；`SKILL.md` 里提到的本地路径是否存在，靠人工核对。
 
@@ -34,7 +35,7 @@
   - `feat(skills): 新增 if5 / show-me / unlazy 三个 skill`
   - `chore(atw): 接入 ATW 工作流并初始化仓库代理配置`
 - **type**：出现过 `feat`、`fix`、`docs`、`chore`。
-- **scope**：改 `skills/` 和 `index.json` 用 `skills`；改 ATW 配置用 `atw`。
+- **scope**：改 `skills/` 和 `index.json` 用 `skills`；改 ATW 配置用 `atw`；改 `cli/` 和 `catalog.json` 用 `cli`。
 - **正文用中文**，讲清每一项改了什么、为什么。多项改动用列表，一项一条（`c2230a1`、`0d4c05f`）。
 - **直接提交到 `main`**：仓库只有 `main` 一个分支，历史是线性的，没有合并提交。
 

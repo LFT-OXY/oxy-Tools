@@ -13,6 +13,8 @@
 | `skills/`（本层） | skill 的目录形态、`SKILL.md` 写法、`index.json` 清单与版本、上游整包、校验与提交约定 |
 | [`scripts/`](../scripts/index.md) | 随 skill 分发的脚本和 HTML 资产 |
 
+另有 [`cli/`](../cli/index.md) 一层，管 `cli/` 下的安装器和它读取的 `catalog.json`；它的代码与 skill 互不引用。
+
 **源在 `skills/`，别处的同名目录是安装副本。** `.claude/skills/` 和 `.agents/skills/` 里除了 `atw init` 装的 `atw-*`，还有本仓库部分 skill 的副本（装了哪些记在 `.atw/.optional-skills.json`），目前与 `skills/` 下的源逐文件一致。改 skill 只改 `skills/<name>/`，不手改副本。`atw-*` skill 不是本仓库的产物，不受本层约束，也不登记进 `index.json`。
 
 ---
