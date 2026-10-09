@@ -1,0 +1,9 @@
+{"file": ".atw/spec/skills/index.md", "reason": "本仓库的层次划分与 skill 层总览；本任务要在其上新增 CLI 一层并改写概述"}
+{"file": ".atw/spec/skills/manifest-versioning.md", "reason": "index.json 的字段契约与版本规则；安装器读取它，且不得破坏 A Team Workflow 依赖的字段"}
+{"file": ".atw/spec/skills/directory-structure.md", "reason": "仓库布局与边界；cli/ 必须自成一体、不触及 skills/"}
+{"file": ".atw/spec/skills/vendored-skills.md", "reason": "上游整包的对待方式；构建与测试不得扫入它们自带的测试和包描述文件"}
+{"file": ".atw/spec/skills/quality-guidelines.md", "reason": "现有校验命令与提交信息约定"}
+{"file": ".atw/spec/guides/cross-layer-thinking-guide.md", "reason": "目录数据格式跨越仓库数据与安装器两层，新增字段时对照"}
+{"file": "docs/adr/0001-installer-lives-in-skill-repo.md", "reason": "安装器放在 cli/ 的决定及其三条规矩"}
+{"file": "docs/adr/0002-catalog-fetched-at-runtime.md", "reason": "目录运行时拉取的决定、格式版本号与对 A Team Workflow 的承诺"}
+{"file": "GLOSSARY.md", "reason": "领域术语：安装器、目录、组件、应用项目、skill 清单、宿主、工具"}
