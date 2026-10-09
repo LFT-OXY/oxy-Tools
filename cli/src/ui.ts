@@ -1,9 +1,11 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Skill } from './catalog.ts';
-import type { Host } from './hosts.ts';
+import type { App, Mcp, Skill } from './catalog.ts';
+import type { Command, Host } from './hosts.ts';
+import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
+import type { McpStatus } from './mcp-status.ts';
 import { MESSAGES, type Failure, type Lang } from './messages.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { SkillStatus } from './skill-status.ts';
@@ -31,6 +33,7 @@ const UNICODE = {
   cursor: '▸',
   checked: '■',
   unchecked: '□',
+  unavailable: '–',
   separator: '·',
   ellipsis: '…',
   arrow: '→',
@@ -52,6 +55,7 @@ const ASCII: typeof UNICODE = {
   cursor: '>',
   checked: '[x]',
   unchecked: '[ ]',
+  unavailable: '[-]',
   separator: '-',
   ellipsis: '...',
   arrow: '->',
@@ -71,7 +75,7 @@ const ERASE_LINE = '\r\x1b[2K';
 // 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
 const REASON_MARK = '\u200b';
 
-export type GroupId = 'skill' | 'app';
+export type GroupId = 'skill' | 'mcp' | 'app';
 export type MenuChoice = GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
@@ -85,6 +89,15 @@ export interface InstallTarget {
   status: SkillStatus;
 }
 
+/** 一项 MCP 安装：哪个条目、装进哪个宿主、它在那里现在的状态 */
+export interface McpTarget {
+  name: string;
+  host: string;
+  status: Exclude<McpStatus, 'unsupported'>;
+}
+
+export type McpOutcome = { ok: true } | { ok: false; problem: McpInstallProblem };
+
 export type Environment = Readonly<Record<string, string | undefined>>;
 
 export interface UiOptions {
@@ -97,6 +110,14 @@ export interface UiOptions {
 }
 
 export type Ui = ReturnType<typeof createUi>;
+
+// 展示时不加引号也不会被 shell 另作解释的参数
+const PLAIN_ARGUMENT = /^[A-Za-z0-9@%+=:,./_~-]+$/;
+
+// 给用户看的一条完整命令。参数里有 shell 会另作解释的字符（网址里的 & ? 之类）就加上单引号，照着敲也是同一条命令
+function commandLine({ command, args }: Command): string {
+  return [command, ...args].map((arg) => (PLAIN_ARGUMENT.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`)).join(' ');
+}
 
 // 悬挂缩进：首行以 lead 开头，正文过长时折行，续行与正文的左缘对齐
 function hanging(indent: string, lead: string, text: string): string[] {
@@ -154,7 +175,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => displayWidth(row[column] ?? ''))) + 2);
 
   // 带表头的表：表头暗淡，哪一栏都不截断。最后一栏是备注，整张表一个放法：每一格都放得下才成一栏；
-  // 有一格放不下就都另起一行，与它前一栏的左缘对齐，表头不写这一栏。一格备注都没有时也不写
+  // 有一格放不下就都另起一行，与它前一栏的左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），
+  // 表头不写这一栏。一格备注都没有时也不写
   const table = (header: readonly string[], rows: readonly (readonly string[])[]): string[] => {
     const last = header.length - 1;
     const widths = columnWidths([header, ...rows]).slice(0, last);
@@ -164,7 +186,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     const notes = rows.map((row) => row[last] ?? '');
     const noteHeader = notes.some((note) => note !== '') ? (header[last] ?? '') : '';
     const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
-    const ownLine = (note: string): string[] => (note === '' ? [] : [`${' '.repeat(total(widths.slice(0, -1)))}${note}`]);
+    const indent = Math.max(2, Math.min(total(widths.slice(0, -1)), USABLE - Math.max(...notes.map(displayWidth))));
+    const ownLine = (note: string): string[] => (note === '' ? [] : [`${' '.repeat(indent)}${note}`]);
     return [
       dim(`${start(header)}${inline ? noteHeader : ''}`.trimEnd()),
       ...rows.flatMap((row, index) => {
@@ -192,7 +215,14 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
   const cursor = paint('cyan', symbols.cursor);
   const theme: PromptTheme = {
     prefix: { idle: paint(['cyan', 'bold'], '?'), done: paint('green', symbols.done) },
-    icon: { cursor, checked: paint('cyan', symbols.checked), unchecked: symbols.unchecked },
+    icon: {
+      cursor,
+      checked: paint('cyan', symbols.checked),
+      unchecked: symbols.unchecked,
+      // 不可选的行整行由 style.disabled 压暗，勾选框自己不带样式；这种行勾不上，两个图标是同一个
+      disabledChecked: symbols.unavailable,
+      disabledUnchecked: symbols.unavailable,
+    },
     style: {
       message: (text) => paint('bold', text),
       answer: (text) => `${dim(symbols.separator)} ${text}`,
@@ -239,8 +269,102 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     }
   };
 
+  const mcpStatusCell = (status: McpStatus): string => {
+    switch (status) {
+      case 'none':
+        return dim(t.mcpStatus.none);
+      case 'configured':
+        return paint('green', t.mcpStatus.configured);
+      case 'unknown':
+        return t.mcpStatus.unknown;
+      case 'unsupported':
+        return dim(t.mcpStatus.unsupported);
+    }
+  };
+
   // 条目一次全部列出；一屏放不下时才由交互库滚动
   const pageSize = (): number => Math.max(7, (out.rows ?? 24) - 6);
+
+  // 汇总之后的那一问：动手、返回修改、取消
+  const decision = (message: string, go: string): SelectQuestion<InstallDecision> => {
+    const choice = (value: InstallDecision, label: string) => ({ value, short: label, name: label });
+    return { message, pageSize: pageSize(), theme, rows: [choice('install', go), choice('revise', t.revise), choice('cancel', t.cancel)] };
+  };
+
+  // 「正在安装」分区，各类组件共用：doing 是进行中的那一行写的字；每一项的结果由调用方说成文字
+  const progress = (targets: readonly { name: string; host: string }[], doing: string) => {
+    type Target = (typeof targets)[number];
+    const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
+    const lead = (mark: string, target: Target): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
+    const totals = { succeeded: 0, failed: 0, skipped: 0 };
+    // 标题下面已经打出的行数
+    let lines = 0;
+    const settle = (total: keyof typeof totals, rows: string[]): void => {
+      totals[total]++;
+      lines += rows.length;
+      print(...rows);
+    };
+    print(...gapAbove(), section(t.installing));
+    return {
+      begin(target: Target): (result?: { ok: true; text: string } | { ok: false; reason: string }) => void {
+        const erase = spin((mark) => `${lead(mark, target)}${doing}${dim(symbols.ellipsis)}`);
+        return (result) => {
+          erase();
+          if (!result) return;
+          if (result.ok) settle('succeeded', [`${lead(paint('green', symbols.done), target)}${result.text}`]);
+          else settle('failed', hanging('', `${lead(paint('red', symbols.failed), target)}${paint(['red', 'bold'], t.failed)} `, result.reason));
+        };
+      },
+      skip(target: Target, reason: string): void {
+        settle('skipped', [`${lead(dim(symbols.dash), target)}${t.skippedResult} ${reason}`]);
+      },
+      finish(): void {
+        // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
+        const up = lines + 1;
+        if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
+          out.write(`\x1b[${up}A${ERASE_LINE}${section(t.results)}\x1b[${up}B\r`);
+        }
+        print(rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `)));
+      },
+    };
+  };
+
+  // 多选的条目表：名称、每个宿主一栏状态、说明。cells 与 hosts 一一对应；unavailable 是这一行不可选的原因，
+  // 接在说明后面。一个都不勾就确认表示返回
+  const entryPicker = <Value>(
+    message: string,
+    hosts: readonly Host[],
+    entries: readonly { value: Value; name: string; cells: readonly string[]; about: string; checked: boolean; unavailable?: string }[],
+  ): CheckboxQuestion<Value> => {
+    // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
+    const lead = displayWidth(symbols.checked) + 2;
+    const header = [t.nameColumn, ...hosts.map((host) => host.name)];
+    const rows = entries.map((entry) => [entry.name, ...entry.cells]);
+    const widths = columnWidths([header, ...rows]);
+    const aboutWidth = USABLE - lead - widths.reduce((sum, width) => sum + width, 0);
+    const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
+    return {
+      message,
+      pageSize: pageSize(),
+      theme,
+      rows: [
+        { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
+        ...entries.map((entry, index) => {
+          const reason = entry.unavailable === undefined ? undefined : `${symbols.separator} ${REASON_MARK}${entry.unavailable}${REASON_MARK}`;
+          // 原因接在说明后面，说明相应少占几列
+          const room = aboutWidth - (reason === undefined ? 0 : displayWidth(` ${reason}`));
+          return {
+            value: entry.value,
+            short: entry.name,
+            name: `${cells(rows[index] ?? [])}${room > 0 ? truncate(entry.about, room, symbols.ellipsis) : ''}`,
+            description: entry.about,
+            checked: entry.checked,
+            ...(reason === undefined ? {} : { disabled: reason }),
+          };
+        }),
+      ],
+    };
+  };
 
   return {
     line(text: string): void {
@@ -264,7 +388,19 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     },
 
     /** 本机信息：宿主在不在、目录里各类条目的数量，有要提醒的事各多一行。 */
-    catalogSummary({ hosts, skills, apps, skipped }: { hosts: readonly Host[]; skills: number; apps: number; skipped: number }): void {
+    catalogSummary({
+      hosts,
+      skills,
+      mcps,
+      apps,
+      skipped,
+    }: {
+      hosts: readonly Host[];
+      skills: number;
+      mcps: number;
+      apps: number;
+      skipped: number;
+    }): void {
       const presence = (host: Host): string =>
         `${host.name} ${host.detected ? paint('green', symbols.done) : `${dim(symbols.dash)} ${t.notDetected}`}`;
       const names = (detected: boolean): string[] =>
@@ -273,7 +409,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       const present = names(true);
       print(
         ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
-        ...keyValue(t.catalogKey, t.counts({ skills, apps }).join(` ${symbols.separator} `) || t.noEntries),
+        ...keyValue(t.catalogKey, t.counts({ skills, mcps, apps }).join(` ${symbols.separator} `) || t.noEntries),
         ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing, apps > 0), attention) : []),
         ...(present.length > 0 && missing.length > 0
           ? keyValue(t.noticeKey, t.hostsSkipped(missing.join(t.listSeparator), present.join(t.listSeparator)), attention)
@@ -399,8 +535,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       );
     },
 
-    /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面。 */
-    hostPicker(choices: readonly { host: Host; location: string }[], checked: readonly Host[]): CheckboxQuestion<Host> {
+    /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面，没有就不写。 */
+    hostPicker(choices: readonly { host: Host; location?: string }[], checked: readonly Host[]): CheckboxQuestion<Host> {
       const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + 2;
       return {
         message: t.pickHosts,
@@ -409,7 +545,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
         rows: choices.map(({ host, location }) => ({
           value: host,
           short: host.name,
-          name: `${pad(host.name, nameWidth)}${dim(location)}`,
+          name: location === undefined ? host.name : `${pad(host.name, nameWidth)}${dim(location)}`,
           checked: checked.includes(host),
         })),
       };
@@ -424,28 +560,49 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       entries: readonly { skill: Skill; statuses: readonly SkillStatus[] }[],
       checked: readonly Skill[],
     ): CheckboxQuestion<Skill> {
-      // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
-      const lead = displayWidth(symbols.checked) + 2;
-      const header = [t.nameColumn, ...hosts.map((host) => host.name)];
-      const rows = entries.map(({ skill, statuses }) => [skill.name, ...statuses.map((status) => statusCell(status, skill.version))]);
-      const widths = columnWidths([header, ...rows]);
-      const aboutWidth = USABLE - lead - widths.reduce((sum, width) => sum + width, 0);
-      const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
-      return {
-        message: t.pickSkills,
-        pageSize: pageSize(),
-        theme,
-        rows: [
-          { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
-          ...entries.map(({ skill }, index) => ({
-            value: skill,
-            short: skill.name,
-            name: `${cells(rows[index] ?? [])}${truncate(skill.description[lang], aboutWidth, symbols.ellipsis)}`,
-            description: skill.description[lang],
-            checked: checked.includes(skill),
-          })),
-        ],
-      };
+      return entryPicker(
+        t.pickSkills,
+        hosts,
+        entries.map(({ skill, statuses }) => ({
+          value: skill,
+          name: skill.name,
+          cells: statuses.map((status) => statusCell(status, skill.version)),
+          about: skill.description[lang],
+          checked: checked.includes(skill),
+        })),
+      );
+    },
+
+    /** 读不到某些宿主的配置时，在 MCP 列表上方说明：它们那一栏的状态都是未知。 */
+    mcpConfigUnreadable(hosts: readonly Host[]): void {
+      print(...keyValue(t.noticeKey, t.mcpConfigUnreadable(hosts.map((host) => host.name).join(t.listSeparator)), attention));
+    },
+
+    /**
+     * 勾选要安装的 MCP：名称、每个宿主一栏状态、说明。statuses 与 hosts 一一对应；checked 是提问出现时已经勾上的那些。
+     * 所选的宿主一个都不支持的条目不可选，行尾注明原因；只有一部分不支持的仍可选。
+     */
+    mcpPicker(
+      hosts: readonly Host[],
+      entries: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[],
+      checked: readonly Mcp[],
+    ): CheckboxQuestion<Mcp> {
+      return entryPicker(
+        t.pickMcps,
+        hosts,
+        entries.map(({ mcp, statuses }) => {
+          const unavailable = statuses.every((status) => status === 'unsupported');
+          return {
+            value: mcp,
+            name: mcp.name,
+            // 不可选的行整行压暗，状态词自己不再带样式：行内的收尾码会把后半行的暗淡一并关掉
+            cells: statuses.map((status) => (unavailable ? t.mcpStatus[status] : mcpStatusCell(status))),
+            about: mcp.description[lang],
+            checked: checked.includes(mcp),
+            ...(unavailable ? { unavailable: t.unsupportedByHosts } : {}),
+          };
+        }),
+      );
     },
 
     /**
@@ -485,13 +642,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     },
 
     confirmInstall(): SelectQuestion<InstallDecision> {
-      const choice = (value: InstallDecision, label: string) => ({ value, short: label, name: label });
-      return {
-        message: t.confirmInstall,
-        pageSize: pageSize(),
-        theme,
-        rows: [choice('install', t.startInstall), choice('revise', t.revise), choice('cancel', t.cancel)],
-      };
+      return decision(t.confirmInstall, t.startInstall);
     },
 
     /** 不是本工具装的目录，覆盖前单独问一次，缺省不覆盖。 */
@@ -504,48 +655,85 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
      * （不给结果则只擦掉这一行）；用户没同意覆盖的那些不 begin，改用 skip。全部结束后 finish 把标题换成「结果」并打出合计。
      */
     installation(targets: readonly InstallTarget[]) {
-      const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
-      const lead = (mark: string, target: InstallTarget): string =>
-        `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
-      const totals = { succeeded: 0, failed: 0, skipped: 0 };
-      // 标题下面已经打出的行数
-      let lines = 0;
-      print(...gapAbove(), section(t.installing));
+      const rows = progress(targets, t.downloading);
       return {
         begin(target: InstallTarget): (outcome?: InstallOutcome) => void {
-          const erase = spin((mark) => `${lead(mark, target)}${t.downloading}${dim(symbols.ellipsis)}`);
-          return (outcome) => {
-            erase();
-            if (!outcome) return;
-            const rows = outcome.ok
-              ? [
-                  `${lead(paint('green', symbols.done), target)}${paint('green', t.installed)} ${
-                    target.status.kind === 'other-version' ? versionChange(target.status, outcome.version) : outcome.version
-                  }`,
-                ]
-              : hanging(
-                  '',
-                  `${lead(paint('red', symbols.failed), target)}${paint(['red', 'bold'], t.failed)} `,
-                  t.installProblem(outcome.problem),
-                );
-            totals[outcome.ok ? 'succeeded' : 'failed']++;
-            lines += rows.length;
-            print(...rows);
-          };
+          const settle = rows.begin(target);
+          return (outcome) =>
+            settle(
+              outcome &&
+                (outcome.ok
+                  ? {
+                      ok: true,
+                      text: `${paint('green', t.installed)} ${
+                        target.status.kind === 'other-version' ? versionChange(target.status, outcome.version) : outcome.version
+                      }`,
+                    }
+                  : { ok: false, reason: t.installProblem(outcome.problem) }),
+            );
         },
-        skip(target: InstallTarget): void {
-          totals.skipped++;
-          lines++;
-          print(`${lead(dim(symbols.dash), target)}${t.skippedResult} ${t.overwriteDeclined}`);
+        skip: (target: InstallTarget): void => rows.skip(target, t.overwriteDeclined),
+        finish: rows.finish,
+      };
+    },
+
+    /**
+     * MCP 的汇总：每一项装进哪个宿主、是新装还是覆盖。同一个条目装进几个宿主就有几行，名字只写在第一行。
+     * 状态未知时说不出是新装还是覆盖，只写安装，备注里说明会先尝试移除。
+     */
+    mcpSummary(targets: readonly McpTarget[]): void {
+      const action = { none: t.actions.fresh, configured: paint(attention, t.actions.overwrite), unknown: t.actions.unknown };
+      const note = { none: '', configured: t.mcpConfiguredNote, unknown: t.mcpUnknownNote };
+      print(
+        ...gapAbove(),
+        section(t.mcpSummary(new Set(targets.map((target) => target.name)).size)),
+        ...table(
+          [t.entryColumn, t.agentColumn, t.actionColumn, t.noteColumn],
+          targets.map((target, index) => [
+            target.name === targets[index - 1]?.name ? '' : target.name,
+            target.host,
+            action[target.status],
+            note[target.status],
+          ]),
+        ),
+      );
+    },
+
+    /** 将要执行的完整命令，逐条编号；过长时折行，续行与命令的左缘对齐。命令本身从不截断。 */
+    commandList(commands: readonly Command[]): void {
+      const indexWidth = Math.max(2, String(commands.length).length);
+      print(
+        ...gapAbove(),
+        section(t.commandsToRun(commands.length)),
+        ...commands.flatMap((command, index) => hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLine(command))),
+        '',
+      );
+    },
+
+    /** 接在将执行的命令后面：这个宿主添加远程地址的 MCP 时可能当场打开浏览器登录，而它的输出不会显示在这里。 */
+    mcpLoginNotice(host: Host, login: Command): void {
+      print(...keyValue(t.noticeKey, t.mcpLoginNotice(host.name, commandLine(login)), attention), '');
+    },
+
+    confirmCommands(): SelectQuestion<InstallDecision> {
+      return decision(t.confirmCommands, t.runCommands);
+    },
+
+    /** MCP 的「正在安装」分区，用法同 installation；没有跳过的项。 */
+    mcpInstallation(targets: readonly McpTarget[]) {
+      const rows = progress(targets, t.configuring);
+      return {
+        begin(target: McpTarget): (outcome?: McpOutcome) => void {
+          const settle = rows.begin(target);
+          return (outcome) =>
+            settle(
+              outcome &&
+                (outcome.ok
+                  ? { ok: true, text: paint('green', t.mcpStatus.configured) }
+                  : { ok: false, reason: t.mcpInstallProblem(outcome.problem) }),
+            );
         },
-        finish(): void {
-          // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
-          const up = lines + 1;
-          if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
-            out.write(`\x1b[${up}A${ERASE_LINE}${section(t.results)}\x1b[${up}B\r`);
-          }
-          print(rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `)));
-        },
+        finish: rows.finish,
       };
     },
   };

@@ -33,3 +33,24 @@ export const SAMPLE_APPS = [
   { name: 'atlas', description: LONG_APP_ABOUT, url: 'https://example.com/atlas?tab=readme&lang=zh#install' },
   { name: 'borealis', description: { zh: '第二个样例应用项目', en: 'The second sample app' }, url: 'https://example.org/borealis' },
 ];
+
+export const LONG_MCP_ABOUT = {
+  zh: '本地进程方式的样例 MCP，它的说明故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方去看',
+  en: 'A sample MCP run as a local process, described at such length that one list row cannot hold it and the full text has to be read below the list',
+};
+
+/** 两种连接方式各一条：本地进程、远程地址 */
+export const SAMPLE_MCPS = [
+  {
+    name: 'docs-local',
+    description: LONG_MCP_ABOUT,
+    url: 'https://example.com/docs-local',
+    server: { command: 'npx', args: ['-y', '@example/docs-mcp@latest'] },
+  },
+  {
+    name: 'tracker-remote',
+    description: { zh: '远程地址方式的样例 MCP', en: 'A sample MCP reached at a remote address' },
+    url: 'https://example.org/tracker',
+    server: { url: 'https://mcp.example.org/mcp' },
+  },
+];

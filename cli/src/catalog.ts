@@ -42,8 +42,30 @@ export interface App {
   url: string;
 }
 
+/** MCP 的连接方式，二选一：本地进程（启动命令和参数），或远程地址（一个网址） */
+export type McpServer = { command: string; args: string[] } | { url: string };
+
+export interface Mcp {
+  name: string;
+  description: { zh: string; en: string };
+  /** 官方链接 */
+  url: string;
+  /** 支持的宿主（Host.id）；省略表示全部支持 */
+  hosts?: string[];
+  server: McpServer;
+}
+
 /** 字段该是什么样的 */
-export type FieldRule = 'name' | 'text' | 'relative-path' | 'object' | 'https-url';
+export type FieldRule =
+  | 'name'
+  | 'text'
+  | 'relative-path'
+  | 'object'
+  | 'https-url'
+  | 'host-list'
+  | 'mcp-server'
+  | 'command-word'
+  | 'command-word-list';
 
 export type EntryProblem =
   | { kind: 'not-object' }
@@ -66,6 +88,7 @@ export interface SkippedEntry {
 
 export interface Catalog {
   skills: Skill[];
+  mcps: Mcp[];
   apps: App[];
   /** 被跳过的条目：校验不通过的，以及与前面重名的 */
   skipped: SkippedEntry[];
@@ -116,7 +139,7 @@ export class UnsafePathError extends Error {
 /** 这一版安装器认识的目录格式版本，index.json 与 catalog.json 共用 */
 const SUPPORTED_FORMAT = 1;
 // catalog.json 里这一版还不读内容的数组；条目的字段由各自的功能在用到时定义和校验
-const UNREAD_ARRAYS = ['mcps', 'tools'];
+const UNREAD_ARRAYS = ['tools'];
 
 const GITHUB_REPO = 'LFT-OXY/oxy-Tools';
 const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/`;
@@ -162,8 +185,11 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
   };
   const skills = collect(skillList, 'skills', parseSkill);
   // catalog.json 里的数组可以缺省，缺省当作空
-  const apps = otherEntries.data['apps'] === undefined ? [] : collect(otherEntries, 'apps', parseApp);
-  return { skills, apps, skipped, unread };
+  const optional = <Entry extends { name: string }>(list: string, parse: (entry: unknown) => Entry | EntryProblem): Entry[] =>
+    otherEntries.data[list] === undefined ? [] : collect(otherEntries, list, parse);
+  const mcps = optional('mcps', parseMcp);
+  const apps = optional('apps', parseApp);
+  return { skills, mcps, apps, skipped, unread };
 }
 
 /** 默认的目录来源：GitHub 上本仓库 main 分支的原始文件。 */
@@ -339,6 +365,10 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 // 别的字符要先做百分号编码。这样里面没有空白、引号、反斜杠和不可见的字符
 const HTTPS_URL = /^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
 
+// 启动命令和它的每个参数会原样显示给用户确认、再交给宿主的命令：只收这些字符，
+// 所以里面没有空白、引号和任何 shell 会另作解释的字符，看到的就是执行的
+const COMMAND_WORD = /^[A-Za-z0-9@:/._=+,~-]+$/;
+
 const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
 const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
 
@@ -362,6 +392,31 @@ function parseApp(entry: unknown): App | EntryProblem {
   if (isProblem(description)) return description;
   if (!isHttpsUrl(url)) return bad('url', 'https-url');
   return { name, description, url };
+}
+
+function parseMcp(entry: unknown): Mcp | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const { name, url, hosts, server } = entry;
+  if (!isName(name)) return bad('name', 'name');
+  const description = parseDescription(entry['description']);
+  if (isProblem(description)) return description;
+  if (!isHttpsUrl(url)) return bad('url', 'https-url');
+  // 不认识的宿主留着不管：以后加了宿主，旧版安装器照样读得了这一条
+  if (hosts !== undefined && !(isList(hosts, isName) && hosts.length > 0)) return bad('hosts', 'host-list');
+  const connection = parseMcpServer(server);
+  if (isProblem(connection)) return connection;
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection };
+}
+
+function parseMcpServer(server: unknown): McpServer | EntryProblem {
+  if (!isRecord(server)) return bad('server', 'object');
+  const { command, url, args = [] } = server;
+  // 两种连接方式恰好取一种
+  if ((command === undefined) === (url === undefined)) return bad('server', 'mcp-server');
+  if (command === undefined) return isHttpsUrl(url) ? { url } : bad('server.url', 'https-url');
+  if (!isCommandWord(command)) return bad('server.command', 'command-word');
+  if (!isList(args, isCommandWord)) return bad('server.args', 'command-word-list');
+  return { command, args };
 }
 
 // 中英文一句话说明，各类条目都有
@@ -390,6 +445,14 @@ function isSafeRelativePath(value: unknown): value is string {
   );
 }
 
+function isCommandWord(value: unknown): value is string {
+  return typeof value === 'string' && COMMAND_WORD.test(value);
+}
+
+function isList<Item>(value: unknown, isItem: (item: unknown) => item is Item): value is Item[] {
+  return Array.isArray(value) && value.every(isItem);
+}
+
 function isHttpsUrl(value: unknown): value is string {
   return typeof value === 'string' && HTTPS_URL.test(value) && URL.canParse(value);
 }
@@ -399,6 +462,6 @@ export function isText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '' && !CONTROL_CHARACTER.test(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

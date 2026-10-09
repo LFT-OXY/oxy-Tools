@@ -5,12 +5,12 @@ import { dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
-import { runInstaller } from '../src/installer.ts';
+import { runInstaller, type CommandResult } from '../src/installer.ts';
 import { PromptAborted, type CheckboxQuestion, type ConfirmQuestion, type Prompter, type SelectQuestion } from '../src/prompter.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { keyboardPrompter } from './terminal.ts';
 
-export { EMPTY_CATALOG, LONG_ABOUT, LONG_APP_ABOUT, SAMPLE_APPS, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
+export { EMPTY_CATALOG, LONG_ABOUT, LONG_APP_ABOUT, LONG_MCP_ABOUT, SAMPLE_APPS, SAMPLE_FILES, SAMPLE_MCPS, SAMPLE_SKILLS } from './fixtures.ts';
 export { KEY } from './terminal.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
@@ -156,6 +156,11 @@ export interface RunOptions {
   onPath?: string[];
   /** 传 false 表示浏览器打不开：要打开的链接照样记下来，但链接打开器以失败告终 */
   browser?: boolean;
+  /**
+   * 预设外部命令的结果：命令照样记下来，不执行。返回的字段盖过缺省的结果（退出状态 0）；
+   * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果
+   */
+  commandResult?: (command: string, args: readonly string[]) => Partial<CommandResult> | Error | undefined;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径，都相对主目录 */
@@ -220,9 +225,10 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       const active = choices.find((row) => row.value === cursor) ?? choices[0];
       for (const row of question.rows) {
         if ('separator' in row) lines.push(` ${row.separator}`);
-        else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
-        // 不可选的行照交互库的拼法：行首一个短横，原因接在后面
-        else if (row.disabled) lines.push(question.theme.style.disabled(`- ${row.name} ${row.disabled}`));
+        // 不可选的行照交互库的拼法：单选的行首一个短横，多选的是不可选的勾选框；原因接在后面
+        else if (row.disabled) {
+          lines.push(question.theme.style.disabled(`${'checked' in row ? ` ${icon.disabledUnchecked}` : '-'} ${row.name} ${row.disabled}`));
+        } else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
         else lines.push(`  ${row.name}`);
       }
       if (active?.description) lines.push(active.description);
@@ -272,7 +278,9 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       interrupt: options.interrupt ?? new AbortController().signal,
       runCommand: async (command, args) => {
         commands.push({ command, args });
-        return { exitCode: 0 };
+        const preset = options.commandResult?.(command, args);
+        if (preset instanceof Error) throw preset;
+        return { exitCode: 0, ...preset };
       },
       prompter: options.keys ? interactive : scripted,
       openLink: async (url) => {

@@ -1,5 +1,6 @@
 // 界面文案，中英各一份。
 import type { CatalogFailure } from './catalog.ts';
+import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 
 export type Lang = 'zh' | 'en';
@@ -33,7 +34,7 @@ export interface Messages {
   catalogKey: string;
   noticeKey: string;
   /** 目录里各类条目的数量，每类一段；没有条目的那一类不写 */
-  counts: (counts: { skills: number; apps: number }) => string[];
+  counts: (counts: { skills: number; mcps: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
   pickGroup: string;
@@ -49,8 +50,15 @@ export interface Messages {
   nameColumn: string;
   /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号 */
   skillStatus: { none: string; installed: string; unmanaged: string };
+  /** MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主 */
+  mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
+  /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
+  mcpConfigUnreadable: (hosts: string) => string;
+  /** MCP 条目不可选的原因：所选的宿主它一个都不支持 */
+  unsupportedByHosts: string;
   pickHosts: string;
   pickSkills: string;
+  pickMcps: string;
   pickApp: string;
   linkKey: string;
   /** 应用项目的链接已经交给浏览器；浏览器有没有真的打开，安装器不一定看得出来 */
@@ -63,12 +71,21 @@ export interface Messages {
   actionColumn: string;
   locationColumn: string;
   noteColumn: string;
-  /** 汇总里的操作：目标位置原先没有东西是新装，有就是覆盖 */
-  actions: { fresh: string; overwrite: string };
+  /** 汇总里的操作：目标位置原先没有东西是新装，有就是覆盖；有没有判断不了时（MCP 的状态未知）只说添加 */
+  actions: { fresh: string; overwrite: string; unknown: string };
   /** 汇总里覆盖项的备注 */
   reinstallNote: (version: string) => string;
   unmanagedNote: string;
   installSummary: (count: number) => string;
+  mcpSummary: (count: number) => string;
+  /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
+  mcpConfiguredNote: string;
+  mcpUnknownNote: string;
+  /** 宿主添加远程地址的 MCP 时可能当场登录；login 是事后补登录的命令，后面要跟 MCP 的名字 */
+  mcpLoginNotice: (host: string, login: string) => string;
+  commandsToRun: (count: number) => string;
+  confirmCommands: string;
+  runCommands: string;
   replaceNotice: string;
   confirmInstall: string;
   startInstall: string;
@@ -83,14 +100,16 @@ export interface Messages {
   installing: string;
   results: string;
   downloading: string;
+  configuring: string;
   installed: string;
   failed: string;
   skippedResult: string;
   overwriteDeclined: string;
   installProblem: (problem: SkillInstallProblem) => string;
+  mcpInstallProblem: (problem: McpInstallProblem) => string;
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
-  groups: Record<'skill' | 'app', { label: string; about: string }>;
+  groups: Record<'skill' | 'mcp' | 'app', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -120,7 +139,11 @@ const zh: Messages = {
   hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
-  counts: ({ skills, apps }) => [...(skills > 0 ? [`${skills} skill`] : []), ...(apps > 0 ? [`${apps} 应用项目`] : [])],
+  counts: ({ skills, mcps, apps }) => [
+    ...(skills > 0 ? [`${skills} skill`] : []),
+    ...(mcps > 0 ? [`${mcps} MCP`] : []),
+    ...(apps > 0 ? [`${apps} 应用项目`] : []),
+  ],
   noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
   pickGroup: '选择分组',
@@ -133,8 +156,12 @@ const zh: Messages = {
   unavailable: '这一项现在选不了',
   nameColumn: '名称',
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
+  mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
+  mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
+  unsupportedByHosts: '需要别的 AI Agent',
   pickHosts: '装进哪些 AI Agent',
   pickSkills: '选择要安装的 skill',
+  pickMcps: '选择要安装的 MCP',
   pickApp: '选择应用项目',
   linkKey: '链接',
   linkOpened: '已在默认浏览器打开；打不开时请复制上面的链接',
@@ -145,10 +172,18 @@ const zh: Messages = {
   actionColumn: '操作',
   locationColumn: '位置',
   noteColumn: '备注',
-  actions: { fresh: '新装', overwrite: '覆盖' },
+  actions: { fresh: '新装', overwrite: '覆盖', unknown: '添加' },
   reinstallNote: (version) => `重装 ${version}`,
   unmanagedNote: '非本工具安装，另行确认',
   installSummary: (count) => `将安装 ${count} 个 skill`,
+  mcpSummary: (count) => `将安装 ${count} 个 MCP`,
+  mcpConfiguredNote: '已配置，先移除再添加',
+  mcpUnknownNote: '状态未知，先尝试移除同名配置',
+  mcpLoginNotice: (host, login) =>
+    `${host} 添加远程地址的 MCP 时可能当场打开浏览器登录，登录完这一项才结束。浏览器打不开就按 Ctrl+C，之后执行 ${login} <名称>`,
+  commandsToRun: (count) => `将执行 ${count} 条命令`,
+  confirmCommands: '执行这些命令吗',
+  runCommands: '执行',
   replaceNotice: '覆盖即整目录替换，目录内的本地改动会丢失',
   confirmInstall: '开始安装吗',
   startInstall: '开始安装',
@@ -161,6 +196,7 @@ const zh: Messages = {
   installing: '正在安装',
   results: '结果',
   downloading: '正在下载',
+  configuring: '正在配置',
   installed: '已安装',
   failed: '失败',
   skippedResult: '跳过',
@@ -177,10 +213,18 @@ const zh: Messages = {
         return `写入失败（${problem.detail}），目标目录未改动`;
     }
   },
+  mcpInstallProblem({ action, cause, removed }) {
+    const what = `${action === 'remove' ? '移除' : '添加'}命令${
+      cause.kind === 'exit' ? `退出状态 ${cause.code}` : `没能运行（${cause.detail}）`
+    }`;
+    if (action === 'remove') return `${what}；未执行添加`;
+    return removed ? `${what}；此前已执行移除` : what;
+  },
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
   groups: {
     skill: { label: 'Skill', about: '装进 AI Agent 的能力包' },
+    mcp: { label: 'MCP', about: '写进 AI Agent 配置的 MCP 服务器' },
     app: { label: '应用项目', about: '需要自行部署，这里只给链接' },
   },
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
@@ -310,8 +354,9 @@ const en: Messages = {
   hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',
-  counts: ({ skills, apps }) => [
+  counts: ({ skills, mcps, apps }) => [
     ...(skills > 0 ? [`${skills} ${skills === 1 ? 'skill' : 'skills'}`] : []),
+    ...(mcps > 0 ? [`${mcps} MCP`] : []),
     ...(apps > 0 ? [`${apps} ${apps === 1 ? 'app' : 'apps'}`] : []),
   ],
   noEntries: 'no usable entries',
@@ -326,8 +371,12 @@ const en: Messages = {
   unavailable: 'This item cannot be selected right now',
   nameColumn: 'Name',
   skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
+  mcpStatus: { none: 'none', configured: 'configured', unknown: 'unknown', unsupported: 'unsupported' },
+  mcpConfigUnreadable: (hosts) => `Could not read the ${hosts} config; cannot tell which MCP servers are configured`,
+  unsupportedByHosts: 'needs another AI Agent',
   pickHosts: 'Install into which AI Agents',
   pickSkills: 'Pick skills to install',
+  pickMcps: 'Pick MCP servers to install',
   pickApp: 'Pick an app',
   linkKey: 'Link',
   linkOpened: 'Opened in your default browser; if nothing opened, copy the link above',
@@ -338,10 +387,18 @@ const en: Messages = {
   actionColumn: 'Action',
   locationColumn: 'Location',
   noteColumn: 'Note',
-  actions: { fresh: 'new', overwrite: 'overwrite' },
+  actions: { fresh: 'new', overwrite: 'overwrite', unknown: 'add' },
   reinstallNote: (version) => `reinstall ${version}`,
   unmanagedNote: 'unmanaged; asked separately',
   installSummary: (count) => `Install ${count} ${count === 1 ? 'skill' : 'skills'}`,
+  mcpSummary: (count) => `Install ${count} MCP ${count === 1 ? 'server' : 'servers'}`,
+  mcpConfiguredNote: 'configured; removed, then added',
+  mcpUnknownNote: 'status unknown; removal tried first',
+  mcpLoginNotice: (host, login) =>
+    `${host} may open a browser to sign in while adding a remote MCP server; that item only finishes once you have signed in. If no browser opens, press Ctrl+C and run ${login} <name> later`,
+  commandsToRun: (count) => `${count} ${count === 1 ? 'command' : 'commands'} to run`,
+  confirmCommands: 'Run these commands?',
+  runCommands: 'Run',
   replaceNotice: 'Overwriting replaces the whole directory; local changes are lost',
   confirmInstall: 'Start installing?',
   startInstall: 'Install',
@@ -354,6 +411,7 @@ const en: Messages = {
   installing: 'Installing',
   results: 'Results',
   downloading: 'downloading',
+  configuring: 'configuring',
   installed: 'installed',
   failed: 'failed',
   skippedResult: 'skipped',
@@ -370,10 +428,18 @@ const en: Messages = {
         return `could not write (${problem.detail}); the target directory is unchanged`;
     }
   },
+  mcpInstallProblem({ action, cause, removed }) {
+    const what = `the ${action} command ${
+      cause.kind === 'exit' ? `exited with status ${cause.code}` : `could not be run (${cause.detail})`
+    }`;
+    if (action === 'remove') return `${what}; add was not run`;
+    return removed ? `${what}; the remove command had already run` : what;
+  },
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
   groups: {
     skill: { label: 'Skill', about: 'Capability packs for your AI Agent' },
+    mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
     app: { label: 'Apps', about: 'Deploy them yourself; only links here' },
   },
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },

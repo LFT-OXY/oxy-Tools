@@ -1,12 +1,14 @@
 // 交互流程：主菜单与各分组的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
-import { CatalogError, type App, type Catalog, type CatalogSource, type PinnedSource, type Skill } from './catalog.ts';
+import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Skill } from './catalog.ts';
 import type { Host } from './hosts.ts';
+import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
-import type { LinkOpener } from './installer.ts';
+import type { CommandRunner, LinkOpener } from './installer.ts';
+import { mcpStatuses } from './mcp-status.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
-import type { InstallOutcome, InstallTarget, Ui } from './ui.ts';
+import type { InstallOutcome, InstallTarget, McpOutcome, McpTarget, Ui } from './ui.ts';
 
 /** 一次运行里各个画面共用的东西。 */
 export interface Session {
@@ -22,6 +24,7 @@ export interface Session {
   ui: Ui;
   prompter: Prompter;
   openLink: LinkOpener;
+  runCommand: CommandRunner;
   /** 钉住的来源：一次运行里只查询一次，之后安装的每个 skill 共用 */
   pinned?: PinnedSource;
 }
@@ -32,12 +35,14 @@ export async function mainMenu(session: Session): Promise<void> {
   // 只列出有条目的分组；组件要装进宿主，一个宿主都没检测到时进不去。应用项目不靠宿主
   const groups = [
     { id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 },
+    { id: 'mcp' as const, count: catalog.mcps.length, lacksHost: detected.length === 0 },
     { id: 'app' as const, count: catalog.apps.length, lacksHost: false },
   ].filter((group) => group.count > 0);
   for (;;) {
     const choice = await prompter.select(ui.mainMenu(groups));
     if (choice === 'exit') return;
     if (choice === 'app') await browseApps(session);
+    else if (choice === 'mcp') await installMcps(session, detected);
     else await installSkills(session, detected);
     ui.nextRound();
   }
@@ -65,25 +70,44 @@ interface Job {
   declined?: boolean;
 }
 
-async function installSkills(session: Session, detected: readonly Host[]): Promise<void> {
+// 先定装进哪些宿主，再由 proceed 走后面的画面；它返回 back 表示要回到上一步。
+// location 是宿主选择里写在名字后面的提示（skill 的目录），没有就不写
+async function withHosts(
+  session: Session,
+  detected: readonly Host[],
+  location: ((host: Host) => string) | undefined,
+  proceed: (hosts: readonly Host[]) => Promise<'back' | 'done'>,
+): Promise<void> {
   const { ui, prompter } = session;
   // 只检测到一个宿主时不问，直接用它
   const asksHosts = detected.length > 1;
   let hosts = detected;
   for (;;) {
     if (asksHosts) {
-      const choices = detected.map((host) => ({ host, location: homeRelative(session, host.skillsDir) }));
+      const choices = detected.map((host) => ({ host, ...(location ? { location: location(host) } : {}) }));
       hosts = await prompter.checkbox(ui.hostPicker(choices, hosts));
       // 一个都不勾就确认：返回主菜单
       if (hosts.length === 0) return;
     }
-    const jobs = await planSkills(session, hosts);
-    if (jobs === 'cancel') return;
-    if (jobs !== 'back') return runJobs(session, jobs);
+    if ((await proceed(hosts)) === 'done') return;
     // 列表里一个都没勾是回到上一步：问过宿主就回去重问，没问过就是主菜单
     if (!asksHosts) return;
     ui.nextRound();
   }
+}
+
+async function installSkills(session: Session, detected: readonly Host[]): Promise<void> {
+  await withHosts(
+    session,
+    detected,
+    (host) => homeRelative(session, host.skillsDir),
+    async (hosts) => {
+      const jobs = await planSkills(session, hosts);
+      if (jobs === 'back') return 'back';
+      if (jobs !== 'cancel') await runJobs(session, jobs);
+      return 'done';
+    },
+  );
 }
 
 // 勾选 skill、看汇总、确认；返回要装的每一项
@@ -151,6 +175,79 @@ async function runJobs(session: Session, jobs: readonly Job[]): Promise<void> {
       if (interrupt.aborted || !(error instanceof SkillInstallError)) {
         settle();
         throw interrupt.aborted ? new PromptAborted() : error;
+      }
+      // 这一项失败不影响其余项
+      outcome = { ok: false, problem: error.problem };
+    }
+    settle(outcome);
+  }
+  progress.finish();
+}
+
+interface McpJob {
+  mcp: Mcp;
+  host: Host;
+  target: McpTarget;
+  steps: McpStep[];
+}
+
+async function installMcps(session: Session, detected: readonly Host[]): Promise<void> {
+  await withHosts(session, detected, undefined, async (hosts) => {
+    const jobs = await planMcps(session, hosts);
+    if (jobs === 'back') return 'back';
+    if (jobs !== 'cancel') await runMcpJobs(session, jobs);
+    return 'done';
+  });
+}
+
+// 勾选 MCP、看汇总和将要执行的命令、确认；返回要装的每一项
+async function planMcps(session: Session, hosts: readonly Host[]): Promise<McpJob[] | 'back' | 'cancel'> {
+  const { catalog, ui, prompter } = session;
+  let picked: Mcp[] = [];
+  for (;;) {
+    // 状态每次进列表都现探测
+    const statuses = mcpStatuses(catalog.mcps, hosts);
+    const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
+    if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
+    const entries = catalog.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
+    picked = await prompter.checkbox(ui.mcpPicker(hosts, entries, picked));
+    if (picked.length === 0) return 'back';
+    // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
+    const jobs = entries
+      .filter(({ mcp }) => picked.includes(mcp))
+      .flatMap(({ mcp, statuses }) =>
+        hosts.flatMap((host, column) => {
+          const status = statuses[column];
+          if (status === undefined || status === 'unsupported') return [];
+          return [{ mcp, host, target: { name: mcp.name, host: host.name, status }, steps: mcpSteps(mcp, host, status) }];
+        }),
+      );
+    ui.mcpSummary(jobs.map((job) => job.target));
+    ui.commandList(jobs.flatMap((job) => job.steps.map((step) => step.command)));
+    // 宿主命令的输出不上屏：它会当场打开浏览器登录的话，事先说一声
+    for (const host of hosts) {
+      const logsIn = jobs.some((job) => job.host === host && 'url' in job.mcp.server);
+      if (host.remoteMcpLogin && logsIn) ui.mcpLoginNotice(host, host.remoteMcpLogin);
+    }
+    const decision = await prompter.select(ui.confirmCommands());
+    if (decision === 'cancel') return 'cancel';
+    if (decision === 'install') return jobs;
+    ui.nextRound();
+  }
+}
+
+async function runMcpJobs(session: Session, jobs: readonly McpJob[]): Promise<void> {
+  const progress = session.ui.mcpInstallation(jobs.map((job) => job.target));
+  for (const { target, steps } of jobs) {
+    const settle = progress.begin(target);
+    let outcome: McpOutcome;
+    try {
+      await installMcp(steps, session.runCommand);
+      outcome = { ok: true };
+    } catch (error) {
+      if (!(error instanceof McpInstallError)) {
+        settle();
+        throw error;
       }
       // 这一项失败不影响其余项
       outcome = { ok: false, problem: error.problem };

@@ -29,7 +29,8 @@ export type CheckboxRow<Value> = CheckboxChoice<Value> | SelectSeparator;
 /** 提问各部分的样式，由呈现层给出。 */
 export interface PromptTheme {
   prefix: { idle: string; done: string };
-  icon: { cursor: string; checked: string; unchecked: string };
+  /** disabledChecked、disabledUnchecked 是多选里不可选的行的勾选框 */
+  icon: { cursor: string; checked: string; unchecked: string; disabledChecked: string; disabledUnchecked: string };
   style: {
     message: (text: string) => string;
     answer: (text: string) => string;

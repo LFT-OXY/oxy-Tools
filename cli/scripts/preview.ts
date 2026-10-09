@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
 import { CatalogError, githubCatalogSource, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
-import { runInstaller } from '../src/installer.ts';
+import { runInstaller, type CommandRunner } from '../src/installer.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
 
@@ -32,6 +32,8 @@ interface Scene {
   links?: Record<string, string>;
   /** 传 false 表示浏览器打不开：链接打开器以失败告终 */
   browser?: boolean;
+  /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
+  commands?: CommandRunner;
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
 }
@@ -77,7 +79,24 @@ const SHOWCASE_APPS = [
   ['ragflow', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
 ].map(([name, zh, en, url]) => ({ name, description: { zh, en }, url }));
 
+// MCP 同样是为预览编的样例：两种连接方式都有，其中一条只支持 Codex
+const SHOWCASE_MCPS = [
+  { name: 'chrome-devtools', zh: '让 AI Agent 操控并调试真实的 Chrome 浏览器', en: 'Let your AI Agent drive and debug a real Chrome browser', server: { command: 'npx', args: ['-y', 'chrome-devtools-mcp@latest'] } },
+  { name: 'context7', zh: '按需拉取各种库的最新文档', en: 'Pull up-to-date documentation for libraries on demand', server: { command: 'npx', args: ['-y', '@upstash/context7-mcp'] } },
+  { name: 'linear', zh: '读写 Linear 的 issue 与项目，登录交给 AI Agent 自己的流程', en: 'Read and write Linear issues and projects; signing in is left to the AI Agent', server: { url: 'https://mcp.linear.app/mcp' } },
+  { name: 'openai-docs', zh: '查询 OpenAI 开发者文档', en: 'Search the OpenAI developer docs', hosts: ['codex'], server: { url: 'https://developers.openai.com/mcp' } },
+].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}` }));
+
 const sample = catalogOf({ version: 1, skills: SHOWCASE_SKILLS });
+const withMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_MCPS });
+// 名字长的 MCP：汇总里它的备注一行放不下
+const LONG_NAME_MCP = {
+  name: 'modelcontextprotocol-server-sequential-thinking',
+  description: { zh: '把复杂问题拆成一步步的思考过程', en: 'Break a complex problem down into a step-by-step thinking process' },
+  url: 'https://example.com/sequential-thinking',
+  server: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
+};
+const withLongNameMcp = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: [...SHOWCASE_MCPS, LONG_NAME_MCP] });
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, apps: SHOWCASE_APPS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
@@ -98,6 +117,17 @@ function installedSkill(skillsDir: string, name: string, version: string): Recor
     [`${skillsDir}/${name}/.oxy-tools.json`]: JSON.stringify({ name, version, commit: null, installedAt: '2026-10-01T08:00:00.000Z' }),
   };
 }
+
+// Claude Code 的用户级配置里已有这两个 MCP
+const CLAUDE_CONFIGURED = { '.claude.json': JSON.stringify({ mcpServers: { 'chrome-devtools': { command: 'npx' }, linear: { type: 'http' } } }) };
+// Codex 的配置写坏了，读不出里面有哪些 MCP
+const CODEX_UNREADABLE = { '.codex/config.toml': '[mcp_servers.context7\n' };
+const ok = { exitCode: 0 };
+// 假装执行命令：Claude Code 那边 linear 的添加失败
+const linearFails: CommandRunner = async (command, args) =>
+  command === 'claude' && args.includes('linear') && args[1] === 'add' ? { exitCode: 1 } : ok;
+// 第二个 MCP 的命令一直跑不完
+const secondHangs: CommandRunner = (_, args) => (args.includes('context7') ? new Promise<never>(() => {}) : Promise.resolve(ok));
 
 const CLAUDE_SKILLS = '.claude/skills';
 const CODEX_SKILLS = '.agents/skills';
@@ -144,6 +174,18 @@ const toApps = [KEY.down, KEY.enter];
 const openApp = [...toApps, ...down(2), KEY.enter];
 // 选中最后一个 ragflow：它的链接比一行长
 const openLongLink = [...toApps, ...down(3), KEY.enter];
+
+// 主菜单上从 Skill 下移到 MCP 再进去
+const toMcps = [KEY.down, KEY.enter];
+// 勾上 chrome-devtools、context7 和 linear，光标停在 linear 上
+const pickMcps = [...toMcps, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space];
+const runMcps = [...pickMcps, KEY.enter, KEY.enter];
+// 只勾 context7：一个 MCP 装进两个宿主
+const pickOneMcp = [...toMcps, KEY.down, KEY.space, KEY.enter];
+// 检测到两个宿主时，进了 MCP 分组先问装进哪些宿主：两项默认勾选，直接确认
+const mcpTwoHosts = (keys: string[]): string[] => [...toMcps, KEY.enter, ...keys.slice(toMcps.length)];
+const MCP_STATES = { catalog: withMcps, home: CLAUDE_CONFIGURED };
+const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE_CONFIGURED, ...CODEX_UNREADABLE } };
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -195,6 +237,24 @@ const scenes: Scene[] = [
   { title: '应用项目详情 · 浏览器打不开', note: '不算出错：链接照样完整写出，只提醒自己复制', catalog: withApps, browser: false, keys: openApp },
   { title: '应用项目详情 · 链接比一行长', note: '链接不截断也不折开，由终端自己折行', catalog: withApps, keys: openLongLink },
   { title: '应用项目 · 返回主菜单', note: '看过一个之后选「返回」', catalog: withApps, keys: [...openApp, ...down(2), KEY.enter] },
+  { title: '主菜单 · 有 MCP', note: 'catalog.json 里有 MCP 条目时多出这个分组，「目录」一行也数上它', catalog: withMcps },
+  { title: 'MCP 多选列表', note: '状态来自 Claude Code 的用户级配置：已配置、未配置；这个宿主不支持的条目不可选，行尾注明原因', ...MCP_STATES, keys: pickMcps },
+  { title: 'MCP 多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '选择宿主 · 装 MCP', note: '装 MCP 时名字后面不写目录', catalog: withMcps, onPath: BOTH_HOSTS, keys: toMcps },
+  { title: 'MCP 多选列表 · 配置文件读不了', note: 'Codex 的配置读不出来：列表上方说明，它那一栏都是「未知」，没有报错；只有一个宿主支持的条目仍可选', ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '汇总确认 · 一个 MCP 装进两个宿主', note: '两条完整的命令都列出来，确认后才执行', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts(pickOneMcp) },
+  { title: '汇总确认 · MCP · 覆盖与状态未知', note: '已配置的先移除再添加；状态未知的先尝试移除同名配置。将执行的每一条命令都在下面', ...MCP_TWO_HOSTS, keys: mcpTwoHosts([...pickMcps, KEY.enter]) },
+  { title: '汇总确认 · MCP · 只装进支持的宿主', note: 'openai-docs 只支持 Codex：汇总和命令里没有 Claude Code 那一份；远程地址装进 Codex 时，命令下面提醒它可能当场打开浏览器登录', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts([...toMcps, ...down(3), KEY.space, KEY.enter]) },
+  {
+    title: '汇总确认 · MCP · 名字长的条目',
+    note: '有一条备注放不下，就都另起一行，表头不写备注一栏；命令过长时折行，续行与命令的左缘对齐',
+    catalog: withLongNameMcp,
+    home: { '.claude.json': JSON.stringify({ mcpServers: { [LONG_NAME_MCP.name]: {}, linear: {} } }) },
+    keys: [...toMcps, ...down(2), KEY.space, ...down(2), KEY.space, KEY.enter],
+  },
+  { title: '正在安装 · MCP', note: '一项已配置，另一项进行中：行首的符号转动', ...MCP_STATES, commands: secondHangs, keys: runMcps },
+  { title: '结果 · MCP 全部成功', note: '标题由「正在安装」改写成「结果」；之后回到主菜单', ...MCP_STATES, keys: runMcps },
+  { title: '结果 · MCP 一项失败', note: '失败的写明是哪一步和退出状态；其余照常', ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
@@ -213,6 +273,9 @@ const scenes: Scene[] = [
   { title: '英文界面 · 应用项目详情 · 浏览器打不开', argv: ['--lang', 'en'], catalog: withApps, browser: false, keys: openApp },
   { title: '英文界面 · 一个宿主都没有 · 有应用项目', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
   { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
+  { title: '英文界面 · MCP 多选列表', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '英文界面 · MCP 多选列表 · 不可选的条目', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '英文界面 · MCP 的汇总与结果', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
@@ -222,6 +285,9 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
   { title: '不显示颜色 · 应用项目详情', note: '设置了 NO_COLOR：链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: openApp },
   { title: '不显示颜色 · 应用项目详情 · 浏览器打不开', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: withApps, browser: false, keys: openApp },
+  { title: '不显示颜色 · MCP 多选列表', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '不显示颜色 · MCP 多选列表 · 不可选的条目', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
@@ -233,6 +299,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
   { title: '没有 Unicode · 应用项目列表', ...LEGACY_CONSOLE, catalog: withApps, keys: toApps },
   { title: '没有 Unicode · 应用项目详情', note: '打开之后的记号退成 +', ...LEGACY_CONSOLE, catalog: withApps, keys: openApp },
+  { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
+  { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 
@@ -295,7 +363,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     homeDir: home,
     tempDir: scratchDir('tmp'),
     interrupt: new AbortController().signal,
-    runCommand: () => Promise.reject(new Error('preview does not run commands')),
+    runCommand: scene.commands ?? (async () => ok),
     prompter,
     // 预览页不真的打开浏览器
     openLink: () => (scene.browser === false ? Promise.reject(new Error('preview has no browser')) : Promise.resolve()),

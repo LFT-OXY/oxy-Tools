@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -96,18 +96,58 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   });
 
   it('安装器还不读内容的那几类条目：照常通过，但说明它们有几条没有校验', async () => {
-    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ name: 'future' }, {}] } }));
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [{ name: 'future' }, {}] } }));
 
     expect(result.stdout).toContain('目录校验通过');
-    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 mcps 有 2 条/);
-    expect(result.stdout).not.toContain('tools');
+    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 tools 有 2 条/);
+    expect(result.stdout).not.toContain('mcps');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('MCP 条目也校验：没有问题时说明有几个，不算进未校验', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个应用项目');
+    expect(result.stdout).not.toContain('未校验');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it.each([
+    ['url', { url: 'http://example.com/docs' }, 'https:// 开头的网址'],
+    ['hosts', { hosts: [] }, '非空的数组'],
+    ['hosts', { hosts: 'claude-code' }, '非空的数组'],
+    ['hosts', { hosts: ['Claude Code'] }, '非空的数组'],
+    ['server', { server: 'npx -y pkg' }, '对象'],
+    ['server', { server: {} }, 'command.*url.*恰好'],
+    ['server', { server: { command: 'npx', url: 'https://mcp.example.com/mcp' } }, 'command.*url.*恰好'],
+    ['server.command', { server: { command: 'npx -y' } }, '不含空白'],
+    ['server.command', { server: { command: '' } }, '不含空白'],
+    ['server.args', { server: { command: 'npx', args: '-y pkg' } }, '数组'],
+    ['server.args', { server: { command: 'npx', args: ['-y', 'pkg && calc'] } }, '不含空白'],
+    ['server.args', { server: { command: 'npx', args: ['--name="x"'] } }, '引号'],
+    ['server.url', { server: { url: 'http://mcp.example.com/mcp' } }, 'https:// 开头的网址'],
+    ['server.url', { server: { url: 'https://mcp.example.com/a b' } }, 'https:// 开头的网址'],
+  ])('MCP 的 %s 写坏时，指明是 catalog.json 的 mcps 第几条、叫什么、这个字段该是什么样的', async (field, overrides, rule) => {
+    const broken = { ...SAMPLE_MCPS[0], name: 'broken', ...overrides };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [SAMPLE_MCPS[1], broken] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 mcps 第 2 条（broken）：${field.replace('.', '\\.')} .*${rule}`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('本地进程方式的 MCP 可以不写 args', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ ...SAMPLE_MCPS[0], server: { command: 'some-mcp' } }] } }));
+
+    expect(result.stdout).toContain('1 个 MCP');
     expect(result.exitCode).toBe(0);
   });
 
   it('应用项目条目也校验：没有问题时说明有几个，不算进未校验', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、2 个应用项目');
     expect(result.stdout).not.toContain('未校验');
     expect(result.exitCode).toBe(0);
   });

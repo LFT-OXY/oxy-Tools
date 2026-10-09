@@ -7,8 +7,12 @@ import { PromptAborted, type Prompter } from './prompter.ts';
 import { createUi, type Environment, type TerminalOutput } from './ui.ts';
 import { VERSION } from './version.ts';
 
-/** 外部命令执行器 */
-export type CommandRunner = (command: string, args: readonly string[]) => Promise<{ exitCode: number }>;
+/** 外部命令跑完的结果 */
+export interface CommandResult {
+  exitCode: number;
+}
+/** 外部命令执行器：不经过 shell，不把命令的输出打到终端上；命令没能起来时拒绝 */
+export type CommandRunner = (command: string, args: readonly string[]) => Promise<CommandResult>;
 /** 链接打开器：在默认浏览器里打开一个网址 */
 export type LinkOpener = (url: string) => Promise<void>;
 
@@ -76,7 +80,13 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
     const hosts = detectHosts(env, options.homeDir);
-    ui.catalogSummary({ hosts, skills: catalog.skills.length, apps: catalog.apps.length, skipped: catalog.skipped.length });
+    ui.catalogSummary({
+      hosts,
+      skills: catalog.skills.length,
+      mcps: catalog.mcps.length,
+      apps: catalog.apps.length,
+      skipped: catalog.skipped.length,
+    });
     await mainMenu({
       catalog,
       source,
@@ -88,6 +98,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       ui,
       prompter: options.prompter,
       openLink: options.openLink,
+      runCommand: options.runCommand,
     });
     return 0;
   } catch (error) {

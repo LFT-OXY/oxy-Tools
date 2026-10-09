@@ -6,12 +6,17 @@ import { MESSAGES } from '../src/messages.ts';
 const EXIT_FAILURE = 1;
 const EXIT_USAGE = 2;
 
+const COMMAND_WORD = '只含字母、数字和 @ : / . _ = + , ~ -，不含空白和引号';
 const RULES: Record<FieldRule, string> = {
   name: '要由小写字母和数字组成，分成几段时用连字符连接',
   text: '要是非空文字，且不含控制字符',
   'relative-path': '要是相对路径：用 / 分段，每段只含字母、数字和 . _ -，且不是 . 或 ..',
   object: '要是对象',
   'https-url': "要是 https:// 开头的网址，且只含字母、数字和 -._~:/?#[]@!$&'()*+,;=%（别的字符先做百分号编码）",
+  'host-list': '要是非空的数组，每一项是一个 AI Agent 的标识（如 claude-code、codex）；全部支持时不写这个字段',
+  'mcp-server': '里 command（本地进程的启动命令）和 url（远程地址）要恰好有一样',
+  'command-word': `要是一个词：${COMMAND_WORD}`,
+  'command-word-list': `要是数组，每一项是一个词：${COMMAND_WORD}`,
 };
 
 process.exitCode = await validate(process.argv.slice(2));
@@ -40,7 +45,7 @@ async function validate(args: string[]): Promise<number> {
     for (const entry of catalog.skipped) console.error(`  ${describe(entry)}`);
     return EXIT_FAILURE;
   }
-  console.log(`目录校验通过：${catalog.skills.length} 个 skill、${catalog.apps.length} 个应用项目`);
+  console.log(`目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.apps.length} 个应用项目`);
   for (const { file, list, count } of catalog.unread) {
     console.log(`  未校验：${file} 的 ${list} 有 ${count} 条，这一版安装器还不读这类条目的内容`);
   }

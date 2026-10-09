@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_CATALOG, KEY, SAMPLE_APPS, STYLE_CODE, catalogDir, run } from './harness.ts';
+import { EMPTY_CATALOG, KEY, SAMPLE_APPS, SAMPLE_MCPS, STYLE_CODE, catalogDir, run } from './harness.ts';
 
 // 交互库自带的样式按 Node 的规则上色，看的是真实进程的环境和标准输出；测试进程的标准输出不是终端，
 // 不强行打开的话它永远不上色，主题里漏盖了哪个样式函数也就查不出来。
@@ -504,5 +504,129 @@ describe('真实的画面：应用项目', () => {
     expect(result.output).toMatch(/^\s+Name\s+About$/m);
     expect(result.output).toMatch(/^ {2}Back$/m);
     expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
+  });
+});
+
+describe('真实的画面：MCP', () => {
+  // 第一条只支持 Claude Code：只检测到 Codex 时它不可选
+  const mcps = [{ ...SAMPLE_MCPS[0], name: 'claude-only', hosts: ['claude-code'] }, SAMPLE_MCPS[1]];
+  const catalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps } });
+  const toMcps: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.enter]];
+
+  it('列表是多选：每行前面有勾选框，之后是状态和说明，下方是按键提示', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toMcps, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/✓ 选择分组 · MCP$/m);
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^▸□ claude-only\s+未配置\s+本地进程方式的样例 MCP.*…$/m);
+    expect(result.output).toMatch(/^ □ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
+    expect(result.output).toMatch(/^\s+↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）$/m);
+  });
+
+  it('所选宿主都不支持的条目：勾选位是短横，行尾注明原因', async () => {
+    const result = await run({ catalog: catalog(), onPath: ['codex'], keys: [...toMcps, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸– claude-only\s+不支持\s+本地进程方式的样例 MCP.*… · 需要别的 AI Agent$/m);
+    expect(result.output).toMatch(/^ □ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
+  });
+
+  it('在不可选的条目上按空格勾不上：列表下方说明这一项选不了；回车就是什么都没选', async () => {
+    const result = await run({
+      catalog: catalog(),
+      onPath: ['codex'],
+      keys: [...toMcps, [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的 MCP · 返回$/m);
+    expect(result.output).not.toContain('将安装');
+    expect(result.commands).toEqual([]);
+  });
+
+  it('全选不会勾上不可选的条目', async () => {
+    const result = await run({
+      catalog: catalog(),
+      onPath: ['codex'],
+      keys: [...toMcps, [PICK_HINT, 'a'], [' ■ tracker-remote', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 选择要安装的 MCP · tracker-remote$/m);
+    expect(result.output).toMatch(/^── 将安装 1 个 MCP ─+$/m);
+    expect(result.output).not.toMatch(/^\s+claude-only\s+Codex/m);
+  });
+
+  it('从勾选到执行走一遍：确认后逐项显示结果，再回到主菜单', async () => {
+    const result = await run({
+      catalog: catalog(),
+      keys: [...toMcps, [PICK_HINT, KEY.space], ['▸■ claude-only', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^▸ 执行$/m);
+    expect(result.output).toMatch(/✓ 执行这些命令吗 · 执行$/m);
+    expect(result.output).toMatch(/^\s+✓\s+claude-only\s+Claude Code\s+已配置$/m);
+    expect(result.commands).toHaveLength(1);
+  });
+
+  it('检测到两个宿主时先选宿主：名字后面不写目录', async () => {
+    const result = await run({ catalog: catalog(), onPath: ['claude', 'codex'], keys: [...toMcps, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸■ Claude Code$/m);
+    expect(result.output).toMatch(/^ ■ Codex$/m);
+  });
+
+  it('设置了 NO_COLOR 时，列表、不可选的行、汇总、命令和结果都不带样式码，零宽空格不打出去', async () => {
+    const result = await run({
+      catalog: catalog(),
+      onPath: ['codex'],
+      env: { NO_COLOR: '1' },
+      home: { '.codex/config.toml': '[mcp_servers.tracker-remote]\nurl = "https://old.example.org/mcp"\n' },
+      keys: [
+        ...toMcps,
+        [PICK_HINT, KEY.space],
+        ['这一项现在选不了', KEY.down],
+        ['▸□ tracker-remote', KEY.space],
+        ['▸■ tracker-remote', KEY.enter],
+        [HINT, KEY.enter],
+        [HINT, KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^ – claude-only\s+不支持\s.* · 需要别的 AI Agent$/m);
+    expect(result.output).toMatch(/^\s+tracker-remote\s+Codex\s+覆盖\s+已配置，先移除再添加$/m);
+    expect(result.output).toMatch(/^\s+✓\s+tracker-remote\s+Codex\s+已配置$/m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+    expect(result.raw).not.toContain('\u200b');
+  });
+
+  it('带样式时零宽空格同样不打出去', async () => {
+    const result = await run({ catalog: catalog(), onPath: ['codex'], keys: [...toMcps, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.raw).toMatch(STYLE_CODE);
+    expect(result.raw).not.toContain('\u200b');
+  });
+
+  it('没有 Unicode 的终端里，不可选的勾选位和各处的符号都退成 ASCII', async () => {
+    const result = await run({
+      catalog: catalog(),
+      onPath: ['codex'],
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['回车 选择', KEY.down], ['> MCP', KEY.enter], ['回车 确认', KEY.down], ['>[ ] tracker-remote', KEY.space], ['>[x] tracker-remote', KEY.enter], ['回车 选择', KEY.enter], ['回车 选择', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^>\[-\] claude-only\s+不支持\s.*\.\.\. - 需要别的 AI Agent$/m);
+    expect(result.output).toMatch(/^\s+\+\s+tracker-remote\s+Codex\s+已配置$/m);
+    expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎–─]/);
+  });
+
+  it('英文界面下不可选的原因也是英文，一行放得下', async () => {
+    const result = await run({
+      catalog: catalog(),
+      onPath: ['codex'],
+      argv: ['--lang', 'en'],
+      keys: [['⏎ select', KEY.down], ['▸ MCP', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^▸– claude-only\s+unsupported\s.* · needs another AI Agent$/m);
   });
 });

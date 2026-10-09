@@ -4,11 +4,7 @@ import { githubCatalogSource } from './catalog.ts';
 import { inquirerPrompter } from './inquirer-prompter.ts';
 import { runInstaller } from './installer.ts';
 import { systemLinkOpener } from './open-link.ts';
-
-// 还没有流程会执行外部命令，真实实现随第一个用到它的功能一起落地
-const notWiredYet = (): never => {
-  throw new Error('not wired yet');
-};
+import { systemCommandRunner } from './run-command.ts';
 
 // 提问之外（如读取目录、下载时）按 Ctrl+C：先让监听这个信号的同步收尾跑完，再换一行退出，
 // 不把 shell 的提示符留在半行上
@@ -40,7 +36,7 @@ process.exitCode = await runInstaller({
   homeDir: homedir(),
   tempDir: tmpdir(),
   interrupt: interrupt.signal,
-  runCommand: notWiredYet,
+  runCommand: systemCommandRunner(),
   prompter: inquirerPrompter(),
   openLink: systemLinkOpener(process.platform),
 });

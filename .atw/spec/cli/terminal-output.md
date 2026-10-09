@@ -18,9 +18,9 @@ ui.installSummary(targets);
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
 
-文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另一个联合类型（`SkillInstallProblem`），文案在 `installProblem`。
+文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另外的类型（skill 是 `SkillInstallProblem`，MCP 是 `McpInstallProblem`），文案在 `installProblem`、`mcpInstallProblem`。
 
-括号里的技术原因只放错误码和 `HTTP 503` 这类不需要翻译的东西。**别的模块里不写给用户看的句子**：要说一句话，就给联合类型加一种情况，在 `messages.ts` 里写中英两份。
+括号里的技术原因只放错误码和 `HTTP 503` 这类不需要翻译的东西。**别的模块里不写给用户看的句子**：要说一句话，就给联合类型加一种情况，在 `messages.ts` 里写中英两份。外部命令自己打出来的话同样不转述（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）。
 
 ```ts
 // 错：英文句子原样进了中文界面
@@ -100,7 +100,17 @@ disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
 
 > **Warning**：`row.disabled` 里带着零宽空格。任何不经 `theme.style.disabled` 就把它打出去的路径都会把零宽空格漏到终端上；测试架子画这种行时也走主题。`prompts.test.ts` 里有带样式和不带样式两条断言输出里没有 `\u200b`。
 
-多选（`@inquirer/checkbox`）的不可选行另有 `icon.disabledChecked`、`icon.disabledUnchecked` 两个图标，还没有画面用到；第一个用到的功能要把它们也盖掉，并在 `prompts.test.ts` 里加 `NO_COLOR` 的断言。
+**多选里不可选的行**（`@inquirer/checkbox` 5.x，MCP 列表里所选宿主都不支持的条目）和单选的有几处不同，都是读它的源码并实测得来的：
+
+| 行为 | 呈现层怎么配合 |
+|------|----------------|
+| 这一行拼成 `<光标或空格><勾选框> <name> <disabled>`，勾选框取 `theme.icon.disabledUnchecked`（勾着的取 `disabledChecked`），整行交给 `theme.style.disabled` | 两个图标都盖成同一个不带样式的符号（`–`，没有 Unicode 时 `[-]`）：整行本来就会被压暗；这种行勾不上，「勾着」的那个用不到，但不盖的话它按 Node 的规则上绿色 |
+| **没有办法指定光标的起始位置**：它停在第一项上，哪怕那一项不可选 | 不处理。条目照目录的顺序排，光标可能起始就在不可选的行上，这时列表下方没有说明全文 |
+| 在这一行上按空格：勾不上，下方多一行 `theme.i18n.disabledError` | 和单选共用同一句话、同一个画法 |
+| `a` 全选、`i` 反选都跳过不可选的行 | 不用配合；`prompts.test.ts` 里有一条守着 |
+| 一个能选的都没有时照样画得出来，用户只能回车（什么都没勾，等于返回） | 不用另做一个“没有可选的”画面 |
+
+不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。两种列表共用 `ui.ts` 的 `entryPicker`（名称、每个宿主一栏、说明），给它 `unavailable`（原因）就是不可选的行。
 
 ---
 
@@ -137,7 +147,7 @@ export interface ConfirmQuestion {
 | 情况 | 画法 |
 |------|------|
 | 每一格备注（连同表头）接在行尾都不超过 79 列 | 备注成一栏，表头写它 |
-| 有一格放不下 | 全部另起一行，缩进到它前一栏（汇总里是「位置」）的左缘；表头不写这一栏 |
+| 有一格放不下 | 全部另起一行，缩进到它前一栏的左缘（skill 的汇总里是「位置」，MCP 的是「操作」）；表头不写这一栏。从那里起连最长的一格都放不下时，所有备注一起往左挪到刚好放得下，不让终端来折 |
 | 一格备注都没有 | 表头不写这一栏 |
 
 表头永远只有一行。
@@ -151,7 +161,27 @@ rows.flatMap((row) => (fits(row) ? [inline(row)] : [start(row), ownLine(row)]));
 const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
 ```
 
-名字和路径都来自目录，长度不由我们定：真实目录里的 `writing-for-agents` 就足以让前四栏占到 78 列。**预览页的样例里要有一条长名字**，不然这种拆行在画面上看不到。
+名字和路径都来自目录，长度不由我们定：真实目录里的 `writing-for-agents` 就足以让前四栏占到 78 列。**预览页的样例里要有一条长名字**，不然这种拆行在画面上看不到。工单 08 补上 MCP 的长名字样例时就查出过一处：备注另起一行后仍从「操作」一栏的左缘起，超出了 80 列。
+
+---
+
+## 将执行的命令
+
+执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。接着是 `ui.confirmCommands()`：执行、返回修改、取消，和 skill 的「开始安装吗」是同一个单选（`decision`）。
+
+| 情况 | 画法 |
+|------|------|
+| 命令比一行长 | 按词折行，续行与命令的左缘对齐；**从不截断**。一个比一行还长的参数独占一行，由终端自己折 |
+| 参数里有 shell 会另作解释的字符（网址里的 `&`、`?`） | 展示时给这个参数加单引号（`commandLine`），照着敲也是同一条命令；执行时不经过 shell，参数原样传 |
+| 要提醒的事（宿主会当场打开浏览器登录） | 命令之后空一行，一行「注意」键值，再空一行 |
+
+```ts
+// 错：命令交给会截断的栏，用户确认的就不是完整的命令
+truncate(commandLine(command), width, symbols.ellipsis);
+
+// 对：只折行
+hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLine(command));
+```
 
 ---
 
@@ -189,7 +219,7 @@ const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWid
 
 ## 改写已经打出去的行
 
-转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。
+转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。「正在安装」分区各类组件共用一个 `progress(targets, doing)`：`ui.installation`（skill）和 `ui.mcpInstallation` 只负责把各自的结果说成文字，行数、合计、改写标题都在它里面。再加一类组件时照此接上，不要另写一遍。
 
 「正在安装」分区结束后要把标题换成「结果」，标题在上面好几行，只能把光标挪上去再挪回来。挪之前先确认两件事，否则会写到别的行上：
 
@@ -236,6 +266,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。
 - 要画出应用项目，场景用 `catalog: withApps`（样例应用项目是为预览编的，其中一条的链接比一行长）；`browser: false` 让链接打开器拒绝。预览页从不真的打开浏览器。
+- 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给 skill 用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘。

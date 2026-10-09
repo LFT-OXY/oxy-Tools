@@ -15,9 +15,11 @@
 ```ts
 // cli/src/hosts.ts
 export interface Host {
+  id: string;         // 目录里指代它的名字：claude-code、codex
   name: string;       // 界面上显示的名字
   detected: boolean;
   skillsDir: string;  // 用户级的 skill 目录
+  // …关于 MCP 的几样（configuredMcps、addMcp、removeMcp、remoteMcpLogin）见「安装 MCP」
 }
 // 安装器认识的全部宿主，检测到的和没检测到的都在；顺序就是界面上的顺序
 export function detectHosts(env: Environment, homeDir: string): Host[];
@@ -70,7 +72,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | Claude Code | 可执行路径上有 `claude` 命令 | `<主目录>/.claude/skills` |
 | Codex | 可执行路径上有 `codex` 命令 | `<主目录>/.agents/skills`（它自己的 `.codex/skills` 已被标为废弃） |
 
-每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量和主目录，交出一个 `Host`），都回答同样的问题；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
+每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量和主目录，交出一个 `Host`），都回答同样的问题（关于 MCP 的那几问见 [安装 MCP](./mcp-install.md)）；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
 
 “可执行路径上有某个命令”的判断不执行任何东西：把 `env.PATH` 按本机的分隔符（`path.delimiter`）拆开，在每个目录里找这个名字，以及这个名字接上 `env.PATHEXT` 里每个扩展名（Windows 上有这个变量，别的系统没有）；找到的必须是可执行的普通文件，同名的目录不算。不看传入的 `platform`——文件系统的事按真实的系统来，测试里才能在任何系统上用一个临时目录当可执行路径。
 
@@ -84,6 +86,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 - **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, host.skillsDir, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
 - 钉住的来源整次运行共用，不因宿主多而多查询。
+- 问不问宿主、勾完之后怎么返回，skill 和 MCP 共用一段流程（`flow.ts` 的 `withHosts`）；装 MCP 时宿主选择里名字后面不写目录。
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；skill 列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回 skill 列表，不重问宿主。
 
 **skill 的状态（`skillStatus`）**
