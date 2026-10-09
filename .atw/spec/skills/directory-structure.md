@@ -11,6 +11,7 @@
 ├── index.json          # 可选 skill 清单
 ├── catalog.json        # 目录里 skill 以外的条目：MCP、工具、应用项目
 ├── cli/                # 安装器 oxy-tools，自成一体的 npm 包，见 CLI 层规范
+├── .github/workflows/  # cli.yml：安装器的测试与目录校验，只管 cli/ 和两个目录文件
 ├── skills/
 │   └── <name>/         # 一个 skill 一个目录，入口固定为 SKILL.md
 ├── docs/agents/        # ATW 用的 issue tracker / 分诊标签 / 域文档约定
@@ -18,7 +19,7 @@
 └── .atw/ .claude/ .agents/ .pi/   # atw init 生成的工作流配置与已安装的 skill 副本
 ```
 
-仓库根没有 `package.json`、构建脚本、CI 配置或 README。每个 skill 自带它需要的一切；安装器的包描述文件、依赖和构建都关在 `cli/` 里（[CLI 层规范](../cli/index.md)）。
+仓库根没有 `package.json`、构建脚本或 README；CI 只有 `.github/workflows/cli.yml` 一个工作流，不碰 `skills/`。每个 skill 自带它需要的一切；安装器的包描述文件、依赖和构建都关在 `cli/` 里（[CLI 层规范](../cli/index.md)）。
 
 ---
 

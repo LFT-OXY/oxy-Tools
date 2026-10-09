@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层目前只写了已经落地的部分（启动、读目录、主菜单、把 skill 装进 Claude Code、出错）。第二个宿主、状态探测、MCP、工具、应用项目和界面设计规则的完整版随对应的功能补进来。
+本层目前只写了已经落地的部分（启动、读目录、主菜单、把 skill 装进 Claude Code、出错、目录校验命令与 CI）。第二个宿主、状态探测、MCP、工具、应用项目和界面设计规则的完整版随对应的功能补进来。
 
 ```
 cli/
@@ -26,7 +26,9 @@ cli/
 │   ├── inquirer-prompter.ts  # 提问器的正式实现（@inquirer）
 │   └── text.ts           # 显示宽度、截断、折行
 ├── test/                 # 只经入口断言的测试，和测试架子
-└── scripts/preview.ts    # 界面预览页（仅供开发）
+└── scripts/              # 仅供开发的脚本，不进 dist/，不随 npm 包发布
+    ├── preview.ts            # 界面预览页
+    └── validate-catalog.ts   # 目录校验命令
 ```
 
 ---
@@ -38,6 +40,7 @@ cli/
 | [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、退出状态、目录读取与校验的契约、测试架子的用法 |
 | [安装 skill](./skill-install.md) | 宿主探测、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵 |
 | [终端输出](./terminal-output.md) | 呈现层的职责、上色与 Unicode 的判断、标准输出与标准错误的分工、改写已打出的行、界面预览页 |
+| [目录校验与 CI](./catalog-validation.md) | 目录校验命令的输出与退出状态、被跳过条目的原因怎么记、命令的测试怎么写、工作流的触发与检出范围 |
 
 ---
 
@@ -48,6 +51,7 @@ cli/
 - [ ] 要动下载、落盘、宿主探测，或加一种装不上的原因 → [安装 skill](./skill-install.md)
 - [ ] 要读 `cli/` 以外的文件、或在仓库根加包描述文件 → 不行，见 ADR-0001
 - [ ] 要改 `index.json` 或 `catalog.json` 的格式 → 先读 ADR-0002 和 [清单与版本](../skills/manifest-versioning.md)
+- [ ] 要给目录加一类条目、一个字段或一条校验规则，或动 CI → [目录校验与 CI](./catalog-validation.md)：写坏的条目带着原因进 `skipped`
 
 ---
 
@@ -62,5 +66,8 @@ cli/
 | `npm run build` | 构建到 `dist/`（不提交） |
 | `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
+| `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
+
+推送后 CI（`.github/workflows/cli.yml`）在 macOS、Linux、Windows 上各用 Node 22.13 和 24 跑全部测试，另跑类型检查和目录校验。
 
 包声明支持 Node 22.13 及以上的 22.x 或 23.5 及以上。行为与 Node 版本有关的改动（样式码、流）要在 22.13 上再跑一遍测试。

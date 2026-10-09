@@ -94,7 +94,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 **目录文件**
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
-- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空；条目的字段由各自的功能在用到时定义，目前安装器不读它们的内容。
+- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空；条目的字段由各自的功能在用到时定义，目前安装器不读它们的内容，只把非空的数组各有几条记在 `Catalog.unread` 里（给目录校验命令用）。
 - 两个文件的 `version` 都是整数的格式版本号，安装器目前认识到 1。
 
 ### 4. Validation & Error Matrix
@@ -108,7 +108,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 | `skills` 不是数组；`mcps`/`tools`/`apps` 存在但不是数组 | 目录格式有误，指出字段 |
 | `version` 大于安装器认识的版本 | 目录格式版本不受支持，提示 `npx oxy-tools@latest`；**不尝试解析** |
 
-单条 skill 条目写坏时只跳过这一条，计入 `Catalog.skipped`，主菜单上方提示数量：
+单条 skill 条目写坏时只跳过这一条，连同原因记进 `Catalog.skipped`（哪个文件、哪个数组、第几条、哪个字段，类型见 [目录校验与 CI](./catalog-validation.md)）；主菜单上方只提示数量，逐条的原因由目录校验命令说：
 
 | 字段 | 规则 |
 |------|------|
@@ -130,7 +130,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 ### 6. Tests Required
 
-测试只经 `runInstaller` 断言——给定目录、主目录、应答，看终端上输出了什么、退出状态是多少、记录到哪些命令和链接。不为内部模块单独写测试，不断言颜色和版式。
+测试只经 `runInstaller` 断言——给定目录、主目录、应答，看终端上输出了什么、退出状态是多少、记录到哪些命令和链接。不为内部模块单独写测试，不断言颜色和版式。唯一的另一个接缝是目录校验命令，它的测试把命令当子进程跑，见 [目录校验与 CI](./catalog-validation.md)。
 
 测试架子在 `cli/test/harness.ts`：
 

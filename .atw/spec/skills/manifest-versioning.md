@@ -83,7 +83,9 @@
 | 缺 `zh` 或 `en` | 某个语言的列表里缺说明 |
 | JSON 语法错误 | 整个清单读不了 |
 
-仓库里没有签入的清单校验脚本，也没有既定的校验流程。下面这段检查的是上表前三项、键集合和排序，在仓库根运行，对当前的 `index.json` 输出 `index.json 通过`：
+安装器读不读得了 `index.json`、会不会跳过其中的条目（缺字段、`path` 不合规则、重名、JSON 语法错误），由目录校验命令查：在 `cli/` 下运行 `npm run validate-catalog -- ..`，CI 在推送后也跑这一条（见 [CLI 层的目录校验与 CI](../cli/catalog-validation.md)）。
+
+清单与 `skills/` 对不对得上，那条命令不查——它不读 `skills/`。这一部分没有签入的脚本，也没有既定的流程。下面这段检查的是上表前三项、键集合和排序，在仓库根运行，对当前的 `index.json` 输出 `index.json 通过`：
 
 ```bash
 python3 - <<'EOF'

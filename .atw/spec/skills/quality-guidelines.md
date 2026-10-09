@@ -6,9 +6,9 @@
 
 ## 现状
 
-仓库级别**没有**任何自动化：没有根 `package.json`、linter、formatter、`.editorconfig`、pre-commit hook 或 CI。唯一的 workflow 文件 `skills/unlazy/.github/workflows/test.yml` 位于子目录，GitHub 不会触发它。
+仓库级别的自动化只有一处：`.github/workflows/cli.yml`，在 `cli/`、`index.json` 或 `catalog.json` 有改动时跑安装器的测试、类型检查和目录校验（见 [CLI 层的目录校验与 CI](../cli/catalog-validation.md)）。它只取 `cli/` 和仓库根的文件，不碰 `skills/`。除此之外没有根 `package.json`、linter、formatter、`.editorconfig` 或 pre-commit hook。另一个 workflow 文件 `skills/unlazy/.github/workflows/test.yml` 位于子目录，GitHub 不会触发它。
 
-也没有成文的“提交前必须跑什么”的流程。下面列的是各 skill 自带、现在能跑的命令。
+skill 这一侧没有成文的“提交前必须跑什么”的流程。下面列的是现在能跑的命令。
 
 ---
 
@@ -16,7 +16,8 @@
 
 | 改动范围 | 命令 | 出处 |
 |----------|------|------|
-| `index.json`，或增删改任何 skill | [清单与版本](./manifest-versioning.md) “校验”一节的脚本 | 该文档；不是既有流程 |
+| `index.json`、`catalog.json` | 在 `cli/` 下 `npm run validate-catalog -- ..`（安装器读不读得了、会不会跳过条目） | `cli/package.json` 的脚本；CI 也跑这一条 |
+| `index.json`，或增删改任何 skill | [清单与版本](./manifest-versioning.md) “校验”一节的脚本（清单与 `skills/` 对不对得上） | 该文档；不是既有流程 |
 | `skills/oxy-learning-hub/scripts/validate_html.py` | `python3 skills/oxy-learning-hub/scripts/validate_html.py --self-test` | 脚本自带的 `--self-test` |
 | `skills/oxy-learning-hub/assets/` | [`scripts/html-assets.md`](../scripts/html-assets.md) “验证”一节 | `skills/oxy-learning-hub/SKILL.md` 要求生成的 HTML 通过校验 |
 | `skills/wizard/template.sh` | `bash -n skills/wizard/template.sh`，装了 `shellcheck` 再跑一遍 | `skills/wizard/SKILL.md` 步骤 4 对生成物的要求 |

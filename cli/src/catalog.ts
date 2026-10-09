@@ -34,10 +34,34 @@ export interface Skill {
   description: { zh: string; en: string };
 }
 
+/** 字段该是什么样的 */
+export type FieldRule = 'name' | 'text' | 'relative-path' | 'object';
+
+export type EntryProblem =
+  | { kind: 'not-object' }
+  | { kind: 'bad-field'; field: string; rule: FieldRule }
+  // 与前面的某一条重名
+  | { kind: 'duplicate' };
+
+/** 被跳过的一条 */
+export interface SkippedEntry {
+  /** 所在的目录文件 */
+  file: string;
+  /** 所在的数组，如 skills */
+  list: string;
+  /** 是数组里的第几条，从 1 数起 */
+  position: number;
+  /** 条目的名字；名字本身不合规则时没有 */
+  name: string | undefined;
+  problem: EntryProblem;
+}
+
 export interface Catalog {
   skills: Skill[];
-  /** 被跳过的条目数：校验不通过的，以及与前面重名的 */
-  skipped: number;
+  /** 被跳过的条目：校验不通过的，以及与前面重名的 */
+  skipped: SkippedEntry[];
+  /** 这一版还不读内容、因而没有校验的条目：哪个文件的哪个数组、有几条；空的数组不列 */
+  unread: { file: string; list: string; count: number }[];
 }
 
 /** 出问题的那个目录文件在哪 */
@@ -101,19 +125,25 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
     readDocument(source, 'index.json'),
     readDocument(source, 'catalog.json'),
   ]);
-  for (const field of CATALOG_ARRAYS) {
-    if (otherEntries.data[field] !== undefined) requireArray(otherEntries, field);
-  }
+  // 这三类条目的内容还不读：只查是不是数组，记下各有几条
+  const unread = CATALOG_ARRAYS.map((list) => ({
+    file: otherEntries.file,
+    list,
+    count: otherEntries.data[list] === undefined ? 0 : requireArray(otherEntries, list).length,
+  })).filter(({ count }) => count > 0);
 
   const skills = new Map<string, Skill>();
-  let skipped = 0;
-  for (const entry of requireArray(skillList, 'skills')) {
+  const skipped: SkippedEntry[] = [];
+  for (const [index, entry] of requireArray(skillList, 'skills').entries()) {
+    const skip = (name: string | undefined, problem: EntryProblem): void =>
+      void skipped.push({ file: skillList.file, list: 'skills', position: index + 1, name, problem });
     const skill = parseSkill(entry);
+    if ('kind' in skill) skip(nameOf(entry), skill);
     // 重名的只留第一条
-    if (skill && !skills.has(skill.name)) skills.set(skill.name, skill);
-    else skipped++;
+    else if (skills.has(skill.name)) skip(skill.name, { kind: 'duplicate' });
+    else skills.set(skill.name, skill);
   }
-  return { skills: [...skills.values()], skipped };
+  return { skills: [...skills.values()], skipped, unread };
 }
 
 /** 默认的目录来源：GitHub 上本仓库 main 分支的原始文件。 */
@@ -285,14 +315,28 @@ const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 
-// 不认识的字段一律忽略；返回 undefined 表示这一条写坏了
-function parseSkill(entry: unknown): Skill | undefined {
-  if (!isRecord(entry)) return undefined;
+// 不认识的字段一律忽略；这一条写坏了就返回头一处问题
+function parseSkill(entry: unknown): Skill | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
   const { name, version, path, description } = entry;
-  if (typeof name !== 'string' || !SKILL_NAME.test(name)) return undefined;
-  if (!isText(version) || !isSafeRelativePath(path)) return undefined;
-  if (!isRecord(description) || !isText(description['zh']) || !isText(description['en'])) return undefined;
-  return { name, version, path, description: { zh: description['zh'], en: description['en'] } };
+  if (!isName(name)) return bad('name', 'name');
+  if (!isText(version)) return bad('version', 'text');
+  if (!isSafeRelativePath(path)) return bad('path', 'relative-path');
+  if (!isRecord(description)) return bad('description', 'object');
+  const { zh, en } = description;
+  if (!isText(zh)) return bad('description.zh', 'text');
+  if (!isText(en)) return bad('description.en', 'text');
+  return { name, version, path, description: { zh, en } };
+}
+
+// 写坏的条目叫什么：名字合规则才认，它接下来要被打到终端上
+function nameOf(entry: unknown): string | undefined {
+  return isRecord(entry) && isName(entry['name']) ? entry['name'] : undefined;
+}
+
+function isName(value: unknown): value is string {
+  return typeof value === 'string' && SKILL_NAME.test(value);
 }
 
 // 会成为文件系统路径的字段：只接受相对路径，拒绝绝对路径、盘符、`.`、`..` 和空段

@@ -18,7 +18,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "start": "npm run build && node dist/bin.js",
-    "preview": "node --experimental-strip-types scripts/preview.ts"
+    "preview": "node --experimental-strip-types scripts/preview.ts",
+    "validate-catalog": "node --experimental-strip-types scripts/validate-catalog.ts"
   },
   "dependencies": {
     "@inquirer/checkbox": "^5.2.6",

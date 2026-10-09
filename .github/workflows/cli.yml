@@ -1,0 +1,65 @@
+# 安装器的测试与目录校验。只在 cli/ 或两个目录文件有改动时运行，取下来的也只有这些：
+# skills/ 下上游整包自带的测试和工作流不归这里管。
+name: cli
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - cli/**
+      - index.json
+      - catalog.json
+      - .github/workflows/cli.yml
+  pull_request:
+    paths:
+      - cli/**
+      - index.json
+      - catalog.json
+      - .github/workflows/cli.yml
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: cli
+
+jobs:
+  test:
+    name: 测试（${{ matrix.os }}，Node ${{ matrix.node }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # 包声明支持的最低版本，和当前的长期支持版本
+        node: ['22.13.0', '24']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 整个仓库有两百多 MB；只取 cli/ 和根目录下的文件
+          sparse-checkout: cli
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  catalog:
+    name: 类型检查与目录校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 根目录下的文件里有要校验的 index.json 和 catalog.json
+          sparse-checkout: cli
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run validate-catalog -- ..

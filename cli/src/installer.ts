@@ -76,7 +76,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
     const host = claudeCode(env, options.homeDir);
-    ui.catalogSummary({ host, skills: catalog.skills.length, skipped: catalog.skipped });
+    ui.catalogSummary({ host, skills: catalog.skills.length, skipped: catalog.skipped.length });
     await mainMenu({
       catalog,
       source,
