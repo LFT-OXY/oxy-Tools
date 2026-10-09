@@ -1,5 +1,6 @@
 // 假键盘加真实的交互库：测试架子和界面预览页都用它来驱动真实的提问。
 import { PassThrough, Writable } from 'node:stream';
+import xterm from '@xterm/headless';
 import { inquirerPrompter } from '../src/inquirer-prompter.ts';
 import type { Prompter } from '../src/prompter.ts';
 
@@ -26,4 +27,12 @@ export function keyboardPrompter(
     ),
   }));
   return { keyboard, prompter };
+}
+
+/** 把终端收到的原始输出放进无头终端，读出最后留在屏幕上的每一行（连同滚上去的）。 */
+export async function screenLines(raw: string): Promise<string[]> {
+  const terminal = new xterm.Terminal({ cols: COLUMNS, rows: 60, scrollback: 1000, allowProposedApi: true, convertEol: true });
+  await new Promise<void>((resolve) => terminal.write(raw, resolve));
+  const buffer = terminal.buffer.active;
+  return Array.from({ length: buffer.length }, (_, row) => buffer.getLine(row)?.translateToString(true) ?? '');
 }

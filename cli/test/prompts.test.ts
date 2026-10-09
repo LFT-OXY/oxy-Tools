@@ -2,7 +2,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_CATALOG, KEY, SAMPLE_APPS, SAMPLE_MCPS, STYLE_CODE, catalogDir, run } from './harness.ts';
+import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, STYLE_CODE, catalogDir, run } from './harness.ts';
+import { screenLines } from './terminal.ts';
 
 // 交互库自带的样式按 Node 的规则上色，看的是真实进程的环境和标准输出；测试进程的标准输出不是终端，
 // 不强行打开的话它永远不上色，主题里漏盖了哪个样式函数也就查不出来。
@@ -628,5 +629,105 @@ describe('真实的画面：MCP', () => {
     });
 
     expect(result.output).toMatch(/^▸– claude-only\s+unsupported\s.* · needs another AI Agent$/m);
+  });
+});
+
+describe('真实的画面：填写 key', () => {
+  const catalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP] } });
+  const KEY_VALUE = 'sk-test-4f9a2c71d0';
+  // 隐藏输入的提问后面那句固定的提示；每按一个键提问都会重画一遍，所以输完之后还等得到它
+  const KEY_HINT = '粘贴后回车';
+  const toKey: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.enter], [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter]];
+  const keyed = (result: { commands: { args: readonly string[] }[] }): string[] =>
+    result.commands.flatMap(({ args }) => args.filter((arg) => arg.startsWith('SEARCH_API_KEY=')));
+
+  it('提问是变量名和一句固定的提示；输入的字符不显示，回车后留下一行只说已填写', async () => {
+    const result = await run({
+      catalog: catalog(),
+      keys: [...toKey, [KEY_HINT, KEY_VALUE], [KEY_HINT, KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\? SEARCH_API_KEY \(输入不显示，粘贴后回车\)/m);
+    expect(result.output).toMatch(/✓ SEARCH_API_KEY · 已填写$/m);
+    expect(result.output).toMatch(/SEARCH_API_KEY=<SEARCH_API_KEY>/);
+    expect(keyed(result)).toEqual([`SEARCH_API_KEY=${KEY_VALUE}`]);
+    expect(result.raw).not.toContain(KEY_VALUE);
+    // 也不用星号之类的记号暴露它有多长
+    expect(result.output).not.toMatch(/\*{2,}/);
+    // 逐个字符也没有回显：这段值里的每个片段都不在提问之后的输出里
+    expect(result.raw.split('SEARCH_API_KEY').slice(2).join('')).not.toMatch(/sk-|4f9a/);
+  });
+
+  it('回答之后提问从屏幕上擦掉，只留下那一行结局', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toKey, [KEY_HINT, KEY_VALUE], [KEY_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    const lines = await screenLines(result.raw);
+    expect(lines.filter((line) => line.includes('SEARCH_API_KEY') && !line.includes('变量') && !line.includes('<'))).toEqual(['✓ SEARCH_API_KEY · 已填写']);
+  });
+
+  it('按 Ctrl+T 不会把输入显示出来', async () => {
+    const result = await run({
+      catalog: catalog(),
+      // Ctrl+T 之后再输一个字符，逼提问重画一遍：要是它切到了明文，这一遍里就有前面输入的东西
+      keys: [...toKey, [KEY_HINT, KEY_VALUE], [KEY_HINT, '\x14x'], [KEY_HINT, KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.raw).not.toContain(KEY_VALUE);
+    expect(result.output).not.toMatch(/ctrl\+t|toggle/i);
+  });
+
+  it('必填的直接回车：留下一行说明将跳过，没有命令要执行，回到主菜单', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toKey, [KEY_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/– SEARCH_API_KEY · 必填，未填写；将跳过 search-keyed$/m);
+    expect(result.output).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的 SEARCH_API_KEY$/m);
+    expect(result.output).not.toContain('执行这些命令吗');
+    expect(result.commands).toEqual([]);
+  });
+
+  it('在这个提问上按 Ctrl+C 干净退出，什么都没执行', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toKey, [KEY_HINT, KEY_VALUE], [KEY_HINT, KEY.ctrlC]] });
+
+    expect(result.exitCode).toBe(130);
+    expect(result.commands).toEqual([]);
+    expect(result.output).not.toContain('出错');
+    expect(result.raw).not.toContain(KEY_VALUE);
+  });
+
+  it('设置了 NO_COLOR 时，key 的说明、提问、留下的一行和带占位符的命令都不带样式码', async () => {
+    const result = await run({
+      catalog: catalog(),
+      env: { NO_COLOR: '1' },
+      keys: [...toKey, [KEY_HINT, KEY_VALUE], [KEY_HINT, KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\s+申请\s+https:\/\/example\.com\/search\/api-keys$/m);
+    expect(result.output).toMatch(/✓ SEARCH_API_KEY · 已填写$/m);
+    expect(result.output).toMatch(/SEARCH_API_KEY=<SEARCH_API_KEY>/);
+    expect(result.output).toMatch(/^\s+✓\s+search-keyed\s+Claude Code\s+已配置$/m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+
+  it('没有 Unicode 的终端里，分区的横线和留下的那一行的记号都退成 ASCII', async () => {
+    const result = await run({
+      catalog: catalog(),
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['回车 选择', KEY.down], ['> MCP', KEY.enter], ['回车 确认', KEY.space], ['>[x] search-keyed', KEY.enter], [KEY_HINT, KEY.enter], ['回车 选择', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^-- search-keyed 需要 key -+$/m);
+    expect(result.output).toMatch(/- SEARCH_API_KEY - 必填，未填写；将跳过 search-keyed$/m);
+    expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎–─]/);
+  });
+
+  it('英文界面下提问后面的提示也是英文，一行放得下', async () => {
+    const result = await run({
+      catalog: catalog(),
+      argv: ['--lang', 'en'],
+      keys: [['⏎ select', KEY.down], ['▸ MCP', KEY.enter], ['⏎ confirm', KEY.space], ['▸■ search-keyed', KEY.enter], ['then press enter', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\? SEARCH_API_KEY \(input hidden; paste, then press enter\)$/m);
   });
 });

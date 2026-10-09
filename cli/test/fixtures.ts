@@ -54,3 +54,19 @@ export const SAMPLE_MCPS = [
     server: { url: 'https://mcp.example.org/mcp' },
   },
 ];
+
+/** 带 key 的 MCP：一个必填的环境变量。只能是本地进程方式 */
+export const KEYED_MCP = {
+  name: 'search-keyed',
+  description: { zh: '需要 API key 的样例 MCP', en: 'A sample MCP that needs an API key' },
+  url: 'https://example.com/search-keyed',
+  server: { command: 'npx', args: ['-y', '@example/search-mcp'] },
+  env: [
+    {
+      name: 'SEARCH_API_KEY',
+      required: true,
+      description: { zh: '样例搜索服务的密钥', en: 'Key for the sample search service' },
+      url: 'https://example.com/search/api-keys',
+    },
+  ],
+};

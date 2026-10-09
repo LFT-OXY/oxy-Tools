@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
+import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -142,6 +142,34 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
 
     expect(result.stdout).toContain('1 个 MCP');
     expect(result.exitCode).toBe(0);
+  });
+
+  it('带环境变量的 MCP 条目没有问题时照常通过', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [...SAMPLE_MCPS, KEYED_MCP] } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、3 个 MCP、0 个应用项目');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it.each([
+    ['env', { env: 'SEARCH_API_KEY' }, '数组.*环境变量'],
+    ['env', { env: [KEYED_MCP.env[0], KEYED_MCP.env[0]] }, '变量名不重复'],
+    ['env', { server: { url: 'https://mcp.example.com/mcp' } }, '只能用于本地进程方式'],
+    ['env[0]', { env: ['SEARCH_API_KEY'] }, '对象'],
+    ['env[0].name', { env: [{ ...KEYED_MCP.env[0], name: 'SEARCH-KEY' }] }, '字母、数字和下划线'],
+    ['env[0].required', { env: [{ ...KEYED_MCP.env[0], required: 'yes' }] }, 'true 或 false'],
+    ['env[0].description', { env: [{ ...KEYED_MCP.env[0], description: '密钥' }] }, '对象'],
+    ['env[0].description.en', { env: [{ ...KEYED_MCP.env[0], description: { zh: '密钥' } }] }, '非空文字'],
+    ['env[0].url', { env: [{ ...KEYED_MCP.env[0], url: 'example.com/keys' }] }, 'https:// 开头的网址'],
+    ['env[1].name', { env: [KEYED_MCP.env[0], { ...KEYED_MCP.env[0], name: '' }] }, '字母、数字和下划线'],
+  ])('MCP 的 %s 写坏时，指明是哪一条、哪一个环境变量的哪个字段', async (field, overrides, rule) => {
+    const broken = { ...KEYED_MCP, name: 'broken', ...overrides };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [SAMPLE_MCPS[1], broken] } }));
+
+    const where = field.replace(/[.[\]]/g, '\\$&');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 mcps 第 2 条（broken）：${where} .*${rule}`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
   });
 
   it('应用项目条目也校验：没有问题时说明有几个，不算进未校验', async () => {

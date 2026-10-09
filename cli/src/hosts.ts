@@ -5,10 +5,15 @@ import { parse as parseToml } from 'smol-toml';
 import { isRecord, type Mcp } from './catalog.ts';
 import type { Environment } from './ui.ts';
 
+/** 命令里带着 key 的一个参数：执行时是「变量名=值」，给用户看时值的位置是占位符 */
+export interface KeyArgument {
+  variable: string;
+}
+
 /** 一条外部命令：不经过 shell，args 的每一项原样是一个参数 */
 export interface Command {
   command: string;
-  args: string[];
+  args: (string | KeyArgument)[];
 }
 
 export interface Host {
@@ -21,8 +26,8 @@ export interface Host {
   skillsDir: string;
   /** 用户级配置里已有的 MCP 的名字，只读地看一眼配置文件；读不了或格式不认识时是 undefined */
   configuredMcps(): ReadonlySet<string> | undefined;
-  /** 把一个 MCP 写进用户级配置的命令：宿主自己的添加命令 */
-  addMcp(mcp: Mcp): Command;
+  /** 把一个 MCP 写进用户级配置的命令：宿主自己的添加命令。variables 是要带上的环境变量的名字 */
+  addMcp(mcp: Mcp, variables: readonly string[]): Command;
   /** 从用户级配置里移除一个 MCP 的命令 */
   removeMcp(name: string): Command;
   /**
@@ -46,14 +51,17 @@ const claudeCode: HostAdapter = (env, homeDir) => ({
   detected: isOnPath('claude', env),
   skillsDir: join(homeDir, '.claude', 'skills'),
   configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
-  addMcp: ({ name, server }) => ({
+  // 环境变量要跟在名字后面：-e 能连收几个值，放在名字前面会把名字也收进去
+  addMcp: ({ name, server }, variables) => ({
     command: 'claude',
     args: [
       'mcp',
       'add',
       '--scope',
       'user',
-      ...('url' in server ? ['--transport', 'http', name, server.url] : [name, '--', server.command, ...server.args]),
+      ...('url' in server
+        ? ['--transport', 'http', name, server.url]
+        : [name, ...variables.flatMap((variable) => ['-e', { variable }]), '--', server.command, ...server.args]),
     ],
   }),
   removeMcp: (name) => ({ command: 'claude', args: ['mcp', 'remove', '--scope', 'user', name] }),
@@ -70,9 +78,16 @@ const codex: HostAdapter = (env, homeDir) => ({
   detected: isOnPath('codex', env),
   skillsDir: join(homeDir, '.agents', 'skills'),
   configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
-  addMcp: ({ name, server }) => ({
+  addMcp: ({ name, server }, variables) => ({
     command: 'codex',
-    args: ['mcp', 'add', name, ...('url' in server ? ['--url', server.url] : ['--', server.command, ...server.args])],
+    args: [
+      'mcp',
+      'add',
+      name,
+      ...('url' in server
+        ? ['--url', server.url]
+        : [...variables.flatMap((variable) => ['--env', { variable }]), '--', server.command, ...server.args]),
+    ],
   }),
   removeMcp: (name) => ({ command: 'codex', args: ['mcp', 'remove', name] }),
   remoteMcpLogin: { command: 'codex', args: ['mcp', 'login'] },

@@ -17,6 +17,10 @@ const RULES: Record<FieldRule, string> = {
   'mcp-server': '里 command（本地进程的启动命令）和 url（远程地址）要恰好有一样',
   'command-word': `要是一个词：${COMMAND_WORD}`,
   'command-word-list': `要是数组，每一项是一个词：${COMMAND_WORD}`,
+  'env-list': '要是数组，每一项是一个环境变量，变量名不重复；不需要环境变量时不写这个字段',
+  'env-name': '要是环境变量的名字：只含字母、数字和下划线，且不以数字开头',
+  boolean: '要是 true 或 false',
+  'local-only': '只能用于本地进程方式（server.command）：远程地址方式的条目不能带环境变量',
 };
 
 process.exitCode = await validate(process.argv.slice(2));

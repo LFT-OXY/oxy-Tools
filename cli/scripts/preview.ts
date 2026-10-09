@@ -97,6 +97,21 @@ const LONG_NAME_MCP = {
   server: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
 };
 const withLongNameMcp = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: [...SHOWCASE_MCPS, LONG_NAME_MCP] });
+// 带 key 的 MCP：context7 的 key 可选，exa 的必填（它的用途写得长，一行放不下）
+const keyed = (name: string, required: boolean, zh: string, en: string, url: string) => [{ name, required, description: { zh, en }, url }];
+const SHOWCASE_KEYED_MCPS = [
+  SHOWCASE_MCPS[0],
+  { ...SHOWCASE_MCPS[1], env: keyed('CONTEXT7_API_KEY', false, '提高请求限额，没有也能用', 'Raises the rate limit; works without it', 'https://context7.com/dashboard') },
+  {
+    name: 'exa',
+    description: { zh: '面向 AI 的网页搜索与正文抓取，需要 API key', en: 'Web search and page content retrieval built for AI; needs an API key' },
+    url: 'https://example.com/exa',
+    server: { command: 'npx', args: ['-y', 'exa-mcp-server'] },
+    env: keyed('EXA_API_KEY', true, 'Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建', 'Key for the Exa search API; sign-up includes a free quota, and keys are created on the API Keys page of the dashboard', 'https://dashboard.exa.ai/api-keys'),
+  },
+  ...SHOWCASE_MCPS.slice(2),
+];
+const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_KEYED_MCPS });
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, apps: SHOWCASE_APPS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
@@ -184,6 +199,17 @@ const runMcps = [...pickMcps, KEY.enter, KEY.enter];
 const pickOneMcp = [...toMcps, KEY.down, KEY.space, KEY.enter];
 // 检测到两个宿主时，进了 MCP 分组先问装进哪些宿主：两项默认勾选，直接确认
 const mcpTwoHosts = (keys: string[]): string[] => [...toMcps, KEY.enter, ...keys.slice(toMcps.length)];
+// 带 key 的样例里 exa 是第三条：只勾它再确认，停在问 key 的提问上
+const toExaKey = [...toMcps, ...down(2), KEY.space, KEY.enter];
+// 勾上 context7（key 可选）和 exa（key 必填），停在第一个 key 的提问上
+const toTwoKeys = [...toMcps, KEY.down, KEY.space, KEY.down, KEY.space, KEY.enter];
+// 假装粘贴进来的 key：它不该出现在任何一格画面里
+const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
+// 填好 exa 的 key，停在汇总确认上
+const toKeyedSummary = [...toExaKey, PASTED_KEY, KEY.enter];
+// 勾上 chrome-devtools 和 exa，exa 的 key 留空
+const skipExa = [...toMcps, KEY.space, ...down(2), KEY.space, KEY.enter, KEY.enter];
+const KEYED = { catalog: withKeyedMcps };
 const MCP_STATES = { catalog: withMcps, home: CLAUDE_CONFIGURED };
 const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE_CONFIGURED, ...CODEX_UNREADABLE } };
 
@@ -255,6 +281,23 @@ const scenes: Scene[] = [
   { title: '正在安装 · MCP', note: '一项已配置，另一项进行中：行首的符号转动', ...MCP_STATES, commands: secondHangs, keys: runMcps },
   { title: '结果 · MCP 全部成功', note: '标题由「正在安装」改写成「结果」；之后回到主菜单', ...MCP_STATES, keys: runMcps },
   { title: '结果 · MCP 一项失败', note: '失败的写明是哪一步和退出状态；其余照常', ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
+  { title: '填写 key · 必填项', note: '勾了 exa：先说明是哪个变量、做什么用、去哪申请、留空会怎样，再问；提问后面是一句固定的提示', ...KEYED, keys: toExaKey },
+  { title: '填写 key · 粘贴之后还没回车', note: '输入不回显，也不显示长度：画面和上一格一样', ...KEYED, keys: [...toExaKey, PASTED_KEY] },
+  { title: '填写 key · 可选项', note: '标题和提示都写明可选：留空就不设置这个变量', ...KEYED, keys: toTwoKeys },
+  { title: '填写 key · 可选的留空之后问下一个', note: '问过的提问擦掉，留下一行结局；每个 key 一个分区', ...KEYED, keys: [...toTwoKeys, KEY.enter] },
+  { title: '汇总确认 · 含 key', note: '命令里 key 的位置是占位符，下面说明执行时才代入；填过的那一行只写已填写', ...KEYED, keys: toKeyedSummary },
+  {
+    title: '汇总确认 · 含 key · 两个宿主',
+    note: 'key 只问一次，两个宿主的命令各带一个占位符；可选的那个留空了，命令里没有它',
+    ...KEYED,
+    onPath: BOTH_HOSTS,
+    keys: [...toMcps, KEY.enter, ...toTwoKeys.slice(toMcps.length), KEY.enter, PASTED_KEY, KEY.enter],
+  },
+  { title: '汇总确认 · 返回修改后再确认', note: '这次运行里填过的 key 不再问，留下一行说明', ...KEYED, keys: [...toKeyedSummary, KEY.down, KEY.enter, KEY.enter] },
+  { title: '结果 · 带 key 的 MCP', note: '结果里同样没有 key 的值', ...KEYED, keys: [...toKeyedSummary, KEY.enter] },
+  { title: '汇总确认 · 必填的 key 没填', note: '留下的一行说明将跳过它；汇总和命令里只有其余的', ...KEYED, keys: skipExa },
+  { title: '结果 · 必填的 key 没填', note: '那一项写明跳过和原因，其余照常', ...KEYED, keys: [...skipExa, KEY.enter] },
+  { title: '结果 · 选中的都没填 key', note: '没有命令要执行：不问执行不执行，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
@@ -276,6 +319,9 @@ const scenes: Scene[] = [
   { title: '英文界面 · MCP 多选列表', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '英文界面 · MCP 多选列表 · 不可选的条目', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '英文界面 · MCP 的汇总与结果', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
+  { title: '英文界面 · 填写 key', argv: ['--lang', 'en'], ...KEYED, keys: toTwoKeys },
+  { title: '英文界面 · 含 key 的汇总', argv: ['--lang', 'en'], ...KEYED, keys: [...toTwoKeys, KEY.enter, PASTED_KEY, KEY.enter] },
+  { title: '英文界面 · 必填的 key 没填', argv: ['--lang', 'en'], ...KEYED, keys: [...skipExa, KEY.enter] },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
@@ -288,6 +334,8 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · MCP 多选列表', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '不显示颜色 · MCP 多选列表 · 不可选的条目', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
+  { title: '不显示颜色 · 填写 key', note: '设置了 NO_COLOR：申请地址没有下划线，文字照旧', env: { NO_COLOR: '1' }, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
+  { title: '不显示颜色 · 含 key 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
@@ -301,6 +349,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 应用项目详情', note: '打开之后的记号退成 +', ...LEGACY_CONSOLE, catalog: withApps, keys: openApp },
   { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
+  { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
+  { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 

@@ -13,6 +13,9 @@ export type Failure =
   | CatalogFailure
   | { kind: 'unexpected'; detail: string };
 
+/** 一个 key 问完之后的结局：填了、留空了、这次运行里早先填过所以没再问 */
+export type KeyOutcome = 'entered' | 'blank' | 'reused';
+
 export interface FailureText {
   title: string;
   cause: string;
@@ -84,6 +87,26 @@ export interface Messages {
   /** 宿主添加远程地址的 MCP 时可能当场登录；login 是事后补登录的命令，后面要跟 MCP 的名字 */
   mcpLoginNotice: (host: string, login: string) => string;
   commandsToRun: (count: number) => string;
+  /** 将执行的命令里有 key 的占位符 */
+  keyPlaceholderNotice: string;
+  /** 问 key 之前那个分区的标题；mcp 是要它的那个 MCP 的名字 */
+  keyRequest: (mcp: string, required: boolean) => string;
+  variableKey: string;
+  purposeKey: string;
+  applyKey: string;
+  tipKey: string;
+  /** 接在变量名后面：必填还是可选 */
+  keyNeed: (required: boolean) => string;
+  /** 输入不显示，以及留空会怎样 */
+  keyInputHint: (mcp: string, required: boolean) => string;
+  /** 隐藏输入的提问后面那句固定的提示 */
+  hiddenInput: string;
+  /** key 问完之后留下的那一行里的结局 */
+  keyOutcome: (outcome: KeyOutcome, mcp: string, required: boolean) => string;
+  /** 结果里跳过的原因：必填的这个变量没填 */
+  keyMissing: (variable: string) => string;
+  /** 汇总里的提醒：这个 MCP 因为必填的变量没填，不在这次要装的里面 */
+  keyMissingNotice: (mcp: string, variable: string) => string;
   confirmCommands: string;
   runCommands: string;
   replaceNotice: string;
@@ -182,6 +205,19 @@ const zh: Messages = {
   mcpLoginNotice: (host, login) =>
     `${host} 添加远程地址的 MCP 时可能当场打开浏览器登录，登录完这一项才结束。浏览器打不开就按 Ctrl+C，之后执行 ${login} <名称>`,
   commandsToRun: (count) => `将执行 ${count} 条命令`,
+  keyPlaceholderNotice: 'key 以占位符显示，执行时才代入真实的值',
+  keyRequest: (mcp, required) => (required ? `${mcp} 需要 key` : `${mcp} 可选的 key`),
+  variableKey: '变量',
+  purposeKey: '用途',
+  applyKey: '申请',
+  tipKey: '提示',
+  keyNeed: (required) => (required ? '（必填）' : '（可选）'),
+  keyInputHint: (mcp, required) => `输入不会显示在屏幕上；留空回车${required ? `将跳过 ${mcp}` : '则不设置这个变量'}`,
+  hiddenInput: '(输入不显示，粘贴后回车)',
+  keyOutcome: (outcome, mcp, required) =>
+    outcome === 'entered' ? '已填写' : outcome === 'reused' ? '本次运行已填写，不再询问' : required ? `必填，未填写；将跳过 ${mcp}` : '可选，已跳过',
+  keyMissing: (variable) => `未填写必填的 ${variable}`,
+  keyMissingNotice: (mcp, variable) => `${mcp} 缺少必填的 ${variable}，这次不安装`,
   confirmCommands: '执行这些命令吗',
   runCommands: '执行',
   replaceNotice: '覆盖即整目录替换，目录内的本地改动会丢失',
@@ -215,7 +251,7 @@ const zh: Messages = {
   },
   mcpInstallProblem({ action, cause, removed }) {
     const what = `${action === 'remove' ? '移除' : '添加'}命令${
-      cause.kind === 'exit' ? `退出状态 ${cause.code}` : `没能运行（${cause.detail}）`
+      cause.kind === 'exit' ? `退出状态 ${cause.code}` : `没能运行${cause.detail === undefined ? '' : `（${cause.detail}）`}`
     }`;
     if (action === 'remove') return `${what}；未执行添加`;
     return removed ? `${what}；此前已执行移除` : what;
@@ -397,6 +433,20 @@ const en: Messages = {
   mcpLoginNotice: (host, login) =>
     `${host} may open a browser to sign in while adding a remote MCP server; that item only finishes once you have signed in. If no browser opens, press Ctrl+C and run ${login} <name> later`,
   commandsToRun: (count) => `${count} ${count === 1 ? 'command' : 'commands'} to run`,
+  keyPlaceholderNotice: 'Keys are shown as placeholders; the real values are only filled in when the commands run',
+  keyRequest: (mcp, required) => (required ? `${mcp} needs a key` : `${mcp}: optional key`),
+  variableKey: 'Variable',
+  purposeKey: 'Purpose',
+  applyKey: 'Get one',
+  tipKey: 'Tip',
+  keyNeed: (required) => (required ? ' (required)' : ' (optional)'),
+  keyInputHint: (mcp, required) =>
+    `Your input is not shown on screen; press enter on an empty line to ${required ? `skip ${mcp}` : 'leave this variable unset'}`,
+  hiddenInput: '(input hidden; paste, then press enter)',
+  keyOutcome: (outcome, mcp, required) =>
+    outcome === 'entered' ? 'entered' : outcome === 'reused' ? 'already entered in this run; not asked again' : required ? `required but left empty; ${mcp} will be skipped` : 'optional, skipped',
+  keyMissing: (variable) => `no value for ${variable}`,
+  keyMissingNotice: (mcp, variable) => `${mcp} is missing the required ${variable} and will not be installed this time`,
   confirmCommands: 'Run these commands?',
   runCommands: 'Run',
   replaceNotice: 'Overwriting replaces the whole directory; local changes are lost',
@@ -430,7 +480,7 @@ const en: Messages = {
   },
   mcpInstallProblem({ action, cause, removed }) {
     const what = `the ${action} command ${
-      cause.kind === 'exit' ? `exited with status ${cause.code}` : `could not be run (${cause.detail})`
+      cause.kind === 'exit' ? `exited with status ${cause.code}` : `could not be run${cause.detail === undefined ? '' : ` (${cause.detail})`}`
     }`;
     if (action === 'remove') return `${what}; add was not run`;
     return removed ? `${what}; the remove command had already run` : what;

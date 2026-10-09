@@ -41,7 +41,8 @@ export type EntryProblem =
   | { kind: 'duplicate' };
 export type FieldRule =
   | 'name' | 'text' | 'relative-path' | 'object' | 'https-url'
-  | 'host-list' | 'mcp-server' | 'command-word' | 'command-word-list';
+  | 'host-list' | 'mcp-server' | 'command-word' | 'command-word-list'
+  | 'env-list' | 'env-name' | 'boolean' | 'local-only';
 ```
 
 命令只做三件事：用 `localCatalogSource(<目录>)` 调 `loadCatalog`，把结果说成人话，定退出状态。**它自己不含任何校验规则**——这样“命令通过”和“安装器一条不跳”永远是一回事。
@@ -110,6 +111,12 @@ export type FieldRule =
 | `mcp-server` | `command` 与 `url` 恰好有一样 | MCP 的 `server` |
 | `command-word` | 一个词：只含字母、数字和 `@ : / . _ = + , ~ -` | MCP 的 `server.command` |
 | `command-word-list` | 数组，每一项是这样的一个词 | MCP 的 `server.args` |
+| `env-list` | 数组，每一项是一个环境变量，变量名不重复 | MCP 的 `env`（不是数组，或有重名） |
+| `env-name` | 环境变量的名字：字母、数字、下划线，不以数字开头 | MCP 的 `env[i].name` |
+| `boolean` | `true` 或 `false` | MCP 的 `env[i].required` |
+| `local-only` | 只能用于本地进程方式 | MCP 的 `env`（远程地址的条目带了非空的 `env`） |
+
+数组里某一项的字段写成 `env[0].name`：下标从 0 数起，和 JSON 里的位置一致（条目是“第几条”从 1 数起，那是给人数的）。嵌在里面的中英文说明仍用 `parseDescription`，第二个参数给它所在的字段（`env[0].`），报出来就是 `env[0].description.en`。
 
 规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，MCP 的顺序见 [安装 MCP](./mcp-install.md)。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
 

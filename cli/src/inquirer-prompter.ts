@@ -1,6 +1,7 @@
 // 提问器的正式实现：交互库 @inquirer 的各个提示。样式全部来自呈现层给的主题。
 import checkbox from '@inquirer/checkbox';
 import confirm from '@inquirer/confirm';
+import password from '@inquirer/password';
 import select, { Separator } from '@inquirer/select';
 import { PromptAborted, type Prompter, type SelectSeparator } from './prompter.ts';
 
@@ -63,6 +64,15 @@ export function inquirerPrompter(streams?: () => PromptStreams): Prompter {
             theme: question.theme,
           },
           streams?.(),
+        ),
+      ),
+    password: (question) =>
+      asking(
+        password(
+          // 不显示任何字符，也不留“按 Ctrl+T 显示”的后门
+          { message: question.message, mask: false, toggleMask: false, theme: question.theme },
+          // 回答之后擦掉这个提问：收成的那一行由呈现层写
+          { ...streams?.(), clearPromptOnDone: true },
         ),
       ),
   };

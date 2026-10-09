@@ -27,6 +27,11 @@ export interface Session {
   runCommand: CommandRunner;
   /** 钉住的来源：一次运行里只查询一次，之后安装的每个 skill 共用 */
   pinned?: PinnedSource;
+  /**
+   * 用户这次运行里填过的 key：MCP 的名字 → 变量名 → 值。同一个变量只问一次。
+   * 只留在内存里，只交给安装动作；不进呈现层，不写任何文件
+   */
+  keys: Map<string, Map<string, string>>;
 }
 
 export async function mainMenu(session: Session): Promise<void> {
@@ -189,6 +194,8 @@ interface McpJob {
   host: Host;
   target: McpTarget;
   steps: McpStep[];
+  /** 没填的那个必填变量的名字：有它这一项就不装 */
+  missingVariable?: string;
 }
 
 async function installMcps(session: Session, detected: readonly Host[]): Promise<void> {
@@ -213,20 +220,33 @@ async function planMcps(session: Session, hosts: readonly Host[]): Promise<McpJo
     picked = await prompter.checkbox(ui.mcpPicker(hosts, entries, picked));
     if (picked.length === 0) return 'back';
     // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
-    const jobs = entries
-      .filter(({ mcp }) => picked.includes(mcp))
-      .flatMap(({ mcp, statuses }) =>
-        hosts.flatMap((host, column) => {
-          const status = statuses[column];
-          if (status === undefined || status === 'unsupported') return [];
-          return [{ mcp, host, target: { name: mcp.name, host: host.name, status }, steps: mcpSteps(mcp, host, status) }];
-        }),
-      );
-    ui.mcpSummary(jobs.map((job) => job.target));
-    ui.commandList(jobs.flatMap((job) => job.steps.map((step) => step.command)));
+    const jobs: McpJob[] = [];
+    for (const { mcp, statuses } of entries.filter((entry) => picked.includes(entry.mcp))) {
+      // key 按 MCP 问，一次用于它要装进的每个宿主
+      const keys = await askKeys(session, mcp);
+      for (const [column, host] of hosts.entries()) {
+        const status = statuses[column];
+        if (status === undefined || status === 'unsupported') continue;
+        const target = { name: mcp.name, host: host.name, status };
+        if ('missing' in keys) jobs.push({ mcp, host, target, steps: [], missingVariable: keys.missing });
+        else jobs.push({ mcp, host, target, steps: mcpSteps(mcp, host, status, keys.variables) });
+      }
+    }
+    const ready = jobs.filter((job) => job.missingVariable === undefined);
+    // 必填的 key 都没填：没有要执行的命令，不必确认，直接去结果里说明
+    if (ready.length === 0) return jobs;
+    const commands = ready.flatMap((job) => job.steps.map((step) => step.command));
+    ui.mcpSummary(ready.map((job) => job.target));
+    ui.commandList(commands);
+    // 勾了却不在汇总里的，按 MCP 各说一次
+    for (const mcp of new Set(jobs.map((job) => job.mcp))) {
+      const skipped = jobs.find((job) => job.mcp === mcp)?.missingVariable;
+      if (skipped !== undefined) ui.mcpKeyMissingNotice(mcp, skipped);
+    }
+    if (commands.some(({ args }) => args.some((arg) => typeof arg !== 'string'))) ui.keyPlaceholderNotice();
     // 宿主命令的输出不上屏：它会当场打开浏览器登录的话，事先说一声
     for (const host of hosts) {
-      const logsIn = jobs.some((job) => job.host === host && 'url' in job.mcp.server);
+      const logsIn = ready.some((job) => job.host === host && 'url' in job.mcp.server);
       if (host.remoteMcpLogin && logsIn) ui.mcpLoginNotice(host, host.remoteMcpLogin);
     }
     const decision = await prompter.select(ui.confirmCommands());
@@ -236,13 +256,41 @@ async function planMcps(session: Session, hosts: readonly Host[]): Promise<McpJo
   }
 }
 
+// 逐个问这个 MCP 要的环境变量：先显示说明和申请链接，输入不回显。返回要带上的那些变量的名字；
+// 必填的留空就不装这个 MCP（它后面的变量也不再问），可选的留空就不带
+async function askKeys(session: Session, mcp: Mcp): Promise<{ variables: string[] } | { missing: string }> {
+  const { ui, prompter } = session;
+  const known = session.keys.get(mcp.name) ?? new Map<string, string>();
+  session.keys.set(mcp.name, known);
+  const variables: string[] = [];
+  for (const variable of mcp.env) {
+    if (known.has(variable.name)) {
+      ui.keyOutcome(mcp, variable, 'reused');
+    } else {
+      ui.keyRequest(mcp, variable);
+      // 粘贴进来的常带着首尾的空白
+      const value = (await prompter.password(ui.keyQuestion(variable))).trim();
+      ui.keyOutcome(mcp, variable, value === '' ? 'blank' : 'entered');
+      if (value === '' && variable.required) return { missing: variable.name };
+      if (value === '') continue;
+      known.set(variable.name, value);
+    }
+    variables.push(variable.name);
+  }
+  return { variables };
+}
+
 async function runMcpJobs(session: Session, jobs: readonly McpJob[]): Promise<void> {
   const progress = session.ui.mcpInstallation(jobs.map((job) => job.target));
-  for (const { target, steps } of jobs) {
+  for (const { mcp, target, steps, missingVariable } of jobs) {
+    if (missingVariable !== undefined) {
+      progress.skip(target, missingVariable);
+      continue;
+    }
     const settle = progress.begin(target);
     let outcome: McpOutcome;
     try {
-      await installMcp(steps, session.runCommand);
+      await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand);
       outcome = { ok: true };
     } catch (error) {
       if (!(error instanceof McpInstallError)) {

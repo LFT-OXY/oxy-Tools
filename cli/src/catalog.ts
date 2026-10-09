@@ -45,6 +45,16 @@ export interface App {
 /** MCP 的连接方式，二选一：本地进程（启动命令和参数），或远程地址（一个网址） */
 export type McpServer = { command: string; args: string[] } | { url: string };
 
+/** MCP 启动时要带上的一个环境变量，通常是 API key；值由用户在安装时给 */
+export interface McpVariable {
+  name: string;
+  /** 必填的没填就不装这个 MCP；可选的没填就不传 */
+  required: boolean;
+  description: { zh: string; en: string };
+  /** 去哪申请 */
+  url: string;
+}
+
 export interface Mcp {
   name: string;
   description: { zh: string; en: string };
@@ -53,6 +63,8 @@ export interface Mcp {
   /** 支持的宿主（Host.id）；省略表示全部支持 */
   hosts?: string[];
   server: McpServer;
+  /** 要向用户要的环境变量，没有就是空的；只有本地进程方式才有 */
+  env: McpVariable[];
 }
 
 /** 字段该是什么样的 */
@@ -65,7 +77,11 @@ export type FieldRule =
   | 'host-list'
   | 'mcp-server'
   | 'command-word'
-  | 'command-word-list';
+  | 'command-word-list'
+  | 'env-list'
+  | 'env-name'
+  | 'boolean'
+  | 'local-only';
 
 export type EntryProblem =
   | { kind: 'not-object' }
@@ -369,6 +385,9 @@ const HTTPS_URL = /^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
 // 所以里面没有空白、引号和任何 shell 会另作解释的字符，看到的就是执行的
 const COMMAND_WORD = /^[A-Za-z0-9@:/._=+,~-]+$/;
 
+// 环境变量的名字：它会拼进宿主的命令（名字=值），也会原样打到终端上
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
 const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
 
@@ -405,7 +424,31 @@ function parseMcp(entry: unknown): Mcp | EntryProblem {
   if (hosts !== undefined && !(isList(hosts, isName) && hosts.length > 0)) return bad('hosts', 'host-list');
   const connection = parseMcpServer(server);
   if (isProblem(connection)) return connection;
-  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection };
+  const env = parseMcpEnv(entry['env']);
+  if (isProblem(env)) return env;
+  // 远程地址的服务器不是我们起的进程，没有地方放环境变量；两个宿主的添加命令也都不收
+  if ('url' in connection && env.length > 0) return bad('env', 'local-only');
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection, env };
+}
+
+// 可以省略，省略当作没有。字段里的下标从 0 数起，和 JSON 里的位置一致
+function parseMcpEnv(env: unknown = []): McpVariable[] | EntryProblem {
+  if (!Array.isArray(env)) return bad('env', 'env-list');
+  const variables: McpVariable[] = [];
+  for (const [index, variable] of env.entries()) {
+    const field = `env[${index}]`;
+    if (!isRecord(variable)) return bad(field, 'object');
+    const { name, required, url } = variable;
+    if (typeof name !== 'string' || !VARIABLE_NAME.test(name)) return bad(`${field}.name`, 'env-name');
+    if (typeof required !== 'boolean') return bad(`${field}.required`, 'boolean');
+    const description = parseDescription(variable['description'], `${field}.`);
+    if (isProblem(description)) return description;
+    if (!isHttpsUrl(url)) return bad(`${field}.url`, 'https-url');
+    // 同一个变量只能要一次
+    if (variables.some((earlier) => earlier.name === name)) return bad('env', 'env-list');
+    variables.push({ name, required, description, url });
+  }
+  return variables;
 }
 
 function parseMcpServer(server: unknown): McpServer | EntryProblem {
@@ -419,12 +462,12 @@ function parseMcpServer(server: unknown): McpServer | EntryProblem {
   return { command, args };
 }
 
-// 中英文一句话说明，各类条目都有
-function parseDescription(description: unknown): { zh: string; en: string } | EntryProblem {
-  if (!isRecord(description)) return bad('description', 'object');
+// 中英文一句话说明，各类条目都有；within 是它所在的字段（MCP 的环境变量也各有一份说明）
+function parseDescription(description: unknown, within = ''): { zh: string; en: string } | EntryProblem {
+  if (!isRecord(description)) return bad(`${within}description`, 'object');
   const { zh, en } = description;
-  if (!isText(zh)) return bad('description.zh', 'text');
-  if (!isText(en)) return bad('description.en', 'text');
+  if (!isText(zh)) return bad(`${within}description.zh`, 'text');
+  if (!isText(en)) return bad(`${within}description.en`, 'text');
   return { zh, en };
 }
 

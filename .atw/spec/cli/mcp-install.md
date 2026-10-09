@@ -1,6 +1,6 @@
 # 安装 MCP
 
-> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。目前只处理不需要 API key 的 MCP；带 key 的随工单 09 补进来。
+> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。带 API key 的 MCP（条目里的 `env`）也在这里。
 
 ---
 
@@ -8,28 +8,36 @@
 
 ### 1. Scope / Trigger
 
-安装 MCP 会**执行外部命令**，而命令的内容（启动命令、参数、网址）来自运行时拉取的远程目录。凡是改 MCP 条目的字段或校验、改命令怎么拼、改看哪个配置文件、改状态怎么判、改已配置或状态未知时怎么装、动外部命令执行器，或加一个宿主，都落在这份契约上。
+安装 MCP 会**执行外部命令**，而命令的内容（启动命令、参数、网址）来自运行时拉取的远程目录。凡是改 MCP 条目的字段或校验、改命令怎么拼、改看哪个配置文件、改状态怎么判、改已配置或状态未知时怎么装、动外部命令执行器、动 key 怎么问怎么传，或加一个宿主，都落在这份契约上。
 
 ### 2. Signatures
 
 ```ts
 // cli/src/catalog.ts
 export type McpServer = { command: string; args: string[] } | { url: string }; // 本地进程，或远程地址
+export interface McpVariable {  // MCP 启动时要带上的一个环境变量，通常是 API key；值由用户在安装时给
+  name: string;
+  required: boolean;            // 必填的没填就不装这个 MCP；可选的没填就不传
+  description: { zh: string; en: string };
+  url: string;                  // 去哪申请
+}
 export interface Mcp {
   name: string;
   description: { zh: string; en: string };
   url: string;        // 官方链接
   hosts?: string[];   // 支持的宿主（Host.id）；省略表示全部支持
   server: McpServer;
+  env: McpVariable[]; // 没有就是空的；只有本地进程方式才有
 }
 
 // cli/src/hosts.ts
-export interface Command { command: string; args: string[] } // 不经过 shell，args 的每一项原样是一个参数
+export interface KeyArgument { variable: string } // 命令里带着 key 的一个参数：执行时是「变量名=值」，给用户看时值的位置是占位符
+export interface Command { command: string; args: (string | KeyArgument)[] } // 不经过 shell，args 的每一项原样是一个参数
 export interface Host {
   id: string;                                              // 目录里指代它的名字：claude-code、codex
   // …name、detected、skillsDir 见「安装 skill」
   configuredMcps(): ReadonlySet<string> | undefined;       // 用户级配置里已有的 MCP 的名字；读不了或格式不认识时 undefined
-  addMcp(mcp: Mcp): Command;
+  addMcp(mcp: Mcp, variables: readonly string[]): Command; // variables 是要带上的环境变量的名字，不是值
   removeMcp(name: string): Command;
   remoteMcpLogin?: Command;                                // 见「宿主添加远程地址时会当场登录」
 }
@@ -40,14 +48,21 @@ export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[]): McpSt
 
 // cli/src/install-mcp.ts
 export interface McpStep { action: 'remove' | 'add'; command: Command; tolerated: boolean }
-export function mcpSteps(mcp: Mcp, host: Host, status: Exclude<McpStatus, 'unsupported'>): McpStep[];
-export async function installMcp(steps: readonly McpStep[], runCommand: CommandRunner): Promise<void>;
+export function mcpSteps(mcp: Mcp, host: Host, status: Exclude<McpStatus, 'unsupported'>, variables: readonly string[]): McpStep[];
+// keys 是「变量名 → 值」：到执行的这一刻才代入命令
+export async function installMcp(steps: readonly McpStep[], keys: ReadonlyMap<string, string>, runCommand: CommandRunner): Promise<void>;
 export interface McpInstallProblem {
   action: 'remove' | 'add';                                                   // 失败的是哪一步
-  cause: { kind: 'exit'; code: number } | { kind: 'not-started'; detail: string };
+  cause: { kind: 'exit'; code: number } | { kind: 'not-started'; detail: string | undefined }; // detail 是错误码，错误没带就没有
   removed: boolean;                                                           // 添加失败时，移除命令是否已经执行成功
 }
 export class McpInstallError extends Error { readonly problem: McpInstallProblem }
+
+// cli/src/flow.ts
+interface Session {
+  // …
+  keys: Map<string, Map<string, string>>; // 这次运行里填过的 key：MCP 的名字 → 变量名 → 值。只在内存里
+}
 
 // cli/src/installer.ts
 export interface CommandResult { exitCode: number }
@@ -57,7 +72,7 @@ export type CommandRunner = (command: string, args: readonly string[]) => Promis
 export function systemCommandRunner(): CommandRunner;
 ```
 
-`installMcp` 失败时**只**抛 `McpInstallError`。`mcpSteps` 先算出来、交给汇总展示，之后执行的就是这同一份——“看到的就是执行的”靠的是不重算。
+`installMcp` 失败时**只**抛 `McpInstallError`——执行器当场抛出（没返回承诺）的也算在内。`mcpSteps` 先算出来、交给汇总展示，之后执行的就是这同一份——“看到的就是执行的”靠的是不重算。带 key 的命令也一样：`steps` 里 key 的位置是一个 `KeyArgument`（只有变量名），展示时写成占位符，执行时由 `installMcp` 从 `keys` 里取值代入，**值不进 `steps`，也不进呈现层**。
 
 ### 3. Contracts
 
@@ -75,6 +90,14 @@ export function systemCommandRunner(): CommandRunner;
 
 远程地址的写成 `"server": { "url": "https://mcp.example.com/mcp" }`。
 
+需要 API key 的再加一个 `env`：
+
+```json
+"env": [
+  { "name": "EXA_API_KEY", "required": true, "description": { "zh": "…", "en": "…" }, "url": "https://dashboard.exa.ai/api-keys" }
+]
+```
+
 | 字段 | 规则 |
 |------|------|
 | `name`、`description`、`url` | 与应用项目同一套规则（见 [入口与测试](./installer-entry.md)）；`url` 是官方链接，目前不显示。名字只在 `mcps` 里唯一 |
@@ -82,6 +105,10 @@ export function systemCommandRunner(): CommandRunner;
 | `server` | 对象，`command` 与 `url` **恰好有一样** |
 | `server.command`、`server.args` 的每一项 | `^[A-Za-z0-9@:/._=+,~-]+$`；`args` 可省略（当作空） |
 | `server.url` | 与应用项目的 `url` 同一条规则：只收 https，只含 RFC 3986 允许的字符 |
+| `env` | 可省略（当作空）；写了就要是数组，里面的变量名不重复。**只适用于本地进程方式**：远程地址的条目带了非空的 `env` 整条不通过（写一个空数组不算带） |
+| `env[i].name` | `^[A-Za-z_][A-Za-z0-9_]*$`：它会拼进宿主的命令（`名字=值`），也会原样打到终端上 |
+| `env[i].required` | 布尔值，**必须写**，不猜缺省 |
+| `env[i].description`、`env[i].url` | 说明同各类条目的 `description`；`url` 是申请地址，与应用项目的 `url` 同一条规则 |
 
 `command` 和 `args` 收得这么紧，是因为它们有三个去处：原样打到终端上让用户确认、交给宿主的命令、被宿主记进配置之后每次启动都执行。规则保证里面没有空白、引号和任何 shell 会另作解释的字符，所以展示出来的那一行没有歧义，Windows 上经 `cmd.exe` 起 `.cmd` 时也不必转义引号。代价是带空格的参数、带查询串的网址参数、Windows 路径都写不进目录。这条规则是工单 08 的实现者定的，**维护者尚未确认**；要放宽先改这里和 `catalog.ts` 的 `COMMAND_WORD`，并重新核对 `ui.ts` 里展示命令时加引号的判断（`PLAIN_ARGUMENT`）。
 
@@ -91,12 +118,14 @@ export function systemCommandRunner(): CommandRunner;
 |---|---|---|
 | 添加本地进程 | `claude mcp add --scope user <名字> -- <命令> <参数…>` | `codex mcp add <名字> -- <命令> <参数…>` |
 | 添加远程地址 | `claude mcp add --scope user --transport http <名字> <网址>` | `codex mcp add <名字> --url <网址>` |
+| 添加带环境变量的本地进程 | `claude mcp add --scope user <名字> -e <变量>=<值> -- <命令> <参数…>` | `codex mcp add <名字> --env <变量>=<值> -- <命令> <参数…>` |
 | 移除 | `claude mcp remove --scope user <名字>` | `codex mcp remove <名字>` |
 | 同名已存在时再添加 | **失败**，退出状态 1（`already exists in user config`） | 直接覆盖，退出状态 0 |
 | 移除一个不存在的 | 失败，退出状态 1 | 成功，退出状态 0 |
 | 用户级配置 | `<配置目录>/.claude.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是主目录，`CLAUDE_CONFIG_DIR` 非空时用它 | `<CODEX_HOME>/config.toml` 的 `mcp_servers` 表；`CODEX_HOME` 缺省是 `<主目录>/.codex` |
 
 - 远程地址只有一种：可流式的 HTTP。SSE、请求头鉴权都不在范围内。
+- 环境变量一个变量一个 `-e` / `--env`，照目录里的顺序，**跟在名字后面、`--` 前面**。Claude Code 的 `-e` 能连收几个值，放在名字前面会把名字也收进去。两个宿主都把值原样记进配置里这个 MCP 的 `env`（实测过带 `=`、`&`、`+`、`/` 的值），添加命令自己的输出里不回显值。Codex 对 `--url` 加 `--env` 直接报错（`command is required`），这是“环境变量只适用于本地进程”在宿主那边的依据。
 - **各系统上命令相同，原生 Windows 上也不给本地进程包 `cmd /c`**。Claude Code 的旧文档要求过（否则 `npx` 这类 `.cmd` 起不来，报 Connection closed）；它的更新日志 2.1.119 写明移除了那条“需要 cmd /c 包装”的警告（称其为误报），现行的 MCP 文档里也已经没有这条说明；Codex 的文档从未要求过。2.1.119 之前的 Claude Code 不在支持之列。这个结论来自文档和更新日志，**没有在 Windows 真机上实测**；`mcp.test.ts` 里有一条 `platform: 'win32'` 的测试守着“不包”这个决定。
 - 两个环境变量是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。
 
@@ -129,6 +158,22 @@ export function systemCommandRunner(): CommandRunner;
 - 每个 MCP 在每个**支持它的**所选宿主下各是一项，各有一行结果，互不影响；一项失败不影响其余项，退出状态不变。
 - 所选宿主一个都不支持的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写「需要别的 AI Agent」；只有一部分不支持的仍可选。
 
+**带 key 的 MCP（`flow.ts` 的 `askKeys`）**
+
+勾选之后、汇总之前，对每个勾上的、带 `env` 的 MCP 逐个变量问（画面见 [终端输出](./terminal-output.md) 的「隐藏输入」）：
+
+| 情况 | 结果 |
+|------|------|
+| 填了（去掉首尾空白后非空） | 记进 `Session.keys[MCP 的名字][变量名]`；它要装进的每个宿主的添加命令都带上这个变量 |
+| 可选的留空 | 不带这个变量，照常安装；不记 |
+| 必填的留空 | **这个 MCP 不装**：它后面的变量不再问；每个宿主各有一项 `steps` 为空、带 `missingVariable` 的任务，汇总和命令里没有它，命令之后一行「注意  <MCP> 缺少必填的 <变量>，这次不安装」，结果里每个宿主一行「跳过 未填写必填的 <变量>」，计入合计的跳过 |
+| 这次运行里这个 MCP 的这个变量已经填过 | 不再问，留一行「✓ <变量> · 本次运行已填写，不再询问」 |
+| 勾上的全都因此被跳过 | 没有命令要执行：**不显示汇总、不问执行不执行**，直接进结果分区，然后回主菜单 |
+
+- key 按 MCP 问，不按宿主问：两个宿主都选了也只问一次。
+- 值只有三个去处：`Session.keys`（内存）、`installMcp` 拼出来的参数、宿主自己的配置。**安装器不把它写进任何文件，不打到终端上**——呈现层的函数只收变量名和结局（`'entered' | 'blank' | 'reused'`），从不收值。
+- key 作为命令行参数传给宿主，命令运行的那一瞬间本机别的进程看得到（`ps`）。这是规格定的做法（「key 只作为参数传给宿主的添加命令」），不是疏漏。
+
 **外部命令执行器（`systemCommandRunner`）**
 
 | 项 | 约定 |
@@ -138,6 +183,10 @@ export function systemCommandRunner(): CommandRunner;
 | 结果 | 结束了就兑现 `{ exitCode }`（被信号结束算 1）；起不来（命令不存在）就拒绝，错误带 `code` |
 
 > **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。
+>
+> 它起子进程时继承的是**进程自己的环境**，不是传给 `runInstaller` 的 `env`（正式运行时两者是同一份）。用真实的 `claude`、`codex` 做端到端核对时，`CLAUDE_CONFIG_DIR` 和 `CODEX_HOME` 要在起脚本的 shell 里 `export` 到临时目录，脚本开头先断言它们确实指向临时目录再动手；只放进 `env` 的话，状态探测看的是临时目录，命令却写进了真实的配置（工单 09 时出过一次，当场用宿主的移除命令撤回了）。
+>
+> key 的值不做任何校验就成了一个参数（只去掉首尾空白）。它是用户自己输入的，不是远程数据；但 `cross-spawn` 对全局装的 `.cmd` 只转义一次，值里有双引号时在 Windows 上可能传错。要不要拒绝或剥掉引号，维护者还没有定。
 
 **宿主添加远程地址时会当场登录**
 
@@ -147,7 +196,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 ### 4. Validation & Error Matrix
 
-目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args` 的顺序查。
+目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args`、`env`（逐项按 `name`、`required`、`description`、`url`，再查重名）、最后是“远程地址不许带 `env`”的顺序查。
 
 单项安装失败（`installMcp` 抛 `McpInstallError`）：只这一项失败，结果里这一行写「失败」加原因，退出状态不变。
 
@@ -157,6 +206,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 | 添加命令非零退出，之前没有移除成功过 | `action: 'add'`，`removed: false` | `添加命令退出状态 1` |
 | 添加命令非零退出，移除已经成功 | `action: 'add'`，`removed: true` | `添加命令退出状态 1；此前已执行移除`——旧配置这时已经没了，必须说 |
 | 命令没能起来 | `cause: not-started`，`detail` 是错误码 | `添加命令没能运行（ENOENT）` |
+| 命令没能起来，错误没带错误码；或执行器当场抛出 | `cause: not-started`，`detail: undefined` | `添加命令没能运行`——**不取错误的消息**：消息里可能带着整条命令，而命令里有 key |
 | 状态未知时的移除失败（非零退出或没能起来） | 不算失败 | 接着添加，这一步的结果不出现在任何地方 |
 
 原因里**不带宿主命令自己的话**，也不写“配置未改动”：前者见下面的 Design Decision，后者是因为宿主的命令原不原子我们保证不了。
@@ -169,6 +219,9 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - Base：条目的 `hosts` 是 `["codex"]`，只检测到 Claude Code → 那一行不可选，行尾「需要别的 AI Agent」；两个宿主都选了时它可选，Claude Code 那一栏写「不支持」，只装进 Codex。
 - Bad：`server.args` 里有一项是 `pkg; rm -rf ~` → 这一条被跳过，计入主菜单上方提示的数量，目录校验命令指出 `server.args`。
 - Bad：`claude mcp add` 以 1 退出 → 这一行「失败 添加命令退出状态 1」，别的项照常，安装器不退出。
+- Good（带 key）：两个宿主都选了，勾了一个有必填 key 的 → 问一次，汇总里两条命令各有一个 `<变量名>` 占位符和一行「注意  key 以占位符显示…」，记录到的两条命令带着输入的值。
+- Base（带 key）：勾了两个，其中一个的必填 key 留空 → 那一个不在汇总和命令里，命令下面一行「注意」，结果里它「跳过 未填写必填的 …」，另一个照常。
+- Bad（带 key）：远程地址的条目写了 `env` → 这一条被跳过，目录校验命令指出 `env`「只能用于本地进程方式」。
 
 ### 6. Tests Required
 
@@ -185,7 +238,10 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - 登录提醒：远程地址 + Codex 时有，且在命令之后、提问之前；本地进程 + Codex、远程地址 + 只有 Claude Code 时没有。
 - `prompts.test.ts`：不可选的行的勾选位与原因、在它上面按空格勾不上、`a` 全选不会勾上它、`NO_COLOR` 下不带样式码且没有零宽空格、没有 Unicode 时的 `[-]`。
 
-测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，什么都不返回就是成功；命令照样进 `result.commands`。
+- 带 key 的在 `cli/test/mcp-keys.test.ts`：说明与申请链接出现在提问之前；两个宿主的命令（**字面值**，带着输入的值）；两个宿主只问一次；可选留空不带、必填留空跳过（结果里的原因、其余照常、后面的变量不再问、全被跳过时不问执行）；汇总里的占位符和两行「注意」的先后；`返回修改` 和再装一次都不再问、留空的重新问、两个 MCP 同名变量各问各的；写坏的 `env` 每种一条。
+- **key 的值不出现**：`result.raw + result.stdout + result.stderr` 里找不到输入的值——成功、命令非零退出、命令起不来而错误消息里带着整条命令（值还被转义过）、执行器当场抛出，各一条；外加主目录和 `result.tmp` 里什么都没多。`prompts.test.ts` 里用真实的交互库再证一遍输入不回显。
+
+测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，**它自己抛出**表示执行器当场抛出、连承诺都没返回，什么都不返回就是成功；命令照样进 `result.commands`（里面是代入了值的字符串参数）。`secret(值)`、`blank()` 回答隐藏输入。
 
 折行会打断整句的断言：命令和英文句子先 `text.replace(/\s+/g, ' ')` 再比，中文句子把空白全去掉再比（中文可以在任意两字之间折）。
 
@@ -219,6 +275,18 @@ exec(`codex mcp add ${name} --url ${url}`);
 expect(result.commands).toEqual([{ command: 'claude', args: ['mcp', 'add', '--scope', 'user', name, '--', ...server.args] }]);
 ```
 
+```ts
+// 把 key 的值放进要展示的东西里，指望展示的时候记得遮：呈现层从此拿得到值，哪天多打一个字段就漏了
+steps: mcpSteps(mcp, host, status, new Map([['EXA_API_KEY', value]]));
+ui.commandList(steps.map((step) => mask(step.command)));
+```
+
+```ts
+// 失败的原因取错误的消息：没有错误码时整句进了括号，里面可能是带着 key 的整条命令；
+// 按原值去替换也不保险，值在消息里可能被转义或截断过
+detail: technicalReason(error).replaceAll(value, '<EXA_API_KEY>'),
+```
+
 #### Correct
 
 ```ts
@@ -236,6 +304,17 @@ await installMcp(steps, session.runCommand);
 ```ts
 // 期望值是字面的命令，出处是宿主的文档
 const CODEX_ADD_REMOTE = { command: 'codex', args: ['mcp', 'add', 'tracker-remote', '--url', 'https://mcp.example.org/mcp'] };
+```
+
+```ts
+// 命令里只留变量名；值到执行的这一刻才由安装动作代入，呈现层只画占位符
+addMcp: ({ name, server }, variables) => ({ command: 'codex', args: ['mcp', 'add', name, ...variables.flatMap((variable) => ['--env', { variable }]), '--', …] }),
+await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand);
+```
+
+```ts
+// 没能起来的原因只取错误码，没有就不写括号
+detail: errorCode(error), // string | undefined
 ```
 
 ---
@@ -258,7 +337,23 @@ const CODEX_ADD_REMOTE = { command: 'codex', args: ['mcp', 'add', 'tracker-remot
 
 **Decision**：不转述，执行器干脆不收命令的输出。三个理由：英文句子原样进了中文界面，违反 [终端输出](./terminal-output.md) 的“括号里的技术原因只放错误码”；那一行的长度不由我们定，一个放不下的长词会被终端折开，结果分区改写标题时就数错了行；工单 09 之后命令的参数里有 key，宿主把它回显出来就成了泄漏的通道。
 
+工单 09 把同一条规矩收紧到“命令没能起来”上：原先错误没带错误码时退而取它的消息（`technicalReason`），现在只取错误码，没有就只说「没能运行」。Node 起不了子进程时的消息会带上整条命令（如参数里有空字符时的 `ERR_INVALID_ARG_VALUE`）。
+
 **代价**：用户只看到哪一步、退出状态几。完整的命令在汇总里，可以照着自己再跑一遍看原因。要改回去，先在终端输出的规范里立例外，并解决上面后两条。
+
+---
+
+## Design Decision: 「只问一次」按 MCP 加变量名记
+
+**Context**：规格写的是「同一次运行里同一个变量只问一次，用于所有选中的宿主」。记住填过的值有两种记法：只按变量名，或按「MCP + 变量名」。
+
+**Decision**：按「MCP + 变量名」记。两个 MCP 可以用同一个变量名而要的是不同的东西（`API_KEY` 这类泛名字）：只按变量名记，第二个 MCP 会不声不响地拿到第一个服务的 key，等于把凭据交给了别家的进程。问两遍只是多粘贴一次。规格那句话的后半句「用于所有选中的宿主」和用户故事 27 说的都是同一个 MCP 的两个宿主，这一点照做了。
+
+留空的不算填过：必填的留空之后回头再选它，要是不重新问，这次运行里就再也装不上它；可选的同理。代价是可选项每次返回修改都会再问一遍（按一下回车）。
+
+记住的值在这次运行结束前改不了：粘贴错了要退出重来。
+
+**没有经维护者确认**，记在任务的 `prd.md` 修订记录里。
 
 ---
 

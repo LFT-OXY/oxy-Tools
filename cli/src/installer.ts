@@ -99,6 +99,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       prompter: options.prompter,
       openLink: options.openLink,
       runCommand: options.runCommand,
+      keys: new Map(),
     });
     return 0;
   } catch (error) {

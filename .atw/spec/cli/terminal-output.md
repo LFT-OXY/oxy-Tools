@@ -136,7 +136,40 @@ export interface ConfirmQuestion {
 | 回答之后显示的字来自 `transformer`，缺省是 `keywords` 里的词 | 提问器的正式实现用 `question.answers` 做 `transformer`，收成的一行写「是」「否」 |
 | 输入了认不出的东西再回车：不结束提问，下方多一行 `theme.keywords.error(...)`，经 `theme.style.error`；之后再按任何键这一行就消失 | 句子是 `messages.ts` 的 `answerYesOrNo`；样式沿用不可选的行那句话的画法（黄色粗体的「注意」）。不盖的话打出来的是英文 |
 
-`prompts.test.ts` 里有这三样的断言，以及 `NO_COLOR` 下整段不带样式码的断言。再加一种提示（隐藏输入的 `password`）时照此办：先读它的源码，把用到的样式函数和自带的句子列全。
+`prompts.test.ts` 里有这三样的断言，以及 `NO_COLOR` 下整段不带样式码的断言。再加一种提示时照此办：先读它的源码，把用到的样式函数和自带的句子列全。
+
+---
+
+## 隐藏输入
+
+问 API key 用 `@inquirer/password`（5.x）。画面分三段，都由呈现层出：
+
+```
+── exa 需要 key ────────────────────────────────────────────────────────────────
+  变量      EXA_API_KEY（必填）
+  用途      Exa 搜索 API 的密钥
+  申请      https://dashboard.exa.ai/api-keys
+  提示      输入不会显示在屏幕上；留空回车将跳过 exa
+
+? EXA_API_KEY (输入不显示，粘贴后回车)
+```
+
+| 段 | 函数 | 画法 |
+|----|------|------|
+| 说明 | `ui.keyRequest(mcp, variable)` | 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」；四行键值：变量（后面注明必填或可选）、用途、申请、提示（留空会怎样）。**申请地址和应用项目的链接一样整条写在一行上**，带下划线，不交给折行 |
+| 提问 | `ui.keyQuestion(variable)` → `PasswordQuestion { message, theme }` | 提问是变量名，后面一句暗淡的固定提示（`theme.style.maskedText`，文案是 `messages.ts` 的 `hiddenInput`） |
+| 结局 | `ui.keyOutcome(mcp, variable, outcome)` | 和已回答的提问同一个画法：记号、粗体的变量名、暗淡的 `·`、一句话。填了和沿用的是绿色 `✓`，留空的是暗淡 `–`。**只收结局（`'entered' \| 'blank' \| 'reused'`），不收值，也不写长度** |
+
+交互库对隐藏输入的做法（读它的源码并实测得来），以及怎么配合：
+
+| 行为 | 怎么配合 |
+|------|----------|
+| `mask` 不给时不显示任何字符，提问后面是 `theme.style.help(theme.style.maskedText)`；库自带的 `help` 按 Node 的规则上暗淡 | `mask: false`；主题盖掉 `maskedText`（本地化的那句话）和 `help`（呈现层自己的 `dim`） |
+| `toggleMask` 缺省是开的：按 Ctrl+T 把输入显示成明文，下方还多一行英文的按键提示 | `toggleMask: false`。关掉之后它用不到 `keysHelpTip` |
+| 每按一个键提问都重画一遍（内容一样），光标是藏起来的 | 不用配合。用 `keys` 的测试因此可以在输完之后再等一次那句提示 |
+| 回答之后收成 `✓ 变量名 ·`，后面是空的 | 提问器的正式实现给 `clearPromptOnDone: true`，**回答之后把提问整个擦掉**，结局由 `ui.keyOutcome` 另写一行——这样留空和填了能用不同的记号和说法 |
+
+`prompts.test.ts` 里有：输入的值和它的片段不在原始输出里、没有星号、Ctrl+T 之后再输一个字符逼它重画也没有明文、回答后屏幕上只剩结局那一行（用 `screenLines` 还原画面）、`NO_COLOR` 下不带样式码、没有 Unicode 时的记号。
 
 ---
 
@@ -173,7 +206,8 @@ const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWid
 |------|------|
 | 命令比一行长 | 按词折行，续行与命令的左缘对齐；**从不截断**。一个比一行还长的参数独占一行，由终端自己折 |
 | 参数里有 shell 会另作解释的字符（网址里的 `&`、`?`） | 展示时给这个参数加单引号（`commandLine`），照着敲也是同一条命令；执行时不经过 shell，参数原样传 |
-| 要提醒的事（宿主会当场打开浏览器登录） | 命令之后空一行，一行「注意」键值，再空一行 |
+| 命令里有 key（`KeyArgument`） | 写成 `变量名=<变量名>`，尖括号这一段是黄色粗体，不加引号；真实的值不到呈现层来。`commandLine(command, placeholder)` 的第二个参数给占位符上样式 |
+| 要提醒的事 | 命令之后空一行，每件事一行「注意」键值，各自后面空一行。先后是：必填的 key 没填而不安装的 MCP（一个 MCP 一行）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、宿主会当场打开浏览器登录 |
 
 ```ts
 // 错：命令交给会截断的栏，用户确认的就不是完整的命令
@@ -231,7 +265,8 @@ if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
 }
 ```
 
-- `lines` 是标题之后实际打出的行数：一项的失败原因折成两行就算两行，所以要数呈现层自己折出来的行，不是数条目。
+- `lines` 是标题之后**终端上实际占的行数**：一项的失败原因折成两行就算两行；一行里有个比一行还长的词（目录给的变量名、名字很长时剩下的地方放不下）折不开，会被终端自己折开，所以每一行按 `ceil(显示宽度 / 终端列数)` 算，不是数条目，也不是数呈现层打了几行。
+- 跳过的原因和失败的原因一样经 `hanging` 自己折行：原因里可以有目录给的名字，长度不由我们定。
 - 条件不满足时不改写，标题留作「正在安装」。
 - 除了这两处，不回头改已经打出去的东西。
 
@@ -266,6 +301,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。
 - 要画出应用项目，场景用 `catalog: withApps`（样例应用项目是为预览编的，其中一条的链接比一行长）；`browser: false` 让链接打开器拒绝。预览页从不真的打开浏览器。
+- 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给 skill 用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。

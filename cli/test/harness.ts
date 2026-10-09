@@ -6,11 +6,28 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller, type CommandResult } from '../src/installer.ts';
-import { PromptAborted, type CheckboxQuestion, type ConfirmQuestion, type Prompter, type SelectQuestion } from '../src/prompter.ts';
+import {
+  PromptAborted,
+  type CheckboxQuestion,
+  type ConfirmQuestion,
+  type PasswordQuestion,
+  type Prompter,
+  type SelectQuestion,
+} from '../src/prompter.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { keyboardPrompter } from './terminal.ts';
 
-export { EMPTY_CATALOG, LONG_ABOUT, LONG_APP_ABOUT, LONG_MCP_ABOUT, SAMPLE_APPS, SAMPLE_FILES, SAMPLE_MCPS, SAMPLE_SKILLS } from './fixtures.ts';
+export {
+  EMPTY_CATALOG,
+  KEYED_MCP,
+  LONG_ABOUT,
+  LONG_APP_ABOUT,
+  LONG_MCP_ABOUT,
+  SAMPLE_APPS,
+  SAMPLE_FILES,
+  SAMPLE_MCPS,
+  SAMPLE_SKILLS,
+} from './fixtures.ts';
 export { KEY } from './terminal.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
@@ -55,14 +72,15 @@ export function catalogDir(files: { index?: unknown; catalog?: unknown; content?
 }
 
 type ListQuestion = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
-type Question = ListQuestion | ConfirmQuestion;
-type Prompt = 'select' | 'checkbox' | 'confirm';
+type Question = ListQuestion | ConfirmQuestion | PasswordQuestion;
+type Prompt = 'select' | 'checkbox' | 'confirm' | 'password';
 type Answer = (question: Question, prompt: Prompt) => unknown;
 
 const RIGHT_ANSWER: Record<Prompt, string> = {
   select: '单选，要用 choose()',
   checkbox: '多选，要用 pick()',
   confirm: '是否题，要用 yes() 或 no()',
+  password: '隐藏输入，要用 secret() 或 blank()',
 };
 // 应答用错了提问的种类就失败，并说该用哪个
 const wrongAnswer = (question: Question, prompt: Prompt): Error =>
@@ -106,13 +124,25 @@ export const yes = (): Answer => confirming(true);
 /** 是否题：答「否」。 */
 export const no = (): Answer => confirming(false);
 
+/** 隐藏输入：输入（或粘贴）这段文字再回车。 */
+export function secret(value: string): Answer {
+  return (question, prompt) => {
+    if (prompt !== 'password') throw wrongAnswer(question, prompt);
+    return value;
+  };
+}
+
+/** 隐藏输入：什么都不输直接回车。 */
+export const blank = (): Answer => secret('');
+
 /**
  * 什么都不动直接回车：单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，
  * 是否题取它的缺省回答。
  */
 export function accept(): Answer {
   return (question, prompt) => {
-    if (!('rows' in question)) return question.default;
+    if (prompt === 'password') throw wrongAnswer(question, prompt);
+    if (!('rows' in question)) return 'default' in question ? question.default : undefined;
     const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
     if (prompt === 'checkbox') return choices.filter((row) => 'checked' in row && row.checked).map((row) => row.value);
     const active = ('default' in question && choices.find((row) => row.value === question.default)) || choices[0];
@@ -158,7 +188,8 @@ export interface RunOptions {
   browser?: boolean;
   /**
    * 预设外部命令的结果：命令照样记下来，不执行。返回的字段盖过缺省的结果（退出状态 0）；
-   * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果
+   * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
+   * 它自己抛出则表示执行器当场抛出、连承诺都没返回
    */
   commandResult?: (command: string, args: readonly string[]) => Partial<CommandResult> | Error | undefined;
   /** 主目录的初始状态：相对路径 → 文件内容 */
@@ -216,7 +247,8 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const catalog = options.catalog ?? catalogDir();
   let unanswered: string | undefined;
 
-  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文；是否题只有提问和缺省回答
+  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文；是否题只有提问和缺省回答；
+  // 隐藏输入只有提问和后面那句固定的提示，输入的东西不记
   const ask = (prompt: Prompt, question: Question, cursor?: unknown): unknown => {
     const lines = [`? ${question.message}`];
     if ('rows' in question) {
@@ -232,8 +264,10 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
         else lines.push(`  ${row.name}`);
       }
       if (active?.description) lines.push(active.description);
-    } else {
+    } else if ('default' in question) {
       lines[0] += question.default ? ' (Y/n)' : ' (y/N)';
+    } else {
+      lines[0] += ` ${question.theme.style.help(question.theme.style.maskedText)}`;
     }
     record('stdout')(`${lines.join('\n')}\n`);
     const answer = answers.shift();
@@ -247,6 +281,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     select: async <Value>(question: SelectQuestion<Value>) => ask('select', question, question.default) as Value,
     checkbox: async <Value>(question: CheckboxQuestion<Value>) => ask('checkbox', question) as Value[],
     confirm: async (question) => ask('confirm', question) as boolean,
+    password: async (question) => ask('password', question) as string,
   };
 
   const { keyboard, prompter: interactive } = keyboardPrompter(record('stdout'), ROWS);
@@ -276,11 +311,10 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       homeDir: home,
       tempDir: tmp,
       interrupt: options.interrupt ?? new AbortController().signal,
-      runCommand: async (command, args) => {
+      runCommand: (command, args) => {
         commands.push({ command, args });
         const preset = options.commandResult?.(command, args);
-        if (preset instanceof Error) throw preset;
-        return { exitCode: 0, ...preset };
+        return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       },
       prompter: options.keys ? interactive : scripted,
       openLink: async (url) => {

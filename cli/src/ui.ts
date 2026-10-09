@@ -1,13 +1,13 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, Skill } from './catalog.ts';
+import type { App, Mcp, McpVariable, Skill } from './catalog.ts';
 import type { Command, Host } from './hosts.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 import type { McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type Lang } from './messages.ts';
-import type { CheckboxQuestion, ConfirmQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import { MESSAGES, type Failure, type KeyOutcome, type Lang } from './messages.ts';
+import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { SkillStatus } from './skill-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
 
@@ -114,9 +114,15 @@ export type Ui = ReturnType<typeof createUi>;
 // 展示时不加引号也不会被 shell 另作解释的参数
 const PLAIN_ARGUMENT = /^[A-Za-z0-9@%+=:,./_~-]+$/;
 
-// 给用户看的一条完整命令。参数里有 shell 会另作解释的字符（网址里的 & ? 之类）就加上单引号，照着敲也是同一条命令
-function commandLine({ command, args }: Command): string {
-  return [command, ...args].map((arg) => (PLAIN_ARGUMENT.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`)).join(' ');
+// 给用户看的一条完整命令。参数里有 shell 会另作解释的字符（网址里的 & ? 之类）就加上单引号，照着敲也是同一条命令。
+// key 的位置写成占位符 <变量名>，由 placeholder 上样式；真实的值不到这里来
+function commandLine({ command, args }: Command, placeholder: (text: string) => string = (text) => text): string {
+  return [command, ...args]
+    .map((arg) => {
+      if (typeof arg !== 'string') return `${arg.variable}=${placeholder(`<${arg.variable}>`)}`;
+      return PLAIN_ARGUMENT.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
+    })
+    .join(' ');
 }
 
 // 悬挂缩进：首行以 lead 开头，正文过长时折行，续行与正文的左缘对齐
@@ -247,6 +253,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
           .join(dim(` ${symbols.separator} `))}`,
       defaultAnswer: (text) => dim(`(${text})`),
       confirmDefault: (text) => text.toUpperCase(),
+      maskedText: t.hiddenInput,
+      help: dim,
     },
     i18n: { disabledError: t.unavailable },
     // 按键在任何语言下都是 y 和 n；回答之后显示的字由提问自己给
@@ -297,11 +305,11 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
     const lead = (mark: string, target: Target): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
     const totals = { succeeded: 0, failed: 0, skipped: 0 };
-    // 标题下面已经打出的行数
+    // 标题下面已经打出的行数，照终端上实际占的行数算：一个比一行还长的词（目录给的名字）折不开，会被终端折成几行
     let lines = 0;
     const settle = (total: keyof typeof totals, rows: string[]): void => {
       totals[total]++;
-      lines += rows.length;
+      for (const row of rows) lines += Math.max(1, Math.ceil(displayWidth(row) / (out.columns ?? WIDTH)));
       print(...rows);
     };
     print(...gapAbove(), section(t.installing));
@@ -315,8 +323,9 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
           else settle('failed', hanging('', `${lead(paint('red', symbols.failed), target)}${paint(['red', 'bold'], t.failed)} `, result.reason));
         };
       },
+      // 原因里可以有目录给的名字，长度不由我们定：和失败的原因一样自己折行，行数才数得对
       skip(target: Target, reason: string): void {
-        settle('skipped', [`${lead(dim(symbols.dash), target)}${t.skippedResult} ${reason}`]);
+        settle('skipped', hanging('', `${lead(dim(symbols.dash), target)}${t.skippedResult} `, reason));
       },
       finish(): void {
         // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
@@ -705,9 +714,46 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       print(
         ...gapAbove(),
         section(t.commandsToRun(commands.length)),
-        ...commands.flatMap((command, index) => hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLine(command))),
+        ...commands.flatMap((command, index) =>
+          hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLine(command, (text) => paint(attention, text))),
+        ),
         '',
       );
+    },
+
+    /** 接在将执行的命令后面：命令里 key 的位置是占位符。 */
+    keyPlaceholderNotice(): void {
+      print(...keyValue(t.noticeKey, t.keyPlaceholderNotice, attention), '');
+    },
+
+    /** 问一个 key 之前：哪个 MCP 要它、它是什么、去哪申请、留空会怎样。 */
+    keyRequest(mcp: Mcp, variable: McpVariable): void {
+      print(
+        ...gapAbove(),
+        section(t.keyRequest(mcp.name, variable.required)),
+        ...keyValue(t.variableKey, `${variable.name}${t.keyNeed(variable.required)}`),
+        ...keyValue(t.purposeKey, variable.description[lang]),
+        // 申请地址和应用项目的链接一样整条写在一行上：折开了就没法照着复制
+        `  ${dim(pad(t.applyKey, KEY_WIDTH))}${paint('underline', variable.url)}`,
+        ...keyValue(t.tipKey, t.keyInputHint(mcp.name, variable.required)),
+        '',
+      );
+    },
+
+    /** 隐藏输入：提问是变量名，后面一句固定的提示；输入的东西不显示。 */
+    keyQuestion(variable: McpVariable): PasswordQuestion {
+      return { message: variable.name, theme };
+    },
+
+    /** 提问擦掉之后留下的一行：和已回答的提问同一个画法，填了的不写值也不写长度。 */
+    keyOutcome(mcp: Mcp, variable: McpVariable, outcome: KeyOutcome): void {
+      const mark = outcome === 'blank' ? dim(symbols.dash) : paint('green', symbols.done);
+      print(...hanging('', `${mark} ${paint('bold', variable.name)} ${dim(symbols.separator)} `, t.keyOutcome(outcome, mcp.name, variable.required)));
+    },
+
+    /** 接在将执行的命令后面：这个 MCP 必填的 key 没填，不在这次要装的里面。 */
+    mcpKeyMissingNotice(mcp: Mcp, variable: string): void {
+      print(...keyValue(t.noticeKey, t.keyMissingNotice(mcp.name, variable), attention), '');
     },
 
     /** 接在将执行的命令后面：这个宿主添加远程地址的 MCP 时可能当场打开浏览器登录，而它的输出不会显示在这里。 */
@@ -719,7 +765,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       return decision(t.confirmCommands, t.runCommands);
     },
 
-    /** MCP 的「正在安装」分区，用法同 installation；没有跳过的项。 */
+    /** MCP 的「正在安装」分区，用法同 installation；必填的 key 没填的那些不 begin，改用 skip，给出没填的变量名。 */
     mcpInstallation(targets: readonly McpTarget[]) {
       const rows = progress(targets, t.configuring);
       return {
@@ -733,6 +779,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
                   : { ok: false, reason: t.mcpInstallProblem(outcome.problem) }),
             );
         },
+        skip: (target: McpTarget, missingVariable: string): void => rows.skip(target, t.keyMissing(missingVariable)),
         finish: rows.finish,
       };
     },

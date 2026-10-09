@@ -47,6 +47,9 @@ export interface PromptTheme {
     defaultAnswer: (text: string) => string;
     /** 按键提示里代表缺省回答的那个字母 */
     confirmDefault: (text: string) => string;
+    /** 隐藏输入的提问后面那句固定的提示，和它的样式 */
+    maskedText: string;
+    help: (text: string) => string;
   };
   i18n: { disabledError: string };
   /** 是否题认的两个按键，以及输入了别的东西时的那句话 */
@@ -78,6 +81,11 @@ export interface ConfirmQuestion {
   theme: PromptTheme;
 }
 
+export interface PasswordQuestion {
+  message: string;
+  theme: PromptTheme;
+}
+
 export interface Prompter {
   /** 单选。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   select<Value>(question: SelectQuestion<Value>): Promise<Value>;
@@ -85,6 +93,11 @@ export interface Prompter {
   checkbox<Value>(question: CheckboxQuestion<Value>): Promise<Value[]>;
   /** 是否题。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   confirm(question: ConfirmQuestion): Promise<boolean>;
+  /**
+   * 隐藏输入：输入的东西不回显，也不暴露长度。回答之后这个提问从屏幕上擦掉，
+   * 结局由呈现层另写一行。用户按 Ctrl+C 时以 PromptAborted 拒绝。
+   */
+  password(question: PasswordQuestion): Promise<string>;
 }
 
 export class PromptAborted extends Error {
