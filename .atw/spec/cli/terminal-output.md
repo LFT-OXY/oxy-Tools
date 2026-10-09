@@ -18,7 +18,19 @@ ui.skillDetail(skill);
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数全部盖掉**（前缀、光标、提问、回答、活动行、说明、按键提示），原因见下一节。
 
-文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。
+文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另一个联合类型（`SkillInstallProblem`），文案在 `installProblem`。
+
+括号里的技术原因只放错误码和 `HTTP 503` 这类不需要翻译的东西。**别的模块里不写给用户看的句子**：要说一句话，就给联合类型加一种情况，在 `messages.ts` 里写中英两份。
+
+```ts
+// 错：英文句子原样进了中文界面
+throw new Error('unsafe path');            // → 下载中断（unsafe path）
+
+// 对：一种有名字的情况，文案在 messages.ts
+throw new UnsafePathError();               // → SkillInstallProblem { kind: 'unsafe-path' }
+```
+
+**文案有长度上限的地方要自己算**：按键提示是交互库原样打出来的一行，呈现层不替它折行，中英文都必须在 79 列以内（英文的「⏎ confirm (none = back)」就是这么来的——原先那句超了两列，被终端折成两行）。加了按键提示的文案，就在 `prompts.test.ts` 里用真实的交互库断言整行。
 
 ---
 
@@ -49,7 +61,9 @@ color ? styleText(format, text, { validateStream: false }) : text;
 
 沿用交互库（`@inquirer/figures`）的判断，它没有导出，呈现层照写了一份（`ui.ts` 的 `supportsUnicode`）：Windows 上只有 Windows Terminal、VS Code 等几种终端算支持；其他系统上只有 `TERM=linux` 不算。
 
-不支持时，`ui.ts` 里的 `ASCII` 符号表整体替换 `UNICODE`（两张表同一个类型，加符号时两边都要加），按键提示里交互库写死传进来的 `↑↓`、`⏎` 换成 `messages.ts` 的 `keyNames`。
+不支持时，`ui.ts` 里的 `ASCII` 符号表整体替换 `UNICODE`（两张表同一个类型，加符号时两边都要加），按键提示里交互库写死传进来的 `↑↓`、`⏎` 换成 `messages.ts` 的 `keyNames`。交互库传进来的是英文单词的按键（多选的 `space`），任何终端里都换成 `keyWords` 里的字。
+
+ASCII 的符号宽度可以和 Unicode 的不同（勾选框 `■` 一列，`[x]` 三列）。**凡是按符号宽度对齐的地方都用 `displayWidth(symbols.x)` 算**，不写死列数：多选列表的表头缩进就是「勾选框的宽度 + 1」。
 
 ---
 
@@ -58,6 +72,28 @@ color ? styleText(format, text, { validateStream: false }) : text;
 - 出错说明（`ui.failure()`）写到标准错误，其余写到标准输出。
 - 没有交互式终端时不打印大标志、不读目录。
 - 加载提示用 `\r\x1b[2K` 在同一行上重写，读完后擦掉；它只在已经确认是终端之后才出现。
+
+---
+
+## 改写已经打出去的行
+
+转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。
+
+「正在安装」分区结束后要把标题换成「结果」，标题在上面好几行，只能把光标挪上去再挪回来。挪之前先确认两件事，否则会写到别的行上：
+
+```ts
+// 标题还在屏幕上、且没有哪一行被终端折开
+const up = lines + 1;
+if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
+  out.write(`\x1b[${up}A${ERASE_LINE}${section(t.results)}\x1b[${up}B\r`);
+}
+```
+
+- `lines` 是标题之后实际打出的行数：一项的失败原因折成两行就算两行，所以要数呈现层自己折出来的行，不是数条目。
+- 条件不满足时不改写，标题留作「正在安装」。
+- 除了这两处，不回头改已经打出去的东西。
+
+> **Warning**：测试架子的 `result.screen` 只懂 `\r\x1b[2K`，不懂光标上移。改写过标题的输出里，`output` 和 `screen` 都同时有「正在安装」和「结果」两个标题的文字；断言结果时匹配 `── 结果 ─`，不要断言「正在安装」不存在。真实的样子看界面预览页。
 
 ---
 
@@ -85,6 +121,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 
 `cli/scripts/preview.ts` 经 `runInstaller` 按场景表驱动安装器：提问由真实的交互库渲染，按键是脚本发的，输出喂给无头终端（`@xterm/headless`），再把字符格连同样式转成 HTML，每个画面一格，深色和浅色终端各一份。它是视觉评审对照设计方向时用的画面证据。
 
-- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、按键）。
+- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、按键）。
+- 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘。

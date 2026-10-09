@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { STACK_FRAME, STYLE_CODE, choose, interrupt, run } from './harness.ts';
+import { STACK_FRAME, STYLE_CODE, choose, interrupt, pick, run } from './harness.ts';
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -17,7 +17,7 @@ describe('启动', () => {
   });
 
   it('大标志一次运行只出现一次，回到主菜单时不重复', async () => {
-    const result = await run({ answers: [choose('Skill'), choose('返回'), choose('退出')] });
+    const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
 
     expect(result.output.split(LOGO_TOP)).toHaveLength(2);
   });
@@ -38,12 +38,12 @@ describe('语言', () => {
   it('系统语言环境不是中文时用英文界面和英文说明', async () => {
     const result = await run({
       env: { LANG: 'en_US.UTF-8' },
-      answers: [choose('Skill'), choose('Back'), choose('Exit')],
+      answers: [choose('Skill'), pick(), choose('Exit')],
     });
 
     expect(result.output).toContain('Pick a group');
     expect(result.output).toContain('Curated AI toolchain installer');
-    expect(result.output).toMatch(/^\s+beta-pack\s+The second sample skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+The second sample skill$/m);
     expect(result.output).not.toContain('选择分组');
   });
 
@@ -76,6 +76,7 @@ describe('启动参数', () => {
     expect(result.output).toContain('--lang');
     expect(result.output).toContain('--version');
     expect(result.output).toContain('OXY_TOOLS_CATALOG');
+    expect(result.output).toContain('GITHUB_TOKEN');
     expect(result.output).not.toContain('选择分组');
     expect(result.exitCode).toBe(0);
   });
@@ -175,7 +176,7 @@ describe('颜色', () => {
   });
 
   it('设置了 NO_COLOR 时不输出任何样式码，文字不变', async () => {
-    const answers = (): ReturnType<typeof choose>[] => [choose('Skill'), choose('beta-pack'), choose('返回'), choose('退出')];
+    const answers = (): ReturnType<typeof choose>[] => [choose('Skill'), pick('beta-pack'), choose('开始安装'), choose('退出')];
     const styled = await run({ answers: answers() });
     const mono = await run({ env: { NO_COLOR: '1' }, answers: answers() });
 
@@ -209,12 +210,15 @@ describe('没有 Unicode 的终端', () => {
     const result = await run({
       platform: 'win32',
       env: { TERM: '' },
-      answers: [choose('Skill'), choose('beta-pack'), choose('返回'), choose('退出')],
+      answers: [choose('Skill'), pick('beta-pack'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toContain(' / _ \\ \\ \\/ /\\ \\ / /');
-    expect(result.output).toMatch(/^-- beta-pack -+$/m);
-    expect(result.output).not.toMatch(/[█─▸✓·…⠋⠙⠹]/);
+    expect(result.output).toMatch(/^-- 将安装 1 个 skill -+$/m);
+    expect(result.output).toMatch(/^\s+\[ \] alpha\s/m);
+    expect(result.output).toMatch(/^\s+\+\s+beta-pack\s+Claude Code\s+已安装 2\.3$/m);
+    expect(result.output).toMatch(/^\s+合计\s+1 成功 - 0 失败 - 0 跳过$/m);
+    expect(result.output).not.toMatch(/[█─▸✓✗■□–·…⠋⠙⠹]/);
   });
 });
 

@@ -1,16 +1,16 @@
 // 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器。
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller } from '../src/installer.ts';
-import { PromptAborted, type Prompter, type SelectQuestion } from '../src/prompter.ts';
-import { EMPTY_CATALOG, SAMPLE_SKILLS } from './fixtures.ts';
+import { PromptAborted, type CheckboxQuestion, type Prompter, type SelectQuestion } from '../src/prompter.ts';
+import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { keyboardPrompter } from './terminal.ts';
 
-export { EMPTY_CATALOG, LONG_ABOUT, SAMPLE_SKILLS } from './fixtures.ts';
+export { EMPTY_CATALOG, LONG_ABOUT, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 export { KEY } from './terminal.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
@@ -29,8 +29,20 @@ export function tempDir(label: string): string {
   return dir;
 }
 
-/** 写出一份本地样例目录。传对象按 JSON 写，传字符串原样写（用来造写坏的文件），传 null 则不写这个文件。 */
-export function catalogDir(files: { index?: unknown; catalog?: unknown } = {}): string {
+/** 在 dir 下按“相对路径 → 内容”写出一批文件。 */
+export function writeTree(dir: string, files: Record<string, string>): void {
+  for (const [path, content] of Object.entries(files)) {
+    const file = join(dir, ...path.split('/'));
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, content);
+  }
+}
+
+/**
+ * 写出一份本地样例目录。index 和 catalog 传对象按 JSON 写，传字符串原样写（用来造写坏的文件），传 null 则不写这个文件；
+ * content 是各个 skill 的内容，缺省是 SAMPLE_FILES。
+ */
+export function catalogDir(files: { index?: unknown; catalog?: unknown; content?: Record<string, string> } = {}): string {
   const dir = tempDir('catalog');
   const write = (name: string, content: unknown): void => {
     if (content === null) return;
@@ -38,19 +50,33 @@ export function catalogDir(files: { index?: unknown; catalog?: unknown } = {}): 
   };
   write('index.json', files.index === undefined ? { version: 1, skills: SAMPLE_SKILLS } : files.index);
   write('catalog.json', files.catalog === undefined ? EMPTY_CATALOG : files.catalog);
+  writeTree(dir, files.content ?? SAMPLE_FILES);
   return dir;
 }
 
-type Answer = (question: SelectQuestion<unknown>) => unknown;
+type Question = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
+type Answer = (question: Question, prompt: 'select' | 'checkbox') => unknown;
 
-/** 选中第一栏文字等于 label 的那一行，和用户按画面上的字来选是一回事。 */
+function rowNamed(question: Question, label: string): { value: unknown } {
+  for (const row of question.rows) {
+    if (!('separator' in row) && firstCell(row.name) === label) return row;
+  }
+  throw new Error(`「${question.message}」里没有「${label}」这一项`);
+}
+
+/** 单选：选中第一栏文字等于 label 的那一行，和用户按画面上的字来选是一回事。 */
 export function choose(label: string): Answer {
-  return (question) => {
-    for (const row of question.rows) {
-      if ('separator' in row) continue;
-      if (firstCell(row.name) === label) return row.value;
-    }
-    throw new Error(`「${question.message}」里没有「${label}」这一项`);
+  return (question, prompt) => {
+    if (prompt !== 'select') throw new Error(`「${question.message}」是多选，要用 pick()`);
+    return rowNamed(question, label).value;
+  };
+}
+
+/** 多选：只勾选第一栏文字等于这些 label 的行再确认；一个都不传就是什么都不勾直接确认。 */
+export function pick(...labels: string[]): Answer {
+  return (question, prompt) => {
+    if (prompt !== 'checkbox') throw new Error(`「${question.message}」是单选，要用 choose()`);
+    return labels.map((label) => rowNamed(question, label).value);
   };
 }
 
@@ -84,6 +110,14 @@ export interface RunOptions {
   keys?: [waitFor: string, key: string][];
   /** 本地样例目录的路径，或一个现成的目录来源；缺省是 catalogDir() */
   catalog?: string | CatalogSource;
+  /** 可执行路径上有哪些命令，缺省只有 claude */
+  onPath?: string[];
+  /** 主目录的初始状态：相对路径 → 文件内容 */
+  home?: Record<string, string>;
+  /** 用户在提问之外按 Ctrl+C 的信号 */
+  interrupt?: AbortSignal;
+  /** 交给安装器放临时文件的目录，缺省新建一个 */
+  tmp?: string;
   /** 标准输入、标准输出、标准错误是不是终端，缺省都是；传 false 表示都不是 */
   tty?: boolean | Streams;
   platform?: NodeJS.Platform;
@@ -105,6 +139,8 @@ export interface RunResult {
   commands: { command: string; args: readonly string[] }[];
   opened: string[];
   home: string;
+  /** 交给安装器放临时文件的目录 */
+  tmp: string;
 }
 
 export async function run(options: RunOptions = {}): Promise<RunResult> {
@@ -116,26 +152,37 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const opened: string[] = [];
   const answers = [...(options.answers ?? [])];
   const home = tempDir('home');
+  writeTree(home, options.home ?? {});
+  const tmp = options.tmp ?? tempDir('tmp');
+  const bin = tempDir('bin');
+  for (const command of options.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
   const tty = typeof options.tty === 'object' ? options.tty : { stdin: options.tty, stdout: options.tty, stderr: options.tty };
   const catalog = options.catalog ?? catalogDir();
   let unanswered: string | undefined;
 
-  // 把提问照画面的样子记进输出：提问、每一行、光标所在行的说明全文
+  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文
+  const ask = (prompt: 'select' | 'checkbox', question: Question, cursor?: unknown): unknown => {
+    const { icon } = question.theme;
+    const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
+    const active = choices.find((row) => row.value === cursor) ?? choices[0];
+    const lines = [`? ${question.message}`];
+    for (const row of question.rows) {
+      if ('separator' in row) lines.push(` ${row.separator}`);
+      else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
+      else lines.push(`  ${row.name}`);
+    }
+    if (active?.description) lines.push(active.description);
+    record('stdout')(`${lines.join('\n')}\n`);
+    const answer = answers.shift();
+    if (!answer) {
+      unanswered = question.message;
+      throw new PromptAborted();
+    }
+    return answer(question, prompt);
+  };
   const scripted: Prompter = {
-    async select<Value>(question: SelectQuestion<Value>): Promise<Value> {
-      const choices = question.rows.filter((row) => !('separator' in row));
-      const active = choices.find((row) => 'value' in row && row.value === question.default) ?? choices[0];
-      const lines = [`? ${question.message}`];
-      for (const row of question.rows) lines.push('separator' in row ? ` ${row.separator}` : `  ${row.name}`);
-      if (active && 'description' in active && active.description) lines.push(active.description);
-      record('stdout')(`${lines.join('\n')}\n`);
-      const answer = answers.shift();
-      if (!answer) {
-        unanswered = question.message;
-        throw new PromptAborted();
-      }
-      return answer(question as SelectQuestion<unknown>) as Value;
-    },
+    select: async <Value>(question: SelectQuestion<Value>) => ask('select', question, question.default) as Value,
+    checkbox: async <Value>(question: CheckboxQuestion<Value>) => ask('checkbox', question) as Value[],
   };
 
   const { keyboard, prompter: interactive } = keyboardPrompter(record('stdout'), ROWS);
@@ -155,7 +202,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const [exitCode] = await Promise.all([
     runInstaller({
       argv: options.argv ?? [],
-      env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', ...options.env },
+      env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...options.env },
       platform: options.platform ?? 'linux',
       systemLocale: options.systemLocale ?? 'en-US',
       stdout: { isTTY: tty.stdout ?? true, rows: ROWS, write: record('stdout') },
@@ -163,6 +210,8 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       stdinIsTTY: tty.stdin ?? true,
       catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
       homeDir: home,
+      tempDir: tmp,
+      interrupt: options.interrupt ?? new AbortController().signal,
       runCommand: async (command, args) => {
         commands.push({ command, args });
         return { exitCode: 0 };
@@ -190,5 +239,6 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     commands,
     opened,
     home,
+    tmp,
   };
 }

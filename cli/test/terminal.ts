@@ -3,7 +3,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { inquirerPrompter } from '../src/inquirer-prompter.ts';
 import type { Prompter } from '../src/prompter.ts';
 
-export const KEY = { down: '\x1b[B', enter: '\r', ctrlC: '\x03' };
+export const KEY = { down: '\x1b[B', enter: '\r', space: ' ', ctrlC: '\x03' };
 export const COLUMNS = 80;
 
 /** 提问由真实的交互库画到 write 上；往返回的 keyboard 里写按键。 */

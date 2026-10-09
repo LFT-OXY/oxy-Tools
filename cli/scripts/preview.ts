@@ -1,10 +1,12 @@
 // 界面预览页（仅供开发）：经安装器入口按预设场景驱动安装器，提问由真实的交互库渲染，
 // 把无头终端里的画面连同样式转成一个离线 HTML 页面，每个画面一格，深色和浅色终端各一份。
 // 生成物在 .preview/ 下，不提交，不随 npm 包发布。
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
-import { githubCatalogSource, type CatalogSource } from '../src/catalog.ts';
+import { CatalogError, githubCatalogSource, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller } from '../src/installer.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
@@ -21,6 +23,8 @@ interface Scene {
   /** 标准输入和标准输出是不是终端，缺省是；标准错误一直接在终端上 */
   tty?: boolean;
   catalog?: CatalogSource;
+  /** 可执行路径上有哪些命令，缺省只有 claude */
+  onPath?: string[];
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
 }
@@ -38,13 +42,31 @@ const SHOWCASE_SKILLS = [
   ['writing-for-agents', '1.0.0', '编写 skill、AGENTS.md、CLAUDE.md 等给 AI 读的文档的写作规范', 'Writing guidelines for documents that agents read: skills, AGENTS.md, CLAUDE.md'],
 ].map(([name, version, zh, en]) => ({ name, version, path: `skills/${name}`, description: { zh, en } }));
 
+// 假装下载：每个 skill 只有一个 SKILL.md。fails 里的 skill 以给定的原因失败，hangs 里的一直下不完
+function downloads(behaviour: { fails?: Record<string, string>; hangs?: string[] } = {}): CatalogSource['pin'] {
+  return async () => ({
+    commit: 'c2230a119e3cf013df0f699d1f1ecedb86f4126d',
+    async download(path, dest) {
+      const name = path.split('/').pop() ?? '';
+      if (behaviour.hangs?.includes(name)) await new Promise<never>(() => {});
+      const failure = behaviour.fails?.[name];
+      if (failure) throw new Error(failure);
+      writeFileSync(join(dest, 'SKILL.md'), `# ${name}\n`);
+    },
+  });
+}
+
 // 位置照默认的目录来源来写，内容换成样例
-function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG): CatalogSource {
+function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG, pin = downloads()): CatalogSource {
   const files: Record<string, unknown> = { 'index.json': index, 'catalog.json': catalog };
-  return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]) };
+  return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]), pin };
 }
 
 const sample = catalogOf({ version: 1, skills: SHOWCASE_SKILLS });
+const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
+const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
+const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
+const COMMITS_QUERY = 'https://api.github.com/repos/LFT-OXY/oxy-Tools/commits/main';
 const withBrokenEntry = catalogOf({ version: 1, skills: [...SHOWCASE_SKILLS, { name: 'broken', path: '../elsewhere' }] });
 const newerFormat = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { version: 2, components: [] });
 const neverLoads: CatalogSource = { ...sample, readText: () => new Promise<string>(() => {}) };
@@ -57,28 +79,55 @@ const offline: CatalogSource = {
 
 const LEGACY_CONSOLE = { platform: 'win32' as const, env: { TERM: '' } };
 const toSkills = [KEY.enter];
+// 勾上 pr 和 wizard，光标停在 wizard 上
+const pickTwo = [...toSkills, ...down(5), KEY.space, KEY.down, KEY.space];
+const toSummary = [...pickTwo, KEY.enter];
+const install = [...toSummary, KEY.enter];
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
   { title: '主菜单', note: 'catalog.json 三个数组为空：只有 Skill 一个分组和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
-  { title: 'skill 列表', note: '说明过长则截断；光标所在行的全文在列表下方', keys: [...toSkills, ...down(4)] },
-  { title: 'skill 详情', note: '选中一个 skill 后显示版本和说明全文，再回到列表', keys: [...toSkills, ...down(3), KEY.enter] },
-  { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, ...down(8), KEY.enter] },
+  { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
+  { title: '汇总确认 · 选了两个 skill', note: '列出每个 skill 将装到的目录；可开始安装、返回修改或取消', keys: toSummary },
+  { title: '汇总确认 · 返回修改', note: '回到列表，之前勾选的还在', keys: [...toSummary, KEY.down, KEY.enter] },
+  { title: '正在查询', note: '确认之后先向 GitHub 查询当前提交和文件列表', catalog: withPin(() => new Promise<never>(() => {})), keys: install },
+  { title: '正在安装', note: '一项已装好，另一项进行中：行首的符号转动', catalog: withPin(downloads({ hangs: ['wizard'] })), keys: install },
+  { title: '结果 · 全部成功', note: '标题由「正在安装」改写成「结果」；之后回到主菜单', keys: install },
+  { title: '结果 · 一项成功一项失败', note: '两项各有一行，失败的带原因', catalog: oneFails, keys: install },
+  {
+    title: '出错 · GitHub 限流',
+    note: '查询文件列表时被限流：说明原因和两个出路，之后回到主菜单',
+    catalog: queryFails({ kind: 'rate-limited', authenticated: false, minutes: 37 }),
+    keys: install,
+  },
+  {
+    title: '出错 · 无法查询 skill 的文件列表',
+    note: '查询时断网',
+    catalog: queryFails({ kind: 'skill-files-unlisted', problem: 'unreachable', detail: 'ENOTFOUND', where: COMMITS_QUERY, badToken: false }),
+    keys: install,
+  },
+  { title: '主菜单 · 没有检测到 Claude Code', note: '可执行路径上没有 claude 命令：装不了，只能浏览', onPath: [] },
+  { title: 'skill 列表 · 没有检测到 Claude Code', note: '只能浏览：单选列表', onPath: [], keys: [...toSkills, ...down(4)] },
+  { title: 'skill 详情 · 没有检测到 Claude Code', note: '选中一个 skill 后显示版本和说明全文，再回到列表', onPath: [], keys: [...toSkills, ...down(3), KEY.enter] },
+  { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
   { title: '出错 · 无法识别的参数', note: 'npx oxy-tools --frobnicate', argv: ['--frobnicate'] },
   { title: '帮助', note: 'npx oxy-tools --help', argv: ['--help'] },
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en', argv: ['--lang', 'en'] },
-  { title: '英文界面 · skill 列表', argv: ['--lang', 'en'], keys: [...toSkills, ...down(4)] },
+  { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
+  { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
-  { title: '不显示颜色 · skill 列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: [...toSkills, ...down(4)] },
+  { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
+  { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
-  { title: '没有 Unicode · skill 列表', ...LEGACY_CONSOLE, keys: [...toSkills, ...down(4)] },
-  { title: '没有 Unicode · skill 详情后返回', ...LEGACY_CONSOLE, keys: [...toSkills, KEY.enter, ...down(8), KEY.enter] },
+  { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
+  { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
+  { title: '没有 Unicode · skill 详情后返回', note: '没有检测到 Claude Code', ...LEGACY_CONSOLE, onPath: [], keys: [...toSkills, KEY.enter, ...down(8), KEY.enter] },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 
@@ -96,6 +145,12 @@ interface Cell {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// 每个场景一个假的主目录、临时目录和可执行路径，全部放在这下面，结束时一并删掉
+const scratch = mkdtempSync(join(tmpdir(), 'oxy-tools-preview-'));
+function scratchDir(label: string): string {
+  return mkdtempSync(join(scratch, `${label}-`));
+}
+
 async function play(scene: Scene): Promise<Cell[][]> {
   const terminal = new xterm.Terminal({ cols: COLUMNS, rows: ROWS, allowProposedApi: true, convertEol: true });
   let lastWrite = Date.now();
@@ -112,16 +167,20 @@ async function play(scene: Scene): Promise<Cell[][]> {
 
   const { keyboard, prompter } = keyboardPrompter(write, ROWS);
   const tty = scene.tty ?? true;
+  const bin = scratchDir('bin');
+  for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
   const finished = runInstaller({
     argv: scene.argv ?? [],
-    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', ...scene.env },
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
     platform: scene.platform ?? 'darwin',
     systemLocale: 'zh-CN',
-    stdout: { isTTY: tty, rows: ROWS, write },
+    stdout: { isTTY: tty, rows: ROWS, columns: COLUMNS, write },
     stderr: { isTTY: true, write },
     stdinIsTTY: tty,
     catalogSource: scene.catalog ?? sample,
-    homeDir: '/nonexistent',
+    homeDir: scratchDir('home'),
+    tempDir: scratchDir('tmp'),
+    interrupt: new AbortController().signal,
     runCommand: () => Promise.reject(new Error('preview does not run commands')),
     prompter,
     openLink: () => Promise.reject(new Error('preview does not open links')),
@@ -266,5 +325,6 @@ const target = fileURLToPath(new URL('../.preview/index.html', import.meta.url))
 mkdirSync(fileURLToPath(new URL('../.preview/', import.meta.url)), { recursive: true });
 writeFileSync(target, page(frames));
 console.log(`${frames.length} 个画面 → ${target}`);
+rmSync(scratch, { recursive: true, force: true });
 // 一直在加载的场景还挂着定时器，直接结束进程
 process.exit(0);

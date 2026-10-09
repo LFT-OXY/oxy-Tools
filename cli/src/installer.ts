@@ -1,6 +1,7 @@
 // 安装器入口，也是测试的主接缝：外部依赖全部由调用方传入，正式运行时用真实实现，测试时全部替换。
 import { CatalogError, loadCatalog, localCatalogSource, type CatalogSource } from './catalog.ts';
 import { mainMenu } from './flow.ts';
+import { claudeCode } from './hosts.ts';
 import type { Failure, Lang } from './messages.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { createUi, type Environment, type TerminalOutput } from './ui.ts';
@@ -24,6 +25,10 @@ export interface InstallerOptions {
   stdinIsTTY: boolean;
   catalogSource: CatalogSource;
   homeDir: string;
+  /** 放临时文件的目录 */
+  tempDir: string;
+  /** 用户在提问之外按 Ctrl+C 时触发。触发后进程随即退出，所以监听它的收尾只能是同步的 */
+  interrupt: AbortSignal;
   runCommand: CommandRunner;
   prompter: Prompter;
   openLink: LinkOpener;
@@ -65,13 +70,24 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     }
 
     ui.logo(VERSION);
-    const loading = ui.loading();
+    const loading = ui.loading('catalog');
     // 维护者预览用：环境变量把目录来源改为本地目录
     const localCatalog = env['OXY_TOOLS_CATALOG'];
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
-    ui.catalogSummary({ skills: catalog.skills.length, skipped: catalog.skipped });
-    await mainMenu(catalog, ui, options.prompter);
+    const host = claudeCode(env, options.homeDir);
+    ui.catalogSummary({ host, skills: catalog.skills.length, skipped: catalog.skipped });
+    await mainMenu({
+      catalog,
+      source,
+      host,
+      homeDir: options.homeDir,
+      tempDir: options.tempDir,
+      githubToken: env['GITHUB_TOKEN'] || undefined,
+      interrupt: options.interrupt,
+      ui,
+      prompter: options.prompter,
+    });
     return 0;
   } catch (error) {
     if (error instanceof PromptAborted) return EXIT_INTERRUPTED;

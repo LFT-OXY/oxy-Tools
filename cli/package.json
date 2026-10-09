@@ -21,6 +21,7 @@
     "preview": "node --experimental-strip-types scripts/preview.ts"
   },
   "dependencies": {
+    "@inquirer/checkbox": "^5.2.6",
     "@inquirer/select": "^5.2.6"
   },
   "devDependencies": {

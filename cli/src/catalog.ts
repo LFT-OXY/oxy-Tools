@@ -1,6 +1,7 @@
-// 目录：读取 skill 清单 index.json 与 catalog.json，校验后合并成统一的条目集合。
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+// 目录：读取 skill 清单 index.json 与 catalog.json，校验后合并成统一的条目集合；
+// 目录来源也在这里，它还负责把某个 skill 的文件取下来。
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 
 export interface CatalogSource {
   readonly kind: 'remote' | 'local';
@@ -8,6 +9,22 @@ export interface CatalogSource {
   locate(file: string): string;
   /** 读取目录根下的一个文本文件；读不到时抛出 */
   readText(file: string): Promise<string>;
+  /** 钉住来源此刻的内容，之后下载的每个 skill 都出自这同一份 */
+  pin(options: PinOptions): Promise<PinnedSource>;
+}
+
+export interface PinOptions {
+  /** GitHub 的访问令牌，有就带上 */
+  token: string | undefined;
+  /** 用户按 Ctrl+C 的信号 */
+  signal: AbortSignal;
+}
+
+export interface PinnedSource {
+  /** 来源提交；本地目录没有 */
+  readonly commit: string | null;
+  /** 把目录根下 path 这个目录里的全部文件取到 dest（一个已存在的空目录）下 */
+  download(path: string, dest: string): Promise<void>;
 }
 
 export interface Skill {
@@ -37,7 +54,13 @@ export type CatalogFailure =
   | ({ kind: 'catalog-malformed'; problem: 'not-json' | 'not-object' | 'no-version' } & FileOrigin)
   // field 是本该为数组的那个字段
   | ({ kind: 'catalog-malformed'; problem: 'not-array'; field: string } & FileOrigin)
-  | ({ kind: 'catalog-too-new'; found: number; supported: number } & FileOrigin);
+  | ({ kind: 'catalog-too-new'; found: number; supported: number } & FileOrigin)
+  // minutes 是大约多久之后恢复，答复里没说就没有
+  | { kind: 'rate-limited'; authenticated: boolean; minutes: number | undefined }
+  // where 是查询的网址；badToken 表示带去的访问令牌被拒绝了
+  | { kind: 'skill-files-unlisted'; problem: 'unreachable'; detail: string; where: string; badToken: boolean }
+  // malformed 是答复读不懂，truncated 是文件列表不全
+  | { kind: 'skill-files-unlisted'; problem: 'malformed' | 'truncated'; where: string };
 
 export class CatalogError extends Error {
   readonly failure: CatalogFailure;
@@ -49,13 +72,28 @@ export class CatalogError extends Error {
   }
 }
 
+/** 来源给出的文件列表里，有路径指向要下载的那个目录之外。 */
+export class UnsafePathError extends Error {
+  constructor() {
+    super('unsafe path');
+    this.name = 'UnsafePathError';
+  }
+}
+
 /** 这一版安装器认识的目录格式版本，index.json 与 catalog.json 共用 */
 const SUPPORTED_FORMAT = 1;
 // catalog.json 里的三个数组；条目的字段由各自的功能在用到时定义和校验
 const CATALOG_ARRAYS = ['mcps', 'tools', 'apps'];
 
-const GITHUB_RAW = 'https://raw.githubusercontent.com/LFT-OXY/oxy-Tools/main/';
+const GITHUB_REPO = 'LFT-OXY/oxy-Tools';
+const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/`;
+const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/`;
+// 两个目录文件读 main 分支上最新的
+const CATALOG_ROOT = `${GITHUB_RAW}main/`;
 const FETCH_TIMEOUT_MS = 20_000;
+// 单个文件可以有十几 MB
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+const DOWNLOADS_AT_ONCE = 6;
 
 /** 读取并校验目录。整份读不了时抛出 CatalogError；单条条目写坏只跳过那一条。 */
 export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
@@ -82,15 +120,99 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
 export function githubCatalogSource(): CatalogSource {
   return {
     kind: 'remote',
-    locate: (file) => GITHUB_RAW + file,
+    locate: (file) => CATALOG_ROOT + file,
     async readText(file) {
       // 只走 HTTPS：拒绝一切跳转，免得被带到别的协议或站点
-      const response = await fetch(GITHUB_RAW + file, {
+      const response = await fetch(CATALOG_ROOT + file, {
         redirect: 'error',
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.text();
+    },
+    pin: pinGitHub,
+  };
+}
+
+interface TreeFile {
+  path: string;
+  /** git 的文件模式，100755 是可执行文件 */
+  mode: unknown;
+}
+
+// 不下载整个仓库：查一次当前提交和它的文件列表，之后每个 skill 只取自己目录下的文件，全部钉在这个提交上
+async function pinGitHub({ token, signal }: PinOptions): Promise<PinnedSource> {
+  // 查询一次，把答复交给 read 读出想要的东西；read 返回 undefined 或抛出表示答复读不懂
+  const query = async <Result>(
+    path: string,
+    accept: string,
+    read: (response: Response) => Promise<Result | undefined>,
+  ): Promise<{ result: Result; where: string }> => {
+    const where = GITHUB_API + path;
+    const unreachable = (detail: string, badToken = false): CatalogError =>
+      new CatalogError({ kind: 'skill-files-unlisted', problem: 'unreachable', detail, where, badToken });
+    const response = await fetch(where, {
+      redirect: 'error',
+      headers: { accept, ...(token === undefined ? {} : { authorization: `Bearer ${token}` }) },
+      signal: AbortSignal.any([signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]),
+    }).catch((error: unknown) => {
+      throw unreachable(technicalReason(error));
+    });
+    const limit = rateLimit(response);
+    if (limit) throw new CatalogError({ kind: 'rate-limited', authenticated: token !== undefined, ...limit });
+    if (!response.ok) throw unreachable(`HTTP ${response.status}`, response.status === 401 && token !== undefined);
+    const result = await read(response).catch(() => undefined);
+    if (result === undefined) throw new CatalogError({ kind: 'skill-files-unlisted', problem: 'malformed', where });
+    return { result, where };
+  };
+
+  // 这个媒体类型只答复提交号，不带整份提交详情
+  const { result: commit } = await query('commits/main', 'application/vnd.github.sha', async (response) => {
+    const sha = (await response.text()).trim();
+    // 提交号接下来要拼进网址里
+    return /^[0-9a-f]{40,64}$/.test(sha) ? sha : undefined;
+  });
+  const { result: listing, where } = await query(`git/trees/${commit}?recursive=1`, 'application/vnd.github+json', async (response) => {
+    const body: unknown = await response.json();
+    return isRecord(body) && Array.isArray(body['tree']) ? { tree: body['tree'] as unknown[], truncated: body['truncated'] === true } : undefined;
+  });
+  // 列表不全就不能保证装上的 skill 是完整的
+  if (listing.truncated) throw new CatalogError({ kind: 'skill-files-unlisted', problem: 'truncated', where });
+  const files = listing.tree.filter(
+    (entry): entry is TreeFile => isRecord(entry) && entry['type'] === 'blob' && typeof entry['path'] === 'string',
+  );
+
+  return {
+    commit,
+    async download(path, dest) {
+      const root = resolve(dest) + sep;
+      const pending = files
+        .filter((file) => file.path.startsWith(`${path}/`))
+        .map((file) => ({ ...file, target: resolve(dest, ...file.path.slice(path.length + 1).split('/')) }));
+      // 文件列表是远程数据：每个文件落地的位置都必须还在 dest 里面
+      if (pending.some((file) => !file.target.startsWith(root))) throw new UnsafePathError();
+      const stop = new AbortController();
+      const failures: unknown[] = [];
+      const fetchFile = async (file: (typeof pending)[number]): Promise<void> => {
+        const response = await fetch(`${GITHUB_RAW}${commit}/${file.path.split('/').map(encodeURIComponent).join('/')}`, {
+          redirect: 'error',
+          signal: AbortSignal.any([signal, stop.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        await mkdir(dirname(file.target), { recursive: true });
+        await writeFile(file.target, new Uint8Array(await response.arrayBuffer()), { mode: file.mode === '100755' ? 0o755 : 0o644 });
+      };
+      // 几个文件同时下；有一个失败就都停下，等全部停稳了再报，免得还有人往 dest 里写
+      const worker = async (): Promise<void> => {
+        for (let file = pending.shift(); file && failures.length === 0; file = pending.shift()) {
+          await fetchFile(file).catch((error: unknown) => {
+            failures.push(error);
+            stop.abort();
+          });
+        }
+      };
+      await Promise.all(Array.from({ length: DOWNLOADS_AT_ONCE }, worker));
+      if (failures.length > 0) throw failures[0];
     },
   };
 }
@@ -101,7 +223,18 @@ export function localCatalogSource(dir: string): CatalogSource {
     kind: 'local',
     locate: (file) => join(dir, file),
     readText: (file) => readFile(join(dir, file), 'utf8'),
+    pin: async () => ({ commit: null, download: (path, dest) => cp(join(dir, path), dest, { recursive: true }) }),
   };
+}
+
+// 被限流时的答复是 403 或 429：限额用完的带 x-ratelimit-remaining: 0 和恢复的时刻，请求太密的带 retry-after（秒）
+function rateLimit(response: Response): { minutes: number | undefined } | undefined {
+  if (response.status !== 403 && response.status !== 429) return undefined;
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter === null && response.headers.get('x-ratelimit-remaining') !== '0') return undefined;
+  const reset = response.headers.get('x-ratelimit-reset');
+  const seconds = retryAfter !== null ? Number(retryAfter) : reset !== null ? Number(reset) - Date.now() / 1000 : NaN;
+  return { minutes: Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds / 60)) : undefined };
 }
 
 interface Document extends FileOrigin {
@@ -140,8 +273,8 @@ function requireArray({ data, ...origin }: Document, field: string): unknown[] {
   return value;
 }
 
-// 读取失败的简短技术原因：优先取错误码（ENOTFOUND、ENOENT），网络错误的真正原因在 cause 里
-function technicalReason(error: unknown): string {
+/** 失败的简短技术原因：优先取错误码（ENOTFOUND、ENOENT），网络错误的真正原因在 cause 里 */
+export function technicalReason(error: unknown): string {
   const root = error instanceof Error && error.cause instanceof Error ? error.cause : error;
   if (!(root instanceof Error)) return String(root);
   const { code } = root as NodeJS.ErrnoException;

@@ -30,10 +30,15 @@ export interface InstallerOptions {
   runCommand: CommandRunner;      // 外部命令执行器
   prompter: Prompter;             // 提问器
   openLink: LinkOpener;           // 链接打开器
+  // 两样运行环境的事实，和 env、platform 同类，不算外部依赖
+  tempDir: string;                // 放临时文件的目录（bin.ts 给 os.tmpdir()）
+  interrupt: AbortSignal;         // 用户在提问之外按 Ctrl+C 时触发
 }
 ```
 
 入口不直接碰 `process`：参数、环境变量、平台、输出流都从 `options` 来。`cli/src/bin.ts` 负责把真实的东西接上去，除此之外不放逻辑。
+
+`interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
 
 `runCommand` 和 `openLink` 目前没有流程用到，`bin.ts` 里接的是会抛错的占位；真实实现随第一个用到它们的功能落地，签名届时可以改。
 
@@ -52,7 +57,9 @@ export interface InstallerOptions {
 
 | 变量 | 行为 |
 |------|------|
-| `OXY_TOOLS_CATALOG` | 非空时，目录来源改为这个本地目录（其中要有 `index.json` 和 `catalog.json`），覆盖传入的 `catalogSource` |
+| `OXY_TOOLS_CATALOG` | 非空时，目录来源改为这个本地目录（其中要有 `index.json` 和 `catalog.json`），覆盖传入的 `catalogSource`；skill 的内容也从这个目录读 |
+| `GITHUB_TOKEN` | 非空时，向 GitHub 的接口查询带上它（`Authorization: Bearer`）；下载文件从不带 |
+| `PATH`、`PATHEXT` | 判断宿主的命令在不在，见 [安装 skill](./skill-install.md) |
 | `LC_ALL`、`LC_MESSAGES`、`LANG` | 按这个顺序取第一个非空的判断语言：以 `zh` 开头用中文，否则英文；都为空时看 `systemLocale` |
 | `NO_COLOR` | 只要存在就不带任何样式，见 [终端输出](./terminal-output.md) |
 | `TERM`、`WT_SESSION` 等 | 判断终端是否支持 Unicode，见 [终端输出](./terminal-output.md) |
@@ -64,7 +71,9 @@ export interface InstallerOptions {
 | 0 | 正常退出、`--help`、`--version` |
 | 1 | 没有交互式终端、目录读不了、目录格式有误或版本过高、意外错误 |
 | 2 | 启动参数不对 |
-| 130 | 用户按了 Ctrl+C |
+| 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`） |
+
+单个条目安装失败、向 GitHub 查询失败（含被限流）都**不改变退出状态**：前者只在结果里列出，后者打出出错说明后回到主菜单。
 
 **目录来源**
 
@@ -74,6 +83,7 @@ export interface CatalogSource {
   readonly kind: 'remote' | 'local';
   locate(file: string): string;            // 给用户看的网址或路径
   readText(file: string): Promise<string>; // 读不到时抛出
+  pin(options: PinOptions): Promise<PinnedSource>; // 钉住来源此刻的内容，见「安装 skill」
 }
 export function githubCatalogSource(): CatalogSource; // 默认：GitHub 上本仓库 main 分支的原始文件
 export function localCatalogSource(dir: string): CatalogSource;
@@ -132,10 +142,13 @@ const result = await run({
   tty: { stdout: false },                                        // 哪个流不是终端
 });
 result.exitCode; result.output; result.stdout; result.stderr; result.screen; result.commands; result.opened;
+result.home; result.tmp; // 临时的主目录、交给安装器放临时文件的目录
 ```
 
-- `choose(label)` 按画面上第一栏的字选一项，那一项不在就失败；`interrupt()` 表示在这个提问上按 Ctrl+C。预设的应答没用完或不够用，测试都会失败。
-- 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文），所以“菜单里有什么”可以直接断言文字。
+- `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`interrupt()` 表示在这个提问上按 Ctrl+C。单选用了 `pick`、多选用了 `choose` 会直接报错。预设的应答没用完或不够用，测试都会失败。
+- 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框），所以“菜单里有什么”可以直接断言文字。
+- 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`，传 `[]` 就是没有检测到宿主）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。
+- 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。
 - `result.screen` 是最后留在画面上的文字（被擦掉重写的加载提示只算最后一次）；比较两次运行的文字时用它，不用 `output`。
 - 要核对**提问部分实际打到终端上的东西**（符号、按键提示、样式码），改用 `keys`：提问由真实的交互库渲染，脚本等画面上出现某段文字再按键。
 
@@ -143,7 +156,7 @@ result.exitCode; result.output; result.stdout; result.stderr; result.screen; res
 const result = await run({ keys: [['⏎ 选择', KEY.enter], ['▸ beta-pack', KEY.ctrlC]] });
 ```
 
-每条新行为至少要有：正常路径一条；它引入的每种出错各一条，断言原因、下一步、没有堆栈、退出状态非零。
+每条新行为至少要有：正常路径一条；它引入的每种出错各一条，断言原因、下一步、没有堆栈，以及退出状态（让安装器退出的出错是非零；只让一项失败或一次查询失败的不改变退出状态）。
 
 ### 7. Wrong vs Correct
 
@@ -165,6 +178,16 @@ await run({ keys: [['选择', KEY.enter], ['选择', KEY.down]] });
 expect(result.output).toContain('/nonexistent/catalog');
 ```
 
+```ts
+// 卡死表头缩进了几列：这是版式，交给界面预览页和视觉评审
+expect(result.output).toMatch(/^\s{3}名称\s+说明$/m);
+```
+
+```ts
+// 列表里的一行卡死行首只有空白：多选的行前面有勾选框，换成多选就全红
+expect(result.output).toMatch(/^\s+beta-pack\s+第二个样例 skill$/m);
+```
+
 #### Correct
 
 ```ts
@@ -182,6 +205,10 @@ await run({ keys: [['⏎ 选择', KEY.enter], ['⏎ 选择', KEY.down]] });
 ```ts
 const missing = join(tempDir('catalog'), '我的 目录');
 expect(result.output).toContain(missing);
+```
+
+```ts
+expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 ```
 
 ---

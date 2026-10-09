@@ -17,15 +17,24 @@ export interface SelectSeparator {
 
 export type SelectRow<Value> = SelectChoice<Value> | SelectSeparator;
 
+export interface CheckboxChoice<Value> extends SelectChoice<Value> {
+  /** 提问出现时是否已勾选 */
+  checked: boolean;
+}
+
+export type CheckboxRow<Value> = CheckboxChoice<Value> | SelectSeparator;
+
 /** 提问各部分的样式，由呈现层给出。 */
 export interface PromptTheme {
   prefix: { idle: string; done: string };
-  icon: { cursor: string };
+  icon: { cursor: string; checked: string; unchecked: string };
   style: {
     message: (text: string) => string;
     answer: (text: string) => string;
     highlight: (text: string) => string;
     description: (text: string) => string;
+    /** 多选回答之后显示什么 */
+    renderSelectedChoices: (selected: readonly { short: string }[]) => string;
     keysHelpTip: (keys: [key: string, action: string][]) => string;
   };
 }
@@ -39,9 +48,18 @@ export interface SelectQuestion<Value> {
   theme: PromptTheme;
 }
 
+export interface CheckboxQuestion<Value> {
+  message: string;
+  rows: readonly CheckboxRow<Value>[];
+  pageSize: number;
+  theme: PromptTheme;
+}
+
 export interface Prompter {
   /** 单选。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   select<Value>(question: SelectQuestion<Value>): Promise<Value>;
+  /** 多选，返回勾选的那些值；一个都不勾也能确认。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
+  checkbox<Value>(question: CheckboxQuestion<Value>): Promise<Value[]>;
 }
 
 export class PromptAborted extends Error {

@@ -15,9 +15,10 @@ describe('主菜单', () => {
   });
 });
 
-describe('skill 分组', () => {
+// 装不了的时候只能看：单选列表，回车显示详情
+describe('没有检测到 Claude Code 时的 skill 分组', () => {
   it('列出每个 skill 的名字和一句话说明，并能返回主菜单', async () => {
-    const result = await run({ answers: [choose('Skill'), choose('返回'), choose('退出')] });
+    const result = await run({ onPath: [], answers: [choose('Skill'), choose('返回'), choose('退出')] });
 
     expect(result.output).toMatch(/^\s+alpha\s+第一个样例 skill/m);
     expect(result.output).toMatch(/^\s+beta-pack\s+第二个样例 skill$/m);
@@ -26,14 +27,14 @@ describe('skill 分组', () => {
   });
 
   it('一行放不下的说明在列表里截断，全文显示在列表下方', async () => {
-    const result = await run({ answers: [choose('Skill'), choose('返回'), choose('退出')] });
+    const result = await run({ onPath: [], answers: [choose('Skill'), choose('返回'), choose('退出')] });
 
     expect(result.output).toMatch(/^\s+alpha\s+第一个样例 skill.*…$/m);
     expect(result.output).toContain(LONG_ABOUT.zh);
   });
 
   it('选中一个 skill 时显示它的版本，之后回到列表', async () => {
-    const result = await run({ answers: [choose('Skill'), choose('beta-pack'), choose('返回'), choose('退出')] });
+    const result = await run({ onPath: [], answers: [choose('Skill'), choose('beta-pack'), choose('返回'), choose('退出')] });
 
     expect(result.output).toMatch(/── beta-pack ─+$/m);
     expect(result.output).toMatch(/^\s+版本\s+2\.3$/m);
@@ -41,9 +42,9 @@ describe('skill 分组', () => {
   });
 });
 
-describe('skill 详情', () => {
+describe('没有检测到 Claude Code 时的 skill 详情', () => {
   it('带上说明全文', async () => {
-    const result = await run({ answers: [choose('Skill'), choose('alpha'), choose('返回'), choose('退出')] });
+    const result = await run({ onPath: [], answers: [choose('Skill'), choose('alpha'), choose('返回'), choose('退出')] });
 
     expect(result.output).toMatch(/── alpha ─+$/m);
     // 详情里的说明按 67 列折行，全文分在两行上
@@ -55,6 +56,7 @@ describe('skill 详情', () => {
     const name = `skill-${'x'.repeat(90)}`;
     const long = { name, version: '1.0.0', path: `skills/${name}`, description: { zh: '名字很长', en: 'A long name' } };
     const result = await run({
+      onPath: [],
       catalog: catalogDir({ index: { version: 1, skills: [long] } }),
       answers: [choose('Skill'), choose(name), choose('返回'), choose('退出')],
     });

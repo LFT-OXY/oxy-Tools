@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { githubCatalogSource, type CatalogSource } from '../src/catalog.ts';
-import { EMPTY_CATALOG, SAMPLE_SKILLS, STACK_FRAME, catalogDir, choose, run, tempDir } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_SKILLS, STACK_FRAME, catalogDir, choose, pick, run, tempDir } from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -11,7 +11,7 @@ const skill = (overrides: Record<string, unknown>): Record<string, unknown> => (
   description: { zh: '写坏的条目', en: 'A broken entry' },
   ...overrides,
 });
-const browse = [choose('Skill'), choose('返回'), choose('退出')];
+const browse = [choose('Skill'), pick(), choose('退出')];
 
 describe('写坏的条目', () => {
   it.each([
@@ -34,7 +34,7 @@ describe('写坏的条目', () => {
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
     expect(result.output).toMatch(/^\s+目录\s+1 skill$/m);
-    expect(result.output).toMatch(/^\s+beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('broken');
     expect(result.exitCode).toBe(0);
   });
@@ -74,7 +74,7 @@ describe('不认识的字段', () => {
       answers: browse,
     });
 
-    expect(result.output).toMatch(/^\s+beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('注意');
     expect(result.exitCode).toBe(0);
   });
@@ -101,6 +101,7 @@ describe('目录读取失败', () => {
     kind: 'remote',
     locate: (file) => `https://example.invalid/catalog/${file}`,
     readText: () => Promise.reject(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND example.invalid') })),
+    pin: () => Promise.reject(new Error('目录都读不到，不该走到下载这一步')),
   };
 
   it('断网时说明读不到什么、从哪读，给出下一步，以非零状态退出', async () => {
@@ -159,12 +160,13 @@ describe('目录来源', () => {
       kind: 'remote',
       locate: (file) => `https://example.invalid/${file}`,
       readText: () => Promise.reject(new Error('不该读到默认的目录来源')),
+      pin: () => Promise.reject(new Error('不该读到默认的目录来源')),
     };
     const local = catalogDir({ index: { version: 1, skills: [{ ...good, name: 'from-local-dir', path: 'skills/from-local-dir' }] } });
 
     const result = await run({ catalog: unreachable, env: { OXY_TOOLS_CATALOG: local }, answers: browse });
 
-    expect(result.output).toMatch(/^\s+from-local-dir\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ from-local-dir\s+第二个样例 skill$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -194,7 +196,7 @@ describe('默认的目录来源', () => {
 
     const result = await run({ catalog: githubCatalogSource(), answers: browse });
 
-    expect(result.output).toMatch(/^\s+beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
     expect(fetched.mock.calls.map(([url]) => String(url)).sort()).toEqual([
       'https://raw.githubusercontent.com/LFT-OXY/oxy-Tools/main/catalog.json',
       'https://raw.githubusercontent.com/LFT-OXY/oxy-Tools/main/index.json',

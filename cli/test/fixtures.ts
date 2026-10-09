@@ -15,4 +15,11 @@ export const SAMPLE_SKILLS = [
   },
 ];
 
+/** 样例 skill 的内容：目录根下的相对路径 → 文件内容 */
+export const SAMPLE_FILES: Record<string, string> = {
+  'skills/alpha/SKILL.md': '# alpha\n',
+  'skills/alpha/references/guide.md': 'alpha 的参考文档\n',
+  'skills/beta-pack/SKILL.md': '# beta-pack\n',
+};
+
 export const EMPTY_CATALOG = { version: 1, mcps: [], tools: [], apps: [] };
