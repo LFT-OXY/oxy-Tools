@@ -26,13 +26,15 @@ export interface Messages {
   loading: { catalog: string; skillFiles: string };
   agentKey: string;
   notDetected: string;
-  /** 一个宿主都没检测到；hosts 是安装器认识的全部宿主的名字 */
-  noHosts: (hosts: readonly string[]) => string;
+  /** 一个宿主都没检测到；hosts 是安装器认识的全部宿主的名字，appsBrowsable 表示目录里有应用项目可看 */
+  noHosts: (hosts: readonly string[], appsBrowsable: boolean) => string;
   /** 只检测到一部分宿主：missing 是没检测到的，present 是检测到的，都已按并列的写法连好 */
   hostsSkipped: (missing: string, present: string) => string;
   catalogKey: string;
   noticeKey: string;
-  counts: (counts: { skills: number }) => string;
+  /** 目录里各类条目的数量，每类一段；没有条目的那一类不写 */
+  counts: (counts: { skills: number; apps: number }) => string[];
+  noEntries: string;
   skipped: (count: number) => string;
   pickGroup: string;
   groupColumn: string;
@@ -49,6 +51,11 @@ export interface Messages {
   skillStatus: { none: string; installed: string; unmanaged: string };
   pickHosts: string;
   pickSkills: string;
+  pickApp: string;
+  linkKey: string;
+  /** 应用项目的链接已经交给浏览器；浏览器有没有真的打开，安装器不一定看得出来 */
+  linkOpened: string;
+  linkNotOpened: string;
   /** 并列几个名字时用的分隔 */
   listSeparator: string;
   entryColumn: string;
@@ -83,7 +90,7 @@ export interface Messages {
   installProblem: (problem: SkillInstallProblem) => string;
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
-  groups: { skill: { label: string; about: string } };
+  groups: Record<'skill' | 'app', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -108,11 +115,13 @@ const zh: Messages = {
   loading: { catalog: '正在读取目录', skillFiles: '正在查询 skill 的文件列表' },
   agentKey: 'AI Agent',
   notDetected: '未检测到',
-  noHosts: (hosts) => `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件`,
+  noHosts: (hosts, appsBrowsable) =>
+    `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件${appsBrowsable ? '；应用项目仍可浏览' : ''}`,
   hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
-  counts: ({ skills }) => (skills > 0 ? `${skills} skill` : '没有可用的条目'),
+  counts: ({ skills, apps }) => [...(skills > 0 ? [`${skills} skill`] : []), ...(apps > 0 ? [`${apps} 应用项目`] : [])],
+  noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
   pickGroup: '选择分组',
   groupColumn: '分组',
@@ -126,6 +135,10 @@ const zh: Messages = {
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   pickHosts: '装进哪些 AI Agent',
   pickSkills: '选择要安装的 skill',
+  pickApp: '选择应用项目',
+  linkKey: '链接',
+  linkOpened: '已在默认浏览器打开；打不开时请复制上面的链接',
+  linkNotOpened: '没能打开浏览器，请复制上面的链接自行打开',
   listSeparator: '、',
   entryColumn: '条目',
   agentColumn: 'AI Agent',
@@ -166,7 +179,10 @@ const zh: Messages = {
   },
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
-  groups: { skill: { label: 'Skill', about: '装进 AI Agent 的能力包' } },
+  groups: {
+    skill: { label: 'Skill', about: '装进 AI Agent 的能力包' },
+    app: { label: '应用项目', about: '需要自行部署，这里只给链接' },
+  },
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
@@ -289,11 +305,16 @@ const en: Messages = {
   loading: { catalog: 'Loading catalog', skillFiles: 'Looking up skill files' },
   agentKey: 'AI Agent',
   notDetected: 'not detected',
-  noHosts: (hosts) => `${hosts.join(' and ')} not detected; components cannot be installed`,
+  noHosts: (hosts, appsBrowsable) =>
+    `${hosts.join(' and ')} not detected; components cannot be installed${appsBrowsable ? '; apps can still be browsed' : ''}`,
   hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',
-  counts: ({ skills }) => (skills > 0 ? `${skills} ${skills === 1 ? 'skill' : 'skills'}` : 'no usable entries'),
+  counts: ({ skills, apps }) => [
+    ...(skills > 0 ? [`${skills} ${skills === 1 ? 'skill' : 'skills'}`] : []),
+    ...(apps > 0 ? [`${apps} ${apps === 1 ? 'app' : 'apps'}`] : []),
+  ],
+  noEntries: 'no usable entries',
   skipped: (count) => `${count} malformed catalog ${count === 1 ? 'entry was' : 'entries were'} skipped`,
   pickGroup: 'Pick a group',
   groupColumn: 'Group',
@@ -307,6 +328,10 @@ const en: Messages = {
   skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
   pickHosts: 'Install into which AI Agents',
   pickSkills: 'Pick skills to install',
+  pickApp: 'Pick an app',
+  linkKey: 'Link',
+  linkOpened: 'Opened in your default browser; if nothing opened, copy the link above',
+  linkNotOpened: 'Could not open a browser; copy the link above and open it yourself',
   listSeparator: ', ',
   entryColumn: 'Entry',
   agentColumn: 'AI Agent',
@@ -347,7 +372,10 @@ const en: Messages = {
   },
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
-  groups: { skill: { label: 'Skill', about: 'Capability packs for your AI Agent' } },
+  groups: {
+    skill: { label: 'Skill', about: 'Capability packs for your AI Agent' },
+    app: { label: 'Apps', about: 'Deploy them yourself; only links here' },
+  },
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },

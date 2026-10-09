@@ -76,7 +76,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
     const hosts = detectHosts(env, options.homeDir);
-    ui.catalogSummary({ hosts, skills: catalog.skills.length, skipped: catalog.skipped.length });
+    ui.catalogSummary({ hosts, skills: catalog.skills.length, apps: catalog.apps.length, skipped: catalog.skipped.length });
     await mainMenu({
       catalog,
       source,
@@ -87,6 +87,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       interrupt: options.interrupt,
       ui,
       prompter: options.prompter,
+      openLink: options.openLink,
     });
     return 0;
   } catch (error) {

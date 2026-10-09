@@ -11,6 +11,7 @@ const RULES: Record<FieldRule, string> = {
   text: '要是非空文字，且不含控制字符',
   'relative-path': '要是相对路径：用 / 分段，每段只含字母、数字和 . _ -，且不是 . 或 ..',
   object: '要是对象',
+  'https-url': "要是 https:// 开头的网址，且只含字母、数字和 -._~:/?#[]@!$&'()*+,;=%（别的字符先做百分号编码）",
 };
 
 process.exitCode = await validate(process.argv.slice(2));
@@ -39,7 +40,7 @@ async function validate(args: string[]): Promise<number> {
     for (const entry of catalog.skipped) console.error(`  ${describe(entry)}`);
     return EXIT_FAILURE;
   }
-  console.log(`目录校验通过：${catalog.skills.length} 个 skill`);
+  console.log(`目录校验通过：${catalog.skills.length} 个 skill、${catalog.apps.length} 个应用项目`);
   for (const { file, list, count } of catalog.unread) {
     console.log(`  未校验：${file} 的 ${list} 有 ${count} 条，这一版安装器还不读这类条目的内容`);
   }

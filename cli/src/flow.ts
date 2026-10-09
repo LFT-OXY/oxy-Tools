@@ -1,8 +1,9 @@
 // 交互流程：主菜单与各分组的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
-import { CatalogError, type Catalog, type CatalogSource, type PinnedSource, type Skill } from './catalog.ts';
+import { CatalogError, type App, type Catalog, type CatalogSource, type PinnedSource, type Skill } from './catalog.ts';
 import type { Host } from './hosts.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
+import type { LinkOpener } from './installer.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
 import type { InstallOutcome, InstallTarget, Ui } from './ui.ts';
@@ -20,6 +21,7 @@ export interface Session {
   interrupt: AbortSignal;
   ui: Ui;
   prompter: Prompter;
+  openLink: LinkOpener;
   /** 钉住的来源：一次运行里只查询一次，之后安装的每个 skill 共用 */
   pinned?: PinnedSource;
 }
@@ -27,15 +29,31 @@ export interface Session {
 export async function mainMenu(session: Session): Promise<void> {
   const { catalog, ui, prompter } = session;
   const detected = session.hosts.filter((host) => host.detected);
-  // 只列出有条目的分组；组件要装进宿主，一个宿主都没检测到时进不去
-  const groups = [{ id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 }].filter(
-    (group) => group.count > 0,
-  );
+  // 只列出有条目的分组；组件要装进宿主，一个宿主都没检测到时进不去。应用项目不靠宿主
+  const groups = [
+    { id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 },
+    { id: 'app' as const, count: catalog.apps.length, lacksHost: false },
+  ].filter((group) => group.count > 0);
   for (;;) {
     const choice = await prompter.select(ui.mainMenu(groups));
     if (choice === 'exit') return;
-    await installSkills(session, detected);
+    if (choice === 'app') await browseApps(session);
+    else await installSkills(session, detected);
     ui.nextRound();
+  }
+}
+
+// 应用项目装不了：显示说明和官方链接，并在浏览器里打开它；看完一个回到列表，光标留在它上面
+async function browseApps(session: Session): Promise<void> {
+  const { catalog, ui, prompter } = session;
+  let cursor: App | undefined;
+  for (;;) {
+    const app = await prompter.select(ui.appList(catalog.apps, cursor));
+    if (app === null) return;
+    ui.appDetail(app);
+    // 浏览器打不开不算出错：链接已经整条写在上面
+    ui.linkOutcome(await session.openLink(app.url).then(() => true, () => false));
+    cursor = app;
   }
 }
 

@@ -1,7 +1,7 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { Skill } from './catalog.ts';
+import type { App, Skill } from './catalog.ts';
 import type { Host } from './hosts.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 import { MESSAGES, type Failure, type Lang } from './messages.ts';
@@ -71,7 +71,7 @@ const ERASE_LINE = '\r\x1b[2K';
 // 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
 const REASON_MARK = '\u200b';
 
-export type GroupId = 'skill';
+export type GroupId = 'skill' | 'app';
 export type MenuChoice = GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
@@ -264,7 +264,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     },
 
     /** 本机信息：宿主在不在、目录里各类条目的数量，有要提醒的事各多一行。 */
-    catalogSummary({ hosts, skills, skipped }: { hosts: readonly Host[]; skills: number; skipped: number }): void {
+    catalogSummary({ hosts, skills, apps, skipped }: { hosts: readonly Host[]; skills: number; apps: number; skipped: number }): void {
       const presence = (host: Host): string =>
         `${host.name} ${host.detected ? paint('green', symbols.done) : `${dim(symbols.dash)} ${t.notDetected}`}`;
       const names = (detected: boolean): string[] =>
@@ -273,8 +273,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       const present = names(true);
       print(
         ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
-        ...keyValue(t.catalogKey, t.counts({ skills })),
-        ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing), attention) : []),
+        ...keyValue(t.catalogKey, t.counts({ skills, apps }).join(` ${symbols.separator} `) || t.noEntries),
+        ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing, apps > 0), attention) : []),
         ...(present.length > 0 && missing.length > 0
           ? keyValue(t.noticeKey, t.hostsSkipped(missing.join(t.listSeparator), present.join(t.listSeparator)), attention)
           : []),
@@ -354,6 +354,49 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
           { value: 'exit' as const, short: t.exit, name: t.exit },
         ],
       };
+    },
+
+    /** 应用项目列表：名称、说明两栏。选中的值是那个应用项目，null 表示返回；cursor 是光标起始所在的那一项。 */
+    appList(apps: readonly App[], cursor?: App): SelectQuestion<App | null> {
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...apps.map((app) => displayWidth(app.name))) + 2;
+      const aboutWidth = USABLE - 2 - nameWidth;
+      return {
+        message: t.pickApp,
+        pageSize: pageSize(),
+        theme,
+        ...(cursor ? { default: cursor } : {}),
+        rows: [
+          // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
+          { separator: dim(` ${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
+          ...apps.map((app) => ({
+            value: app,
+            short: app.name,
+            name: `${pad(app.name, nameWidth)}${truncate(app.description[lang], aboutWidth, symbols.ellipsis)}`,
+            description: app.description[lang],
+          })),
+          { separator: ' ' },
+          { value: null, short: t.back, name: t.back },
+        ],
+      };
+    },
+
+    /** 应用项目详情：说明全文和官方链接。链接整条写出，浏览器打不开时用户照着复制。 */
+    appDetail(app: App): void {
+      print(
+        ...gapAbove(),
+        section(app.name),
+        ...keyValue(t.aboutColumn, app.description[lang]),
+        // 链接再长也整条写在一行上，不交给折行：折开了就没法照着复制
+        `  ${dim(pad(t.linkKey, KEY_WIDTH))}${paint('underline', app.url)}`,
+      );
+    },
+
+    /** 接在详情后面：链接交给浏览器了没有。没打开不算出错，只提醒自己复制。 */
+    linkOutcome(opened: boolean): void {
+      print(
+        ...(opened ? [`  ${paint('green', symbols.done)}  ${t.linkOpened}`] : keyValue(t.noticeKey, t.linkNotOpened, attention)),
+        '',
+      );
     },
 
     /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面。 */

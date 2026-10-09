@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEY, STYLE_CODE, run } from './harness.ts';
+import { EMPTY_CATALOG, KEY, SAMPLE_APPS, STYLE_CODE, catalogDir, run } from './harness.ts';
 
 // 交互库自带的样式按 Node 的规则上色，看的是真实进程的环境和标准输出；测试进程的标准输出不是终端，
 // 不强行打开的话它永远不上色，主题里漏盖了哪个样式函数也就查不出来。
@@ -403,5 +403,106 @@ describe('真实的画面：skill 的状态与确认覆盖', () => {
     expect(result.output).toMatch(/\+ ~\S+alpha 不是本工具装的，要覆盖它吗？ - 否$/m);
     expect(result.output).toMatch(/^\s+-\s+alpha\s+Claude Code\s+跳过 未同意覆盖，保持原样$/m);
     expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎–→]/);
+  });
+});
+
+describe('真实的画面：应用项目', () => {
+  const withApps = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } });
+  // 主菜单上把光标从 Skill 移到应用项目再回车
+  const toApps: [string, string][] = [
+    [HINT, KEY.down],
+    ['▸ 应用项目', KEY.enter],
+  ];
+
+  it('列表是单选的两栏表：光标停在第一项上，下方是它的说明全文和按键提示，末尾是返回', async () => {
+    const result = await run({ catalog: withApps(), keys: [...toApps, [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/✓ 选择分组 · 应用项目$/m);
+    expect(result.output).toMatch(/^\s+名称\s+说明$/m);
+    expect(result.output).toMatch(/^▸ atlas\s+第一个样例应用项目.*…$/m);
+    expect(result.output).toMatch(/^ {2}borealis\s+第二个样例应用项目$/m);
+    expect(result.output).toMatch(/^ {2}返回$/m);
+    expect(result.output).toMatch(/^\s+说明\s+第一个样例应用项目，它的说明同样故意写得很长/m);
+    expect(result.output).toMatch(/^\s+↑↓ 移动 · ⏎ 选择$/m);
+  });
+
+  it('选中一项：提问收成一行，打出详情并打开链接，再回到列表，光标留在这一项上', async () => {
+    const result = await run({
+      catalog: withApps(),
+      keys: [...toApps, [HINT, KEY.down], ['▸ borealis', KEY.enter], ['▸ borealis', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 选择应用项目 · borealis$/m);
+    expect(result.output).toMatch(/^── borealis ─+$/m);
+    expect(result.output).toMatch(/^\s+链接\s+https:\/\/example\.org\/borealis$/m);
+    expect(result.opened).toEqual(['https://example.org/borealis']);
+  });
+
+  it('选「返回」回到主菜单', async () => {
+    const result = await run({
+      catalog: withApps(),
+      keys: [...toApps, [HINT, KEY.down], ['▸ borealis', KEY.down], ['▸ 返回', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 选择应用项目 · 返回$/m);
+    expect(result.output.split('✓ 选择应用项目 · 返回')[1]).toMatch(/^▸ Skill\s/m);
+    expect(result.opened).toEqual([]);
+  });
+
+  it('一个宿主都没检测到时，光标直接落在应用项目上，回车就进去', async () => {
+    const result = await run({ catalog: withApps(), onPath: [], keys: [[HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^▸ 应用项目\s+2\s+需要自行部署，这里只给链接$/m);
+    expect(result.output).toMatch(/✓ 选择分组 · 应用项目$/m);
+    expect(result.output).toMatch(/^▸ atlas\s/m);
+  });
+
+  it.each([
+    ['浏览器打开了', true],
+    ['浏览器打不开', false],
+  ])('设置了 NO_COLOR 时，列表和详情都不带样式码（%s）', async (_label, browser) => {
+    const result = await run({
+      catalog: withApps(),
+      env: { NO_COLOR: '1' },
+      browser,
+      keys: [...toApps, [HINT, KEY.enter], ['▸ atlas', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^── atlas ─+$/m);
+    expect(result.output).toContain(SAMPLE_APPS[0]?.url);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+
+  it('没有 Unicode 的终端里，列表的符号和打开之后的记号都退成 ASCII', async () => {
+    const result = await run({
+      catalog: withApps(),
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [
+        ['回车 选择', KEY.down],
+        ['> 应用项目', KEY.enter],
+        ['回车 选择', KEY.down],
+        ['> borealis', KEY.enter],
+        ['> borealis', KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^-- borealis -+$/m);
+    expect(result.output).toMatch(/^\s+\+\s+已在默认浏览器打开；打不开时请复制上面的链接$/m);
+    expect(result.output).not.toMatch(/[▸✓·…↑↓⏎─]/);
+  });
+
+  it('英文界面下的列表', async () => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: withApps(),
+      keys: [['⏎ select', KEY.down], ['▸ Apps', KEY.enter], ['⏎ select', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ Pick a group · Apps$/m);
+    expect(result.output).toMatch(/^\s+Name\s+About$/m);
+    expect(result.output).toMatch(/^ {2}Back$/m);
+    expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
   });
 });

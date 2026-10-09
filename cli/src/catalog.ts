@@ -34,8 +34,16 @@ export interface Skill {
   description: { zh: string; en: string };
 }
 
+/** 应用项目：安装器装不了，只给说明和官方链接 */
+export interface App {
+  name: string;
+  description: { zh: string; en: string };
+  /** 官方链接 */
+  url: string;
+}
+
 /** 字段该是什么样的 */
-export type FieldRule = 'name' | 'text' | 'relative-path' | 'object';
+export type FieldRule = 'name' | 'text' | 'relative-path' | 'object' | 'https-url';
 
 export type EntryProblem =
   | { kind: 'not-object' }
@@ -58,6 +66,7 @@ export interface SkippedEntry {
 
 export interface Catalog {
   skills: Skill[];
+  apps: App[];
   /** 被跳过的条目：校验不通过的，以及与前面重名的 */
   skipped: SkippedEntry[];
   /** 这一版还不读内容、因而没有校验的条目：哪个文件的哪个数组、有几条；空的数组不列 */
@@ -106,8 +115,8 @@ export class UnsafePathError extends Error {
 
 /** 这一版安装器认识的目录格式版本，index.json 与 catalog.json 共用 */
 const SUPPORTED_FORMAT = 1;
-// catalog.json 里的三个数组；条目的字段由各自的功能在用到时定义和校验
-const CATALOG_ARRAYS = ['mcps', 'tools', 'apps'];
+// catalog.json 里这一版还不读内容的数组；条目的字段由各自的功能在用到时定义和校验
+const UNREAD_ARRAYS = ['mcps', 'tools'];
 
 const GITHUB_REPO = 'LFT-OXY/oxy-Tools';
 const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/`;
@@ -125,25 +134,36 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
     readDocument(source, 'index.json'),
     readDocument(source, 'catalog.json'),
   ]);
-  // 这三类条目的内容还不读：只查是不是数组，记下各有几条
-  const unread = CATALOG_ARRAYS.map((list) => ({
+  // 这几类条目的内容还不读：只查是不是数组，记下各有几条
+  const unread = UNREAD_ARRAYS.map((list) => ({
     file: otherEntries.file,
     list,
     count: otherEntries.data[list] === undefined ? 0 : requireArray(otherEntries, list).length,
   })).filter(({ count }) => count > 0);
 
-  const skills = new Map<string, Skill>();
   const skipped: SkippedEntry[] = [];
-  for (const [index, entry] of requireArray(skillList, 'skills').entries()) {
-    const skip = (name: string | undefined, problem: EntryProblem): void =>
-      void skipped.push({ file: skillList.file, list: 'skills', position: index + 1, name, problem });
-    const skill = parseSkill(entry);
-    if ('kind' in skill) skip(nameOf(entry), skill);
-    // 重名的只留第一条
-    else if (skills.has(skill.name)) skip(skill.name, { kind: 'duplicate' });
-    else skills.set(skill.name, skill);
-  }
-  return { skills: [...skills.values()], skipped, unread };
+  // 逐条读一个数组：写坏的和重名的带着原因进 skipped，其余收下。名字只在各自的数组里唯一
+  const collect = <Entry extends { name: string }>(
+    document: Document,
+    list: string,
+    parse: (entry: unknown) => Entry | EntryProblem,
+  ): Entry[] => {
+    const entries = new Map<string, Entry>();
+    for (const [index, entry] of requireArray(document, list).entries()) {
+      const skip = (name: string | undefined, problem: EntryProblem): void =>
+        void skipped.push({ file: document.file, list, position: index + 1, name, problem });
+      const parsed = parse(entry);
+      if (isProblem(parsed)) skip(nameOf(entry), parsed);
+      // 重名的只留第一条
+      else if (entries.has(parsed.name)) skip(parsed.name, { kind: 'duplicate' });
+      else entries.set(parsed.name, parsed);
+    }
+    return [...entries.values()];
+  };
+  const skills = collect(skillList, 'skills', parseSkill);
+  // catalog.json 里的数组可以缺省，缺省当作空
+  const apps = otherEntries.data['apps'] === undefined ? [] : collect(otherEntries, 'apps', parseApp);
+  return { skills, apps, skipped, unread };
 }
 
 /** 默认的目录来源：GitHub 上本仓库 main 分支的原始文件。 */
@@ -315,19 +335,42 @@ const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
 
+// 链接会被原样打到终端上、再交给系统打开：只接受 https 网址，且只含网址里允许的字符（RFC 3986），
+// 别的字符要先做百分号编码。这样里面没有空白、引号、反斜杠和不可见的字符
+const HTTPS_URL = /^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
+
+const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
+const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
+
 // 不认识的字段一律忽略；这一条写坏了就返回头一处问题
 function parseSkill(entry: unknown): Skill | EntryProblem {
   if (!isRecord(entry)) return { kind: 'not-object' };
-  const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
-  const { name, version, path, description } = entry;
+  const { name, version, path } = entry;
   if (!isName(name)) return bad('name', 'name');
   if (!isText(version)) return bad('version', 'text');
   if (!isSafeRelativePath(path)) return bad('path', 'relative-path');
+  const description = parseDescription(entry['description']);
+  if (isProblem(description)) return description;
+  return { name, version, path, description };
+}
+
+function parseApp(entry: unknown): App | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const { name, url } = entry;
+  if (!isName(name)) return bad('name', 'name');
+  const description = parseDescription(entry['description']);
+  if (isProblem(description)) return description;
+  if (!isHttpsUrl(url)) return bad('url', 'https-url');
+  return { name, description, url };
+}
+
+// 中英文一句话说明，各类条目都有
+function parseDescription(description: unknown): { zh: string; en: string } | EntryProblem {
   if (!isRecord(description)) return bad('description', 'object');
   const { zh, en } = description;
   if (!isText(zh)) return bad('description.zh', 'text');
   if (!isText(en)) return bad('description.en', 'text');
-  return { name, version, path, description: { zh, en } };
+  return { zh, en };
 }
 
 // 写坏的条目叫什么：名字合规则才认，它接下来要被打到终端上
@@ -345,6 +388,10 @@ function isSafeRelativePath(value: unknown): value is string {
     typeof value === 'string' &&
     value.split('/').every((segment) => PATH_SEGMENT.test(segment) && segment !== '.' && segment !== '..')
   );
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  return typeof value === 'string' && HTTPS_URL.test(value) && URL.canParse(value);
 }
 
 // 目录是远程数据，会被原样打到终端上，所以文字里不许有控制字符

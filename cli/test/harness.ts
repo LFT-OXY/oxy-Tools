@@ -10,7 +10,7 @@ import { PromptAborted, type CheckboxQuestion, type ConfirmQuestion, type Prompt
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { keyboardPrompter } from './terminal.ts';
 
-export { EMPTY_CATALOG, LONG_ABOUT, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
+export { EMPTY_CATALOG, LONG_ABOUT, LONG_APP_ABOUT, SAMPLE_APPS, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 export { KEY } from './terminal.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
@@ -154,6 +154,8 @@ export interface RunOptions {
   catalog?: string | CatalogSource;
   /** 可执行路径上有哪些命令，缺省只有 claude */
   onPath?: string[];
+  /** 传 false 表示浏览器打不开：要打开的链接照样记下来，但链接打开器以失败告终 */
+  browser?: boolean;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径，都相对主目录 */
@@ -273,7 +275,10 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
         return { exitCode: 0 };
       },
       prompter: options.keys ? interactive : scripted,
-      openLink: async (url) => void opened.push(url),
+      openLink: async (url) => {
+        opened.push(url);
+        if (options.browser === false) throw new Error('spawn xdg-open ENOENT');
+      },
     }),
     typing(),
   ]);

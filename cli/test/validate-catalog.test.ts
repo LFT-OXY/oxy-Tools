@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -96,13 +96,44 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   });
 
   it('安装器还不读内容的那几类条目：照常通过，但说明它们有几条没有校验', async () => {
-    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ name: 'future' }], apps: [{}, {}] } }));
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ name: 'future' }, {}] } }));
 
     expect(result.stdout).toContain('目录校验通过');
-    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 mcps 有 1 条/);
-    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 apps 有 2 条/);
+    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 mcps 有 2 条/);
     expect(result.stdout).not.toContain('tools');
     expect(result.exitCode).toBe(0);
+  });
+
+  it('应用项目条目也校验：没有问题时说明有几个，不算进未校验', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个应用项目');
+    expect(result.stdout).not.toContain('未校验');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('应用项目写坏时，指明是 catalog.json 的 apps 第几条、叫什么、哪个字段', async () => {
+    const broken = { ...SAMPLE_APPS[0], name: 'broken', url: 'http://example.com/broken' };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: [SAMPLE_APPS[1], broken] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过');
+    expect(result.stderr).toMatch(/catalog\.json 的 apps 第 2 条（broken）：url .*https:\/\/ 开头的网址/);
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('skill 和应用项目各有写坏的：都报出来', async () => {
+    const result = await validate(
+      catalogDir({
+        index: { version: 1, skills: [good, skill({ version: undefined })] },
+        catalog: { ...EMPTY_CATALOG, apps: [{ ...SAMPLE_APPS[1], description: { zh: '只有中文' } }, SAMPLE_APPS[1]] },
+      }),
+    );
+
+    expect(result.stderr).toContain('有 2 个条目');
+    expect(result.stderr).toMatch(/index\.json 的 skills 第 2 条（broken）：version /);
+    expect(result.stderr).toMatch(/catalog\.json 的 apps 第 1 条（borealis）：description\.en .*非空文字/);
+    expect(result.exitCode).toBe(1);
   });
 
   it('每一类条目都校验过时，不出现未校验的说明', async () => {

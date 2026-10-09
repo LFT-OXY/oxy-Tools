@@ -30,6 +30,8 @@ interface Scene {
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径 */
   links?: Record<string, string>;
+  /** 传 false 表示浏览器打不开：链接打开器以失败告终 */
+  browser?: boolean;
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
 }
@@ -67,7 +69,16 @@ function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG, pin = downl
   return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]), pin };
 }
 
+// 应用项目是为预览编的样例：仓库的 catalog.json 目前是空的
+const SHOWCASE_APPS = [
+  ['dify', '开源的 LLM 应用开发平台，自带工作流编排与知识库，用 docker 部署', 'Open-source LLM app development platform with workflow orchestration and a knowledge base, deployed with docker', 'https://github.com/langgenius/dify'],
+  ['n8n', '可自托管的工作流自动化平台，内置 AI 节点', 'Self-hostable workflow automation platform with built-in AI nodes', 'https://github.com/n8n-io/n8n'],
+  ['open-webui', '自托管的大模型对话界面，可接 Ollama 与各家 API', 'Self-hosted chat interface for large models; works with Ollama and vendor APIs', 'https://github.com/open-webui/open-webui'],
+  ['ragflow', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
+].map(([name, zh, en, url]) => ({ name, description: { zh, en }, url }));
+
 const sample = catalogOf({ version: 1, skills: SHOWCASE_SKILLS });
+const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, apps: SHOWCASE_APPS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -127,6 +138,12 @@ const agreeOverwrite = [...toOverwriteQuestion, 'y', KEY.enter];
 const pickLongName = [...toSkills, ...down(4), KEY.space, KEY.enter];
 // 勾上 if5、pr 和 wizard：名字都短，备注放得下
 const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.down, KEY.space, KEY.enter];
+// 主菜单上从 Skill 下移到应用项目再进去；一个宿主都没有时光标本来就在应用项目上
+const toApps = [KEY.down, KEY.enter];
+// 选中第三个应用项目 open-webui
+const openApp = [...toApps, ...down(2), KEY.enter];
+// 选中最后一个 ragflow：它的链接比一行长
+const openLongLink = [...toApps, ...down(3), KEY.enter];
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -170,6 +187,14 @@ const scenes: Scene[] = [
   { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；skill 分组不可进入，行尾注明原因，光标落在「退出」上', onPath: [] },
   { title: '主菜单 · 一个宿主都没有 · 在 skill 分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
+  { title: '主菜单 · 有应用项目', note: 'catalog.json 里有应用项目时多出这个分组，「目录」一行也数上它', catalog: withApps },
+  { title: '主菜单 · 一个宿主都没有 · 有应用项目', note: '说明里补一句应用项目仍可浏览；光标直接落在应用项目上', catalog: withApps, onPath: [] },
+  { title: '应用项目列表', note: '单选的两栏表，末尾是「返回」；光标所在行的说明全文在列表下方', catalog: withApps, keys: toApps },
+  { title: '应用项目列表 · 一个宿主都没有', note: '这个分组不靠宿主，照样进得去', catalog: withApps, onPath: [], keys: [KEY.enter] },
+  { title: '应用项目详情 · 已打开浏览器', note: '说明全文和带下划线的完整链接，再说明已打开；之后回到列表，光标留在这一项上', catalog: withApps, keys: openApp },
+  { title: '应用项目详情 · 浏览器打不开', note: '不算出错：链接照样完整写出，只提醒自己复制', catalog: withApps, browser: false, keys: openApp },
+  { title: '应用项目详情 · 链接比一行长', note: '链接不截断也不折开，由终端自己折行', catalog: withApps, keys: openLongLink },
+  { title: '应用项目 · 返回主菜单', note: '看过一个之后选「返回」', catalog: withApps, keys: [...openApp, ...down(2), KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
@@ -183,6 +208,10 @@ const scenes: Scene[] = [
   { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '英文界面 · 一个宿主都没有', argv: ['--lang', 'en'], onPath: [] },
+  { title: '英文界面 · 应用项目列表', argv: ['--lang', 'en'], catalog: withApps, keys: toApps },
+  { title: '英文界面 · 应用项目详情', argv: ['--lang', 'en'], catalog: withApps, keys: openApp },
+  { title: '英文界面 · 应用项目详情 · 浏览器打不开', argv: ['--lang', 'en'], catalog: withApps, browser: false, keys: openApp },
+  { title: '英文界面 · 一个宿主都没有 · 有应用项目', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
   { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
@@ -191,6 +220,8 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 四种状态并存', note: '设置了 NO_COLOR：每种状态的文字本身就不同', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '不显示颜色 · 含覆盖项的汇总、确认与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
+  { title: '不显示颜色 · 应用项目详情', note: '设置了 NO_COLOR：链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: openApp },
+  { title: '不显示颜色 · 应用项目详情 · 浏览器打不开', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: withApps, browser: false, keys: openApp },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
@@ -200,6 +231,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 四种状态并存', note: '版本变化的箭头退成 ->', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '没有 Unicode · 含覆盖项的汇总、确认与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
+  { title: '没有 Unicode · 应用项目列表', ...LEGACY_CONSOLE, catalog: withApps, keys: toApps },
+  { title: '没有 Unicode · 应用项目详情', note: '打开之后的记号退成 +', ...LEGACY_CONSOLE, catalog: withApps, keys: openApp },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 
@@ -264,7 +297,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
     interrupt: new AbortController().signal,
     runCommand: () => Promise.reject(new Error('preview does not run commands')),
     prompter,
-    openLink: () => Promise.reject(new Error('preview does not open links')),
+    // 预览页不真的打开浏览器
+    openLink: () => (scene.browser === false ? Promise.reject(new Error('preview has no browser')) : Promise.resolve()),
   });
 
   await settle();

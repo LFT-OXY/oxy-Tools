@@ -40,7 +40,25 @@ export interface InstallerOptions {
 
 `interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
 
-`runCommand` 和 `openLink` 目前没有流程用到，`bin.ts` 里接的是会抛错的占位；真实实现随第一个用到它们的功能落地，签名届时可以改。
+`runCommand` 目前没有流程用到，`bin.ts` 里接的是会抛错的占位；真实实现随第一个用到它的功能落地，签名届时可以改。
+
+`openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`，应用项目用它打开官方链接：
+
+```ts
+export type LinkOpener = (url: string) => Promise<void>; // 打不开时拒绝
+export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
+```
+
+| 项 | 约定 |
+|----|------|
+| 用什么打开 | macOS `open <网址>`；Windows `rundll32 url.dll,FileProtocolHandler <网址>`；其余系统 `xdg-open <网址>` |
+| 怎么起 | `spawn`，**不经过 shell**（网址是远程数据，里面的 `&` 之类不能有机会被当成命令）；`stdio: 'ignore'`、`detached: true`（用户随后按 Ctrl+C 时不把浏览器一起带走） |
+| 什么算打不开（拒绝） | 系统上没有这个命令（`ENOENT`）；或命令在 1.5 秒内以非零状态结束（没有能打开网址的程序） |
+| 什么算打开了 | 命令以 0 结束；或 1.5 秒后还没结束——有的系统上它要等浏览器关掉才结束，这时 `unref` 掉、不再等 |
+
+调用方（`flow.ts`）把**任何**拒绝都当作“没打开”，不当作出错：不经 `ui.failure()`，不改变退出状态。打开器看不出来的失败（远程终端里命令照常以 0 结束）靠界面上那句固定的提醒兜住，见 [终端输出](./terminal-output.md) 的「应用项目」。
+
+> **Warning**：`systemLinkOpener` 不进自动化测试（测试里链接打开器只记录）。改了它就用一个假的 `open` 命令手动核对四种结局：正常、非零退出、迟迟不结束、命令不存在，并确认网址是作为**单个参数**原样传进去的。Windows 那一支至今没有在真机上跑过。
 
 ### 3. Contracts
 
@@ -73,7 +91,7 @@ export interface InstallerOptions {
 | 2 | 启动参数不对 |
 | 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`） |
 
-单个条目安装失败、向 GitHub 查询失败（含被限流）都**不改变退出状态**：前者只在结果里列出，后者打出出错说明后回到主菜单。
+单个条目安装失败、向 GitHub 查询失败（含被限流）、应用项目的链接在浏览器里打不开，都**不改变退出状态**：第一种只在结果里列出，第二种打出出错说明后回到主菜单，第三种只在详情下面提醒用户自己复制链接。
 
 **目录来源**
 
@@ -94,7 +112,12 @@ export function localCatalogSource(dir: string): CatalogSource;
 **目录文件**
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
-- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空；条目的字段由各自的功能在用到时定义，目前安装器不读它们的内容，只把非空的数组各有几条记在 `Catalog.unread` 里（给目录校验命令用）。
+- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空；条目的字段由各自的功能在用到时定义。`apps` 已经读内容（字段见下）；`mcps`、`tools` 目前还不读，只把非空的数组各有几条记在 `Catalog.unread` 里（给目录校验命令用）。
+- `apps` 的一条（应用项目）：
+
+  ```json
+  { "name": "dify", "description": { "zh": "…", "en": "…" }, "url": "https://github.com/langgenius/dify" }
+  ```
 - 两个文件的 `version` 都是整数的格式版本号，安装器目前认识到 1。
 
 ### 4. Validation & Error Matrix
@@ -120,6 +143,17 @@ export function localCatalogSource(dir: string): CatalogSource;
 | 重名 | 只留第一条，其余计入跳过 |
 | 不认识的字段 | 忽略 |
 
+应用项目条目（`catalog.json` 的 `apps`）同样逐条校验，写坏的只跳过那一条：
+
+| 字段 | 规则 |
+|------|------|
+| `name` | 与 skill 的 `name` 同一条规则。**名字只在各自的数组里唯一**：应用项目可以和某个 skill 同名 |
+| `description.zh`、`description.en` | 非空文字，不含控制字符 |
+| `url` | `^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$`，且 `URL.canParse` 通过。只收 https；只含 RFC 3986 允许的字符，别的（汉字、空格）要先做百分号编码 |
+| 重名、不认识的字段 | 同上 |
+
+`url` 收得这么紧是因为它有两个去处：原样打到终端上让用户复制，和交给系统的打开命令。规则保证里面没有空白、引号、反斜杠、控制字符和不可见的字符（如改变文字方向的 `U+202E`），所以它在终端上不会被折开、看到的就是打开的、在任何系统的命令行上都是一个参数。这条规则是工单 07 的实现者定的，**维护者尚未确认**；要放宽（比如收 `http`）先改这里和 `catalog.ts` 的 `HTTPS_URL`。
+
 其他不能继续的情况：标准输入或标准输出不是终端 →「没有交互式终端」，不打印大标志，不读目录；任何没预料到的异常 →「意外错误」，原因取消息的第一行（为空时用错误的类型名），不打印堆栈。
 
 ### 5. Good/Base/Bad Cases
@@ -127,6 +161,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 - Good：`index.json` 有 11 条合法 skill，`catalog.json` 三个数组为空 → 主菜单只有 Skill 一个分组和退出。
 - Base：`index.json` 里一条的 `path` 是 `skills/../x` → 这一条被跳过，提示「目录中有 1 个条目格式有误，已跳过」，其余照常。
 - Bad：`catalog.json` 的 `version` 是 2 → 不看它的其余内容，提示升级，以 1 退出。
+- Base（应用项目）：`apps` 里一条的 `url` 是 `http://…` → 这一条被跳过并计入提示的数量，其余应用项目照常；全部被跳过时主菜单不出现这个分组。
 
 ### 6. Tests Required
 
@@ -147,6 +182,7 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法，行首一个短横、原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
+- 链接打开器只记录：要打开的网址按先后进 `result.opened`。`browser: false` 表示浏览器打不开——网址照样记下，然后打开器拒绝；用来证明“打不开时不报错、链接文本仍在”。
 - 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。
 - 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。
 - `result.screen` 是最后留在画面上的文字（被擦掉重写的加载提示只算最后一次）；比较两次运行的文字时用它，不用 `output`。

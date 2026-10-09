@@ -23,3 +23,13 @@ export const SAMPLE_FILES: Record<string, string> = {
 };
 
 export const EMPTY_CATALOG = { version: 1, mcps: [], tools: [], apps: [] };
+
+export const LONG_APP_ABOUT = {
+  zh: '第一个样例应用项目，它的说明同样故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方和详情里去看',
+  en: 'The first sample app, described at such length that one list row cannot hold it, so the full text has to be read below the list and in the detail',
+};
+
+export const SAMPLE_APPS = [
+  { name: 'atlas', description: LONG_APP_ABOUT, url: 'https://example.com/atlas?tab=readme&lang=zh#install' },
+  { name: 'borealis', description: { zh: '第二个样例应用项目', en: 'The second sample app' }, url: 'https://example.org/borealis' },
+];

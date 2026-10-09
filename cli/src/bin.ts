@@ -3,8 +3,9 @@ import { homedir, tmpdir } from 'node:os';
 import { githubCatalogSource } from './catalog.ts';
 import { inquirerPrompter } from './inquirer-prompter.ts';
 import { runInstaller } from './installer.ts';
+import { systemLinkOpener } from './open-link.ts';
 
-// 还没有流程会执行外部命令或打开链接，真实实现随第一个用到它们的功能一起落地
+// 还没有流程会执行外部命令，真实实现随第一个用到它的功能一起落地
 const notWiredYet = (): never => {
   throw new Error('not wired yet');
 };
@@ -41,5 +42,5 @@ process.exitCode = await runInstaller({
   interrupt: interrupt.signal,
   runCommand: notWiredYet,
   prompter: inquirerPrompter(),
-  openLink: notWiredYet,
+  openLink: systemLinkOpener(process.platform),
 });
