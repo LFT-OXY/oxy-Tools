@@ -120,8 +120,8 @@ function namesIn(file: string, parse: (text: string) => unknown, table: string):
   }
 }
 
-// Windows 上可执行文件带扩展名，由 PATHEXT 列出；其他系统没有这个变量，只找原名
-function isOnPath(command: string, env: Environment): boolean {
+/** 命令在不在可执行路径上。Windows 上可执行文件带扩展名，由 PATHEXT 列出；其他系统没有这个变量，只找原名 */
+export function isOnPath(command: string, env: Environment): boolean {
   const extensions = ['', ...(env['PATHEXT'] ?? '').split(';').filter(Boolean)];
   const dirs = (env['PATH'] ?? '').split(delimiter).filter(Boolean);
   return dirs.some((dir) => extensions.some((extension) => isExecutable(join(dir, command + extension))));

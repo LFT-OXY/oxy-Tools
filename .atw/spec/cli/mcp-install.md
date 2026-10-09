@@ -66,7 +66,7 @@ interface Session {
 
 // cli/src/installer.ts
 export interface CommandResult { exitCode: number }
-export type CommandRunner = (command: string, args: readonly string[]) => Promise<CommandResult>; // 命令没能起来时拒绝
+export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>; // 命令没能起来时拒绝；options 只有安装工具用，见「安装工具」
 
 // cli/src/run-command.ts
 export function systemCommandRunner(): CommandRunner;

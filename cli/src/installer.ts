@@ -11,8 +11,18 @@ import { VERSION } from './version.ts';
 export interface CommandResult {
   exitCode: number;
 }
-/** 外部命令执行器：不经过 shell，不把命令的输出打到终端上；命令没能起来时拒绝 */
-export type CommandRunner = (command: string, args: readonly string[]) => Promise<CommandResult>;
+export interface CommandOptions {
+  /**
+   * command 是一整行，交给系统的 shell 去解释（工具的官方安装命令，里面可以有管道），这时 args 是空的；
+   * 命令的输入输出直接接在用户的终端上
+   */
+  shell: true;
+}
+/**
+ * 外部命令执行器：缺省不经过 shell，不把命令的输出打到终端上；options 给了 shell 时见 CommandOptions。
+ * 命令没能起来时拒绝
+ */
+export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 /** 链接打开器：在默认浏览器里打开一个网址 */
 export type LinkOpener = (url: string) => Promise<void>;
 
@@ -84,6 +94,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       hosts,
       skills: catalog.skills.length,
       mcps: catalog.mcps.length,
+      tools: catalog.tools.length,
       apps: catalog.apps.length,
       skipped: catalog.skipped.length,
     });
@@ -91,6 +102,8 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       catalog,
       source,
       hosts,
+      env,
+      platform: options.platform,
       homeDir: options.homeDir,
       tempDir: options.tempDir,
       githubToken: env['GITHUB_TOKEN'] || undefined,

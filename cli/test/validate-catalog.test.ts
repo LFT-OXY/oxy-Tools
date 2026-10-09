@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, STACK_FRAME, catalogDir } from './harness.ts';
+import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, SAMPLE_TOOLS, STACK_FRAME, catalogDir } from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -95,21 +95,68 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('安装器还不读内容的那几类条目：照常通过，但说明它们有几条没有校验', async () => {
-    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [{ name: 'future' }, {}] } }));
+  it('MCP 条目也校验：没有问题时说明有几个', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }));
 
-    expect(result.stdout).toContain('目录校验通过');
-    expect(result.stdout).toMatch(/未校验.*catalog\.json 的 tools 有 2 条/);
-    expect(result.stdout).not.toContain('mcps');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
-  it('MCP 条目也校验：没有问题时说明有几个，不算进未校验', async () => {
-    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }));
+  it('工具条目也校验：没有问题时说明有几个', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个应用项目');
-    expect(result.stdout).not.toContain('未校验');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、2 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
+  });
+
+  it.each([
+    ['name', { name: 'Fetcher Tool' }, '小写字母'],
+    ['description.en', { description: { zh: '只有中文' } }, '非空文字'],
+    ['url', { url: 'http://example.com/fetcher' }, 'https:// 开头的网址'],
+    ['hosts', { hosts: [] }, '非空的数组'],
+    ['install', { install: 'curl -LsSf https://example.com/install.sh | sh' }, '对象'],
+    ['install', { install: undefined }, '对象'],
+    ['install.default', { install: { macos: 'brew install fetcher' } }, '一行命令'],
+    ['install.default', { install: { default: '' } }, '一行命令'],
+    ['install.default', { install: { default: 'echo one\necho two' } }, '不换行'],
+    ['install.default', { install: { default: ' brew install fetcher' } }, '首尾不留空格'],
+    ['install.default', { install: { default: 'echo \u202egnp.exe' } }, '看得见的 ASCII'],
+    ['install.default', { install: { default: ['brew', 'install', 'fetcher'] } }, '一行命令'],
+    ['install.windows', { install: { default: 'brew install fetcher', windows: false } }, 'null 表示这个系统不支持'],
+    ['install.linux', { install: { default: 'brew install fetcher', linux: 'apt install\tfetcher' } }, '一行命令'],
+    ['check', { check: 'fetcher' }, '对象'],
+    ['check', { check: undefined }, '对象'],
+    ['check', { check: {} }, 'command.*path.*恰好'],
+    ['check', { check: { command: 'fetcher', path: '.fetcher/bin/fetcher' } }, 'command.*path.*恰好'],
+    ['check.command', { check: { command: 'bin/fetcher' } }, '不带目录'],
+    ['check.command', { check: { command: '..' } }, '不带目录'],
+    ['check.command', { check: { command: 'fetcher --version' } }, '不带目录'],
+    ['check.path', { check: { path: '/usr/local/bin/fetcher' } }, '相对路径'],
+    ['check.path', { check: { path: '../elsewhere/fetcher' } }, '相对路径'],
+  ])('工具的 %s 写坏时，指明是 catalog.json 的 tools 第几条、叫什么、这个字段该是什么样的', async (field, overrides, rule) => {
+    const broken = { ...SAMPLE_TOOLS[0], name: 'broken', ...overrides };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [SAMPLE_TOOLS[1], broken] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过');
+    const named = field === 'name' ? '' : '（broken）';
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 tools 第 2 条${named}：${field.replace('.', '\\.')} .*${rule}`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('工具可以把某个系统标为不支持，也可以不认识的系统名留着不管', async () => {
+    const tool = { ...SAMPLE_TOOLS[0], install: { default: 'brew install fetcher', windows: null, solaris: 42 } };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [tool] } }));
+
+    expect(result.stdout).toContain('1 个工具');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('工具重名时只留第一条，后面的报出来', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [SAMPLE_TOOLS[0], SAMPLE_TOOLS[0]] } }));
+
+    expect(result.stderr).toMatch(/catalog\.json 的 tools 第 2 条（fetcher）：与前面的条目重名/);
+    expect(result.exitCode).toBe(1);
   });
 
   it.each([
@@ -147,7 +194,7 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('带环境变量的 MCP 条目没有问题时照常通过', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [...SAMPLE_MCPS, KEYED_MCP] } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、3 个 MCP、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、3 个 MCP、0 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -172,11 +219,10 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('应用项目条目也校验：没有问题时说明有几个，不算进未校验', async () => {
+  it('应用项目条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、2 个应用项目');
-    expect(result.stdout).not.toContain('未校验');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、0 个工具、2 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -202,12 +248,6 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.stderr).toMatch(/index\.json 的 skills 第 2 条（broken）：version /);
     expect(result.stderr).toMatch(/catalog\.json 的 apps 第 1 条（borealis）：description\.en .*非空文字/);
     expect(result.exitCode).toBe(1);
-  });
-
-  it('每一类条目都校验过时，不出现未校验的说明', async () => {
-    const result = await validate(catalogDir());
-
-    expect(result.stdout).not.toContain('未校验');
   });
 
   it.each([

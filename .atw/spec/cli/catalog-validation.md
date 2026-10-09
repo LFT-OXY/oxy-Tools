@@ -24,13 +24,13 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog>;
 export interface Catalog {
   skills: Skill[];
   mcps: Mcp[];             // 字段见「安装 MCP」
+  tools: Tool[];           // 字段见「安装工具」
   apps: App[];             // 应用项目：{ name, description: { zh, en }, url }
   skipped: SkippedEntry[]; // 被跳过的条目：校验不通过的，以及与前面重名的
-  unread: { file: string; list: string; count: number }[]; // 这一版还不读内容的条目，空的数组不列
 }
 export interface SkippedEntry {
   file: string;             // 所在的目录文件
-  list: string;             // 所在的数组：skills、mcps、apps
+  list: string;             // 所在的数组：skills、mcps、tools、apps
   position: number;         // 第几条，从 1 数起
   name: string | undefined; // 名字本身不合规则时没有
   problem: EntryProblem;
@@ -42,7 +42,8 @@ export type EntryProblem =
 export type FieldRule =
   | 'name' | 'text' | 'relative-path' | 'object' | 'https-url'
   | 'host-list' | 'mcp-server' | 'command-word' | 'command-word-list'
-  | 'env-list' | 'env-name' | 'boolean' | 'local-only';
+  | 'env-list' | 'env-name' | 'boolean' | 'local-only'
+  | 'shell-command' | 'os-command' | 'tool-check' | 'command-name';
 ```
 
 命令只做三件事：用 `localCatalogSource(<目录>)` 调 `loadCatalog`，把结果说成人话，定退出状态。**它自己不含任何校验规则**——这样“命令通过”和“安装器一条不跳”永远是一回事。
@@ -54,7 +55,7 @@ export type FieldRule =
 | 项 | 约定 |
 |----|------|
 | 参数 | 恰好一个：本地目录 |
-| 标准输出 | 通过信息，和“未校验”的说明 |
+| 标准输出 | 通过信息 |
 | 标准错误 | 未通过的说明、用法 |
 | 语言与样式 | 只有中文，不带样式，不经呈现层（同 `scripts/preview.ts`） |
 | 退出状态 | 0 通过；1 未通过；2 用法不对 |
@@ -62,8 +63,7 @@ export type FieldRule =
 输出的样子：
 
 ```
-目录校验通过：11 个 skill、0 个 MCP、0 个应用项目
-  未校验：catalog.json 的 tools 有 1 条，这一版安装器还不读这类条目的内容
+目录校验通过：11 个 skill、0 个 MCP、0 个工具、0 个应用项目
 ```
 
 通过信息把**校验过的每一类**都数出来，是 0 也写：它说的是“这一类查过了”，和主菜单上方「目录」一行只数有条目的分组不是一回事。
@@ -74,6 +74,7 @@ export type FieldRule =
   index.json 的 skills 第 5 条：条目不是对象
   catalog.json 的 apps 第 2 条（dify）：url 要是 https:// 开头的网址，且只含字母、数字和 -._~:/?#[]@!$&'()*+,;=%（别的字符先做百分号编码）
   catalog.json 的 mcps 第 1 条（exa）：server.args 要是数组，每一项是一个词：只含字母、数字和 @ : / . _ = + , ~ -，不含空白和引号
+  catalog.json 的 tools 第 3 条（uv）：install.default 要是一行命令：只含看得见的 ASCII 字符，首尾不留空格，不换行
 ```
 
 ```
@@ -89,8 +90,7 @@ export type FieldRule =
 | 没给目录，或多给了参数 | 用法 | 2 |
 | 整份读不了（`loadCatalog` 抛出 `CatalogError`：读不到、不是 JSON、缺版本号、数组字段不是数组、格式版本过高） | 标题和原因沿用 `messages.ts` 里安装器对用户说的那一句（中文），下一行是文件的位置 | 1 |
 | `skipped` 非空 | 条数，然后每条一行：哪个文件、哪个数组、第几条、名字（有的话）、问题 | 1 |
-| `unread` 非空 | 照常通过，每个数组多一行“未校验” | 0 |
-| 都没有 | `目录校验通过：N 个 skill、M 个 MCP、K 个应用项目` | 0 |
+| 都没有 | `目录校验通过：N 个 skill、M 个 MCP、K 个工具、J 个应用项目` | 0 |
 
 单条条目的问题：
 
@@ -104,10 +104,10 @@ export type FieldRule =
 |-------------|------|----------|
 | `name` | 小写 kebab-case | `name` |
 | `text` | 非空文字，不含控制字符 | `version`、`description.zh`、`description.en` |
-| `relative-path` | 相对路径，每段只含字母、数字、`.`、`_`、`-`，且不是 `.`、`..` | `path` |
+| `relative-path` | 相对路径，每段只含字母、数字、`.`、`_`、`-`，且不是 `.`、`..` | skill 的 `path`、工具的 `check.path` |
 | `object` | 是对象 | `description` |
-| `https-url` | `https://` 开头的网址，只含 RFC 3986 允许的字符 | 应用项目和 MCP 的 `url`、MCP 的 `server.url` |
-| `host-list` | 非空数组，每一项是宿主的标识（合 `name` 的规则） | MCP 的 `hosts` |
+| `https-url` | `https://` 开头的网址，只含 RFC 3986 允许的字符 | 应用项目、MCP 和工具的 `url`、MCP 的 `server.url` |
+| `host-list` | 非空数组，每一项是宿主的标识（合 `name` 的规则） | MCP 和工具的 `hosts` |
 | `mcp-server` | `command` 与 `url` 恰好有一样 | MCP 的 `server` |
 | `command-word` | 一个词：只含字母、数字和 `@ : / . _ = + , ~ -` | MCP 的 `server.command` |
 | `command-word-list` | 数组，每一项是这样的一个词 | MCP 的 `server.args` |
@@ -115,23 +115,27 @@ export type FieldRule =
 | `env-name` | 环境变量的名字：字母、数字、下划线，不以数字开头 | MCP 的 `env[i].name` |
 | `boolean` | `true` 或 `false` | MCP 的 `env[i].required` |
 | `local-only` | 只能用于本地进程方式 | MCP 的 `env`（远程地址的条目带了非空的 `env`） |
+| `shell-command` | 一行命令：只含看得见的 ASCII 字符，首尾不留空格，不换行 | 工具的 `install.default` |
+| `os-command` | 同上的一行命令，或 `null`（这个系统不支持） | 工具的 `install.macos`、`install.linux`、`install.windows` |
+| `tool-check` | `command` 与 `path` 恰好有一样 | 工具的 `check` |
+| `command-name` | 一个命令的名字：只含字母、数字和 `. _ -`，不带目录 | 工具的 `check.command` |
 
 数组里某一项的字段写成 `env[0].name`：下标从 0 数起，和 JSON 里的位置一致（条目是“第几条”从 1 数起，那是给人数的）。嵌在里面的中英文说明仍用 `parseDescription`，第二个参数给它所在的字段（`env[0].`），报出来就是 `env[0].description.en`。
 
-规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，MCP 的顺序见 [安装 MCP](./mcp-install.md)。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
+规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，MCP 的顺序见 [安装 MCP](./mcp-install.md)，工具的见 [安装工具](./tool-install.md)。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
 
 每一类条目各有一个 `parseXxx(entry): Xxx | EntryProblem`，都交给 `loadCatalog` 里的 `collect(document, list, parse)`：它逐条调 `parse`，写坏的和重名的带着原因进 `skipped`。**加一类条目就是加一个 `parse` 函数、调一次 `collect`**，不要另写一遍循环。中英文说明用 `parseDescription`，各类共用。
 
 `SkippedEntry.name` 只在名字合规则时才有：它会被原样打到终端上，而写坏的名字里可能夹着控制码。
 
-**`unread` 是过渡**：`catalog.json` 的 `tools` 目前只查“是不是数组”，条目的字段要等工具的功能落地才定义（`apps` 已随工单 07、`mcps` 已随工单 08 拿掉）。在那之前，非空的数组记进 `unread`，命令照实说“未校验”而不是笼统地说通过。给某一类条目写了解析之后，把它从 `catalog.ts` 的 `UNREAD_ARRAYS` 里拿掉，写坏的条目进 `skipped`，并在命令的通过信息里加上这一类的数量。
+**没有“未校验”这回事了**：工单 10 之前，`catalog.json` 里安装器还不读内容的数组只查“是不是数组”，条数记进 `Catalog.unread`，命令照实说“未校验”。三类条目都有了解析之后，这套过渡（`UNREAD_ARRAYS`、`Catalog.unread`、命令的那一行）已经整个去掉。**以后再加一类条目时不要把它请回来**：先写 `parseXxx`，写坏的进 `skipped`，并在命令的通过信息里加上这一类的数量。
 
 **命令不查的东西**：`name` 与目录名、`SKILL.md` 的 frontmatter 是否一致，`skills/` 下有没有没登记的目录，条目是否按名字升序，`path` 下有没有 `SKILL.md`。这些要读 `skills/`，而安装器读目录时不读它。它们仍由 [清单与版本](../skills/manifest-versioning.md) “校验”一节的脚本查。
 
 ### 5. Good/Base/Bad Cases
 
-- Good：仓库当前的数据 → `目录校验通过：11 个 skill、0 个 MCP、0 个应用项目`，退出 0。
-- Base：`catalog.json` 的 `tools` 里先放了一条 → 通过，多一行“未校验：catalog.json 的 tools 有 1 条…”，退出 0。
+- Good：仓库当前的数据 → `目录校验通过：11 个 skill、0 个 MCP、0 个工具、0 个应用项目`，退出 0。
+- Base：工具条目的 `install` 里有一个不认识的系统名（`solaris`）→ 忽略它，照常通过。
 - Bad：`index.json` 某一条的 `path` 写成 `skills/../x` → 指出第几条、名字、`path` 该是什么样，退出 1。
 
 ### 6. Tests Required

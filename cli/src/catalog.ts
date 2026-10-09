@@ -67,6 +67,28 @@ export interface Mcp {
   env: McpVariable[];
 }
 
+/** 安装命令可以按它覆盖的操作系统 */
+export type ToolOs = 'macos' | 'linux' | 'windows';
+
+/** 怎么算装好了，二选一：某个命令在不在可执行路径上，或用户主目录下某个相对路径存不存在 */
+export type ToolCheck = { command: string } | { path: string };
+
+/** 工具：安装器替用户执行它的官方安装命令，结束后用 check 复核 */
+export interface Tool {
+  name: string;
+  description: { zh: string; en: string };
+  /** 官方链接 */
+  url: string;
+  /** 支持的宿主（Host.id）；省略表示不挑宿主 */
+  hosts?: string[];
+  /**
+   * 安装命令：一整行，交给系统的 shell 去解释（里面可以有管道）。default 是缺省的那一条，
+   * 各系统可以另给一条盖过它；给 null 表示这个系统不支持
+   */
+  install: { default: string } & Partial<Record<ToolOs, string | null>>;
+  check: ToolCheck;
+}
+
 /** 字段该是什么样的 */
 export type FieldRule =
   | 'name'
@@ -81,7 +103,11 @@ export type FieldRule =
   | 'env-list'
   | 'env-name'
   | 'boolean'
-  | 'local-only';
+  | 'local-only'
+  | 'shell-command'
+  | 'os-command'
+  | 'tool-check'
+  | 'command-name';
 
 export type EntryProblem =
   | { kind: 'not-object' }
@@ -105,11 +131,10 @@ export interface SkippedEntry {
 export interface Catalog {
   skills: Skill[];
   mcps: Mcp[];
+  tools: Tool[];
   apps: App[];
   /** 被跳过的条目：校验不通过的，以及与前面重名的 */
   skipped: SkippedEntry[];
-  /** 这一版还不读内容、因而没有校验的条目：哪个文件的哪个数组、有几条；空的数组不列 */
-  unread: { file: string; list: string; count: number }[];
 }
 
 /** 出问题的那个目录文件在哪 */
@@ -154,8 +179,6 @@ export class UnsafePathError extends Error {
 
 /** 这一版安装器认识的目录格式版本，index.json 与 catalog.json 共用 */
 const SUPPORTED_FORMAT = 1;
-// catalog.json 里这一版还不读内容的数组；条目的字段由各自的功能在用到时定义和校验
-const UNREAD_ARRAYS = ['tools'];
 
 const GITHUB_REPO = 'LFT-OXY/oxy-Tools';
 const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/`;
@@ -173,13 +196,6 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
     readDocument(source, 'index.json'),
     readDocument(source, 'catalog.json'),
   ]);
-  // 这几类条目的内容还不读：只查是不是数组，记下各有几条
-  const unread = UNREAD_ARRAYS.map((list) => ({
-    file: otherEntries.file,
-    list,
-    count: otherEntries.data[list] === undefined ? 0 : requireArray(otherEntries, list).length,
-  })).filter(({ count }) => count > 0);
-
   const skipped: SkippedEntry[] = [];
   // 逐条读一个数组：写坏的和重名的带着原因进 skipped，其余收下。名字只在各自的数组里唯一
   const collect = <Entry extends { name: string }>(
@@ -204,8 +220,9 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
   const optional = <Entry extends { name: string }>(list: string, parse: (entry: unknown) => Entry | EntryProblem): Entry[] =>
     otherEntries.data[list] === undefined ? [] : collect(otherEntries, list, parse);
   const mcps = optional('mcps', parseMcp);
+  const tools = optional('tools', parseTool);
   const apps = optional('apps', parseApp);
-  return { skills, mcps, apps, skipped, unread };
+  return { skills, mcps, tools, apps, skipped };
 }
 
 /** 默认的目录来源：GitHub 上本仓库 main 分支的原始文件。 */
@@ -388,6 +405,11 @@ const COMMAND_WORD = /^[A-Za-z0-9@:/._=+,~-]+$/;
 // 环境变量的名字：它会拼进宿主的命令（名字=值），也会原样打到终端上
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+// 工具的安装命令是一整行 shell，会原样显示给用户确认、再原样交给 shell：只收看得见的 ASCII 字符，
+// 首尾不留空格。这样里面没有换行、控制码和不可见的字符，看到的就是执行的
+const SHELL_COMMAND = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
+const TOOL_OSES: readonly ToolOs[] = ['macos', 'linux', 'windows'];
+
 const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
 const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
 
@@ -429,6 +451,45 @@ function parseMcp(entry: unknown): Mcp | EntryProblem {
   // 远程地址的服务器不是我们起的进程，没有地方放环境变量；两个宿主的添加命令也都不收
   if ('url' in connection && env.length > 0) return bad('env', 'local-only');
   return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection, env };
+}
+
+function parseTool(entry: unknown): Tool | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const { name, url, hosts } = entry;
+  if (!isName(name)) return bad('name', 'name');
+  const description = parseDescription(entry['description']);
+  if (isProblem(description)) return description;
+  if (!isHttpsUrl(url)) return bad('url', 'https-url');
+  // 不认识的宿主留着不管，同 MCP
+  if (hosts !== undefined && !(isList(hosts, isName) && hosts.length > 0)) return bad('hosts', 'host-list');
+  const install = parseToolInstall(entry['install']);
+  if (isProblem(install)) return install;
+  const check = parseToolCheck(entry['check']);
+  if (isProblem(check)) return check;
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), install, check };
+}
+
+function parseToolInstall(install: unknown): Tool['install'] | EntryProblem {
+  if (!isRecord(install)) return bad('install', 'object');
+  if (!isShellCommand(install['default'])) return bad('install.default', 'shell-command');
+  const commands: Tool['install'] = { default: install['default'] };
+  for (const os of TOOL_OSES) {
+    const command = install[os];
+    if (command === undefined) continue;
+    if (command !== null && !isShellCommand(command)) return bad(`install.${os}`, 'os-command');
+    commands[os] = command;
+  }
+  return commands;
+}
+
+function parseToolCheck(check: unknown): ToolCheck | EntryProblem {
+  if (!isRecord(check)) return bad('check', 'object');
+  const { command, path } = check;
+  // 两种检查方式恰好取一种
+  if ((command === undefined) === (path === undefined)) return bad('check', 'tool-check');
+  if (command === undefined) return isSafeRelativePath(path) ? { path } : bad('check.path', 'relative-path');
+  // 要拿它去可执行路径的各个目录里找，所以只能是一个文件名
+  return isSafeRelativePath(command) && !command.includes('/') ? { command } : bad('check.command', 'command-name');
 }
 
 // 可以省略，省略当作没有。字段里的下标从 0 数起，和 JSON 里的位置一致
@@ -490,6 +551,10 @@ function isSafeRelativePath(value: unknown): value is string {
 
 function isCommandWord(value: unknown): value is string {
   return typeof value === 'string' && COMMAND_WORD.test(value);
+}
+
+function isShellCommand(value: unknown): value is string {
+  return typeof value === 'string' && SHELL_COMMAND.test(value);
 }
 
 function isList<Item>(value: unknown, isItem: (item: unknown) => item is Item): value is Item[] {

@@ -1,14 +1,16 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, McpVariable, Skill } from './catalog.ts';
+import type { App, Mcp, McpVariable, Skill, Tool, ToolOs } from './catalog.ts';
 import type { Command, Host } from './hosts.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
+import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type KeyOutcome, type Lang } from './messages.ts';
+import { MESSAGES, type Failure, type KeyOutcome, type Lang, type ToolEvidence } from './messages.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { SkillStatus } from './skill-status.ts';
+import type { ToolStatus } from './tool-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
 
 export interface TerminalOutput {
@@ -75,7 +77,7 @@ const ERASE_LINE = '\r\x1b[2K';
 // 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
 const REASON_MARK = '\u200b';
 
-export type GroupId = 'skill' | 'mcp' | 'app';
+export type GroupId = 'skill' | 'mcp' | 'tool' | 'app';
 export type MenuChoice = GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
@@ -97,6 +99,16 @@ export interface McpTarget {
 }
 
 export type McpOutcome = { ok: true } | { ok: false; problem: McpInstallProblem };
+
+/** 工具不可选的原因：条目把当前系统标为不支持，或它要的宿主一个都没检测到 */
+export type ToolUnavailable = { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
+
+/** 一项工具安装：哪个条目、要执行的那一行命令、装完之后查什么 */
+export interface ToolTarget {
+  name: string;
+  command: string;
+  evidence: ToolEvidence;
+}
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -299,33 +311,48 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     return { message, pageSize: pageSize(), theme, rows: [choice('install', go), choice('revise', t.revise), choice('cancel', t.cancel)] };
   };
 
+  // 逐项的结果行与最后的合计，各类组件共用：每一行由 lead 起头（它给结果符号排好位置），原因过长时自己折行。
+  // 说了哪一种结果就记进合计
+  const tally = () => {
+    const totals = { succeeded: 0, failed: 0, skipped: 0 };
+    const row = (total: keyof typeof totals, start: string, text: string): string[] => {
+      totals[total]++;
+      return hanging('', start, text);
+    };
+    return {
+      succeeded: (lead: (mark: string) => string, text: string): string[] => row('succeeded', lead(paint('green', symbols.done)), text),
+      failed: (lead: (mark: string) => string, reason: string): string[] =>
+        row('failed', `${lead(paint('red', symbols.failed))}${paint(['red', 'bold'], t.failed)} `, reason),
+      skipped: (lead: (mark: string) => string, reason: string): string[] => row('skipped', `${lead(dim(symbols.dash))}${t.skippedResult} `, reason),
+      total: (): string[] => [rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `))],
+    };
+  };
+
   // 「正在安装」分区，各类组件共用：doing 是进行中的那一行写的字；每一项的结果由调用方说成文字
   const progress = (targets: readonly { name: string; host: string }[], doing: string) => {
     type Target = (typeof targets)[number];
     const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
-    const lead = (mark: string, target: Target): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
-    const totals = { succeeded: 0, failed: 0, skipped: 0 };
+    const lead = (target: Target) => (mark: string): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
+    const results = tally();
     // 标题下面已经打出的行数，照终端上实际占的行数算：一个比一行还长的词（目录给的名字）折不开，会被终端折成几行
     let lines = 0;
-    const settle = (total: keyof typeof totals, rows: string[]): void => {
-      totals[total]++;
+    const settle = (rows: string[]): void => {
       for (const row of rows) lines += Math.max(1, Math.ceil(displayWidth(row) / (out.columns ?? WIDTH)));
       print(...rows);
     };
     print(...gapAbove(), section(t.installing));
     return {
       begin(target: Target): (result?: { ok: true; text: string } | { ok: false; reason: string }) => void {
-        const erase = spin((mark) => `${lead(mark, target)}${doing}${dim(symbols.ellipsis)}`);
+        const erase = spin((mark) => `${lead(target)(mark)}${doing}${dim(symbols.ellipsis)}`);
         return (result) => {
           erase();
           if (!result) return;
-          if (result.ok) settle('succeeded', [`${lead(paint('green', symbols.done), target)}${result.text}`]);
-          else settle('failed', hanging('', `${lead(paint('red', symbols.failed), target)}${paint(['red', 'bold'], t.failed)} `, result.reason));
+          settle(result.ok ? results.succeeded(lead(target), result.text) : results.failed(lead(target), result.reason));
         };
       },
       // 原因里可以有目录给的名字，长度不由我们定：和失败的原因一样自己折行，行数才数得对
       skip(target: Target, reason: string): void {
-        settle('skipped', hanging('', `${lead(dim(symbols.dash), target)}${t.skippedResult} `, reason));
+        settle(results.skipped(lead(target), reason));
       },
       finish(): void {
         // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
@@ -333,22 +360,33 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
         if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
           out.write(`\x1b[${up}A${ERASE_LINE}${section(t.results)}\x1b[${up}B\r`);
         }
-        print(rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `)));
+        print(...results.total());
       },
     };
   };
 
-  // 多选的条目表：名称、每个宿主一栏状态、说明。cells 与 hosts 一一对应；unavailable 是这一行不可选的原因，
-  // 接在说明后面。一个都不勾就确认表示返回
+  // 多选的条目表：名称、几栏状态、说明。columns 是各栏状态的表头，cells 与它一一对应；unavailable 是这一行
+  // 不可选的原因，接在说明后面——reasonAsStatus 的行（只有一栏状态的工具列表）改写在状态栏的位置，这时不看 cells。
+  // 一个都不勾就确认表示返回
   const entryPicker = <Value>(
     message: string,
-    hosts: readonly Host[],
-    entries: readonly { value: Value; name: string; cells: readonly string[]; about: string; checked: boolean; unavailable?: string }[],
+    columns: readonly string[],
+    entries: readonly {
+      value: Value;
+      name: string;
+      cells: readonly string[];
+      about: string;
+      checked: boolean;
+      unavailable?: string;
+      reasonAsStatus?: boolean;
+    }[],
   ): CheckboxQuestion<Value> => {
     // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
     const lead = displayWidth(symbols.checked) + 2;
-    const header = [t.nameColumn, ...hosts.map((host) => host.name)];
-    const rows = entries.map((entry) => [entry.name, ...entry.cells]);
+    const header = [t.nameColumn, ...columns];
+    const inStatus = (entry: (typeof entries)[number]): entry is (typeof entries)[number] & { unavailable: string } =>
+      entry.unavailable !== undefined && entry.reasonAsStatus === true;
+    const rows = entries.map((entry) => [entry.name, ...(inStatus(entry) ? [entry.unavailable] : entry.cells)]);
     const widths = columnWidths([header, ...rows]);
     const aboutWidth = USABLE - lead - widths.reduce((sum, width) => sum + width, 0);
     const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
@@ -359,6 +397,19 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       rows: [
         { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
         ...entries.map((entry, index) => {
+          // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：原因要落在状态栏时，名称少补一格，说明跟在原因后面
+          if (inStatus(entry)) {
+            return {
+              value: entry.value,
+              short: entry.name,
+              name: pad(entry.name, (widths[0] ?? 0) - 1),
+              description: entry.about,
+              checked: entry.checked,
+              disabled: `${pad(`${REASON_MARK}${entry.unavailable}${REASON_MARK}`, widths[1] ?? 0)}${
+                aboutWidth > 0 ? truncate(entry.about, aboutWidth, symbols.ellipsis) : ''
+              }`,
+            };
+          }
           const reason = entry.unavailable === undefined ? undefined : `${symbols.separator} ${REASON_MARK}${entry.unavailable}${REASON_MARK}`;
           // 原因接在说明后面，说明相应少占几列
           const room = aboutWidth - (reason === undefined ? 0 : displayWidth(` ${reason}`));
@@ -401,12 +452,14 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       hosts,
       skills,
       mcps,
+      tools,
       apps,
       skipped,
     }: {
       hosts: readonly Host[];
       skills: number;
       mcps: number;
+      tools: number;
       apps: number;
       skipped: number;
     }): void {
@@ -418,7 +471,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       const present = names(true);
       print(
         ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
-        ...keyValue(t.catalogKey, t.counts({ skills, mcps, apps }).join(` ${symbols.separator} `) || t.noEntries),
+        ...keyValue(t.catalogKey, t.counts({ skills, mcps, tools, apps }).join(` ${symbols.separator} `) || t.noEntries),
         ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing, apps > 0), attention) : []),
         ...(present.length > 0 && missing.length > 0
           ? keyValue(t.noticeKey, t.hostsSkipped(missing.join(t.listSeparator), present.join(t.listSeparator)), attention)
@@ -571,7 +624,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     ): CheckboxQuestion<Skill> {
       return entryPicker(
         t.pickSkills,
-        hosts,
+        hosts.map((host) => host.name),
         entries.map(({ skill, statuses }) => ({
           value: skill,
           name: skill.name,
@@ -598,7 +651,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     ): CheckboxQuestion<Mcp> {
       return entryPicker(
         t.pickMcps,
-        hosts,
+        hosts.map((host) => host.name),
         entries.map(({ mcp, statuses }) => {
           const unavailable = statuses.every((status) => status === 'unsupported');
           return {
@@ -763,6 +816,73 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
 
     confirmCommands(): SelectQuestion<InstallDecision> {
       return decision(t.confirmCommands, t.runCommands);
+    },
+
+    /**
+     * 勾选要安装的工具：名称、一栏状态、说明；checked 是提问出现时已经勾上的那些。
+     * 装不了的条目不可选，状态栏的位置写原因。
+     */
+    toolPicker(
+      entries: readonly { tool: Tool; status: ToolStatus; unavailable?: ToolUnavailable }[],
+      checked: readonly Tool[],
+    ): CheckboxQuestion<Tool> {
+      return entryPicker(
+        t.pickTools,
+        [t.statusColumn],
+        entries.map(({ tool, status, unavailable }) => ({
+          value: tool,
+          name: tool.name,
+          cells: [status === 'installed' ? paint('green', t.toolStatus.installed) : dim(t.toolStatus.none)],
+          about: tool.description[lang],
+          checked: checked.includes(tool),
+          ...(unavailable
+            ? { unavailable: unavailable.kind === 'os' ? t.unsupportedOs(unavailable.os) : t.unsupportedByHosts, reasonAsStatus: true }
+            : {}),
+        })),
+      );
+    },
+
+    /** 将要执行的工具安装命令，逐条编号，前面是工具的名字；过长时折行，续行与命令的左缘对齐。命令本身从不截断。 */
+    toolCommandList(targets: readonly ToolTarget[]): void {
+      const indexWidth = Math.max(2, String(targets.length).length);
+      const [nameWidth = 0] = columnWidths(targets.map((target) => [target.name]));
+      print(
+        ...gapAbove(),
+        section(t.commandsToRun(targets.length)),
+        ...targets.flatMap((target, index) =>
+          hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  ${pad(target.name, nameWidth)}`, target.command),
+        ),
+        '',
+      );
+    },
+
+    /**
+     * 逐个执行工具的安装命令：每个工具 begin 一次，打出以它名字为标题的分区和要执行的那一行；命令自己的输出随后
+     * 原样接在下面，不经过这里。用 begin 返回的函数交出结论，结论上方空一行。全部结束后 finish 打出合计；
+     * 不止一个工具时，合计之前先用一个「结果」分区把各项的结论再列一遍——前面的早被命令的输出顶出屏幕了。
+     */
+    toolInstallation(targets: readonly ToolTarget[]) {
+      const [nameWidth = 0] = columnWidths(targets.map((target) => [target.name]));
+      const results = tally();
+      const conclusions: string[] = [];
+      return {
+        begin(target: ToolTarget): (result: ToolResult) => void {
+          print(...gapAbove(), section(target.name), ...hanging('  ', `${dim('$')} `, target.command));
+          return (result) => {
+            const lead = (mark: string): string => `  ${mark}  ${pad(target.name, nameWidth)}`;
+            const text = t.toolResult(result, target.evidence);
+            const conclusion = result.available
+              ? results.succeeded((mark) => `${lead(mark)}${paint('green', t.toolAvailable)}`, text)
+              : results.failed(lead, text);
+            conclusions.push(...conclusion);
+            print('', ...conclusion);
+          };
+        },
+        finish(): void {
+          if (targets.length > 1) print('', section(t.results), ...conclusions);
+          print(...results.total());
+        },
+      };
     },
 
     /** MCP 的「正在安装」分区，用法同 installation；必填的 key 没填的那些不 begin，改用 skip，给出没填的变量名。 */

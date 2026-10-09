@@ -40,7 +40,12 @@ export interface InstallerOptions {
 
 `interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
 
-`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`，目前只有安装 MCP 用它；签名、输入输出的约定和手动核对的办法见 [安装 MCP](./mcp-install.md)。它起的子进程继承进程自己的环境，不是 `options.env`。工具的安装命令要把输出透传给用户，届时签名可以改。
+`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`。
+
+```ts
+export interface CommandOptions { shell: true } // command 是一整行，args 是空的
+export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
+```
 
 `openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`，应用项目用它打开官方链接：
 
@@ -92,7 +97,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | 2 | 启动参数不对 |
 | 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`） |
 
-单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来）、向 GitHub 查询失败（含被限流）、应用项目的链接在浏览器里打不开，都**不改变退出状态**：第一种只在结果里列出，第二种打出出错说明后回到主菜单，第三种只在详情下面提醒用户自己复制链接。
+单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流）、应用项目的链接在浏览器里打不开，都**不改变退出状态**：第一种只在结果里列出，第二种打出出错说明后回到主菜单，第三种只在详情下面提醒用户自己复制链接。
 
 **目录来源**
 
@@ -113,7 +118,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 **目录文件**
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
-- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空；条目的字段由各自的功能在用到时定义。`apps` 已经读内容（字段见下），`mcps` 也已经读（字段与校验见 [安装 MCP](./mcp-install.md)）；`tools` 目前还不读，只把它有几条记在 `Catalog.unread` 里（给目录校验命令用）。
+- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空。三类条目的内容都读、都校验：`apps` 的字段见下，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
 - `apps` 的一条（应用项目）：
 
   ```json
@@ -183,7 +188,7 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
-- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`），缺省都以 0 退出。`commandResult: (command, args) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来。
+- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
 - 链接打开器只记录：要打开的网址按先后进 `result.opened`。`browser: false` 表示浏览器打不开——网址照样记下，然后打开器拒绝；用来证明“打不开时不报错、链接文本仍在”。
 - 宿主的配置文件用 `home` 放：`home: { '.claude.json': JSON.stringify({ mcpServers: { x: {} } }) }`、`home: { '.codex/config.toml': '[mcp_servers.x]\n' }`。
 - 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。

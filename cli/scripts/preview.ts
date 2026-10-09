@@ -34,8 +34,26 @@ interface Scene {
   browser?: boolean;
   /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
   commands?: CommandRunner;
+  /** 假装执行工具的安装命令：它往终端上打什么、怎么结束；缺省照 installsTool */
+  shell?: (command: string) => ShellRun;
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
+}
+
+/** 一条假装执行的工具安装命令 */
+interface ShellRun {
+  /** 命令自己打到终端上的东西 */
+  output: string;
+  /** 缺省是 0 */
+  exitCode?: number;
+  /** 假装装好了：往可执行路径里放这个命令 */
+  installs?: string;
+  /** 假装装好了：在主目录下写出这个相对路径 */
+  creates?: string;
+  /** 命令没能起来：以带这个错误码的错误拒绝 */
+  cannotStart?: string;
+  /** 输出打完之后一直不结束 */
+  hangs?: boolean;
 }
 
 // ── 样例目录 ──────────────────────────────────────────────────────────────────
@@ -87,7 +105,38 @@ const SHOWCASE_MCPS = [
   { name: 'openai-docs', zh: '查询 OpenAI 开发者文档', en: 'Search the OpenAI developer docs', hosts: ['codex'], server: { url: 'https://developers.openai.com/mcp' } },
 ].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}` }));
 
+// 工具也是为预览编的样例：两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用
+const SHOWCASE_TOOLS = [
+  {
+    name: 'uv',
+    zh: '极快的 Python 包与项目管理器，许多 MCP 服务器靠它的 uvx 启动',
+    en: 'An extremely fast Python package and project manager; many MCP servers are launched with its uvx',
+    install: { default: 'curl -LsSf https://astral.sh/uv/install.sh | sh', windows: 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"' },
+    check: { command: 'uv' },
+  },
+  { name: 'bun', zh: '一体化的 JavaScript 运行时与包管理器', en: 'All-in-one JavaScript runtime and package manager', install: { default: 'curl -fsSL https://bun.sh/install | bash' }, check: { path: '.bun/bin/bun' } },
+  { name: 'openspec', zh: '规格驱动开发的命令行工具', en: 'Command-line tool for spec-driven development', install: { default: 'npm install -g @fission-ai/openspec@latest' }, check: { command: 'openspec' } },
+  {
+    name: 'bubblewrap',
+    zh: 'Linux 上的轻量沙箱，AI Agent 执行命令时用它隔离',
+    en: 'Lightweight sandbox on Linux that AI Agents use to isolate the commands they run',
+    install: { default: 'sudo apt-get install -y bubblewrap', macos: null, windows: null },
+    check: { command: 'bwrap' },
+  },
+  { name: 'codex-usage', zh: '统计 Codex 的用量与花费', en: 'Report Codex usage and cost', hosts: ['codex'], install: { default: 'npm install -g codex-usage' }, check: { command: 'codex-usage' } },
+].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}` }));
+// 名字和命令都长的工具：命令在汇总里折行
+const LONG_COMMAND_TOOL = {
+  name: 'rustup-toolchain-installer',
+  description: { zh: 'Rust 工具链的安装与版本管理器', en: 'Installer and version manager for the Rust toolchain' },
+  url: 'https://example.com/rustup',
+  install: { default: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path" },
+  check: { path: '.cargo/bin/rustup' },
+};
+
 const sample = catalogOf({ version: 1, skills: SHOWCASE_SKILLS });
+const withTools = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: SHOWCASE_TOOLS });
+const withLongCommandTool = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: [LONG_COMMAND_TOOL, ...SHOWCASE_TOOLS] });
 const withMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_MCPS });
 // 名字长的 MCP：汇总里它的备注一行放不下
 const LONG_NAME_MCP = {
@@ -143,6 +192,24 @@ const linearFails: CommandRunner = async (command, args) =>
   command === 'claude' && args.includes('linear') && args[1] === 'add' ? { exitCode: 1 } : ok;
 // 第二个 MCP 的命令一直跑不完
 const secondHangs: CommandRunner = (_, args) => (args.includes('context7') ? new Promise<never>(() => {}) : Promise.resolve(ok));
+
+// 假装执行工具的安装命令：uv 的装好了，别的打一段 npm 的话、以非零状态结束，什么都没装上
+const UV_OUTPUT = ['downloading uv 0.9.2 aarch64-apple-darwin', 'no checksums to verify', 'installing to /Users/oxy/.local/bin', '  uv', '  uvx', "everything's installed!", ''].join('\n');
+const NPM_FAILURE = ['npm error code EACCES', 'npm error syscall mkdir', 'npm error path /usr/local/lib/node_modules/@fission-ai', 'npm error errno -13', ''].join('\n');
+const installsTool = (command: string): ShellRun =>
+  command.includes('astral.sh/uv') ? { output: UV_OUTPUT, installs: 'uv' } : { output: NPM_FAILURE, exitCode: 243 };
+// Windows 上 uv 的安装脚本说的话
+const UV_OUTPUT_WINDOWS = ['Downloading uv 0.9.2 (x86_64-pc-windows-msvc)', 'Installing to C:\\Users\\oxy\\.local\\bin', '  uv.exe', '  uvx.exe', "everything's installed!", ''].join('\n');
+const installsToolOnWindows = (command: string): ShellRun =>
+  command.includes('astral.sh/uv') ? { output: UV_OUTPUT_WINDOWS, installs: 'uv' } : { output: NPM_FAILURE.replace('/usr/local/lib/node_modules/', 'C:\\Program Files\\nodejs\\node_modules\\'), exitCode: 243 };
+// 两种检查方式各装好一个：uv 进了可执行路径，bun 写出了主目录下的那个路径
+const BUN_OUTPUT = ['bun was installed successfully to ~/.bun/bin/bun', 'Run \'bun --help\' to get started', ''].join('\n');
+const allInstall = (command: string): ShellRun =>
+  command.includes('astral.sh/uv') ? { output: UV_OUTPUT, installs: 'uv' } : { output: BUN_OUTPUT, creates: '.bun/bin/bun' };
+// 第一条命令打了一半，还没结束
+const firstStillRunning = (): ShellRun => ({ output: UV_OUTPUT.split('\n').slice(0, 3).join('\n') + '\n', hangs: true });
+// bun 已经装过：主目录下有它的检查路径
+const BUN_INSTALLED = { '.bun/bin/bun': '' };
 
 const CLAUDE_SKILLS = '.claude/skills';
 const CODEX_SKILLS = '.agents/skills';
@@ -209,6 +276,16 @@ const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 const toKeyedSummary = [...toExaKey, PASTED_KEY, KEY.enter];
 // 勾上 chrome-devtools 和 exa，exa 的 key 留空
 const skipExa = [...toMcps, KEY.space, ...down(2), KEY.space, KEY.enter, KEY.enter];
+// 主菜单上从 Skill 下移到工具再进去（样例目录里只有 skill 和工具两个分组）
+const toTools = [KEY.down, KEY.enter];
+// 勾上 uv 和 openspec，光标停在 openspec 上
+const pickTools = [...toTools, KEY.space, ...down(2), KEY.space];
+const runTools = [...pickTools, KEY.enter, KEY.enter];
+// 勾上 uv 和 bun 再执行
+const runUvAndBun = [...toTools, KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter];
+// 只勾 bun 再执行
+const runBun = [...toTools, KEY.down, KEY.space, KEY.enter, KEY.enter];
+const TOOLS = { catalog: withTools, home: BUN_INSTALLED };
 const KEYED = { catalog: withKeyedMcps };
 const MCP_STATES = { catalog: withMcps, home: CLAUDE_CONFIGURED };
 const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE_CONFIGURED, ...CODEX_UNREADABLE } };
@@ -298,6 +375,19 @@ const scenes: Scene[] = [
   { title: '汇总确认 · 必填的 key 没填', note: '留下的一行说明将跳过它；汇总和命令里只有其余的', ...KEYED, keys: skipExa },
   { title: '结果 · 必填的 key 没填', note: '那一项写明跳过和原因，其余照常', ...KEYED, keys: [...skipExa, KEY.enter] },
   { title: '结果 · 选中的都没填 key', note: '没有命令要执行：不问执行不执行，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
+  { title: '主菜单 · 有工具', note: 'catalog.json 里有工具条目时多出这个分组，「目录」一行也数上它', ...TOOLS },
+  { title: '主菜单 · 一个宿主都没有 · 有工具', note: '工具同样是组件：一个宿主都没检测到时进不去，行尾注明原因', ...TOOLS, onPath: [] },
+  { title: '工具多选列表', note: '只有一栏状态：已安装、未安装，由条目声明的检查方式决定；装不了的条目不可选，状态栏的位置写原因（当前系统不支持、它要的 AI Agent 没检测到）', ...TOOLS, keys: pickTools },
+  { title: '工具多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...TOOLS, keys: [...toTools, ...down(3), KEY.space] },
+  { title: '汇总确认 · 两个工具', note: '两条完整的命令都列出来，前面是序号和工具的名字；确认后才执行', ...TOOLS, keys: [...pickTools, KEY.enter] },
+  { title: '汇总确认 · 工具 · 命令比一行长', note: '命令折行，续行与命令的左缘对齐，从不截断', catalog: withLongCommandTool, keys: [...toTools, KEY.space, KEY.down, KEY.space, KEY.enter] },
+  { title: '汇总确认 · 工具 · Windows 上的命令', note: '条目给这个系统另写了命令：展示和执行的都是那一条', ...TOOLS, platform: 'win32', env: { WT_SESSION: '1' }, keys: [...toTools, KEY.space, KEY.enter] },
+  { title: '执行工具的安装命令 · 进行中', note: '每个工具一个以它名字为标题的分区，第一行是要执行的命令；命令自己的输出原样透传，顶格、不加样式', ...TOOLS, shell: firstStillRunning, keys: runTools },
+  { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
+  { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
+  { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
+  { title: '结果 · 工具 · 命令没能运行', note: '命令没能起来：原因只写错误码，复核照做', catalog: withTools, shell: () => ({ output: '', cannotStart: 'ENOENT' }), keys: runBun },
+  { title: '结果 · 工具 · 命令正常结束但复核不通过', note: '命令以 0 退出，可执行路径上却找不到它：算失败，并提醒可能要重开终端', ...TOOLS, shell: () => ({ output: UV_OUTPUT }), keys: [...toTools, KEY.space, KEY.enter, KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
@@ -322,6 +412,8 @@ const scenes: Scene[] = [
   { title: '英文界面 · 填写 key', argv: ['--lang', 'en'], ...KEYED, keys: toTwoKeys },
   { title: '英文界面 · 含 key 的汇总', argv: ['--lang', 'en'], ...KEYED, keys: [...toTwoKeys, KEY.enter, PASTED_KEY, KEY.enter] },
   { title: '英文界面 · 必填的 key 没填', argv: ['--lang', 'en'], ...KEYED, keys: [...skipExa, KEY.enter] },
+  { title: '英文界面 · 工具多选列表', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
+  { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
@@ -336,6 +428,8 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '不显示颜色 · 填写 key', note: '设置了 NO_COLOR：申请地址没有下划线，文字照旧', env: { NO_COLOR: '1' }, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '不显示颜色 · 含 key 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
+  { title: '不显示颜色 · 工具多选列表', note: '设置了 NO_COLOR：状态和不可选的原因都是字，不靠颜色', env: { NO_COLOR: '1' }, ...TOOLS, keys: pickTools },
+  { title: '不显示颜色 · 工具的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...TOOLS, keys: runTools },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
@@ -351,6 +445,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
+  { title: '没有 Unicode · 工具多选列表', note: '不可选的勾选位退成 [-]，各栏照样对齐；这个系统是 Windows，不支持它的那条写明原因', ...LEGACY_CONSOLE, ...TOOLS, keys: pickTools },
+  { title: '没有 Unicode · 工具的汇总与结果', ...LEGACY_CONSOLE, ...TOOLS, shell: installsToolOnWindows, keys: runTools },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 
@@ -413,7 +509,20 @@ async function play(scene: Scene): Promise<Cell[][]> {
     homeDir: home,
     tempDir: scratchDir('tmp'),
     interrupt: new AbortController().signal,
-    runCommand: scene.commands ?? (async () => ok),
+    runCommand: async (command, args, options) => {
+      if (!options?.shell) return (scene.commands ?? (async () => ok))(command, args);
+      // 工具的安装命令：真的执行时它的输出直接接在终端上，这里照样写到同一个终端里
+      const run = (scene.shell ?? installsTool)(command);
+      write(run.output);
+      if (run.hangs) await new Promise<never>(() => {});
+      if (run.cannotStart) throw Object.assign(new Error(`spawn ${run.cannotStart}`), { code: run.cannotStart });
+      if (run.installs) writeFileSync(join(bin, run.installs), '', { mode: 0o755 });
+      if (run.creates) {
+        mkdirSync(dirname(join(home, run.creates)), { recursive: true });
+        writeFileSync(join(home, run.creates), '');
+      }
+      return { exitCode: run.exitCode ?? 0 };
+    },
     prompter,
     // 预览页不真的打开浏览器
     openLink: () => (scene.browser === false ? Promise.reject(new Error('preview has no browser')) : Promise.resolve()),

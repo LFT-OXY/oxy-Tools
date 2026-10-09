@@ -110,7 +110,24 @@ disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
 | `a` 全选、`i` 反选都跳过不可选的行 | 不用配合；`prompts.test.ts` 里有一条守着 |
 | 一个能选的都没有时照样画得出来，用户只能回车（什么都没勾，等于返回） | 不用另做一个“没有可选的”画面 |
 
-不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。两种列表共用 `ui.ts` 的 `entryPicker`（名称、每个宿主一栏、说明），给它 `unavailable`（原因）就是不可选的行。
+不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。三种列表（skill、MCP、工具）共用 `ui.ts` 的 `entryPicker(message, columns, entries)`：名称、几栏状态（`columns` 是各栏的表头——skill 和 MCP 是宿主的名字，工具只有一栏「状态」）、说明。给一行 `unavailable`（原因）它就不可选。
+
+原因放在哪有两种，一张表里只用一种：
+
+| | 原因的位置 | 用在 | 怎么拼 |
+|---|---|---|---|
+| 缺省 | 接在说明后面，前面一个分隔符（`… · 需要别的 AI Agent`） | MCP | `name` 是整行，`disabled` 是分隔符加圈起来的原因 |
+| `reasonAsStatus: true` | 顶替状态，写在状态栏的位置（`不支持 macOS`），说明照常跟在后面 | 工具（只有一栏状态） | 这时不看 `cells`。交互库把行拼成「`name` + 一个空格 + `disabled`」，所以 `name` 只是名称、少补一格，`disabled` 是圈起来的原因补齐到状态栏的宽度、再接说明 |
+
+```ts
+// 错：把圈起来的原因塞进 cells、再另给一句 disabled——行尾多出一截，零宽空格也跟着 name 走了别的路
+{ name: `${cells([entry.name, mark(reason)])}${about}`, disabled: reason }
+
+// 对：原因在 disabled 里，位置靠 name 少补的那一格对上
+{ name: pad(entry.name, widths[0] - 1), disabled: `${pad(mark(reason), widths[1])}${about}` }
+```
+
+`displayWidth` 把零宽空格算作 0 列，所以圈起来的原因可以直接交给 `pad`。
 
 ---
 
@@ -219,6 +236,24 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ---
 
+## 工具：将执行的命令、执行分区与结论
+
+工具的画面是另一套函数，因为每条命令前面要写工具的名字，执行时输出也不归呈现层管：
+
+| 段 | 函数 | 画法 |
+|----|------|------|
+| 将执行的命令 | `ui.toolCommandList(targets)` | 和 `commandList` 同一个分区标题（「将执行 N 条命令」）。每条是暗淡的右对齐序号、工具名（按最长的名字定宽）、完整命令；过长时折行，续行与**命令**的左缘对齐，从不截断。命令是一整行 shell，**原样写出，不加引号、不改一个字** |
+| 确认 | `ui.confirmCommands()` | 与 MCP 共用 |
+| 一个工具的执行 | `ui.toolInstallation(targets).begin(target)` | 以工具名为标题的分区，下面一行暗淡的 `$` 加命令。之后命令自己的输出直接进终端，**不经过呈现层**：顶格、没有样式，呈现层也不知道它有几行 |
+| 这个工具的结论 | `begin` 返回的函数，收 `ToolResult` | 上方空一行，然后和结果行同一个画法：`✓ <名字> 已可用<说明>`（「已可用」绿）或 `✗ <名字> 失败 <原因>`（红色粗体），过长时折行 |
+| 收尾 | `finish()` | 不止一个工具时先打一个「结果」分区，把各项的结论原样再列一遍；然后通栏横线和「合计」 |
+
+- **没有转动符号，也不回头改写标题**：命令的输出在往同一个终端上写，行首重写和光标上移都会和它撞车。所以它不用 `progress`，「结果」是另起的一个分区，不是把「正在安装」改写而成。
+- 结论里的话来自 `messages.ts` 的 `toolResult(result, evidence)`：通过时它以分隔的标点开头（`，在 PATH 中找到 uv` / `: uv found on PATH`），直接接在「已可用」后面；没通过时接在「失败」和一个空格后面。
+- 结论上方的空行在命令的输出不以换行结尾时只是把那半行收掉，见 [安装工具](./tool-install.md) 的「已知的限制」。
+
+---
+
 ## 应用项目：链接怎么写、打不开怎么说
 
 应用项目的详情（`ui.appDetail`）是一个以它名字为标题的分区，两行键值：说明全文、带下划线的链接；随后 `ui.linkOutcome(opened)` 接一行结局。
@@ -253,7 +288,9 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ## 改写已经打出去的行
 
-转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。「正在安装」分区各类组件共用一个 `progress(targets, doing)`：`ui.installation`（skill）和 `ui.mcpInstallation` 只负责把各自的结果说成文字，行数、合计、改写标题都在它里面。再加一类组件时照此接上，不要另写一遍。
+转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。「正在安装」分区各类组件共用一个 `progress(targets, doing)`：`ui.installation`（skill）和 `ui.mcpInstallation` 只负责把各自的结果说成文字，行数、改写标题都在它里面。再加一类组件时照此接上，不要另写一遍。
+
+**结果行和合计是再下面一层的 `tally()`**，`progress` 和工具的 `toolInstallation` 共用：`succeeded(lead, text)`、`failed(lead, reason)`、`skipped(lead, reason)` 各返回一项的结果行（`lead` 给结果符号排好位置；原因过长时自己折行）并记进合计，`total()` 返回通栏横线和「合计」那一行。套不进 `progress` 的组件（工具：输出不归呈现层管）直接用它，**不要再抄一遍失败行的拼法和合计**。
 
 「正在安装」分区结束后要把标题换成「结果」，标题在上面好几行，只能把光标挪上去再挪回来。挪之前先确认两件事，否则会写到别的行上：
 
@@ -301,6 +338,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。
 - 要画出应用项目，场景用 `catalog: withApps`（样例应用项目是为预览编的，其中一条的链接比一行长）；`browser: false` 让链接打开器拒绝。预览页从不真的打开浏览器。
+- 要画出工具，场景用 `...TOOLS`（`withTools`：五条为预览编的样例——两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用；主目录里 `bun` 已经装着）。命令是假的：场景的 `shell: (command) => ShellRun` 说它往终端上打什么（`output`）、怎么结束（`exitCode`、`cannotStart`、`hangs`）、装没装上（`installs` 往可执行路径里放一个命令，`creates` 在主目录下写出一个路径），缺省是 `installsTool`（uv 装好，别的以非零状态结束）。名字和命令都长的样例在 `withLongCommandTool`。预览页从不真的执行命令。
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给 skill 用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。

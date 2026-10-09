@@ -62,8 +62,8 @@ export async function installMcp(steps: readonly McpStep[], keys: ReadonlyMap<st
   }
 }
 
-// 命令没能起来的原因只取错误码（ENOENT），不取消息：消息里可能带着整条命令，而命令里有 key
-function errorCode(error: unknown): string | undefined {
+/** 命令没能起来的原因只取错误码（ENOENT），不取消息：消息里可能带着整条命令，而命令里有 key */
+export function errorCode(error: unknown): string | undefined {
   const root = error instanceof Error && error.cause instanceof Error ? error.cause : error;
   const code = root instanceof Error ? (root as NodeJS.ErrnoException).code : undefined;
   return typeof code === 'string' ? code : undefined;

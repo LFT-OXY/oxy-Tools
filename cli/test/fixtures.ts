@@ -70,3 +70,29 @@ export const KEYED_MCP = {
     },
   ],
 };
+
+export const LONG_TOOL_ABOUT = {
+  zh: '第一个样例工具，它的说明也故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方去看',
+  en: 'The first sample tool, described at such length that one list row cannot hold it and the full text has to be read below the list',
+};
+
+/** 两种检查方式各一条：命令在不在可执行路径上、主目录下某个相对路径存不存在；第一条在 Windows 上另有命令 */
+export const SAMPLE_TOOLS = [
+  {
+    name: 'fetcher',
+    description: LONG_TOOL_ABOUT,
+    url: 'https://example.com/fetcher',
+    install: {
+      default: 'curl -LsSf https://example.com/fetcher/install.sh | sh',
+      windows: 'powershell -ExecutionPolicy ByPass -c "irm https://example.com/fetcher/install.ps1 | iex"',
+    },
+    check: { command: 'fetcher' },
+  },
+  {
+    name: 'linter',
+    description: { zh: '第二个样例工具', en: 'The second sample tool' },
+    url: 'https://example.org/linter',
+    install: { default: 'npm install -g @example/linter@latest' },
+    check: { path: '.linter/bin/linter' },
+  },
+];

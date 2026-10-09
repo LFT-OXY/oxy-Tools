@@ -1,6 +1,7 @@
 // 界面文案，中英各一份。
-import type { CatalogFailure } from './catalog.ts';
+import type { CatalogFailure, ToolOs } from './catalog.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
+import type { ToolResult } from './install-tool.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 
 export type Lang = 'zh' | 'en';
@@ -13,8 +14,13 @@ export type Failure =
   | CatalogFailure
   | { kind: 'unexpected'; detail: string };
 
+/** 复核一个工具时查的是什么：可执行路径上的一个命令，或主目录下的一个路径（给用户看的写法） */
+export type ToolEvidence = { command: string } | { path: string };
+
 /** 一个 key 问完之后的结局：填了、留空了、这次运行里早先填过所以没再问 */
 export type KeyOutcome = 'entered' | 'blank' | 'reused';
+
+const OS_NAMES: Record<ToolOs, string> = { macos: 'macOS', linux: 'Linux', windows: 'Windows' };
 
 export interface FailureText {
   title: string;
@@ -37,7 +43,7 @@ export interface Messages {
   catalogKey: string;
   noticeKey: string;
   /** 目录里各类条目的数量，每类一段；没有条目的那一类不写 */
-  counts: (counts: { skills: number; mcps: number; apps: number }) => string[];
+  counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
   pickGroup: string;
@@ -57,11 +63,17 @@ export interface Messages {
   mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
   /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
   mcpConfigUnreadable: (hosts: string) => string;
-  /** MCP 条目不可选的原因：所选的宿主它一个都不支持 */
+  /** 条目不可选的原因：MCP 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
   unsupportedByHosts: string;
+  /** 只有一栏状态的列表（工具）里那一栏的表头 */
+  statusColumn: string;
+  toolStatus: { none: string; installed: string };
+  /** 工具不可选的原因：条目把当前系统标为不支持 */
+  unsupportedOs: (os: ToolOs) => string;
   pickHosts: string;
   pickSkills: string;
   pickMcps: string;
+  pickTools: string;
   pickApp: string;
   linkKey: string;
   /** 应用项目的链接已经交给浏览器；浏览器有没有真的打开，安装器不一定看得出来 */
@@ -130,9 +142,16 @@ export interface Messages {
   overwriteDeclined: string;
   installProblem: (problem: SkillInstallProblem) => string;
   mcpInstallProblem: (problem: McpInstallProblem) => string;
+  /** 工具复核通过时结论开头的词 */
+  toolAvailable: string;
+  /**
+   * 工具的结论里词后面的话：查了什么、查到没有，命令没有正常结束时连同它是怎么结束的。
+   * 通过时以分隔的标点开头，直接接在「已可用」后面；没通过时接在「失败」和一个空格后面
+   */
+  toolResult: (result: ToolResult, evidence: ToolEvidence) => string;
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
-  groups: Record<'skill' | 'mcp' | 'app', { label: string; about: string }>;
+  groups: Record<'skill' | 'mcp' | 'tool' | 'app', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -162,9 +181,10 @@ const zh: Messages = {
   hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
-  counts: ({ skills, mcps, apps }) => [
+  counts: ({ skills, mcps, tools, apps }) => [
     ...(skills > 0 ? [`${skills} skill`] : []),
     ...(mcps > 0 ? [`${mcps} MCP`] : []),
+    ...(tools > 0 ? [`${tools} 工具`] : []),
     ...(apps > 0 ? [`${apps} 应用项目`] : []),
   ],
   noEntries: '没有可用的条目',
@@ -182,9 +202,13 @@ const zh: Messages = {
   mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
   mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
   unsupportedByHosts: '需要别的 AI Agent',
+  statusColumn: '状态',
+  toolStatus: { none: '未安装', installed: '已安装' },
+  unsupportedOs: (os) => `不支持 ${OS_NAMES[os]}`,
   pickHosts: '装进哪些 AI Agent',
   pickSkills: '选择要安装的 skill',
   pickMcps: '选择要安装的 MCP',
+  pickTools: '选择要安装的工具',
   pickApp: '选择应用项目',
   linkKey: '链接',
   linkOpened: '已在默认浏览器打开；打不开时请复制上面的链接',
@@ -256,11 +280,27 @@ const zh: Messages = {
     if (action === 'remove') return `${what}；未执行添加`;
     return removed ? `${what}；此前已执行移除` : what;
   },
+  toolAvailable: '已可用',
+  toolResult({ available, run }, evidence) {
+    const found =
+      'command' in evidence ? `在 PATH 中找${available ? '到' : '不到'} ${evidence.command}` : `${evidence.path} ${available ? '已存在' : '不存在'}`;
+    const clean = run.kind === 'exit' && run.code === 0;
+    const ended = clean
+      ? '命令已正常结束'
+      : run.kind === 'exit'
+        ? `命令退出状态 ${run.code}`
+        : `命令没能运行${run.detail === undefined ? '' : `（${run.detail}）`}`;
+    if (available) return clean ? `，${found}` : `，${found}；${ended}`;
+    if (!clean) return `${ended}；${found}`;
+    // 装到了一个还不在可执行路径上的目录里是最常见的情形：安装脚本改的是 shell 的启动文件
+    return `${ended}，但${found}${'command' in evidence ? '；可能要重开终端才找得到' : ''}`;
+  },
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
   groups: {
     skill: { label: 'Skill', about: '装进 AI Agent 的能力包' },
     mcp: { label: 'MCP', about: '写进 AI Agent 配置的 MCP 服务器' },
+    tool: { label: '工具', about: '执行其官方安装命令装上的工具' },
     app: { label: '应用项目', about: '需要自行部署，这里只给链接' },
   },
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
@@ -390,9 +430,10 @@ const en: Messages = {
   hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',
-  counts: ({ skills, mcps, apps }) => [
+  counts: ({ skills, mcps, tools, apps }) => [
     ...(skills > 0 ? [`${skills} ${skills === 1 ? 'skill' : 'skills'}`] : []),
     ...(mcps > 0 ? [`${mcps} MCP`] : []),
+    ...(tools > 0 ? [`${tools} ${tools === 1 ? 'tool' : 'tools'}`] : []),
     ...(apps > 0 ? [`${apps} ${apps === 1 ? 'app' : 'apps'}`] : []),
   ],
   noEntries: 'no usable entries',
@@ -410,9 +451,13 @@ const en: Messages = {
   mcpStatus: { none: 'none', configured: 'configured', unknown: 'unknown', unsupported: 'unsupported' },
   mcpConfigUnreadable: (hosts) => `Could not read the ${hosts} config; cannot tell which MCP servers are configured`,
   unsupportedByHosts: 'needs another AI Agent',
+  statusColumn: 'Status',
+  toolStatus: { none: 'none', installed: 'installed' },
+  unsupportedOs: (os) => `not for ${OS_NAMES[os]}`,
   pickHosts: 'Install into which AI Agents',
   pickSkills: 'Pick skills to install',
   pickMcps: 'Pick MCP servers to install',
+  pickTools: 'Pick tools to install',
   pickApp: 'Pick an app',
   linkKey: 'Link',
   linkOpened: 'Opened in your default browser; if nothing opened, copy the link above',
@@ -485,11 +530,26 @@ const en: Messages = {
     if (action === 'remove') return `${what}; add was not run`;
     return removed ? `${what}; the remove command had already run` : what;
   },
+  toolAvailable: 'available',
+  toolResult({ available, run }, evidence) {
+    const found =
+      'command' in evidence ? `${evidence.command} ${available ? 'found' : 'not found'} on PATH` : `${evidence.path} ${available ? 'exists' : 'does not exist'}`;
+    const clean = run.kind === 'exit' && run.code === 0;
+    const ended = clean
+      ? 'the command finished normally'
+      : run.kind === 'exit'
+        ? `the command exited with status ${run.code}`
+        : `the command could not be run${run.detail === undefined ? '' : ` (${run.detail})`}`;
+    if (available) return clean ? `: ${found}` : `: ${found}; ${ended}`;
+    if (!clean) return `${ended}; ${found}`;
+    return `${ended}, but ${found}${'command' in evidence ? '; a new terminal may be needed to find it' : ''}`;
+  },
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
   groups: {
     skill: { label: 'Skill', about: 'Capability packs for your AI Agent' },
     mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
+    tool: { label: 'Tools', about: 'Installed by running their official install commands' },
     app: { label: 'Apps', about: 'Deploy them yourself; only links here' },
   },
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },

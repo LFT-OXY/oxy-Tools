@@ -1,14 +1,16 @@
 // 交互流程：主菜单与各分组的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
-import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Skill } from './catalog.ts';
+import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Skill, type Tool } from './catalog.ts';
 import type { Host } from './hosts.ts';
 import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
+import { installCommand, installTool } from './install-tool.ts';
 import type { CommandRunner, LinkOpener } from './installer.ts';
 import { mcpStatuses } from './mcp-status.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
-import type { InstallOutcome, InstallTarget, McpOutcome, McpTarget, Ui } from './ui.ts';
+import { toolStatus } from './tool-status.ts';
+import type { Environment, InstallOutcome, InstallTarget, McpOutcome, McpTarget, ToolTarget, ToolUnavailable, Ui } from './ui.ts';
 
 /** 一次运行里各个画面共用的东西。 */
 export interface Session {
@@ -16,6 +18,8 @@ export interface Session {
   source: CatalogSource;
   /** 安装器认识的全部宿主，检测到的和没检测到的都在 */
   hosts: readonly Host[];
+  env: Environment;
+  platform: NodeJS.Platform;
   homeDir: string;
   tempDir: string;
   githubToken: string | undefined;
@@ -41,6 +45,7 @@ export async function mainMenu(session: Session): Promise<void> {
   const groups = [
     { id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 },
     { id: 'mcp' as const, count: catalog.mcps.length, lacksHost: detected.length === 0 },
+    { id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 },
     { id: 'app' as const, count: catalog.apps.length, lacksHost: false },
   ].filter((group) => group.count > 0);
   for (;;) {
@@ -48,6 +53,7 @@ export async function mainMenu(session: Session): Promise<void> {
     if (choice === 'exit') return;
     if (choice === 'app') await browseApps(session);
     else if (choice === 'mcp') await installMcps(session, detected);
+    else if (choice === 'tool') await installTools(session, detected);
     else await installSkills(session, detected);
     ui.nextRound();
   }
@@ -301,6 +307,52 @@ async function runMcpJobs(session: Session, jobs: readonly McpJob[]): Promise<vo
       outcome = { ok: false, problem: error.problem };
     }
     settle(outcome);
+  }
+  progress.finish();
+}
+
+// 工具不装进宿主，所以不问装进哪个：勾选、看将要执行的完整命令、确认，然后逐个执行并复核
+async function installTools(session: Session, detected: readonly Host[]): Promise<void> {
+  const { catalog, ui, prompter } = session;
+  let picked: Tool[] = [];
+  for (;;) {
+    // 状态每次进列表都现探测
+    const entries = catalog.tools.map((tool) => {
+      const plan = installCommand(tool, session.platform);
+      const unavailable: ToolUnavailable | undefined =
+        'unsupported' in plan
+          ? { kind: 'os', os: plan.unsupported }
+          : tool.hosts && !detected.some((host) => tool.hosts?.includes(host.id))
+            ? { kind: 'hosts' }
+            : undefined;
+      return { tool, plan, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
+    });
+    picked = await prompter.checkbox(ui.toolPicker(entries, picked));
+    // 一个都不勾就确认：返回主菜单
+    if (picked.length === 0) return;
+    // 汇总里展示的命令就是之后执行的那一行
+    const jobs = entries.flatMap(({ tool, plan }) =>
+      picked.includes(tool) && 'command' in plan ? [{ tool, target: { name: tool.name, command: plan.command, evidence: evidenceOf(session, tool) } }] : [],
+    );
+    ui.toolCommandList(jobs.map((job) => job.target));
+    const decision = await prompter.select(ui.confirmCommands());
+    if (decision === 'cancel') return;
+    if (decision === 'install') return runTools(session, jobs);
+    ui.nextRound();
+  }
+}
+
+// 复核时查的东西，写成给用户看的样子
+function evidenceOf(session: Session, { check }: Tool): ToolTarget['evidence'] {
+  return 'command' in check ? check : { path: homeRelative(session, join(session.homeDir, ...check.path.split('/'))) };
+}
+
+async function runTools(session: Session, jobs: readonly { tool: Tool; target: ToolTarget }[]): Promise<void> {
+  const progress = session.ui.toolInstallation(jobs.map((job) => job.target));
+  for (const { tool, target } of jobs) {
+    const settle = progress.begin(target);
+    // 成功与否看复核，不看命令的退出状态；一项没装上不影响其余项
+    settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
   }
   progress.finish();
 }

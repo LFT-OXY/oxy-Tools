@@ -23,10 +23,12 @@ export {
   LONG_ABOUT,
   LONG_APP_ABOUT,
   LONG_MCP_ABOUT,
+  LONG_TOOL_ABOUT,
   SAMPLE_APPS,
   SAMPLE_FILES,
   SAMPLE_MCPS,
   SAMPLE_SKILLS,
+  SAMPLE_TOOLS,
 } from './fixtures.ts';
 export { KEY } from './terminal.ts';
 
@@ -191,7 +193,7 @@ export interface RunOptions {
    * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
    * 它自己抛出则表示执行器当场抛出、连承诺都没返回
    */
-  commandResult?: (command: string, args: readonly string[]) => Partial<CommandResult> | Error | undefined;
+  commandResult?: (command: string, args: readonly string[], context: { home: string }) => Partial<CommandResult> | Error | undefined;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径，都相对主目录 */
@@ -218,7 +220,8 @@ export interface RunResult {
   stderr: string;
   /** 最后留在画面上的文字：被擦掉重写的行（加载提示）只算最后一次。只适用于预设应答的提问器 */
   screen: string;
-  commands: { command: string; args: readonly string[] }[];
+  /** 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的 */
+  commands: { command: string; args: readonly string[]; shell?: true }[];
   opened: string[];
   home: string;
   /** 交给安装器放临时文件的目录 */
@@ -311,9 +314,9 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       homeDir: home,
       tempDir: tmp,
       interrupt: options.interrupt ?? new AbortController().signal,
-      runCommand: (command, args) => {
-        commands.push({ command, args });
-        const preset = options.commandResult?.(command, args);
+      runCommand: (command, args, runOptions) => {
+        commands.push({ command, args, ...(runOptions?.shell ? { shell: true as const } : {}) });
+        const preset = options.commandResult?.(command, args, { home });
         return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       },
       prompter: options.keys ? interactive : scripted,

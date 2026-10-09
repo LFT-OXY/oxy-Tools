@@ -7,6 +7,7 @@ const EXIT_FAILURE = 1;
 const EXIT_USAGE = 2;
 
 const COMMAND_WORD = '只含字母、数字和 @ : / . _ = + , ~ -，不含空白和引号';
+const SHELL_COMMAND = '只含看得见的 ASCII 字符，首尾不留空格，不换行';
 const RULES: Record<FieldRule, string> = {
   name: '要由小写字母和数字组成，分成几段时用连字符连接',
   text: '要是非空文字，且不含控制字符',
@@ -21,6 +22,10 @@ const RULES: Record<FieldRule, string> = {
   'env-name': '要是环境变量的名字：只含字母、数字和下划线，且不以数字开头',
   boolean: '要是 true 或 false',
   'local-only': '只能用于本地进程方式（server.command）：远程地址方式的条目不能带环境变量',
+  'shell-command': `要是一行命令：${SHELL_COMMAND}`,
+  'os-command': `要是一行命令（${SHELL_COMMAND}），或用 null 表示这个系统不支持`,
+  'tool-check': '里 command（看这个命令在不在可执行路径上）和 path（看主目录下这个相对路径存不存在）要恰好有一样',
+  'command-name': '要是一个命令的名字：只含字母、数字和 . _ -，不带目录',
 };
 
 process.exitCode = await validate(process.argv.slice(2));
@@ -49,10 +54,9 @@ async function validate(args: string[]): Promise<number> {
     for (const entry of catalog.skipped) console.error(`  ${describe(entry)}`);
     return EXIT_FAILURE;
   }
-  console.log(`目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.apps.length} 个应用项目`);
-  for (const { file, list, count } of catalog.unread) {
-    console.log(`  未校验：${file} 的 ${list} 有 ${count} 条，这一版安装器还不读这类条目的内容`);
-  }
+  console.log(
+    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目`,
+  );
   return 0;
 }
 
