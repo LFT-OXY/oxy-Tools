@@ -1,5 +1,6 @@
 // 提问器的正式实现：交互库 @inquirer 的各个提示。样式全部来自呈现层给的主题。
 import checkbox from '@inquirer/checkbox';
+import confirm from '@inquirer/confirm';
 import select, { Separator } from '@inquirer/select';
 import { PromptAborted, type Prompter, type SelectSeparator } from './prompter.ts';
 
@@ -47,6 +48,18 @@ export function inquirerPrompter(streams?: () => PromptStreams): Prompter {
             choices: choices(question.rows),
             pageSize: question.pageSize,
             loop: false,
+            theme: question.theme,
+          },
+          streams?.(),
+        ),
+      ),
+    confirm: (question) =>
+      asking(
+        confirm(
+          {
+            message: question.message,
+            default: question.default,
+            transformer: (answer) => (answer ? question.answers.yes : question.answers.no),
             theme: question.theme,
           },
           streams?.(),

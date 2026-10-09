@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { UnsafePathError, technicalReason, type PinnedSource, type Skill } from './catalog.ts';
 
 // 安装标记：写在装好的 skill 目录里，说明它是本工具装的。安装器没有任何集中的状态文件
-const MARKER_FILE = '.oxy-tools.json';
+export const MARKER_FILE = '.oxy-tools.json';
 
 export type SkillInstallProblem =
   | { kind: 'no-skill-md' }

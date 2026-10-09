@@ -4,6 +4,7 @@ import { CatalogError, type Catalog, type CatalogSource, type PinnedSource, type
 import type { Host } from './hosts.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
+import { skillStatus } from './skill-status.ts';
 import type { InstallOutcome, InstallTarget, Ui } from './ui.ts';
 
 /** 一次运行里各个画面共用的东西。 */
@@ -42,6 +43,8 @@ interface Job {
   skill: Skill;
   host: Host;
   target: InstallTarget;
+  /** 目标不是本工具装的，而用户没同意覆盖：这一项不装 */
+  declined?: boolean;
 }
 
 async function installSkills(session: Session, detected: readonly Host[]): Promise<void> {
@@ -70,30 +73,57 @@ async function planSkills(session: Session, hosts: readonly Host[]): Promise<Job
   const { catalog, ui, prompter } = session;
   let picked: Skill[] = [];
   for (;;) {
-    picked = await prompter.checkbox(ui.skillPicker(catalog.skills, picked));
+    // 状态每次进列表都现探测
+    const entries = catalog.skills.map((skill) => ({
+      skill,
+      statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)),
+    }));
+    picked = await prompter.checkbox(ui.skillPicker(hosts, entries, picked));
     if (picked.length === 0) return 'back';
     // 每个 skill 在每个宿主下各是一项，各有自己的结果
     const jobs = picked.flatMap((skill) =>
       hosts.map((host) => ({
         skill,
         host,
-        target: { name: skill.name, host: host.name, location: homeRelative(session, join(host.skillsDir, skill.name)) },
+        target: {
+          name: skill.name,
+          host: host.name,
+          location: homeRelative(session, join(host.skillsDir, skill.name)),
+          version: skill.version,
+          status: skillStatus(skill, host.skillsDir),
+        },
       })),
     );
     ui.installSummary(jobs.map((job) => job.target));
     const decision = await prompter.select(ui.confirmInstall());
     if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return jobs;
+    if (decision === 'install') return confirmOverwrites(session, jobs);
     ui.nextRound();
   }
 }
 
+// 不是本工具装的目录逐个另问，缺省不覆盖；没同意的那些不装，其余照常
+async function confirmOverwrites(session: Session, jobs: readonly Job[]): Promise<Job[]> {
+  const { ui, prompter } = session;
+  const confirmed: Job[] = [];
+  for (const job of jobs) {
+    const declined = job.target.status.kind === 'unmanaged' && !(await prompter.confirm(ui.confirmOverwrite(job.target)));
+    confirmed.push({ ...job, declined });
+  }
+  return confirmed;
+}
+
 async function runJobs(session: Session, jobs: readonly Job[]): Promise<void> {
   const { ui, interrupt } = session;
-  const source = await pinSource(session);
-  if (!source) return;
+  // 全都没同意覆盖时没有要下载的，不必查询
+  const source = jobs.every((job) => job.declined) ? undefined : await pinSource(session);
+  if (!source && jobs.some((job) => !job.declined)) return;
   const progress = ui.installation(jobs.map((job) => job.target));
-  for (const { skill, host, target } of jobs) {
+  for (const { skill, host, target, declined } of jobs) {
+    if (declined || !source) {
+      progress.skip(target);
+      continue;
+    }
     const settle = progress.begin(target);
     let outcome: InstallOutcome;
     try {

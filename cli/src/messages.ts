@@ -45,24 +45,41 @@ export interface Messages {
   /** 在不可选的行上按了确认 */
   unavailable: string;
   nameColumn: string;
+  /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号 */
+  skillStatus: { none: string; installed: string; unmanaged: string };
   pickHosts: string;
   pickSkills: string;
   /** 并列几个名字时用的分隔 */
   listSeparator: string;
   entryColumn: string;
   agentColumn: string;
+  actionColumn: string;
   locationColumn: string;
+  noteColumn: string;
+  /** 汇总里的操作：目标位置原先没有东西是新装，有就是覆盖 */
+  actions: { fresh: string; overwrite: string };
+  /** 汇总里覆盖项的备注 */
+  reinstallNote: (version: string) => string;
+  unmanagedNote: string;
   installSummary: (count: number) => string;
   replaceNotice: string;
   confirmInstall: string;
   startInstall: string;
   revise: string;
   cancel: string;
+  /** 选了开始安装之后，对不是本工具装的目录逐个另问；location 是给用户看的路径 */
+  confirmOverwrite: (location: string) => string;
+  yes: string;
+  no: string;
+  /** 是否题上输入了 y、n 之外的东西 */
+  answerYesOrNo: string;
   installing: string;
   results: string;
   downloading: string;
   installed: string;
   failed: string;
+  skippedResult: string;
+  overwriteDeclined: string;
   installProblem: (problem: SkillInstallProblem) => string;
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
@@ -106,23 +123,35 @@ const zh: Messages = {
   needsHost: '需要 AI Agent',
   unavailable: '这一项现在选不了',
   nameColumn: '名称',
+  skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   pickHosts: '装进哪些 AI Agent',
   pickSkills: '选择要安装的 skill',
   listSeparator: '、',
   entryColumn: '条目',
   agentColumn: 'AI Agent',
+  actionColumn: '操作',
   locationColumn: '位置',
+  noteColumn: '备注',
+  actions: { fresh: '新装', overwrite: '覆盖' },
+  reinstallNote: (version) => `重装 ${version}`,
+  unmanagedNote: '非本工具安装，另行确认',
   installSummary: (count) => `将安装 ${count} 个 skill`,
-  replaceNotice: '已存在的同名目录会被整个替换，目录内的本地改动会丢失',
+  replaceNotice: '覆盖即整目录替换，目录内的本地改动会丢失',
   confirmInstall: '开始安装吗',
   startInstall: '开始安装',
   revise: '返回修改',
   cancel: '取消',
+  confirmOverwrite: (location) => `${location} 不是本工具装的，要覆盖它吗？`,
+  yes: '是',
+  no: '否',
+  answerYesOrNo: '请输入 y 或 n',
   installing: '正在安装',
   results: '结果',
   downloading: '正在下载',
   installed: '已安装',
   failed: '失败',
+  skippedResult: '跳过',
+  overwriteDeclined: '未同意覆盖，保持原样',
   installProblem(problem) {
     switch (problem.kind) {
       case 'no-skill-md':
@@ -275,23 +304,35 @@ const en: Messages = {
   needsHost: 'needs an AI Agent',
   unavailable: 'This item cannot be selected right now',
   nameColumn: 'Name',
+  skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
   pickHosts: 'Install into which AI Agents',
   pickSkills: 'Pick skills to install',
   listSeparator: ', ',
   entryColumn: 'Entry',
   agentColumn: 'AI Agent',
+  actionColumn: 'Action',
   locationColumn: 'Location',
+  noteColumn: 'Note',
+  actions: { fresh: 'new', overwrite: 'overwrite' },
+  reinstallNote: (version) => `reinstall ${version}`,
+  unmanagedNote: 'unmanaged; asked separately',
   installSummary: (count) => `Install ${count} ${count === 1 ? 'skill' : 'skills'}`,
-  replaceNotice: 'An existing directory of the same name is replaced as a whole; local changes inside it are lost',
+  replaceNotice: 'Overwriting replaces the whole directory; local changes are lost',
   confirmInstall: 'Start installing?',
   startInstall: 'Install',
   revise: 'Go back and change',
   cancel: 'Cancel',
+  confirmOverwrite: (location) => `${location} is unmanaged. Overwrite it?`,
+  yes: 'yes',
+  no: 'no',
+  answerYesOrNo: 'Please answer y or n',
   installing: 'Installing',
   results: 'Results',
   downloading: 'downloading',
   installed: 'installed',
   failed: 'failed',
+  skippedResult: 'skipped',
+  overwriteDeclined: 'overwrite declined; left as it was',
   installProblem(problem) {
     switch (problem.kind) {
       case 'no-skill-md':

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { githubCatalogSource } from '../src/catalog.ts';
 import { COMMIT, fakeGitHub } from './github.ts';
-import { SAMPLE_FILES, STACK_FRAME, catalogDir, choose, pick, run, tempDir } from './harness.ts';
+import { SAMPLE_FILES, STACK_FRAME, catalogDir, choose, pick, run, tempDir, yes } from './harness.ts';
 
 const skillsDir = (home: string): string => join(home, '.claude', 'skills');
 const read = (...path: string[]): string => readFileSync(join(...path), 'utf8');
@@ -48,9 +48,13 @@ describe('把 skill 装进 Claude Code', () => {
     expect(readdirSync(result.tmp)).toEqual([]);
   });
 
-  it('目标位置已有同名目录时整体替换，原有的文件不留', async () => {
+  it('目标位置已有本工具装的同名目录时整体替换，原有的文件不留', async () => {
     const result = await run({
-      home: { '.claude/skills/alpha/SKILL.md': '旧的内容', '.claude/skills/alpha/leftover.md': '旧版本才有的文件' },
+      home: {
+        '.claude/skills/alpha/SKILL.md': '旧的内容',
+        '.claude/skills/alpha/leftover.md': '旧版本才有的文件',
+        '.claude/skills/alpha/.oxy-tools.json': JSON.stringify({ name: 'alpha', version: '0.9' }),
+      },
       answers: installAlpha,
     });
 
@@ -62,15 +66,14 @@ describe('把 skill 装进 Claude Code', () => {
 });
 
 describe('汇总确认', () => {
-  it('列出每个 skill 将装到的目录，并说明同名目录会被整个替换', async () => {
+  it('列出每个 skill 将装到的目录', async () => {
     const result = await run({ answers: installBoth });
 
     expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
-    expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+位置$/m);
-    expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+~\S+alpha$/m);
+    expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
+    expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     expect(result.output).toContain(join('~', '.claude', 'skills', 'alpha'));
     expect(result.output).toContain(join('~', '.claude', 'skills', 'beta-pack'));
-    expect(result.output).toMatch(/^\s+注意\s+已存在的同名目录会被整个替换，目录内的本地改动会丢失$/m);
   });
 
   it('汇总出现在动手之前：选「取消」什么都不装，回到主菜单', async () => {
@@ -236,7 +239,9 @@ describe('从 GitHub 下载 skill', () => {
 
 describe('下载失败', () => {
   afterEach(() => vi.unstubAllGlobals());
+  // 用户自己放的目录，没有安装标记：覆盖前要单独同意
   const existing = { '.claude/skills/alpha/SKILL.md': '装之前就有的内容', '.claude/skills/alpha/notes.md': '用户自己的笔记' };
+  const agreed = [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), yes()];
   const untouched = (home: string): void => {
     const installed = join(skillsDir(home), 'alpha');
     expect(readdirSync(installed).sort()).toEqual(['SKILL.md', 'notes.md']);
@@ -244,12 +249,12 @@ describe('下载失败', () => {
     expect(read(installed, 'notes.md')).toBe('用户自己的笔记');
   };
 
-  it('下载中途失败后目标位置保持原样，临时目录被清理，其余项照常安装', async () => {
+  it('同意覆盖之后下载中途失败：目标位置保持原样，临时目录被清理，其余项照常安装', async () => {
     fakeGitHub({
       intercept: (url) => (url.endsWith('/skills/alpha/references/guide.md') ? new Response('unavailable', { status: 503 }) : undefined),
     });
 
-    const result = await run({ catalog: githubCatalogSource(), home: existing, answers: installBoth });
+    const result = await run({ catalog: githubCatalogSource(), home: existing, answers: [...agreed, choose('退出')] });
 
     untouched(result.home);
     expect(result.output).toMatch(/^\s+✗\s+alpha\s+Claude Code\s+失败 下载中断（HTTP 503），目标目录未改动$/m);
@@ -284,7 +289,7 @@ describe('下载失败', () => {
       },
     });
 
-    const result = await run({ catalog: githubCatalogSource(), home: existing, tmp, interrupt: user.signal, answers: [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装')] });
+    const result = await run({ catalog: githubCatalogSource(), home: existing, tmp, interrupt: user.signal, answers: agreed });
 
     expect(leftAfterInterrupt).toEqual([]);
     untouched(result.home);

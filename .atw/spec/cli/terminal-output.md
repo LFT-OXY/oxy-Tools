@@ -61,7 +61,7 @@ color ? styleText(format, text, { validateStream: false }) : text;
 
 沿用交互库（`@inquirer/figures`）的判断，它没有导出，呈现层照写了一份（`ui.ts` 的 `supportsUnicode`）：Windows 上只有 Windows Terminal、VS Code 等几种终端算支持；其他系统上只有 `TERM=linux` 不算。
 
-不支持时，`ui.ts` 里的 `ASCII` 符号表整体替换 `UNICODE`（两张表同一个类型，加符号时两边都要加），按键提示里交互库写死传进来的 `↑↓`、`⏎` 换成 `messages.ts` 的 `keyNames`。交互库传进来的是英文单词的按键（多选的 `space`），任何终端里都换成 `keyWords` 里的字。
+不支持时，`ui.ts` 里的 `ASCII` 符号表整体替换 `UNICODE`（两张表同一个类型，加符号时两边都要加；版本变化的箭头 `→` 退成 `->`），按键提示里交互库写死传进来的 `↑↓`、`⏎` 换成 `messages.ts` 的 `keyNames`。交互库传进来的是英文单词的按键（多选的 `space`），任何终端里都换成 `keyWords` 里的字。
 
 ASCII 的符号宽度可以和 Unicode 的不同（勾选框 `■` 一列，`[x]` 三列）。**凡是按符号宽度对齐的地方都用 `displayWidth(symbols.x)` 算**，不写死列数：多选列表的表头缩进就是「勾选框的宽度 + 1」。
 
@@ -101,6 +101,57 @@ disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
 > **Warning**：`row.disabled` 里带着零宽空格。任何不经 `theme.style.disabled` 就把它打出去的路径都会把零宽空格漏到终端上；测试架子画这种行时也走主题。`prompts.test.ts` 里有带样式和不带样式两条断言输出里没有 `\u200b`。
 
 多选（`@inquirer/checkbox`）的不可选行另有 `icon.disabledChecked`、`icon.disabledUnchecked` 两个图标，还没有画面用到；第一个用到的功能要把它们也盖掉，并在 `prompts.test.ts` 里加 `NO_COLOR` 的断言。
+
+---
+
+## 是否题
+
+覆盖一个不是本工具装的目录之前问的那一句用 `@inquirer/confirm`（6.x）。呈现层给出 `ConfirmQuestion`：
+
+```ts
+// cli/src/prompter.ts
+export interface ConfirmQuestion {
+  message: string;
+  default: boolean;                      // 什么都不输直接回车时的回答
+  answers: { yes: string; no: string };  // 回答之后显示的字（是 / 否）
+  theme: PromptTheme;
+}
+```
+
+交互库对是否题的做法（读它的源码并实测得来），以及主题怎么配合：
+
+| 行为 | 呈现层怎么配合 |
+|------|----------------|
+| 提问后面的按键提示由 `theme.keywords.yes`、`no` 的首字母拼成，缺省那一个经 `theme.style.confirmDefault`，整段再经 `theme.style.defaultAnswer`；库自带的 `confirmDefault` 对没有大小写的字（汉字）会按 Node 的规则上青色 | `keywords` 固定是 `y`、`n`，任何语言下都一样（按的就是这两个键），`confirmDefault` 转大写，`defaultAnswer` 加括号并压暗，得到 `(y/N)`。不把「是」「否」放进 `keywords`：提示会变成 `是/否`，而用户按的仍是 y、n |
+| 回答之后显示的字来自 `transformer`，缺省是 `keywords` 里的词 | 提问器的正式实现用 `question.answers` 做 `transformer`，收成的一行写「是」「否」 |
+| 输入了认不出的东西再回车：不结束提问，下方多一行 `theme.keywords.error(...)`，经 `theme.style.error`；之后再按任何键这一行就消失 | 句子是 `messages.ts` 的 `answerYesOrNo`；样式沿用不可选的行那句话的画法（黄色粗体的「注意」）。不盖的话打出来的是英文 |
+
+`prompts.test.ts` 里有这三样的断言，以及 `NO_COLOR` 下整段不带样式码的断言。再加一种提示（隐藏输入的 `password`）时照此办：先读它的源码，把用到的样式函数和自带的句子列全。
+
+---
+
+## 带备注的表
+
+呈现层的 `table(header, rows)` 把最后一栏当备注，**整张表一个放法**：
+
+| 情况 | 画法 |
+|------|------|
+| 每一格备注（连同表头）接在行尾都不超过 79 列 | 备注成一栏，表头写它 |
+| 有一格放不下 | 全部另起一行，缩进到它前一栏（汇总里是「位置」）的左缘；表头不写这一栏 |
+| 一格备注都没有 | 表头不写这一栏 |
+
+表头永远只有一行。
+
+```ts
+// 错：逐行决定——同一张表里有的备注在栏里、有的折到路径下面，折下去的像是路径的续行；
+// 表头自己也可能被拆成两行（「备注」独占一行），哪怕一格备注都没有
+rows.flatMap((row) => (fits(row) ? [inline(row)] : [start(row), ownLine(row)]));
+
+// 对：先看整张表放不放得下，再统一决定
+const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
+```
+
+名字和路径都来自目录，长度不由我们定：真实目录里的 `writing-for-agents` 就足以让前四栏占到 78 列。**预览页的样例里要有一条长名字**，不然这种拆行在画面上看不到。
 
 ---
 
@@ -158,7 +209,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 
 `cli/scripts/preview.ts` 经 `runInstaller` 按场景表驱动安装器：提问由真实的交互库渲染，按键是脚本发的，输出喂给无头终端（`@xterm/headless`），再把字符格连同样式转成 HTML，每个画面一格，深色和浅色终端各一份。它是视觉评审对照设计方向时用的画面证据。
 
-- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、按键）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
+- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。

@@ -1,12 +1,12 @@
 // 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器。
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller } from '../src/installer.ts';
-import { PromptAborted, type CheckboxQuestion, type Prompter, type SelectQuestion } from '../src/prompter.ts';
+import { PromptAborted, type CheckboxQuestion, type ConfirmQuestion, type Prompter, type SelectQuestion } from '../src/prompter.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { keyboardPrompter } from './terminal.ts';
 
@@ -54,10 +54,21 @@ export function catalogDir(files: { index?: unknown; catalog?: unknown; content?
   return dir;
 }
 
-type Question = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
-type Answer = (question: Question, prompt: 'select' | 'checkbox') => unknown;
+type ListQuestion = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
+type Question = ListQuestion | ConfirmQuestion;
+type Prompt = 'select' | 'checkbox' | 'confirm';
+type Answer = (question: Question, prompt: Prompt) => unknown;
 
-function rowNamed(question: Question, label: string): { value: unknown } {
+const RIGHT_ANSWER: Record<Prompt, string> = {
+  select: '单选，要用 choose()',
+  checkbox: '多选，要用 pick()',
+  confirm: '是否题，要用 yes() 或 no()',
+};
+// 应答用错了提问的种类就失败，并说该用哪个
+const wrongAnswer = (question: Question, prompt: Prompt): Error =>
+  new Error(`「${question.message}」是${RIGHT_ANSWER[prompt]}`);
+
+function rowNamed(question: ListQuestion, label: string): { value: unknown } {
   for (const row of question.rows) {
     if ('separator' in row || firstCell(row.name) !== label) continue;
     if ('disabled' in row && row.disabled) throw new Error(`「${question.message}」里的「${label}」不可选`);
@@ -69,7 +80,7 @@ function rowNamed(question: Question, label: string): { value: unknown } {
 /** 单选：选中第一栏文字等于 label 的那一行，和用户按画面上的字来选是一回事；那一行不可选就失败。 */
 export function choose(label: string): Answer {
   return (question, prompt) => {
-    if (prompt !== 'select') throw new Error(`「${question.message}」是多选，要用 pick()`);
+    if (prompt !== 'select' || !('rows' in question)) throw wrongAnswer(question, prompt);
     return rowNamed(question, label).value;
   };
 }
@@ -77,14 +88,31 @@ export function choose(label: string): Answer {
 /** 多选：只勾选第一栏文字等于这些 label 的行再确认；一个都不传就是什么都不勾直接确认。 */
 export function pick(...labels: string[]): Answer {
   return (question, prompt) => {
-    if (prompt !== 'checkbox') throw new Error(`「${question.message}」是单选，要用 choose()`);
+    if (prompt !== 'checkbox' || !('rows' in question)) throw wrongAnswer(question, prompt);
     return labels.map((label) => rowNamed(question, label).value);
   };
 }
 
-/** 什么都不动直接回车：单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认。 */
+const confirming =
+  (answer: boolean): Answer =>
+  (question, prompt) => {
+    if (prompt !== 'confirm') throw wrongAnswer(question, prompt);
+    return answer;
+  };
+
+/** 是否题：答「是」。 */
+export const yes = (): Answer => confirming(true);
+
+/** 是否题：答「否」。 */
+export const no = (): Answer => confirming(false);
+
+/**
+ * 什么都不动直接回车：单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，
+ * 是否题取它的缺省回答。
+ */
 export function accept(): Answer {
   return (question, prompt) => {
+    if (!('rows' in question)) return question.default;
     const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
     if (prompt === 'checkbox') return choices.filter((row) => 'checked' in row && row.checked).map((row) => row.value);
     const active = ('default' in question && choices.find((row) => row.value === question.default)) || choices[0];
@@ -128,6 +156,8 @@ export interface RunOptions {
   onPath?: string[];
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
+  /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径，都相对主目录 */
+  links?: Record<string, string>;
   /** 用户在提问之外按 Ctrl+C 的信号 */
   interrupt?: AbortSignal;
   /** 交给安装器放临时文件的目录，缺省新建一个 */
@@ -167,6 +197,11 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const answers = [...(options.answers ?? [])];
   const home = tempDir('home');
   writeTree(home, options.home ?? {});
+  for (const [link, target] of Object.entries(options.links ?? {})) {
+    mkdirSync(dirname(join(home, link)), { recursive: true });
+    // junction 只在 Windows 上起作用：那里建目录的符号链接要特权，建这种不用
+    symlinkSync(join(home, target), join(home, link), 'junction');
+  }
   const tmp = options.tmp ?? tempDir('tmp');
   const bin = tempDir('bin');
   for (const command of options.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
@@ -174,20 +209,24 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const catalog = options.catalog ?? catalogDir();
   let unanswered: string | undefined;
 
-  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文
-  const ask = (prompt: 'select' | 'checkbox', question: Question, cursor?: unknown): unknown => {
-    const { icon } = question.theme;
-    const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
-    const active = choices.find((row) => row.value === cursor) ?? choices[0];
+  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文；是否题只有提问和缺省回答
+  const ask = (prompt: Prompt, question: Question, cursor?: unknown): unknown => {
     const lines = [`? ${question.message}`];
-    for (const row of question.rows) {
-      if ('separator' in row) lines.push(` ${row.separator}`);
-      else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
-      // 不可选的行照交互库的拼法：行首一个短横，原因接在后面
-      else if (row.disabled) lines.push(question.theme.style.disabled(`- ${row.name} ${row.disabled}`));
-      else lines.push(`  ${row.name}`);
+    if ('rows' in question) {
+      const { icon } = question.theme;
+      const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
+      const active = choices.find((row) => row.value === cursor) ?? choices[0];
+      for (const row of question.rows) {
+        if ('separator' in row) lines.push(` ${row.separator}`);
+        else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
+        // 不可选的行照交互库的拼法：行首一个短横，原因接在后面
+        else if (row.disabled) lines.push(question.theme.style.disabled(`- ${row.name} ${row.disabled}`));
+        else lines.push(`  ${row.name}`);
+      }
+      if (active?.description) lines.push(active.description);
+    } else {
+      lines[0] += question.default ? ' (Y/n)' : ' (y/N)';
     }
-    if (active?.description) lines.push(active.description);
     record('stdout')(`${lines.join('\n')}\n`);
     const answer = answers.shift();
     if (!answer) {
@@ -199,6 +238,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const scripted: Prompter = {
     select: async <Value>(question: SelectQuestion<Value>) => ask('select', question, question.default) as Value,
     checkbox: async <Value>(question: CheckboxQuestion<Value>) => ask('checkbox', question) as Value[],
+    confirm: async (question) => ask('confirm', question) as boolean,
   };
 
   const { keyboard, prompter: interactive } = keyboardPrompter(record('stdout'), ROWS);

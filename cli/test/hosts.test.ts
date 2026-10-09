@@ -26,7 +26,7 @@ describe('只检测到 Codex', () => {
     const result = await run({ onPath: ['codex'], answers: installAlpha });
 
     expect(result.output).not.toContain('装进哪些 AI Agent');
-    expect(result.output).toMatch(/^\s+alpha\s+Codex\s+~\S+alpha$/m);
+    expect(result.output).toMatch(/^\s+alpha\s+Codex\s+新装\s+~\S+alpha$/m);
     expect(result.output).toContain(join('~', '.agents', 'skills', 'alpha'));
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Codex\s+已安装 1\.0\.0$/m);
     expect(existsSync(claudeSkills(result.home))).toBe(false);
@@ -114,10 +114,10 @@ describe('检测到两个宿主', () => {
     });
 
     expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
-    expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+~\S+alpha$/m);
+    expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     // 同一条目的后续行不重复名字
-    expect(result.output).toMatch(/^\s+Codex\s+~\S+alpha$/m);
-    expect(result.output).toMatch(/^\s+Codex\s+~\S+beta-pack$/m);
+    expect(result.output).toMatch(/^\s+Codex\s+新装\s+~\S+alpha$/m);
+    expect(result.output).toMatch(/^\s+Codex\s+新装\s+~\S+beta-pack$/m);
     expect(result.output).toContain(join('~', '.agents', 'skills', 'beta-pack'));
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Codex\s+已安装 1\.0\.0$/m);

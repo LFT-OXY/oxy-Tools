@@ -5,7 +5,8 @@ import type { Skill } from './catalog.ts';
 import type { Host } from './hosts.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 import { MESSAGES, type Failure, type Lang } from './messages.ts';
-import type { CheckboxQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import type { CheckboxQuestion, ConfirmQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import type { SkillStatus } from './skill-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
 
 export interface TerminalOutput {
@@ -32,6 +33,7 @@ const UNICODE = {
   unchecked: '□',
   separator: '·',
   ellipsis: '…',
+  arrow: '→',
   rule: '─',
   spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
   logo: [
@@ -52,6 +54,7 @@ const ASCII: typeof UNICODE = {
   unchecked: '[ ]',
   separator: '-',
   ellipsis: '...',
+  arrow: '->',
   rule: '-',
   spinner: ['-', '\\', '|', '/'],
   logo: [
@@ -73,11 +76,13 @@ export type MenuChoice = GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
 
-/** 一项安装：哪个条目、装进哪个宿主、装到哪（给用户看的路径） */
+/** 一项安装：哪个条目、装进哪个宿主、装到哪（给用户看的路径）、要装的版本、那里现在的状态 */
 export interface InstallTarget {
   name: string;
   host: string;
   location: string;
+  version: string;
+  status: SkillStatus;
 }
 
 export type Environment = Readonly<Record<string, string | undefined>>;
@@ -148,12 +153,25 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
   const columnWidths = (rows: readonly (readonly string[])[]): number[] =>
     (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => displayWidth(row[column] ?? ''))) + 2);
 
-  // 带表头的表：表头暗淡，哪一栏都不截断
+  // 带表头的表：表头暗淡，哪一栏都不截断。最后一栏是备注，整张表一个放法：每一格都放得下才成一栏；
+  // 有一格放不下就都另起一行，与它前一栏的左缘对齐，表头不写这一栏。一格备注都没有时也不写
   const table = (header: readonly string[], rows: readonly (readonly string[])[]): string[] => {
-    const widths = columnWidths([header, ...rows]);
-    const line = (cells: readonly string[]): string =>
-      `  ${cells.map((cell, column) => pad(cell, widths[column] ?? 0)).join('').trimEnd()}`;
-    return [dim(line(header)), ...rows.map(line)];
+    const last = header.length - 1;
+    const widths = columnWidths([header, ...rows]).slice(0, last);
+    const total = (columns: readonly number[]): number => 2 + columns.reduce((sum, width) => sum + width, 0);
+    const start = (cells: readonly string[]): string =>
+      `  ${cells.slice(0, last).map((cell, column) => pad(cell, widths[column] ?? 0)).join('')}`;
+    const notes = rows.map((row) => row[last] ?? '');
+    const noteHeader = notes.some((note) => note !== '') ? (header[last] ?? '') : '';
+    const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
+    const ownLine = (note: string): string[] => (note === '' ? [] : [`${' '.repeat(total(widths.slice(0, -1)))}${note}`]);
+    return [
+      dim(`${start(header)}${inline ? noteHeader : ''}`.trimEnd()),
+      ...rows.flatMap((row, index) => {
+        const note = notes[index] ?? '';
+        return inline ? [`${start(row)}${note}`.trimEnd()] : [start(row).trimEnd(), ...ownLine(note)];
+      }),
+    ];
   };
 
   // 行首的符号转动；返回的函数把这一行擦掉
@@ -197,8 +215,28 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
         `   ${keys
           .map(([key, action]) => `${t.keyWords[key] ?? (unicode ? key : (t.keyNames[key] ?? key))} ${dim(t.keys[action] ?? action)}`)
           .join(dim(` ${symbols.separator} `))}`,
+      defaultAnswer: (text) => dim(`(${text})`),
+      confirmDefault: (text) => text.toUpperCase(),
     },
     i18n: { disabledError: t.unavailable },
+    // 按键在任何语言下都是 y 和 n；回答之后显示的字由提问自己给
+    keywords: { yes: 'y', no: 'n', error: () => t.answerYesOrNo },
+  };
+
+  // 状态一律用词表达，不显示颜色时文字一字不变。listed 是清单里的版本
+  const versionChange = (status: { version: string }, listed: string): string =>
+    `${status.version} ${symbols.arrow} ${listed}`;
+  const statusCell = (status: SkillStatus, listed: string): string => {
+    switch (status.kind) {
+      case 'none':
+        return dim(t.skillStatus.none);
+      case 'installed':
+        return `${paint('green', t.skillStatus.installed)} ${status.version}`;
+      case 'other-version':
+        return paint(attention, versionChange(status, listed));
+      case 'unmanaged':
+        return paint(attention, t.skillStatus.unmanaged);
+    }
   };
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动
@@ -334,22 +372,32 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       };
     },
 
-    /** 勾选要安装的 skill；checked 是提问出现时已经勾上的那些。一个都不勾就确认表示返回。 */
-    skillPicker(skills: readonly Skill[], checked: readonly Skill[]): CheckboxQuestion<Skill> {
-      // 两栏的表：名称、说明。多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
+    /**
+     * 勾选要安装的 skill：名称、每个宿主一栏状态、说明。statuses 与 hosts 一一对应；
+     * checked 是提问出现时已经勾上的那些。一个都不勾就确认表示返回。
+     */
+    skillPicker(
+      hosts: readonly Host[],
+      entries: readonly { skill: Skill; statuses: readonly SkillStatus[] }[],
+      checked: readonly Skill[],
+    ): CheckboxQuestion<Skill> {
+      // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
       const lead = displayWidth(symbols.checked) + 2;
-      const nameWidth = Math.max(displayWidth(t.nameColumn), ...skills.map((skill) => displayWidth(skill.name))) + 2;
-      const aboutWidth = USABLE - lead - nameWidth;
+      const header = [t.nameColumn, ...hosts.map((host) => host.name)];
+      const rows = entries.map(({ skill, statuses }) => [skill.name, ...statuses.map((status) => statusCell(status, skill.version))]);
+      const widths = columnWidths([header, ...rows]);
+      const aboutWidth = USABLE - lead - widths.reduce((sum, width) => sum + width, 0);
+      const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
       return {
         message: t.pickSkills,
         pageSize: pageSize(),
         theme,
         rows: [
-          { separator: dim(`${' '.repeat(lead - 1)}${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
-          ...skills.map((skill) => ({
+          { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
+          ...entries.map(({ skill }, index) => ({
             value: skill,
             short: skill.name,
-            name: `${pad(skill.name, nameWidth)}${truncate(skill.description[lang], aboutWidth, symbols.ellipsis)}`,
+            name: `${cells(rows[index] ?? [])}${truncate(skill.description[lang], aboutWidth, symbols.ellipsis)}`,
             description: skill.description[lang],
             checked: checked.includes(skill),
           })),
@@ -357,22 +405,39 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       };
     },
 
-    /** 汇总：每一项将装到哪里。同一个条目装进几个宿主就有几行，名字只写在第一行。 */
+    /**
+     * 汇总：每一项将装到哪里、是新装还是覆盖。同一个条目装进几个宿主就有几行，名字只写在第一行。
+     * 有覆盖项时提醒本地改动会丢失。
+     */
     installSummary(targets: readonly InstallTarget[]): void {
+      const overwrites = (target: InstallTarget): boolean => target.status.kind !== 'none';
+      const note = ({ status, version }: InstallTarget): string => {
+        switch (status.kind) {
+          case 'none':
+            return '';
+          case 'installed':
+            return t.reinstallNote(status.version);
+          case 'other-version':
+            return versionChange(status, version);
+          case 'unmanaged':
+            return t.unmanagedNote;
+        }
+      };
       print(
         ...gapAbove(),
         section(t.installSummary(new Set(targets.map((target) => target.name)).size)),
         ...table(
-          [t.entryColumn, t.agentColumn, t.locationColumn],
+          [t.entryColumn, t.agentColumn, t.actionColumn, t.locationColumn, t.noteColumn],
           targets.map((target, index) => [
             target.name === targets[index - 1]?.name ? '' : target.name,
             target.host,
+            overwrites(target) ? paint(attention, t.actions.overwrite) : t.actions.fresh,
             target.location,
+            note(target),
           ]),
         ),
         '',
-        ...keyValue(t.noticeKey, t.replaceNotice, attention),
-        '',
+        ...(targets.some(overwrites) ? [...keyValue(t.noticeKey, t.replaceNotice, attention), ''] : []),
       );
     },
 
@@ -386,9 +451,14 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       };
     },
 
+    /** 不是本工具装的目录，覆盖前单独问一次，缺省不覆盖。 */
+    confirmOverwrite(target: InstallTarget): ConfirmQuestion {
+      return { message: t.confirmOverwrite(target.location), default: false, answers: { yes: t.yes, no: t.no }, theme };
+    },
+
     /**
      * 「正在安装」分区：每一项先 begin，进行中的那一行行首的符号转动；用它返回的函数交出结果，这一行就改写成结果
-     * （不给结果则只擦掉这一行）。全部结束后 finish 把标题换成「结果」并打出合计。
+     * （不给结果则只擦掉这一行）；用户没同意覆盖的那些不 begin，改用 skip。全部结束后 finish 把标题换成「结果」并打出合计。
      */
     installation(targets: readonly InstallTarget[]) {
       const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
@@ -405,7 +475,11 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
             erase();
             if (!outcome) return;
             const rows = outcome.ok
-              ? [`${lead(paint('green', symbols.done), target)}${paint('green', t.installed)} ${outcome.version}`]
+              ? [
+                  `${lead(paint('green', symbols.done), target)}${paint('green', t.installed)} ${
+                    target.status.kind === 'other-version' ? versionChange(target.status, outcome.version) : outcome.version
+                  }`,
+                ]
               : hanging(
                   '',
                   `${lead(paint('red', symbols.failed), target)}${paint(['red', 'bold'], t.failed)} `,
@@ -415,6 +489,11 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
             lines += rows.length;
             print(...rows);
           };
+        },
+        skip(target: InstallTarget): void {
+          totals.skipped++;
+          lines++;
+          print(`${lead(dim(symbols.dash), target)}${t.skippedResult} ${t.overwriteDeclined}`);
         },
         finish(): void {
           // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉

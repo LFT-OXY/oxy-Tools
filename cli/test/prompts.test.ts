@@ -33,8 +33,8 @@ describe('真实的提问画面', () => {
     });
 
     expect(result.output).toMatch(/✓ 选择分组 · Skill$/m);
-    expect(result.output).toMatch(/^▸□ alpha\s+第一个样例 skill.*…$/m);
-    expect(result.output).toMatch(/^▸□ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/^▸□ alpha\s+未装\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/^▸□ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+说明\s+第二个样例 skill$/m);
   });
 
@@ -95,9 +95,9 @@ describe('真实的多选画面', () => {
   it('skill 列表是多选：每行前面有勾选框，下方是说明全文和本地化的按键提示', async () => {
     const result = await run({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^\s+名称\s+说明$/m);
-    expect(result.output).toMatch(/^▸□ alpha\s+第一个样例 skill.*…$/m);
-    expect(result.output).toMatch(/^ □ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^▸□ alpha\s+未装\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/^ □ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+说明\s+第一个样例 skill，它的说明故意写得很长/m);
     expect(result.output).toMatch(/^\s+↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）$/m);
   });
@@ -175,9 +175,9 @@ describe('真实的多选画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/^\s+名称\s+说明$/m);
-    expect(result.output).toMatch(/^>\[ \] alpha\s+第一个样例 skill.*\.\.\.$/m);
-    expect(result.output).toMatch(/^ \[ \] beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^>\[ \] alpha\s+未装\s+第一个样例 skill.*\.\.\.$/m);
+    expect(result.output).toMatch(/^ \[ \] beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+上下键 移动 - 空格 选择 - a 全选 - i 反选 - 回车 确认（不选则返回）$/m);
     expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎]/);
   });
@@ -281,5 +281,127 @@ describe('真实的画面：选择宿主', () => {
 
     expect(result.output).toMatch(/^▸■ Claude Code\s+~\S+skills$/m);
     expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+});
+
+describe('真实的画面：skill 的状态与确认覆盖', () => {
+  const marker = (name: string, version: string): string => JSON.stringify({ name, version });
+  // alpha 是用户自己放的，beta-pack 是本工具装的旧版本
+  const home = {
+    '.claude/skills/alpha/SKILL.md': '用户自己写的 skill',
+    '.claude/skills/beta-pack/SKILL.md': '# beta-pack\n',
+    '.claude/skills/beta-pack/.oxy-tools.json': marker('beta-pack', '2.0'),
+  };
+  const toConfirm: [string, string][] = [
+    [HINT, KEY.enter],
+    [PICK_HINT, KEY.space],
+    ['▸■ alpha', KEY.enter],
+    [HINT, KEY.enter],
+  ];
+  const overwritten = (result: { home: string }): boolean => existsSync(join(result.home, '.claude', 'skills', 'alpha', '.oxy-tools.json'));
+
+  it('列表里每个宿主一栏状态', async () => {
+    const result = await run({ home, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^▸□ alpha\s+非本工具安装\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/^ □ beta-pack\s+2\.0 → 2\.3\s+第二个样例 skill$/m);
+  });
+
+  it('确认覆盖的提问后面是 (y/N)；直接回车就是不覆盖，收成一行写「否」', async () => {
+    const result = await run({ home, keys: [...toConfirm, ['(y/N)', KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/\? ~\S+alpha 不是本工具装的，要覆盖它吗？ \(y\/N\)/);
+    expect(result.output).toMatch(/✓ ~\S+alpha 不是本工具装的，要覆盖它吗？ · 否$/m);
+    expect(result.output).toMatch(/^\s+–\s+alpha\s+Claude Code\s+跳过 未同意覆盖，保持原样$/m);
+    expect(overwritten(result)).toBe(false);
+  });
+
+  it('按 y 再回车就覆盖，收成一行写「是」', async () => {
+    const result = await run({ home, keys: [...toConfirm, ['(y/N)', 'y'], ['(y/N) y', KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/✓ ~\S+alpha 不是本工具装的，要覆盖它吗？ · 是$/m);
+    expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
+    expect(overwritten(result)).toBe(true);
+  });
+
+  it('输入了 y、n 之外的东西：提问不结束，下方说明该输入什么', async () => {
+    const result = await run({
+      home,
+      keys: [...toConfirm, ['(y/N)', 'x'], ['(y/N) x', KEY.enter], ['请输入 y 或 n', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\s+注意\s+请输入 y 或 n$/m);
+    expect(result.output).not.toContain('正在安装');
+    expect(overwritten(result)).toBe(false);
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('英文界面下的确认：回答之后和输入不对时都是英文', async () => {
+    const toConfirmInEnglish: [string, string][] = [
+      ['⏎ select', KEY.enter],
+      ['⏎ confirm', KEY.space],
+      ['▸■ alpha', KEY.enter],
+      ['⏎ select', KEY.enter],
+    ];
+    const declined = await run({
+      argv: ['--lang', 'en'],
+      home,
+      keys: [...toConfirmInEnglish, ['(y/N)', KEY.enter], ['⏎ select', KEY.ctrlC]],
+    });
+    const mistyped = await run({
+      argv: ['--lang', 'en'],
+      home,
+      keys: [...toConfirmInEnglish, ['(y/N)', 'x'], ['(y/N) x', KEY.enter], ['Please answer y or n', KEY.ctrlC]],
+    });
+
+    expect(declined.output).toMatch(/✓ ~\S+alpha is unmanaged\. Overwrite it\? · no$/m);
+    expect(mistyped.output).toMatch(/^\s+Notice\s+Please answer y or n$/m);
+  });
+
+  it('设置了 NO_COLOR 时，状态栏、含覆盖项的汇总和确认覆盖的提问都不带样式码', async () => {
+    const result = await run({
+      home,
+      env: { NO_COLOR: '1' },
+      keys: [
+        [HINT, KEY.enter],
+        [PICK_HINT, KEY.space],
+        ['▸■ alpha', KEY.down],
+        ['▸□ beta-pack', KEY.space],
+        ['▸■ beta-pack', KEY.enter],
+        [HINT, KEY.enter],
+        ['(y/N)', 'x'],
+        ['(y/N) x', KEY.enter],
+        ['请输入 y 或 n', '\x7f'],
+        ['(y/N)', KEY.enter],
+        [HINT, KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^\s+beta-pack\s+Claude Code\s+覆盖\s+~\S+beta-pack\s+2\.0 → 2\.3$/m);
+    expect(result.output).toMatch(/· 否$/m);
+    expect(result.output).toMatch(/已安装 2\.0 → 2\.3$/m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+
+  it('没有 Unicode 的终端里，版本变化的箭头和跳过的记号都退成 ASCII', async () => {
+    const result = await run({
+      home,
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [
+        ['回车 选择', KEY.enter],
+        ['回车 确认', KEY.space],
+        ['>[x] alpha', KEY.enter],
+        ['回车 选择', KEY.enter],
+        ['(y/N)', KEY.enter],
+        ['回车 选择', KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^ \[ \] beta-pack\s+2\.0 -> 2\.3\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/\+ ~\S+alpha 不是本工具装的，要覆盖它吗？ - 否$/m);
+    expect(result.output).toMatch(/^\s+-\s+alpha\s+Claude Code\s+跳过 未同意覆盖，保持原样$/m);
+    expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎–→]/);
   });
 });

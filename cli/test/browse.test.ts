@@ -21,8 +21,8 @@ describe('skill 列表', () => {
   it('列出每个 skill 的名字和一句话说明，并能返回主菜单', async () => {
     const result = await run({ answers: browse });
 
-    expect(result.output).toMatch(/ alpha\s+第一个样例 skill/m);
-    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ alpha\s+未装\s+第一个样例 skill/m);
+    expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output.split('选择分组')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
@@ -30,7 +30,7 @@ describe('skill 列表', () => {
   it('一行放不下的说明在列表里截断，全文显示在列表下方', async () => {
     const result = await run({ answers: browse });
 
-    expect(result.output).toMatch(/ alpha\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/ alpha\s+未装\s+第一个样例 skill.*…$/m);
     expect(result.output).toContain(LONG_ABOUT.zh);
   });
 

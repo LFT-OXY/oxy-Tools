@@ -348,7 +348,7 @@ function isSafeRelativePath(value: unknown): value is string {
 }
 
 // 目录是远程数据，会被原样打到终端上，所以文字里不许有控制字符
-function isText(value: unknown): value is string {
+export function isText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '' && !CONTROL_CHARACTER.test(value);
 }
 

@@ -42,8 +42,14 @@ export interface PromptTheme {
     /** 多选回答之后显示什么 */
     renderSelectedChoices: (selected: readonly { short: string }[]) => string;
     keysHelpTip: (keys: [key: string, action: string][]) => string;
+    /** 是否题后面的按键提示（y/n） */
+    defaultAnswer: (text: string) => string;
+    /** 按键提示里代表缺省回答的那个字母 */
+    confirmDefault: (text: string) => string;
   };
   i18n: { disabledError: string };
+  /** 是否题认的两个按键，以及输入了别的东西时的那句话 */
+  keywords: { yes: string; no: string; error: () => string };
 }
 
 export interface SelectQuestion<Value> {
@@ -62,11 +68,22 @@ export interface CheckboxQuestion<Value> {
   theme: PromptTheme;
 }
 
+export interface ConfirmQuestion {
+  message: string;
+  /** 什么都不输直接回车时的回答 */
+  default: boolean;
+  /** 回答之后显示的字 */
+  answers: { yes: string; no: string };
+  theme: PromptTheme;
+}
+
 export interface Prompter {
   /** 单选。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   select<Value>(question: SelectQuestion<Value>): Promise<Value>;
   /** 多选，返回勾选的那些值；一个都不勾也能确认。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   checkbox<Value>(question: CheckboxQuestion<Value>): Promise<Value[]>;
+  /** 是否题。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
+  confirm(question: ConfirmQuestion): Promise<boolean>;
 }
 
 export class PromptAborted extends Error {

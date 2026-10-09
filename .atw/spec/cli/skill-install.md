@@ -1,6 +1,6 @@
 # 安装 skill
 
-> 宿主探测（`cli/src/hosts.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）三段的契约，以及流程（`cli/src/flow.ts`）怎么决定装进哪些宿主。目前有 Claude Code 和 Codex 两个宿主；skill 的状态探测随后面的功能补进来。
+> 宿主探测（`cli/src/hosts.ts`）、状态探测（`cli/src/skill-status.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）四段的契约，以及流程（`cli/src/flow.ts`）怎么决定装进哪些宿主、哪些要先问过才覆盖。目前有 Claude Code 和 Codex 两个宿主。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### 1. Scope / Trigger
 
-安装 skill 会向 GitHub 的接口发请求、往用户主目录里写东西、替换已有的目录。凡是改下载方式、落盘步骤、安装标记的字段、宿主的判断方式，加一个宿主，改问不问宿主的规则，或加一种装不上的原因，都落在这份契约上。A Team Workflow 将来要直接调用安装动作，所以它的签名不能认识宿主。
+安装 skill 会向 GitHub 的接口发请求、往用户主目录里写东西、替换已有的目录。凡是改下载方式、落盘步骤、安装标记的字段、宿主的判断方式、状态怎么判、覆盖前问不问，加一个宿主，改问不问宿主的规则，或加一种装不上的原因，都落在这份契约上。A Team Workflow 将来要直接调用安装动作，所以它的签名不能认识宿主。
 
 ### 2. Signatures
 
@@ -21,6 +21,14 @@ export interface Host {
 }
 // 安装器认识的全部宿主，检测到的和没检测到的都在；顺序就是界面上的顺序
 export function detectHosts(env: Environment, homeDir: string): Host[];
+
+// cli/src/skill-status.ts
+export type SkillStatus =
+  | { kind: 'none' }                              // 目标位置什么都没有
+  | { kind: 'installed'; version: string }        // 本工具装的，版本与清单一致
+  | { kind: 'other-version'; version: string }    // 本工具装的，version 是已装的版本，与清单的不同（更旧或更新都算）
+  | { kind: 'unmanaged' };                        // 已存在但不是本工具装的
+export function skillStatus(skill: Skill, skillsDir: string): SkillStatus;
 
 // cli/src/catalog.ts —— CatalogSource 的一部分
 pin(options: PinOptions): Promise<PinnedSource>;
@@ -78,6 +86,36 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - 钉住的来源整次运行共用，不因宿主多而多查询。
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；skill 列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回 skill 列表，不重问宿主。
 
+**skill 的状态（`skillStatus`）**
+
+状态完全来自对 `<skillsDir>/<名字>` 此刻的探测，同步、只读，不抛错；没有任何集中的状态文件。
+
+| 目标位置 | 状态 | 列表里的写法 |
+|----------|------|--------------|
+| `lstat` 失败（不存在，或上级不是目录、读不了） | `none` | `未装` |
+| 是符号链接（**不跟随**：它指向的目录里有安装标记也不算） | `unmanaged` | `非本工具安装` |
+| 有 `.oxy-tools.json`，其中的 `version` 与清单里这一条的相同 | `installed` | `已装 <版本>` |
+| 同上，但 `version` 不同 | `other-version` | `<已装的> → <清单的>` |
+| 存在但没有安装标记；或标记不是 JSON、没有 `version`、`version` 不是非空文字或夹着控制字符；或目标是个文件 | `unmanaged` | `非本工具安装` |
+
+- 标记里的 `version` 会打到终端上，所以和目录里的文字守同一条规矩（`catalog.ts` 的 `isText`）；不合规矩的标记当作没有标记——宁可多问一次要不要覆盖。
+- **每次要显示就现探测**：每进一次 skill 列表探测一轮（装完回到列表就是新的状态），勾完之后给汇总再探测一次。不把上一轮的结果记下来复用。
+
+**覆盖与单独确认（`flow.ts`）**
+
+| 状态 | 汇总里的操作 | 备注 | 选了「开始安装」之后 |
+|------|--------------|------|----------------------|
+| `none` | 新装 | 空 | 直接装 |
+| `installed` | 覆盖 | `重装 <版本>` | 直接装（整目录替换，标记更新） |
+| `other-version` | 覆盖 | `<已装的> → <清单的>` | 直接装；结果写 `已安装 <已装的> → <清单的>` |
+| `unmanaged` | 覆盖 | `非本工具安装，另行确认` | **逐项另问**「`<路径>` 不是本工具装的，要覆盖它吗？」，缺省否 |
+
+- 另问发生在汇总确认之后、查询和下载之前，一项一问（同一个 skill 在两个宿主下都是 `unmanaged` 就问两次，问的是各自的路径）。
+- 没同意的那一项不装，目标位置原样不动，结果里是 `– <名字> <宿主> 跳过 未同意覆盖，保持原样`，计入合计的「跳过」；其余项照常。
+- **全都没同意时不向 GitHub 查询**：没有要下载的。
+- 汇总里只要有一项是覆盖，表后就有一行「注意  覆盖即整目录替换，目录内的本地改动会丢失」；全是新装时没有这一行。
+- 同意覆盖符号链接时，换掉的只是链接本身（见落盘第 5 步），那里变成一个装好的真目录，链接原先指向的目录一个字节都不动。
+
 **向 GitHub 查询（`githubCatalogSource().pin`）**
 
 两个请求，一次运行只发一轮（流程把钉住的来源记在本次运行里，装几轮都共用；查询失败不记，下一轮重新查）：
@@ -122,7 +160,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 }
 ```
 
-`version` 取自目录里这一条的版本，`commit` 是来源提交（本地目录来源时是 `null`），`installedAt` 是 ISO 8601 的 UTC 时间。安装器没有任何集中的状态文件；目录里有没有这个文件，就是“是不是本工具装的”的唯一依据。
+`version` 取自目录里这一条的版本，`commit` 是来源提交（本地目录来源时是 `null`），`installedAt` 是 ISO 8601 的 UTC 时间。安装器没有任何集中的状态文件；目录里有没有这个文件（并且读得出 `version`），就是“是不是本工具装的”的唯一依据。文件名由 `install-skill.ts` 导出（`MARKER_FILE`），状态探测读的是同一个常量。
 
 **中断**：`interrupt` 一触发，`installSkill` 的监听当场同步删掉临时目录和那两个以点开头的目录（进程随即退出，等不到 `finally`）；在测试里进程不退出，流程看到信号已触发就以 130 结束。
 
@@ -147,6 +185,8 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | 下载这一步的其他失败 | `download`，`detail` 是 `HTTP 503`、`ENOTFOUND`、`ENOENT`（本地来源里没有这个目录）等 |
 | 建临时目录、写标记、建 skill 目录、挪动、替换失败 | `write`，`detail` 是错误码 |
 
+不算失败的一种结果：用户没同意覆盖。它不经 `installSkill`，流程直接调 `progress.skip(target)`，这一行写「跳过 未同意覆盖，保持原样」，退出状态不变。
+
 令牌的值不出现在任何输出里：出错说明只提变量名。
 
 ### 5. Good/Base/Bad Cases
@@ -155,12 +195,15 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - Good：两个宿主都检测到且都选了，勾了 `pr` → `~/.claude/skills/pr` 和 `~/.agents/skills/pr` 各有内容和各自的标记，汇总两行、结果两行、合计「2 成功」。
 - Base：`wizard` 的一个文件答复 503 → `wizard` 那一行是「失败 下载中断（HTTP 503），目标目录未改动」，原先的 `~/.claude/skills/wizard` 一个字节都没变，临时目录是空的；`pr` 照常装上；退出状态 0。
 - Base：选了两个宿主，主目录里的 `.agents` 是个文件 → Codex 那一行「失败 写入失败（…）」，Claude Code 那一行照常「已安装」；退出状态 0。
+- Good：`~/.claude/skills/beta-pack` 是本工具装的 2.0，清单里是 2.3 → 列表里写 `2.0 → 2.3`，汇总里是「覆盖」加同样的备注和一行「注意」，不另问；装完后旧文件不在了，标记是 2.3，结果写「已安装 2.0 → 2.3」。
+- Base：`~/.claude/skills/alpha` 是用户自己放的，同时勾了 `beta-pack` → 选了「开始安装」之后问一次，直接回车（否）→ `alpha` 原样不动、结果是「跳过」，`beta-pack` 照常装上，合计「1 成功 · 0 失败 · 1 跳过」。
+- Base：`~/.claude/skills/alpha` 是指向 `~/my-skills/alpha` 的符号链接，同意覆盖 → 那里变成装好的真目录，`~/my-skills/alpha` 的文件清单和内容都没变。
 - Bad：查询被限流 → 打出「出错：GitHub 限流」和两条出路，什么都没装，回到主菜单；同一次运行里再装一次会重新查询。
 - Bad：一个宿主都没检测到 → skill 分组进不去，主目录里什么都不多。
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（只有 Claude Code 时的安装）和 `cli/test/hosts.test.ts`（宿主探测与宿主选择）；真实的多选画面和不可选的行在 `prompts.test.ts`：
+都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（只有 Claude Code 时的安装）、`cli/test/hosts.test.ts`（宿主探测与宿主选择）和 `cli/test/skill-status.test.ts`（状态、覆盖、单独确认、符号链接）；真实的多选画面、不可选的行和是否题在 `prompts.test.ts`：
 
 - 装一个、装多个：断言主目录里的文件内容、标记的四个字段、主目录里没有多出别的东西、`result.tmp` 是空的。
 - 整体替换：主目录里事先放一个同名目录，断言旧文件不在了。
@@ -169,6 +212,11 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - **下载中途失败后目标位置保持原样**：事先放好同名目录，让其中一个文件 503，断言那个目录的文件清单和内容都没变、其余项装上了、`result.tmp` 是空的。
 - 中断：在某个文件的请求里触发 `interrupt`，**当场**读临时目录断言已经空了（事后再读分不出是同步清的还是 `finally` 清的），再断言目标没变、退出状态 130。
 - 上面两张表里的每一种情况各一条：断言标题或原因的文字、没有堆栈、什么都没装（或其余项照常）、退出状态。
+- 状态：主目录里事先放好带标记的目录（`home`）和符号链接（`links`），断言列表里那一行的状态词——四种各一条，外加符号链接指向带标记的目录、标记写坏、标记的版本里夹着控制码（还要断言控制码没有出现在 `result.raw` 里）；装完再进列表，断言第二次的列表里已经是「已装」。
+- 覆盖已装的：断言汇总那一行的操作与备注、「注意」；装完后旧文件不在、标记的版本更新了；**预设的应答里没有多出一个是否题**（多问了测试就会因为没有预设应答而失败）。
+- 不是本工具装的：`accept()` 证明缺省是不覆盖；`no()` 断言目录的文件清单和内容都没变、其余项装上了、结果里的「跳过」和合计；`yes()` 断言整目录替换并有了标记；两个宿主各问各的；全都没同意时 `fakeGitHub().queries()` 是空的；在这个提问上 `interrupt()` 以 130 退出、什么都没动。
+- 符号链接：同意后 `lstatSync(目标).isSymbolicLink()` 为假、里面是新内容和标记，**链接原先指向的目录的文件清单和内容都没变**；不同意时链接还在。
+- 下载失败与中断那两条用的是「用户自己放的目录 + `yes()`」：同意覆盖之后才失败，用户的东西也必须原样留着。
 - 宿主：`onPath` 给 `['codex']`、`['claude', 'codex']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时分组那一行的文字，以及真实交互库下光标起始在哪、在那一行上回车进不去。
 
 ### 7. Wrong vs Correct
@@ -191,7 +239,27 @@ await Promise.all(files.map(fetchFile));
 interrupt.addEventListener('abort', () => void rm(work, { recursive: true }));
 ```
 
+```ts
+// 用 stat 判断：跟着链接走到了带标记的目录，把用户的链接当成了本工具装的，不问就替换
+if (statSync(target).isDirectory() && existsSync(join(target, MARKER_FILE))) return { kind: 'installed', version };
+```
+
+```ts
+// 进列表时探测一次存起来，装完回到列表还用它：刚装好的那个仍然显示「未装」
+session.statuses ??= probeAll(catalog.skills, hosts);
+```
+
 #### Correct
+
+```ts
+// 先 lstat：是链接就不往下看
+if (lstatSync(target).isSymbolicLink()) return { kind: 'unmanaged' };
+```
+
+```ts
+// 每次要显示就现探测
+const entries = catalog.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
+```
 
 ```ts
 // 新内容先弄到目标旁边（同一个文件系统），再用两次同步的改名替换，放不上去就挪回来
@@ -233,6 +301,26 @@ interrupt.addEventListener('abort', discard);
 
 ---
 
+## Design Decision: 安装标记读不出版本，就当它不是本工具装的
+
+**Context**：规格说“目录存在而没有安装标记”算不是本工具装的，没说标记在、但读不懂（不是 JSON、没有 `version`、版本里夹着控制字符）时怎么算。
+
+**Decision**：当作没有标记，状态是 `unmanaged`，覆盖前单独问。另一条路是“文件在就算本工具装的”，但那样版本显示不出来，而且会不问就替换一个来历说不清的目录。多问一次的代价小于悄悄替换。
+
+**没有经维护者确认**，记在任务的 `prd.md` 修订记录里。
+
+---
+
+## Design Decision: 「注意」只在有覆盖项时出现
+
+**Context**：规格要求汇总确认时说明“整目录替换、本地改动会丢失”。工单 06 之前探测不出哪一项是覆盖，这一行固定出现。
+
+**Decision**：现在只有至少一项的操作是「覆盖」时才打这一行。全是新装时没有东西会丢，这一行只是噪音；有了「操作」一栏，哪些会被覆盖已经逐行标出。
+
+**没有经维护者确认**；要它固定出现，改 `ui.installSummary` 里那一个条件即可。
+
+---
+
 ## Common Mistakes
 
 ### 版本号和提交号不是同一时刻取的
@@ -241,4 +329,4 @@ interrupt.addEventListener('abort', discard);
 
 **Cause**：`index.json` 在启动时从 `main` 读，提交号要到确认安装之后才查；这中间 `main` 上有新提交就会对不上。窗口是用户停在菜单里的那段时间。
 
-**现状**：没有处理。后果是下次运行时这个 skill 显示为版本不同，重装一次就对上了。要根治得在钉住提交之后按那个提交重读 `index.json`；要不要做还没有定。
+**现状**：没有处理。后果是下次运行时这个 skill 显示为版本不同（`<旧> → <新>`），重装一次就对上了。要根治得在钉住提交之后按那个提交重读 `index.json`；要不要做还没有定。

@@ -43,7 +43,7 @@ describe('语言', () => {
 
     expect(result.output).toContain('Pick a group');
     expect(result.output).toContain('Curated AI toolchain installer');
-    expect(result.output).toMatch(/ beta-pack\s+The second sample skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+none\s+The second sample skill$/m);
     expect(result.output).not.toContain('选择分组');
   });
 

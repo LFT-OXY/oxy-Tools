@@ -1,9 +1,9 @@
 // 界面预览页（仅供开发）：经安装器入口按预设场景驱动安装器，提问由真实的交互库渲染，
 // 把无头终端里的画面连同样式转成一个离线 HTML 页面，每个画面一格，深色和浅色终端各一份。
 // 生成物在 .preview/ 下，不提交，不随 npm 包发布。
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
 import { CatalogError, githubCatalogSource, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
@@ -26,6 +26,10 @@ interface Scene {
   catalog?: CatalogSource;
   /** 可执行路径上有哪些命令，缺省只有 claude */
   onPath?: string[];
+  /** 主目录里事先有什么：相对路径 → 文件内容 */
+  home?: Record<string, string>;
+  /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径 */
+  links?: Record<string, string>;
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
 }
@@ -76,6 +80,33 @@ const offline: CatalogSource = {
   readText: () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo'), { code: 'ENOTFOUND' }) })),
 };
 
+// 主目录里一个本工具装的 skill：有安装标记
+function installedSkill(skillsDir: string, name: string, version: string): Record<string, string> {
+  return {
+    [`${skillsDir}/${name}/SKILL.md`]: `# ${name}\n`,
+    [`${skillsDir}/${name}/.oxy-tools.json`]: JSON.stringify({ name, version, commit: null, installedAt: '2026-10-01T08:00:00.000Z' }),
+  };
+}
+
+const CLAUDE_SKILLS = '.claude/skills';
+const CODEX_SKILLS = '.agents/skills';
+// 四种状态都有：已装、版本不同、不是本工具装的（手动放的目录、符号链接）、未装
+const MIXED: Pick<Scene, 'home' | 'links'> = {
+  home: {
+    ...installedSkill(CLAUDE_SKILLS, 'archify', '2.16'),
+    ...installedSkill(CODEX_SKILLS, 'archify', '2.16'),
+    ...installedSkill(CLAUDE_SKILLS, 'explanation', '0.9.0'),
+    ...installedSkill(CODEX_SKILLS, 'explanation', '1.0.0'),
+    ...installedSkill(CLAUDE_SKILLS, 'if5', '1.0.0'),
+    [`${CLAUDE_SKILLS}/pr/SKILL.md`]: '# 自己写的 pr\n',
+    ...installedSkill(CLAUDE_SKILLS, 'writing-for-agents', '1.0.0'),
+    'dotfiles/skills/writing-for-agents/SKILL.md': '# 用链接管理的 skill\n',
+  },
+  links: { [`${CODEX_SKILLS}/writing-for-agents`]: 'dotfiles/skills/writing-for-agents' },
+};
+// 名字长的条目上有备注：一行放不下，备注另起一行
+const LONG_NAME_UNMANAGED = { home: { [`${CLAUDE_SKILLS}/oxy-learning-hub/SKILL.md`]: '# 自己放的\n' } };
+
 // ── 场景 ──────────────────────────────────────────────────────────────────────
 
 const LEGACY_CONSOLE = { platform: 'win32' as const, env: { TERM: '' } };
@@ -86,6 +117,16 @@ const toSummary = [...pickTwo, KEY.enter];
 const install = [...toSummary, KEY.enter];
 // 检测到两个宿主时，进了 skill 分组先问装进哪些宿主：两项默认勾选，直接确认
 const twoHosts = (keys: string[]): string[] => [KEY.enter, ...keys];
+// 勾上 explanation、pr 和 wizard：在 MIXED 里分别是版本不同、不是本工具装的、未装
+const pickThree = [...toSkills, KEY.down, KEY.space, ...down(4), KEY.space, KEY.down, KEY.space];
+const toMixedSummary = [...pickThree, KEY.enter];
+// 选了「开始安装」，停在确认覆盖的提问上
+const toOverwriteQuestion = [...toMixedSummary, KEY.enter];
+const declineOverwrite = [...toOverwriteQuestion, KEY.enter];
+const agreeOverwrite = [...toOverwriteQuestion, 'y', KEY.enter];
+const pickLongName = [...toSkills, ...down(4), KEY.space, KEY.enter];
+// 勾上 if5、pr 和 wizard：名字都短，备注放得下
+const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.down, KEY.space, KEY.enter];
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -117,6 +158,15 @@ const scenes: Scene[] = [
   { title: 'skill 多选列表 · 两个宿主', note: '上面两行是已回答的提问', onPath: BOTH_HOSTS, keys: twoHosts(pickTwo) },
   { title: '汇总确认 · 两个宿主', note: '每个 skill 在每个宿主下各一行，名字只写在第一行', onPath: BOTH_HOSTS, keys: twoHosts(toSummary) },
   { title: '结果 · 两个宿主', note: '按宿主分别列出，各有各的结果', onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
+  { title: 'skill 多选列表 · 四种状态并存', note: '每个宿主一栏：已装带版本、版本不同写两个版本、非本工具安装（手动放的目录或符号链接）、未装', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
+  { title: 'skill 多选列表 · 一个宿主的状态', note: '只装进一个宿主时只有一栏', ...MIXED, keys: pickThree },
+  { title: '汇总确认 · 含覆盖项', note: '操作一栏标出覆盖；备注写版本变化、重装或另行确认，放得下就成一栏；下面提醒本地改动会丢失', ...MIXED, keys: pickShortNames },
+  { title: '汇总确认 · 含覆盖项 · 两个宿主', note: '有一条备注放不下，就都另起一行，与位置的左缘对齐，表头不写备注一栏', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(toMixedSummary) },
+  { title: '汇总确认 · 名字长的条目', note: '同样是备注另起一行', ...LONG_NAME_UNMANAGED, keys: pickLongName },
+  { title: '确认覆盖 · 不是本工具装的目录', note: '选了「开始安装」之后单独再问，缺省不覆盖', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(toOverwriteQuestion) },
+  { title: '确认覆盖 · 输入了别的', note: '只认 y 和 n；输入别的不结束提问，下方说明', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts([...toOverwriteQuestion, 'x', KEY.enter]) },
+  { title: '结果 · 未同意覆盖的跳过', note: '那个目录保持原样，其余照常；覆盖了旧版本的写出两个版本', onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
+  { title: '结果 · 同意覆盖', note: '同意之后和别的项一样安装', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(agreeOverwrite) },
   { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；skill 分组不可进入，行尾注明原因，光标落在「退出」上', onPath: [] },
   { title: '主菜单 · 一个宿主都没有 · 在 skill 分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
@@ -130,12 +180,16 @@ const scenes: Scene[] = [
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
   { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toSkills },
   { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
+  { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
+  { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '英文界面 · 一个宿主都没有', argv: ['--lang', 'en'], onPath: [] },
   { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
   { title: '不显示颜色 · 选择宿主', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '不显示颜色 · 四种状态并存', note: '设置了 NO_COLOR：每种状态的文字本身就不同', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
+  { title: '不显示颜色 · 含覆盖项的汇总、确认与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
@@ -143,6 +197,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
   { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
   { title: '没有 Unicode · 选择宿主', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '没有 Unicode · 四种状态并存', note: '版本变化的箭头退成 ->', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
+  { title: '没有 Unicode · 含覆盖项的汇总、确认与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
@@ -185,6 +241,15 @@ async function play(scene: Scene): Promise<Cell[][]> {
   const tty = scene.tty ?? true;
   const bin = scratchDir('bin');
   for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
+  const home = scratchDir('home');
+  for (const [path, content] of Object.entries(scene.home ?? {})) {
+    mkdirSync(dirname(join(home, path)), { recursive: true });
+    writeFileSync(join(home, path), content);
+  }
+  for (const [link, target] of Object.entries(scene.links ?? {})) {
+    mkdirSync(dirname(join(home, link)), { recursive: true });
+    symlinkSync(join(home, target), join(home, link), 'junction');
+  }
   const finished = runInstaller({
     argv: scene.argv ?? [],
     env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
@@ -194,7 +259,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     stderr: { isTTY: true, write },
     stdinIsTTY: tty,
     catalogSource: scene.catalog ?? sample,
-    homeDir: scratchDir('home'),
+    homeDir: home,
     tempDir: scratchDir('tmp'),
     interrupt: new AbortController().signal,
     runCommand: () => Promise.reject(new Error('preview does not run commands')),

@@ -34,7 +34,7 @@ describe('写坏的条目', () => {
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
     expect(result.output).toMatch(/^\s+目录\s+1 skill$/m);
-    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('broken');
     expect(result.exitCode).toBe(0);
   });
@@ -74,7 +74,7 @@ describe('不认识的字段', () => {
       answers: browse,
     });
 
-    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('格式有误');
     expect(result.exitCode).toBe(0);
   });
@@ -166,7 +166,7 @@ describe('目录来源', () => {
 
     const result = await run({ catalog: unreachable, env: { OXY_TOOLS_CATALOG: local }, answers: browse });
 
-    expect(result.output).toMatch(/ from-local-dir\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ from-local-dir\s+未装\s+第二个样例 skill$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -196,7 +196,7 @@ describe('默认的目录来源', () => {
 
     const result = await run({ catalog: githubCatalogSource(), answers: browse });
 
-    expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(fetched.mock.calls.map(([url]) => String(url)).sort()).toEqual([
       'https://raw.githubusercontent.com/LFT-OXY/oxy-Tools/main/catalog.json',
       'https://raw.githubusercontent.com/LFT-OXY/oxy-Tools/main/index.json',
