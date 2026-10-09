@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "if5": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    },
+    "onetake": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    },
+    "retro": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    },
+    "show-me": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    },
+    "wizard": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    },
+    "writing-for-agents": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
+    }
+  }
+}

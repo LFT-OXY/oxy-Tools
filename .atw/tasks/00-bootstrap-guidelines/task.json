@@ -1,0 +1,29 @@
+{
+  "id": "00-bootstrap-guidelines",
+  "name": "00-bootstrap-guidelines",
+  "title": "Bootstrap Guidelines",
+  "description": "Fill in project development guidelines for AI agents",
+  "status": "discover",
+  "dev_type": "docs",
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "autuhae",
+  "assignee": "autuhae",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".atw/spec/backend/",
+    ".atw/spec/frontend/"
+  ],
+  "notes": "First-time setup task created by atw init (fullstack project)",
+  "meta": {}
+}
