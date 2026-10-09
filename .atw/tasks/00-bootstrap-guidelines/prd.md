@@ -21,36 +21,37 @@ the rest conversationally.
 
 ## Status (update the checkboxes as you complete each item)
 
-- [ ] Fill backend guidelines
-- [ ] Fill frontend guidelines
-- [ ] Add code examples
+- [x] Fill skills-layer guidelines
+- [x] Fill scripts-layer guidelines
+- [x] Add code examples
+
+> 2026-10-09 调整：`atw init` 按 fullstack 项目生成了 backend / frontend 两层模板，
+> 但本仓库是 agent skill 分发仓库（`skills/` + `index.json`），没有后端服务、前端应用
+> 或数据库。按 `atw-spec-bootstrap` 的规则（模板不是契约，不适用的删掉），spec 层改为
+> `skills/` 与 `scripts/`，原 backend / frontend 模板已移除。
 
 ---
 
 ## Spec files to populate
 
 
-### Backend guidelines
+### Skills layer
 
 | File | What to document |
 |------|------------------|
-| `.atw/spec/backend/directory-structure.md` | Where different file types go (routes, services, utils) |
-| `.atw/spec/backend/database-guidelines.md` | ORM, migrations, query patterns, naming conventions |
-| `.atw/spec/backend/error-handling.md` | How errors are caught, logged, and returned |
-| `.atw/spec/backend/logging-guidelines.md` | Log levels, format, what to log |
-| `.atw/spec/backend/quality-guidelines.md` | Code review standards, testing requirements |
+| `.atw/spec/skills/directory-structure.md` | 仓库布局、skill 目录的四种形态、命名 |
+| `.atw/spec/skills/skill-authoring.md` | `SKILL.md` frontmatter、触发方式、正文结构、`agents/openai.yaml` |
+| `.atw/spec/skills/manifest-versioning.md` | `index.json` 字段契约、版本号规则、校验命令 |
+| `.atw/spec/skills/vendored-skills.md` | 带上游许可证整包引入的 skill 怎么对待 |
+| `.atw/spec/skills/quality-guidelines.md` | 按改动类型的校验、提交约定、禁止事项 |
 
 
-### Frontend guidelines
+### Scripts layer
 
 | File | What to document |
 |------|------------------|
-| `.atw/spec/frontend/directory-structure.md` | Component/page/hook organization |
-| `.atw/spec/frontend/component-guidelines.md` | Component patterns, props conventions |
-| `.atw/spec/frontend/hook-guidelines.md` | Custom hook naming, patterns |
-| `.atw/spec/frontend/state-management.md` | State library, patterns, what goes where |
-| `.atw/spec/frontend/type-safety.md` | TypeScript conventions, type organization |
-| `.atw/spec/frontend/quality-guidelines.md` | Linting, testing, accessibility |
+| `.atw/spec/scripts/bundled-scripts.md` | 随 skill 分发的脚本：运行时、命令行形态、输出与退出码、失败行为 |
+| `.atw/spec/scripts/html-assets.md` | HTML 模板占位符、校验器要求、主题 token、模板与脚本的 DOM 约定 |
 
 
 ### Thinking guides (already populated)
