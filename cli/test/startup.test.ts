@@ -38,7 +38,7 @@ describe('语言', () => {
   it('系统语言环境不是中文时用英文界面和英文说明', async () => {
     const result = await run({
       env: { LANG: 'en_US.UTF-8' },
-      answers: [choose('Skill'), pick(), choose('Exit')],
+      answers: [choose('Skills'), pick(), choose('Exit')],
     });
 
     expect(result.output).toContain('Pick a group');

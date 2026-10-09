@@ -155,7 +155,7 @@ describe('结果', () => {
   it('英文界面下结果也是英文', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
-      answers: [choose('Skill'), pick('alpha'), choose('Install'), choose('Exit')],
+      answers: [choose('Skills'), pick('alpha'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^── Install 1 skill ─+$/m);

@@ -547,7 +547,7 @@ const en: Messages = {
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
   groups: {
-    skill: { label: 'Skill', about: 'Capability packs for your AI Agent' },
+    skill: { label: 'Skills', about: 'Capability packs for your AI Agent' },
     mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
     tool: { label: 'Tools', about: 'Installed by running their official install commands' },
     app: { label: 'Apps', about: 'Deploy them yourself; only links here' },

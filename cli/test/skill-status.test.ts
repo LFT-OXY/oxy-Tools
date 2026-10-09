@@ -96,7 +96,7 @@ describe('skill 列表里的状态', () => {
         ...installed('.claude/skills', 'beta-pack', '2.0'),
         '.agents/skills/beta-pack/SKILL.md': 'placed by hand',
       },
-      answers: [choose('Skill'), accept(), pick(), pick(), choose('Exit')],
+      answers: [choose('Skills'), accept(), pick(), pick(), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+About$/m);
@@ -195,7 +195,7 @@ describe('覆盖已装的 skill', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       home: { ...installed('.claude/skills', 'alpha', '1.0.0'), ...installed('.claude/skills', 'beta-pack', '2.0') },
-      answers: [choose('Skill'), pick('alpha', 'beta-pack'), choose('Install'), choose('Exit')],
+      answers: [choose('Skills'), pick('alpha', 'beta-pack'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Entry\s+AI Agent\s+Action\s+Location(\s+Note)?$/m);
@@ -308,7 +308,7 @@ describe('不是本工具装的同名目录', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha'), choose('Install'), no(), choose('Exit')],
+      answers: [choose('Skills'), pick('alpha'), choose('Install'), no(), choose('Exit')],
     });
 
     expect(result.output).toMatch(/\s+overwrite\s+~\S+alpha\s+unmanaged; asked separately$/m);

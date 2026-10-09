@@ -250,7 +250,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       // 整行压暗，两处除外：原因是用户最需要读的字；光标停在这一行上时，光标要和别的行上一样显眼
       disabled: (text) => {
         const lead = text.startsWith(cursor) ? cursor : '';
-        return `${lead}${text
+        // 别的行上光标随整行加粗，这里单独给它加上
+        return `${lead && paint('bold', lead)}${text
           .slice(lead.length)
           .split(REASON_MARK)
           .map((part, index) => (index % 2 === 1 || part === '' ? part : dim(part)))

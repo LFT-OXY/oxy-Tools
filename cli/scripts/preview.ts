@@ -414,6 +414,8 @@ const scenes: Scene[] = [
   { title: '英文界面 · 必填的 key 没填', argv: ['--lang', 'en'], ...KEYED, keys: [...skipExa, KEY.enter] },
   { title: '英文界面 · 工具多选列表', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
+  { title: '英文界面 · 出错', argv: ['--lang', 'en'], catalog: offline },
+  { title: '英文界面 · 帮助', note: 'npx oxy-tools --help --lang en', argv: ['--help', '--lang', 'en'] },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
@@ -442,6 +444,7 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 应用项目列表', ...LEGACY_CONSOLE, catalog: withApps, keys: toApps },
   { title: '没有 Unicode · 应用项目详情', note: '打开之后的记号退成 +', ...LEGACY_CONSOLE, catalog: withApps, keys: openApp },
   { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
+  { title: '没有 Unicode · MCP 多选列表 · 不可选的条目', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
@@ -544,7 +547,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
 function readCells(terminal: InstanceType<typeof xterm.Terminal>): Cell[][] {
   const buffer = terminal.buffer.active;
   const lines: Cell[][] = [];
-  for (let y = 0; y < ROWS; y++) {
+  // 整个缓冲区，连同滚出屏幕的部分：画面比 ROWS 行长时，只读前 ROWS 行会把底下的截掉
+  for (let y = 0; y < buffer.length; y++) {
     const line = buffer.getLine(y);
     const cells: Cell[] = [];
     for (let x = 0; line && x < COLUMNS; x++) {

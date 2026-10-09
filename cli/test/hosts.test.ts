@@ -183,7 +183,7 @@ describe('检测到两个宿主', () => {
   });
 
   it('英文界面下的宿主选择', async () => {
-    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Skill'), pick(), choose('Exit')] });
+    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Skills'), pick(), choose('Exit')] });
 
     expect(result.output).toContain('Install into which AI Agents');
     expect(result.output).toMatch(/^\s*■ Codex\s+~\S+skills$/m);
@@ -214,6 +214,6 @@ describe('一个宿主都没检测到', () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: [], answers: [choose('Exit')] });
 
     expect(result.output).toMatch(/^\s+Notice\s+Claude Code and Codex not detected; components cannot be installed$/m);
-    expect(result.output).toMatch(/^- Skill\s+2\s+Capability packs for your AI Agent · needs an AI Agent$/m);
+    expect(result.output).toMatch(/^- Skills\s+2\s+Capability packs for your AI Agent · needs an AI Agent$/m);
   });
 });

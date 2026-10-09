@@ -134,3 +134,19 @@ cli/
 推送后 CI（`.github/workflows/cli.yml`）在 macOS、Linux、Windows 上各用 Node 22.13 和 24 跑全部测试，另跑类型检查和目录校验。
 
 包声明支持 Node 22.13 及以上的 22.x 或 23.5 及以上。行为与 Node 版本有关的改动（样式码、流）要在 22.13 上再跑一遍测试。
+
+### 发布前在本机核对
+
+自动化测试不碰真实的宿主命令、真实的终端和打出来的包。发 npm 版本之前照下面走一遍（工单 12 用过的做法）；都在临时目录里做，不动真实的主目录和宿主配置。
+
+| 核对什么 | 怎么做 |
+|----------|--------|
+| 包里有什么、装出来能不能跑 | `npm pack --pack-destination <临时目录>`，在一个临时项目里 `npm install <那个 .tgz>`，再 `npx --no-install oxy-tools --version`、`--help` |
+| 没有交互式终端 | `npx --no-install oxy-tools </dev/null \| cat`：说明在标准错误，退出状态 1 |
+| 目录格式版本过高 | 伪终端里 `OXY_TOOLS_CATALOG=<version 写成 99 的样例目录> node dist/bin.js` |
+| 断网 | 伪终端里 `sandbox-exec -p '(version 1)(allow default)(deny network*)' node dist/bin.js`（macOS），走的是缺省的 GitHub 目录来源 |
+| skill、MCP、工具的整条流程 | 伪终端里跑 `node dist/bin.js`，事先 `export HOME=<临时目录> CLAUDE_CONFIG_DIR=<临时目录> CODEX_HOME=<临时目录> OXY_TOOLS_CATALOG=<样例目录>`，脚本开头断言这几个都指向临时目录。执行的是真实的 `claude`、`codex`，写的是临时配置；完了查临时配置里有那几条、终端的原始输出里搜不到填的 key、真实配置里没有样例的名字 |
+| 不显示颜色 | 同上再加 `NO_COLOR=1`：原始输出里一个样式码（`ESC[…m`）都没有 |
+| 深色与浅色的真实终端 | 在终端程序里各用一套深色、一套浅色的配色跑同一条流程，看每个画面；观感的结论记进 [界面设计](./ui-design.md) |
+
+样例目录要自己写（一个 skill 的真实内容，加几条 MCP、工具、应用项目），名字取成不会和机器上已有的 MCP 撞车的（如 `oxy-sample-*`）——安装器遇到同名的会先移除。伪终端可以用 `expect`，或 Python 的 `pty` 写个按步骤发按键的小脚本；要把录下的原始输出还原成画面，交给 `@xterm/headless`。
