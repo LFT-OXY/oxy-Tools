@@ -2,3 +2,5 @@ node_modules/
 dist/
 # 界面预览页是生成物
 .preview/
+# npm pack 打出来的包
+*.tgz

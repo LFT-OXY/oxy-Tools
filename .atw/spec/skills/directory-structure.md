@@ -10,6 +10,7 @@
 /
 ├── index.json          # 可选 skill 清单
 ├── catalog.json        # 目录里 skill 以外的条目：MCP、工具、应用项目
+├── README.md           # 仓库的两个用途、怎么运行安装器、许可证按目录的归属
 ├── cli/                # 安装器 oxy-tools，自成一体的 npm 包，见 CLI 层规范
 ├── .github/workflows/  # cli.yml：安装器的测试与目录校验，只管 cli/ 和两个目录文件
 ├── skills/
@@ -19,7 +20,7 @@
 └── .atw/ .claude/ .agents/ .pi/   # atw init 生成的工作流配置与已安装的 skill 副本
 ```
 
-仓库根没有 `package.json`、构建脚本或 README；CI 只有 `.github/workflows/cli.yml` 一个工作流，不碰 `skills/`。每个 skill 自带它需要的一切；安装器的包描述文件、依赖和构建都关在 `cli/` 里（[CLI 层规范](../cli/index.md)）。
+仓库根没有 `package.json`、构建脚本，也没有统一的许可证文件：许可证按目录分别归属（`cli/` 是 MIT，上游整包沿用各自的 `LICENSE`），根 `README.md` 里有一张表，增删带 `LICENSE` 的目录时跟着改。CI 只有 `.github/workflows/cli.yml` 一个工作流，不碰 `skills/`。每个 skill 自带它需要的一切；安装器的包描述文件、依赖和构建都关在 `cli/` 里（[CLI 层规范](../cli/index.md)）。
 
 ---
 

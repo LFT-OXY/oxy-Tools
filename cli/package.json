@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Curated AI toolchain installer: pick skills, MCP servers and tools from the oxy-Tools catalog and install them into Claude Code or Codex",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LFT-OXY/oxy-Tools.git",
+    "directory": "cli"
+  },
   "type": "module",
   "bin": {
     "oxy-tools": "dist/bin.js"

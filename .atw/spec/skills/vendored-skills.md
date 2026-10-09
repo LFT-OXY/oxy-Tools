@@ -14,6 +14,8 @@
 | `skills/onetake/` | PolyForm Noncommercial 1.0.0 | Patrick (github.com/feitangyuan) | `c2230a1` |
 | `skills/unlazy/` | MIT | Leonxlnx | `66591ee` |
 
+仓库根 `README.md` 的「许可证」一节有一张同样的表，引入或移除整包时两处一起改。
+
 其余 skill 没有 `LICENSE`。其中只有 `skills/pr/` 记了部分内容的出处（`CREDITS.md`、`metadata.credits`）；别的 skill 的来源仓库里没有记录，不要凭写法推断它是自写还是引入的。
 
 ---
