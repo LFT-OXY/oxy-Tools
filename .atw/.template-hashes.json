@@ -35,7 +35,7 @@
     ".claude/skills/atw-handoff/agents/openai.yaml": "f99f9bff5f0938baa706165d1dd1555e9f51f6cf19b3abb8b23b745f5cd29843",
     ".claude/skills/atw-handoff/SKILL.md": "3fc5cec0baa490d59f768e99c00226ed90c6b798c9e237ceab3267a2e34cf559",
     ".claude/skills/atw-implement/agents/openai.yaml": "19a2e644289d8b16e123ee8386ce2ba1c03061e3444088791eeead39b4c4c6d6",
-    ".claude/skills/atw-implement/SKILL.md": "f6c9877dded15ae522afd1cce3f0ff5778635c01dc1cebe91bb0ccf580ca0408",
+    ".claude/skills/atw-implement/SKILL.md": "564e02502096d743a52667306753c04225e0493606c74eb00002ddcef40813f4",
     ".claude/skills/atw-implement-spec/agents/openai.yaml": "72fa6f2cbc9369ec9d9244b5dc8b9d5127f22ffee4d6dc7d28e40c480cbb0c5e",
     ".claude/skills/atw-implement-spec/SKILL.md": "515112e48a8aa5029b11df41147f1c677b02e2f7570d8527889b840f14e3fd60",
     ".claude/skills/atw-improve-codebase-architecture/agents/openai.yaml": "5d67bc99fcd5c93d19460000d843442b77c40f03fefd6f63f9f089dd4f547fa3",
@@ -154,7 +154,7 @@
     ".agents/skills/atw-handoff/agents/openai.yaml": "f99f9bff5f0938baa706165d1dd1555e9f51f6cf19b3abb8b23b745f5cd29843",
     ".agents/skills/atw-handoff/SKILL.md": "3fc5cec0baa490d59f768e99c00226ed90c6b798c9e237ceab3267a2e34cf559",
     ".agents/skills/atw-implement/agents/openai.yaml": "19a2e644289d8b16e123ee8386ce2ba1c03061e3444088791eeead39b4c4c6d6",
-    ".agents/skills/atw-implement/SKILL.md": "f6c9877dded15ae522afd1cce3f0ff5778635c01dc1cebe91bb0ccf580ca0408",
+    ".agents/skills/atw-implement/SKILL.md": "564e02502096d743a52667306753c04225e0493606c74eb00002ddcef40813f4",
     ".agents/skills/atw-implement-spec/agents/openai.yaml": "72fa6f2cbc9369ec9d9244b5dc8b9d5127f22ffee4d6dc7d28e40c480cbb0c5e",
     ".agents/skills/atw-implement-spec/SKILL.md": "515112e48a8aa5029b11df41147f1c677b02e2f7570d8527889b840f14e3fd60",
     ".agents/skills/atw-improve-codebase-architecture/agents/openai.yaml": "5d67bc99fcd5c93d19460000d843442b77c40f03fefd6f63f9f089dd4f547fa3",
@@ -242,7 +242,7 @@
     ".pi/agents/atw-review.md": "f9f70899161afcc691c82a96058f09fce7bdf7fa4756a468ed3d1dfbf33332b9",
     ".pi/extensions/atw/index.ts": "90db46221c0cbd86cc99f6793fc0784432762a942cc8644669e4b194e4a8e8f4",
     ".pi/settings.json": "853bb977c2c8ae58ef87127e76e789d3e02dd17d6bb2d8269d3c83e8f3da153d",
-    "AGENTS.md": "8586eb51525da2c91a39044482a50325fb636705bbe9a8e25f47311515fdd90a",
+    "AGENTS.md": "95becde8bf909f16ded92f4c8b53f1a3a0202d4f71f146d6e0545852a5fa23ed",
     ".atw/agents/implement-agent.md": "c46a8d8031b0facc75340fb0e667f5e08b69d8f90c126fcc40977a3ea8fb971f",
     ".atw/agents/review.md": "99a0f062ad94f0029bc5451531269ad6e5aaa5c46aa81c4353f6c80f35224d3b",
     ".atw/config.yaml": "3f190a7268397ac19443d7b40960f2fd4deda4e9ae6c2cc6b6dc2d3f6a45add7",
@@ -278,6 +278,6 @@
     ".atw/scripts/noob_mode.py": "2354f0d97f38af2b4b5219ec6b71ab9d7865296654001c8fb09d5567aa504a44",
     ".atw/scripts/task.py": "99e187d08d13cd9cfd7a4a66cf30db71d35daf452cfd417c940201f58a310826",
     ".atw/scripts/tickets.py": "120c57cedfe654379e1212a9df0a711d98c7ee8a0574a081e0eb8ce837c5939d",
-    ".atw/workflow.md": "36c17e95ebfd774b07e177d174d6045c84a496c8b043e1850747828ce5442995"
+    ".atw/workflow.md": "305c89ead673dd2192f1ff55dea724530702161f1b3ed44e49c3446d0a3fb24a"
   }
 }
