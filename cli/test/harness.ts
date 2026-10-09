@@ -59,12 +59,14 @@ type Answer = (question: Question, prompt: 'select' | 'checkbox') => unknown;
 
 function rowNamed(question: Question, label: string): { value: unknown } {
   for (const row of question.rows) {
-    if (!('separator' in row) && firstCell(row.name) === label) return row;
+    if ('separator' in row || firstCell(row.name) !== label) continue;
+    if ('disabled' in row && row.disabled) throw new Error(`「${question.message}」里的「${label}」不可选`);
+    return row;
   }
   throw new Error(`「${question.message}」里没有「${label}」这一项`);
 }
 
-/** 单选：选中第一栏文字等于 label 的那一行，和用户按画面上的字来选是一回事。 */
+/** 单选：选中第一栏文字等于 label 的那一行，和用户按画面上的字来选是一回事；那一行不可选就失败。 */
 export function choose(label: string): Answer {
   return (question, prompt) => {
     if (prompt !== 'select') throw new Error(`「${question.message}」是多选，要用 pick()`);
@@ -77,6 +79,18 @@ export function pick(...labels: string[]): Answer {
   return (question, prompt) => {
     if (prompt !== 'checkbox') throw new Error(`「${question.message}」是单选，要用 choose()`);
     return labels.map((label) => rowNamed(question, label).value);
+  };
+}
+
+/** 什么都不动直接回车：单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认。 */
+export function accept(): Answer {
+  return (question, prompt) => {
+    const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
+    if (prompt === 'checkbox') return choices.filter((row) => 'checked' in row && row.checked).map((row) => row.value);
+    const active = ('default' in question && choices.find((row) => row.value === question.default)) || choices[0];
+    if (!active) throw new Error(`「${question.message}」里没有可选的项`);
+    if ('disabled' in active && active.disabled) throw new Error(`「${question.message}」的光标起始落在不可选的一项上`);
+    return active.value;
   };
 }
 
@@ -169,6 +183,8 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     for (const row of question.rows) {
       if ('separator' in row) lines.push(` ${row.separator}`);
       else if ('checked' in row) lines.push(` ${row.checked ? icon.checked : icon.unchecked} ${row.name}`);
+      // 不可选的行照交互库的拼法：行首一个短横，原因接在后面
+      else if (row.disabled) lines.push(question.theme.style.disabled(`- ${row.name} ${row.disabled}`));
       else lines.push(`  ${row.name}`);
     }
     if (active?.description) lines.push(active.description);

@@ -1,6 +1,6 @@
 # 安装 skill
 
-> 宿主探测（`cli/src/hosts.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）三段的契约。目前只有 Claude Code 一个宿主；第二个宿主和 skill 的状态探测随后面的功能补进来。
+> 宿主探测（`cli/src/hosts.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）三段的契约，以及流程（`cli/src/flow.ts`）怎么决定装进哪些宿主。目前有 Claude Code 和 Codex 两个宿主；skill 的状态探测随后面的功能补进来。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### 1. Scope / Trigger
 
-安装 skill 会向 GitHub 的接口发请求、往用户主目录里写东西、替换已有的目录。凡是改下载方式、落盘步骤、安装标记的字段、宿主的判断方式，或加一种装不上的原因，都落在这份契约上。A Team Workflow 将来要直接调用安装动作，所以它的签名不能认识宿主。
+安装 skill 会向 GitHub 的接口发请求、往用户主目录里写东西、替换已有的目录。凡是改下载方式、落盘步骤、安装标记的字段、宿主的判断方式，加一个宿主，改问不问宿主的规则，或加一种装不上的原因，都落在这份契约上。A Team Workflow 将来要直接调用安装动作，所以它的签名不能认识宿主。
 
 ### 2. Signatures
 
@@ -19,7 +19,8 @@ export interface Host {
   detected: boolean;
   skillsDir: string;  // 用户级的 skill 目录
 }
-export function claudeCode(env: Environment, homeDir: string): Host;
+// 安装器认识的全部宿主，检测到的和没检测到的都在；顺序就是界面上的顺序
+export function detectHosts(env: Environment, homeDir: string): Host[];
 
 // cli/src/catalog.ts —— CatalogSource 的一部分
 pin(options: PinOptions): Promise<PinnedSource>;
@@ -59,8 +60,23 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | 宿主 | 判断 | skill 目录 |
 |------|------|-----------|
 | Claude Code | 可执行路径上有 `claude` 命令 | `<主目录>/.claude/skills` |
+| Codex | 可执行路径上有 `codex` 命令 | `<主目录>/.agents/skills`（它自己的 `.codex/skills` 已被标为废弃） |
+
+每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量和主目录，交出一个 `Host`），都回答同样的问题；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
 
 “可执行路径上有某个命令”的判断不执行任何东西：把 `env.PATH` 按本机的分隔符（`path.delimiter`）拆开，在每个目录里找这个名字，以及这个名字接上 `env.PATHEXT` 里每个扩展名（Windows 上有这个变量，别的系统没有）；找到的必须是可执行的普通文件，同名的目录不算。不看传入的 `platform`——文件系统的事按真实的系统来，测试里才能在任何系统上用一个临时目录当可执行路径。
+
+**装进哪些宿主（`flow.ts`）**
+
+| 检测到的宿主 | 主菜单上方 | 进 skill 分组之后 |
+|--------------|-----------|-------------------|
+| 两个及以上 | 「AI Agent」一行每个宿主后面一个 `✓` | 先问「装进哪些 AI Agent」：多选，默认全选，名字后面是各自的 skill 目录；再进 skill 列表 |
+| 只有一个 | 没检测到的写「– 未检测到」，另有一行「注意」说明它被跳过、组件只装进检测到的那个 | 不问，直接用它 |
+| 一个都没有 | 每个都写「– 未检测到」，一行「注意」说明暂时装不了组件 | 进不去：分组那一行不可选，行尾注明「需要 AI Agent」，光标起始落在第一个能选的项上 |
+
+- **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, host.skillsDir, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
+- 钉住的来源整次运行共用，不因宿主多而多查询。
+- **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；skill 列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回 skill 列表，不重问宿主。
 
 **向 GitHub 查询（`githubCatalogSource().pin`）**
 
@@ -135,13 +151,16 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 ### 5. Good/Base/Bad Cases
 
-- Good：勾了 `pr` 和 `wizard`，查询一轮（两个请求），5 个文件都从同一个提交下，两个目录各有内容和标记，结果两行「已安装」，回到主菜单。
+- Good：只检测到 Claude Code，勾了 `pr` 和 `wizard`，查询一轮（两个请求），5 个文件都从同一个提交下，两个目录各有内容和标记，结果两行「已安装」，回到主菜单。
+- Good：两个宿主都检测到且都选了，勾了 `pr` → `~/.claude/skills/pr` 和 `~/.agents/skills/pr` 各有内容和各自的标记，汇总两行、结果两行、合计「2 成功」。
 - Base：`wizard` 的一个文件答复 503 → `wizard` 那一行是「失败 下载中断（HTTP 503），目标目录未改动」，原先的 `~/.claude/skills/wizard` 一个字节都没变，临时目录是空的；`pr` 照常装上；退出状态 0。
+- Base：选了两个宿主，主目录里的 `.agents` 是个文件 → Codex 那一行「失败 写入失败（…）」，Claude Code 那一行照常「已安装」；退出状态 0。
 - Bad：查询被限流 → 打出「出错：GitHub 限流」和两条出路，什么都没装，回到主菜单；同一次运行里再装一次会重新查询。
+- Bad：一个宿主都没检测到 → skill 分组进不去，主目录里什么都不多。
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（真实的多选画面在 `prompts.test.ts`）：
+都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（只有 Claude Code 时的安装）和 `cli/test/hosts.test.ts`（宿主探测与宿主选择）；真实的多选画面和不可选的行在 `prompts.test.ts`：
 
 - 装一个、装多个：断言主目录里的文件内容、标记的四个字段、主目录里没有多出别的东西、`result.tmp` 是空的。
 - 整体替换：主目录里事先放一个同名目录，断言旧文件不在了。
@@ -150,6 +169,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - **下载中途失败后目标位置保持原样**：事先放好同名目录，让其中一个文件 503，断言那个目录的文件清单和内容都没变、其余项装上了、`result.tmp` 是空的。
 - 中断：在某个文件的请求里触发 `interrupt`，**当场**读临时目录断言已经空了（事后再读分不出是同步清的还是 `finally` 清的），再断言目标没变、退出状态 130。
 - 上面两张表里的每一种情况各一条：断言标题或原因的文字、没有堆栈、什么都没装（或其余项照常）、退出状态。
+- 宿主：`onPath` 给 `['codex']`、`['claude', 'codex']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时分组那一行的文字，以及真实交互库下光标起始在哪、在那一行上回车进不去。
 
 ### 7. Wrong vs Correct
 
@@ -200,6 +220,16 @@ interrupt.addEventListener('abort', discard);
 **Decision**：自己找。跑一次要几百毫秒，每次启动都付；Windows 上 `claude` 是个 `.cmd`，要经 shell 才跑得起来；测试里记录到的命令列表会混进探测用的那一条，之后断言 MCP 的命令时碍事。工具的检查方式里本来就有“某个命令在不在可执行路径上”这一种，到时候用的是同一个判断。
 
 **代价**：靠 shell 别名才能用的 `claude`（不在可执行路径上）检测不到——但那种情况下跑一次也一样找不到。
+
+---
+
+## Design Decision: 装进两个宿主就下载两次
+
+**Context**：同一个 skill 装进两个宿主，内容是一样的。可以下载一次再复制到两处，也可以每个宿主各走一遍安装动作。
+
+**Decision**：各走一遍。安装动作的签名是「条目 + 目标目录」，A Team Workflow 将来要直接调用它，不能让它认识“几个目标”；各走一遍还让两个宿主的结果天然独立——一处下载中断或写不进去，另一处照常，结果里各有一行。
+
+**代价**：体积大的 skill（`onetake` 约 70MB）装进两个宿主要下两遍。要省这一遍，得在流程里先下到临时目录再分发，同时保住“一处失败不影响另一处”和中断时的同步清理；还没有做。
 
 ---
 

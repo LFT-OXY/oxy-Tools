@@ -65,6 +65,8 @@ const ASCII: typeof UNICODE = {
 // 转动符号的节奏照搬交互库的默认值
 const SPINNER_INTERVAL = 80;
 const ERASE_LINE = '\r\x1b[2K';
+// 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
+const REASON_MARK = '\u200b';
 
 export type GroupId = 'skill';
 export type MenuChoice = GroupId | 'exit';
@@ -169,15 +171,26 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     };
   };
 
+  const cursor = paint('cyan', symbols.cursor);
   const theme: PromptTheme = {
     prefix: { idle: paint(['cyan', 'bold'], '?'), done: paint('green', symbols.done) },
-    icon: { cursor: paint('cyan', symbols.cursor), checked: paint('cyan', symbols.checked), unchecked: symbols.unchecked },
+    icon: { cursor, checked: paint('cyan', symbols.checked), unchecked: symbols.unchecked },
     style: {
       message: (text) => paint('bold', text),
       answer: (text) => `${dim(symbols.separator)} ${text}`,
       // 光标所在行整行加粗。行内片段的收尾码会把粗体一并关掉，所以每次收尾后重申一次
       highlight: (text) => paint('bold', text.replaceAll('\x1b[22m', '\x1b[22m\x1b[1m')),
       description: (text) => hanging('   ', dim(pad(t.aboutColumn, displayWidth(t.aboutColumn) + 2)), text).join('\n'),
+      // 整行压暗，两处除外：原因是用户最需要读的字；光标停在这一行上时，光标要和别的行上一样显眼
+      disabled: (text) => {
+        const lead = text.startsWith(cursor) ? cursor : '';
+        return `${lead}${text
+          .slice(lead.length)
+          .split(REASON_MARK)
+          .map((part, index) => (index % 2 === 1 || part === '' ? part : dim(part)))
+          .join('')}`;
+      },
+      error: (text) => hanging('   ', paint(attention, pad(t.noticeKey, displayWidth(t.noticeKey) + 2)), text).join('\n'),
       // 一个都没勾就确认，等于返回
       renderSelectedChoices: (selected) => selected.map((choice) => choice.short).join(t.listSeparator) || t.back,
       keysHelpTip: (keys) =>
@@ -185,25 +198,11 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
           .map(([key, action]) => `${t.keyWords[key] ?? (unicode ? key : (t.keyNames[key] ?? key))} ${dim(t.keys[action] ?? action)}`)
           .join(dim(` ${symbols.separator} `))}`,
     },
+    i18n: { disabledError: t.unavailable },
   };
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动
   const pageSize = (): number => Math.max(7, (out.rows ?? 24) - 6);
-
-  // skill 的两栏表：名称、说明。lead 是交互库在每一行前面放的列数（分隔行前面只有一格，所以表头要多缩进）
-  const skillTable = (skills: readonly Skill[], lead: number) => {
-    const nameWidth = Math.max(displayWidth(t.nameColumn), ...skills.map((skill) => displayWidth(skill.name))) + 2;
-    const aboutWidth = USABLE - lead - nameWidth;
-    return {
-      header: { separator: dim(`${' '.repeat(lead - 1)}${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
-      choices: skills.map((skill) => ({
-        value: skill,
-        short: skill.name,
-        name: `${pad(skill.name, nameWidth)}${truncate(skill.description[lang], aboutWidth, symbols.ellipsis)}`,
-        description: skill.description[lang],
-      })),
-    };
-  };
 
   return {
     line(text: string): void {
@@ -227,12 +226,20 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     },
 
     /** 本机信息：宿主在不在、目录里各类条目的数量，有要提醒的事各多一行。 */
-    catalogSummary({ host, skills, skipped }: { host: Host; skills: number; skipped: number }): void {
-      const presence = host.detected ? paint('green', symbols.done) : `${dim(symbols.dash)} ${t.notDetected}`;
+    catalogSummary({ hosts, skills, skipped }: { hosts: readonly Host[]; skills: number; skipped: number }): void {
+      const presence = (host: Host): string =>
+        `${host.name} ${host.detected ? paint('green', symbols.done) : `${dim(symbols.dash)} ${t.notDetected}`}`;
+      const names = (detected: boolean): string[] =>
+        hosts.filter((host) => host.detected === detected).map((host) => host.name);
+      const missing = names(false);
+      const present = names(true);
       print(
-        ...keyValue(t.agentKey, `${host.name} ${presence}`),
+        ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
         ...keyValue(t.catalogKey, t.counts({ skills })),
-        ...(host.detected ? [] : keyValue(t.noticeKey, t.noHost(host.name), attention)),
+        ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing), attention) : []),
+        ...(present.length > 0 && missing.length > 0
+          ? keyValue(t.noticeKey, t.hostsSkipped(missing.join(t.listSeparator), present.join(t.listSeparator)), attention)
+          : []),
         ...(skipped > 0 ? keyValue(t.noticeKey, t.skipped(skipped), attention) : []),
         rule(),
         '',
@@ -271,23 +278,38 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       print('');
     },
 
-    mainMenu(groups: readonly { id: GroupId; count: number }[]): SelectQuestion<MenuChoice> {
+    /** lacksHost 的分组因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。 */
+    mainMenu(groups: readonly { id: GroupId; count: number; lacksHost: boolean }[]): SelectQuestion<MenuChoice> {
       const rows = groups.map((group) => ({ ...group, ...t.groups[group.id], count: String(group.count) }));
       const labelWidth = Math.max(displayWidth(t.groupColumn), ...rows.map((row) => displayWidth(row.label))) + 2;
       const countWidth = Math.max(displayWidth(t.countColumn), ...rows.map((row) => row.count.length));
       const aboutWidth = USABLE - 2 - labelWidth - countWidth - 2;
-      const line = (label: string, count: string, about: string): string =>
-        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}  ${truncate(about, aboutWidth, symbols.ellipsis)}`;
+      const line = (label: string, count: string, about: string, width = aboutWidth): string =>
+        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}  ${truncate(about, width, symbols.ellipsis)}`;
+      // 原因接在说明后面，说明相应少占几列
+      const reasonWidth = displayWidth(` ${symbols.separator} ${t.needsHost}`);
+      const enterable = rows.find((row) => !row.lacksHost);
       return {
         message: t.pickGroup,
         pageSize: pageSize(),
         theme,
+        // 交互库的光标缺省停在第一项上，哪怕它不可选
+        ...(rows.some((row) => row.lacksHost) ? { default: enterable?.id ?? ('exit' as const) } : {}),
         rows: [
           ...(rows.length > 0
             ? [
                 // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
                 { separator: dim(` ${line(t.groupColumn, t.countColumn, t.aboutColumn)}`) },
-                ...rows.map((row) => ({ value: row.id, short: row.label, name: line(row.label, row.count, row.about) })),
+                ...rows.map((row) => ({
+                  value: row.id,
+                  short: row.label,
+                  ...(row.lacksHost
+                    ? {
+                        name: line(row.label, row.count, row.about, aboutWidth - reasonWidth),
+                        disabled: `${symbols.separator} ${REASON_MARK}${t.needsHost}${REASON_MARK}`,
+                      }
+                    : { name: line(row.label, row.count, row.about) }),
+                })),
                 { separator: ' ' },
               ]
             : []),
@@ -296,38 +318,57 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       };
     },
 
-    /** skill 列表；选中的值是那个 skill，null 表示返回。cursor 是光标起始所在的 skill。 */
-    skillList(skills: readonly Skill[], cursor?: Skill): SelectQuestion<Skill | null> {
-      const { header, choices } = skillTable(skills, 2);
+    /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面。 */
+    hostPicker(choices: readonly { host: Host; location: string }[], checked: readonly Host[]): CheckboxQuestion<Host> {
+      const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + 2;
       return {
-        message: t.browseSkills,
+        message: t.pickHosts,
         pageSize: pageSize(),
         theme,
-        ...(cursor ? { default: cursor } : {}),
-        rows: [header, ...choices, { separator: ' ' }, { value: null, short: t.back, name: t.back }],
+        rows: choices.map(({ host, location }) => ({
+          value: host,
+          short: host.name,
+          name: `${pad(host.name, nameWidth)}${dim(location)}`,
+          checked: checked.includes(host),
+        })),
       };
     },
 
     /** 勾选要安装的 skill；checked 是提问出现时已经勾上的那些。一个都不勾就确认表示返回。 */
     skillPicker(skills: readonly Skill[], checked: readonly Skill[]): CheckboxQuestion<Skill> {
-      // 多选的每一行前面是光标、勾选框和一个空格
-      const { header, choices } = skillTable(skills, displayWidth(symbols.checked) + 2);
+      // 两栏的表：名称、说明。多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
+      const lead = displayWidth(symbols.checked) + 2;
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...skills.map((skill) => displayWidth(skill.name))) + 2;
+      const aboutWidth = USABLE - lead - nameWidth;
       return {
         message: t.pickSkills,
         pageSize: pageSize(),
         theme,
-        rows: [header, ...choices.map((choice) => ({ ...choice, checked: checked.includes(choice.value) }))],
+        rows: [
+          { separator: dim(`${' '.repeat(lead - 1)}${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
+          ...skills.map((skill) => ({
+            value: skill,
+            short: skill.name,
+            name: `${pad(skill.name, nameWidth)}${truncate(skill.description[lang], aboutWidth, symbols.ellipsis)}`,
+            description: skill.description[lang],
+            checked: checked.includes(skill),
+          })),
+        ],
       };
     },
 
-    /** 汇总：每一项将装到哪里。 */
+    /** 汇总：每一项将装到哪里。同一个条目装进几个宿主就有几行，名字只写在第一行。 */
     installSummary(targets: readonly InstallTarget[]): void {
       print(
         ...gapAbove(),
-        section(t.installSummary(targets.length)),
+        section(t.installSummary(new Set(targets.map((target) => target.name)).size)),
         ...table(
           [t.entryColumn, t.agentColumn, t.locationColumn],
-          targets.map((target) => [target.name, target.host, target.location]),
+          targets.map((target, index) => [
+            target.name === targets[index - 1]?.name ? '' : target.name,
+            target.host,
+            target.location,
+          ]),
         ),
         '',
         ...keyValue(t.noticeKey, t.replaceNotice, attention),
@@ -384,16 +425,6 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
           print(rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `)));
         },
       };
-    },
-
-    skillDetail(skill: Skill): void {
-      print(
-        ...gapAbove(),
-        section(skill.name),
-        ...keyValue(t.versionKey, skill.version),
-        ...keyValue(t.aboutColumn, skill.description[lang]),
-        '',
-      );
     },
   };
 }

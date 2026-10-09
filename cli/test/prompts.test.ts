@@ -12,6 +12,8 @@ afterEach(() => vi.unstubAllEnvs());
 // 交互库重画时先挪光标再写，所以已回答的那一行在去掉控制码的文字里不从行首开始，断言只卡行尾。
 // 按键提示是每个提问最后画出来的一行，等到它就说明这个提问已经在等按键了
 const HINT = '⏎ 选择';
+// 多选的按键提示同样是最后画出来的一行
+const PICK_HINT = '⏎ 确认';
 
 describe('真实的提问画面', () => {
   it('主菜单：光标停在第一个分组上，下方是本地化的按键提示', async () => {
@@ -23,34 +25,30 @@ describe('真实的提问画面', () => {
 
   it('回答之后提问收成一行；下移光标后列表下方换成那一项的说明全文', async () => {
     const result = await run({
-      onPath: [],
       keys: [
         [HINT, KEY.enter],
-        [HINT, KEY.down],
-        ['▸ beta-pack', KEY.ctrlC],
+        [PICK_HINT, KEY.down],
+        ['▸□ beta-pack', KEY.ctrlC],
       ],
     });
 
     expect(result.output).toMatch(/✓ 选择分组 · Skill$/m);
-    expect(result.output).toMatch(/^▸ alpha\s+第一个样例 skill.*…$/m);
-    expect(result.output).toMatch(/^▸ beta-pack\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/^▸□ alpha\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/^▸□ beta-pack\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+说明\s+第二个样例 skill$/m);
   });
 
   it('从 skill 列表返回，再从主菜单退出', async () => {
     const result = await run({
-      onPath: [],
       keys: [
         [HINT, KEY.enter],
-        [HINT, KEY.down],
-        ['▸ beta-pack', KEY.down],
-        ['▸ 返回', KEY.enter],
+        [PICK_HINT, KEY.enter],
         [HINT, KEY.down],
         ['▸ 退出', KEY.enter],
       ],
     });
 
-    expect(result.output).toMatch(/✓ 浏览 skill · 返回$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的 skill · 返回$/m);
     expect(result.output).toMatch(/✓ 选择分组 · 退出$/m);
     expect(result.exitCode).toBe(0);
   });
@@ -69,39 +67,29 @@ describe('真实的提问画面', () => {
   });
 
   it('设置了 NO_COLOR 时，提问部分同样不带样式码', async () => {
-    const result = await run({
-      onPath: [],
-      env: { NO_COLOR: '1' },
-      keys: [
-        [HINT, KEY.enter],
-        [HINT, KEY.ctrlC],
-      ],
-    });
+    const result = await run({ env: { NO_COLOR: '1' }, keys: [[HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸ alpha/m);
+    expect(result.output).toMatch(/^▸ Skill/m);
     expect(result.raw).not.toMatch(STYLE_CODE);
   });
 
   it('没有 Unicode 的终端里，提问的符号和按键提示都退成 ASCII', async () => {
     const result = await run({
-      onPath: [],
       platform: 'win32',
       env: { TERM: '' },
       keys: [
         ['回车 选择', KEY.enter],
-        ['回车 选择', KEY.ctrlC],
+        ['回车 确认', KEY.ctrlC],
       ],
     });
 
+    expect(result.output).toMatch(/^> Skill\s+2\s/m);
     expect(result.output).toMatch(/\+ 选择分组 - Skill$/m);
-    expect(result.output).toMatch(/^> alpha\s+第一个样例 skill.*\.\.\.$/m);
-    expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择$/m);
+    // 提问回答之后，收成的那一行紧接着按键提示重画，所以这里不卡行尾
+    expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择/m);
     expect(result.output).not.toMatch(/[▸✓·…↑↓⏎]/);
   });
 });
-
-// 多选的按键提示同样是最后画出来的一行
-const PICK_HINT = '⏎ 确认';
 
 describe('真实的多选画面', () => {
   it('skill 列表是多选：每行前面有勾选框，下方是说明全文和本地化的按键提示', async () => {
@@ -192,5 +180,106 @@ describe('真实的多选画面', () => {
     expect(result.output).toMatch(/^ \[ \] beta-pack\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+上下键 移动 - 空格 选择 - a 全选 - i 反选 - 回车 确认（不选则返回）$/m);
     expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎]/);
+  });
+});
+
+describe('真实的画面：一个宿主都没检测到', () => {
+  it('skill 分组行首是短横、行尾注明原因，光标落在「退出」上，回车就退出', async () => {
+    const result = await run({ onPath: [], keys: [[HINT, KEY.enter]] });
+
+    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^▸ 退出$/m);
+    expect(result.output).toMatch(/✓ 选择分组 · 退出$/m);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('把光标移到 skill 分组上按回车进不去：列表下方说明这一项选不了，仍停在主菜单', async () => {
+    const result = await run({
+      onPath: [],
+      keys: [
+        [HINT, KEY.up],
+        ['▸ Skill', KEY.enter],
+        ['这一项现在选不了', KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
+    expect(result.output).not.toContain('选择要安装的 skill');
+    expect(result.output).not.toContain('✓ 选择分组');
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('设置了 NO_COLOR 时，不可进入的行和那句说明都不带样式码，圈原因用的零宽空格不打出去', async () => {
+    const result = await run({
+      onPath: [],
+      env: { NO_COLOR: '1' },
+      keys: [
+        [HINT, KEY.up],
+        ['▸ Skill', KEY.enter],
+        ['这一项现在选不了', KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+    expect(result.raw).not.toContain('\u200b');
+  });
+
+  it('带样式时零宽空格同样不打出去', async () => {
+    const result = await run({ onPath: [], keys: [[HINT, KEY.ctrlC]] });
+
+    expect(result.raw).not.toContain('\u200b');
+  });
+
+  it('没有 Unicode 的终端里，原因前面的分隔退成 ASCII', async () => {
+    const result = await run({ onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 - 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^> 退出$/m);
+    expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择$/m);
+    expect(result.output).not.toMatch(/[▸✓·…↑↓⏎–]/);
+  });
+
+  it('英文界面下的那句说明也是英文', async () => {
+    const result = await run({
+      onPath: [],
+      argv: ['--lang', 'en'],
+      keys: [
+        ['⏎ select', KEY.up],
+        ['▸ Skill', KEY.enter],
+        ['cannot be selected', KEY.ctrlC],
+      ],
+    });
+
+    expect(result.output).toMatch(/^\s+Notice\s+This item cannot be selected right now$/m);
+  });
+});
+
+describe('真实的画面：选择宿主', () => {
+  const onPath = ['claude', 'codex'];
+
+  it('两项都默认勾选，名字后面是各自的 skill 目录；确认后收成一行', async () => {
+    const result = await run({ onPath, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸■ Claude Code\s+~\S+skills$/m);
+    expect(result.output).toMatch(/^ ■ Codex\s+~\S+skills$/m);
+    expect(result.output).toMatch(/✓ 装进哪些 AI Agent · Claude Code、Codex$/m);
+    expect(result.output).toContain('选择要安装的 skill');
+  });
+
+  it('去掉一个勾再确认：只列出留下的那个', async () => {
+    const result = await run({
+      onPath,
+      keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['▸□ Claude Code', KEY.enter], [PICK_HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 装进哪些 AI Agent · Codex$/m);
+  });
+
+  it('设置了 NO_COLOR 时不带样式码', async () => {
+    const result = await run({ onPath, env: { NO_COLOR: '1' }, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸■ Claude Code\s+~\S+skills$/m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
   });
 });

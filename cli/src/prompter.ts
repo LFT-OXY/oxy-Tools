@@ -8,6 +8,8 @@ export interface SelectChoice<Value> {
   short: string;
   /** 光标停在这一行时，显示在列表下方的全文 */
   description?: string;
+  /** 这一行不可选的原因，接在这一行的末尾；有它就选不了 */
+  disabled?: string;
 }
 
 export interface SelectSeparator {
@@ -33,10 +35,15 @@ export interface PromptTheme {
     answer: (text: string) => string;
     highlight: (text: string) => string;
     description: (text: string) => string;
+    /** 不可选的一整行，原因夹在里面 */
+    disabled: (text: string) => string;
+    /** 在不可选的行上按了确认时，列表下方的那句话 */
+    error: (text: string) => string;
     /** 多选回答之后显示什么 */
     renderSelectedChoices: (selected: readonly { short: string }[]) => string;
     keysHelpTip: (keys: [key: string, action: string][]) => string;
   };
+  i18n: { disabledError: string };
 }
 
 export interface SelectQuestion<Value> {

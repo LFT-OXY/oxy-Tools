@@ -26,7 +26,10 @@ export interface Messages {
   loading: { catalog: string; skillFiles: string };
   agentKey: string;
   notDetected: string;
-  noHost: (host: string) => string;
+  /** 一个宿主都没检测到；hosts 是安装器认识的全部宿主的名字 */
+  noHosts: (hosts: readonly string[]) => string;
+  /** 只检测到一部分宿主：missing 是没检测到的，present 是检测到的，都已按并列的写法连好 */
+  hostsSkipped: (missing: string, present: string) => string;
   catalogKey: string;
   noticeKey: string;
   counts: (counts: { skills: number }) => string;
@@ -37,9 +40,12 @@ export interface Messages {
   aboutColumn: string;
   exit: string;
   back: string;
-  browseSkills: string;
+  /** 分组不可进入的原因，接在那一行的末尾 */
+  needsHost: string;
+  /** 在不可选的行上按了确认 */
+  unavailable: string;
   nameColumn: string;
-  versionKey: string;
+  pickHosts: string;
   pickSkills: string;
   /** 并列几个名字时用的分隔 */
   listSeparator: string;
@@ -85,7 +91,8 @@ const zh: Messages = {
   loading: { catalog: '正在读取目录', skillFiles: '正在查询 skill 的文件列表' },
   agentKey: 'AI Agent',
   notDetected: '未检测到',
-  noHost: (host) => `没有检测到 ${host}，暂时装不了 skill；仍可浏览`,
+  noHosts: (hosts) => `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件`,
+  hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
   counts: ({ skills }) => (skills > 0 ? `${skills} skill` : '没有可用的条目'),
@@ -96,9 +103,10 @@ const zh: Messages = {
   aboutColumn: '说明',
   exit: '退出',
   back: '返回',
-  browseSkills: '浏览 skill',
+  needsHost: '需要 AI Agent',
+  unavailable: '这一项现在选不了',
   nameColumn: '名称',
-  versionKey: '版本',
+  pickHosts: '装进哪些 AI Agent',
   pickSkills: '选择要安装的 skill',
   listSeparator: '、',
   entryColumn: '条目',
@@ -252,7 +260,8 @@ const en: Messages = {
   loading: { catalog: 'Loading catalog', skillFiles: 'Looking up skill files' },
   agentKey: 'AI Agent',
   notDetected: 'not detected',
-  noHost: (host) => `${host} was not detected, so skills cannot be installed for now; you can still browse them`,
+  noHosts: (hosts) => `${hosts.join(' and ')} not detected; components cannot be installed`,
+  hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',
   counts: ({ skills }) => (skills > 0 ? `${skills} ${skills === 1 ? 'skill' : 'skills'}` : 'no usable entries'),
@@ -263,9 +272,10 @@ const en: Messages = {
   aboutColumn: 'About',
   exit: 'Exit',
   back: 'Back',
-  browseSkills: 'Browse skills',
+  needsHost: 'needs an AI Agent',
+  unavailable: 'This item cannot be selected right now',
   nameColumn: 'Name',
-  versionKey: 'Version',
+  pickHosts: 'Install into which AI Agents',
   pickSkills: 'Pick skills to install',
   listSeparator: ', ',
   entryColumn: 'Entry',

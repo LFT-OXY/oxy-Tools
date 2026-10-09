@@ -1,7 +1,7 @@
 // 安装器入口，也是测试的主接缝：外部依赖全部由调用方传入，正式运行时用真实实现，测试时全部替换。
 import { CatalogError, loadCatalog, localCatalogSource, type CatalogSource } from './catalog.ts';
 import { mainMenu } from './flow.ts';
-import { claudeCode } from './hosts.ts';
+import { detectHosts } from './hosts.ts';
 import type { Failure, Lang } from './messages.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { createUi, type Environment, type TerminalOutput } from './ui.ts';
@@ -75,12 +75,12 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const localCatalog = env['OXY_TOOLS_CATALOG'];
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
-    const host = claudeCode(env, options.homeDir);
-    ui.catalogSummary({ host, skills: catalog.skills.length, skipped: catalog.skipped.length });
+    const hosts = detectHosts(env, options.homeDir);
+    ui.catalogSummary({ hosts, skills: catalog.skills.length, skipped: catalog.skipped.length });
     await mainMenu({
       catalog,
       source,
-      host,
+      hosts,
       homeDir: options.homeDir,
       tempDir: options.tempDir,
       githubToken: env['GITHUB_TOKEN'] || undefined,

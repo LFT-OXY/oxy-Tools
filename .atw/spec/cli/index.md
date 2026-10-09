@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层目前只写了已经落地的部分（启动、读目录、主菜单、把 skill 装进 Claude Code、出错、目录校验命令与 CI）。第二个宿主、状态探测、MCP、工具、应用项目和界面设计规则的完整版随对应的功能补进来。
+本层目前只写了已经落地的部分（启动、读目录、主菜单、两个宿主与宿主选择、把 skill 装进宿主、出错、目录校验命令与 CI）。状态探测、MCP、工具、应用项目和界面设计规则的完整版随对应的功能补进来。
 
 ```
 cli/
@@ -17,7 +17,7 @@ cli/
 │   ├── bin.ts            # 把真实依赖接到入口上，别的什么都不做
 │   ├── installer.ts      # 入口 runInstaller，也是测试的主接缝
 │   ├── catalog.ts        # 目录：来源（含把 skill 的文件取下来）、读取、校验
-│   ├── hosts.ts          # 宿主适配：在不在、skill 装到哪个目录
+│   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录
 │   ├── install-skill.ts  # 安装 skill：只认“条目 + 目标目录”
 │   ├── flow.ts           # 交互流程：问什么、显示什么
 │   ├── ui.ts             # 呈现层：一切终端输出的样式
@@ -38,8 +38,8 @@ cli/
 | 文档 | 内容 |
 |------|------|
 | [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、退出状态、目录读取与校验的契约、测试架子的用法 |
-| [安装 skill](./skill-install.md) | 宿主探测、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵 |
-| [终端输出](./terminal-output.md) | 呈现层的职责、上色与 Unicode 的判断、标准输出与标准错误的分工、改写已打出的行、界面预览页 |
+| [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵 |
+| [终端输出](./terminal-output.md) | 呈现层的职责、上色与 Unicode 的判断、不可选的行、标准输出与标准错误的分工、改写已打出的行、界面预览页 |
 | [目录校验与 CI](./catalog-validation.md) | 目录校验命令的输出与退出状态、被跳过条目的原因怎么记、命令的测试怎么写、工作流的触发与检出范围 |
 
 ---
@@ -48,7 +48,8 @@ cli/
 
 - [ ] 要加或改任何行为 → [入口与测试](./installer-entry.md)：先在 `cli/test/` 写经入口的测试
 - [ ] 要往终端上打任何东西 → [终端输出](./terminal-output.md)：只能经呈现层
-- [ ] 要动下载、落盘、宿主探测，或加一种装不上的原因 → [安装 skill](./skill-install.md)
+- [ ] 要动下载、落盘、宿主探测，加一个宿主，或加一种装不上的原因 → [安装 skill](./skill-install.md)
+- [ ] 要让列表里的某一行不可选 → [终端输出](./terminal-output.md) 的「不可选的行」
 - [ ] 要读 `cli/` 以外的文件、或在仓库根加包描述文件 → 不行，见 ADR-0001
 - [ ] 要改 `index.json` 或 `catalog.json` 的格式 → 先读 ADR-0002 和 [清单与版本](../skills/manifest-versioning.md)
 - [ ] 要给目录加一类条目、一个字段或一条校验规则，或动 CI → [目录校验与 CI](./catalog-validation.md)：写坏的条目带着原因进 `skipped`

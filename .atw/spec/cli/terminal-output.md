@@ -6,17 +6,17 @@
 
 ## 只有呈现层往终端上写
 
-`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.skillDetail(skill)`、`ui.mainMenu(groups)`，不拼样式码、不算栏宽、不决定空行。
+`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary(targets)`、`ui.mainMenu(groups)`，不拼样式码、不算栏宽、不决定空行。
 
 ```ts
 // 错：流程里自己拼
-stdout.write(`\x1b[1m${skill.name}\x1b[22m\n`);
+stdout.write(`\x1b[1m${target.name}\x1b[22m  ${target.location}\n`);
 
 // 对：交给呈现层
-ui.skillDetail(skill);
+ui.installSummary(targets);
 ```
 
-提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数全部盖掉**（前缀、光标、提问、回答、活动行、说明、按键提示），原因见下一节。
+提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
 
 文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另一个联合类型（`SkillInstallProblem`），文案在 `installProblem`。
 
@@ -64,6 +64,43 @@ color ? styleText(format, text, { validateStream: false }) : text;
 不支持时，`ui.ts` 里的 `ASCII` 符号表整体替换 `UNICODE`（两张表同一个类型，加符号时两边都要加），按键提示里交互库写死传进来的 `↑↓`、`⏎` 换成 `messages.ts` 的 `keyNames`。交互库传进来的是英文单词的按键（多选的 `space`），任何终端里都换成 `keyWords` 里的字。
 
 ASCII 的符号宽度可以和 Unicode 的不同（勾选框 `■` 一列，`[x]` 三列）。**凡是按符号宽度对齐的地方都用 `displayWidth(symbols.x)` 算**，不写死列数：多选列表的表头缩进就是「勾选框的宽度 + 1」。
+
+---
+
+## 不可选的行
+
+列表里某一行选不了时（一个宿主都没检测到时主菜单的组件分组），给那一行一个 `disabled`——它是**原因**，不是布尔值：
+
+```ts
+// cli/src/prompter.ts
+export interface SelectChoice<Value> {
+  // …
+  disabled?: string; // 这一行不可选的原因，接在这一行的末尾；有它就选不了
+}
+```
+
+交互库（`@inquirer/select` 5.x）对这种行的做法，都是实测得来的：
+
+| 行为 | 呈现层怎么配合 |
+|------|----------------|
+| 把这一行拼成 `- <name> <disabled>`，整行交给 `theme.style.disabled` | 整行压暗，但原因保持正常亮度（它是用户最需要读的字）：原因用一对零宽空格（`REASON_MARK`）圈起来，压暗时跳过圈着的这一段。圈在这一步被拆掉，**不会打到终端上** |
+| 光标**缺省停在第一项上，哪怕它不可选** | 有不可选的行时，用 `default` 把光标放到第一个能选的项上（都不能选就是「退出」） |
+| 光标**移得到**不可选的行上，这时行首的 `-` 换成光标符号 | 压暗时再跳过行首的光标：不然焦点所在的行成了全屏最淡的一行 |
+| 在这一行上按确认：不结束提问，列表下方多一行 `theme.i18n.disabledError`，经 `theme.style.error` | 两样都由主题给：句子是 `messages.ts` 的 `unavailable`，样式和列表下方的说明全文同一个画法（缩进三格、标签后空两格），标签是黄色粗体的「注意」。不盖的话打出来的是英文，颜色按 Node 的规则上 |
+
+原因接在说明后面，所以说明要相应少占几列（`aboutWidth - displayWidth(分隔 + 原因)`），不然这一行会超过 79 列。
+
+```ts
+// 错：靠行内收尾码让原因亮回来——收尾码 \x1b[22m 会把外层的暗淡一并关掉，后半行全亮了
+disabled: `${dim('·')} \x1b[22m${reason}`,
+
+// 对：圈出来，由主题的 disabled 跳过
+disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
+```
+
+> **Warning**：`row.disabled` 里带着零宽空格。任何不经 `theme.style.disabled` 就把它打出去的路径都会把零宽空格漏到终端上；测试架子画这种行时也走主题。`prompts.test.ts` 里有带样式和不带样式两条断言输出里没有 `\u200b`。
+
+多选（`@inquirer/checkbox`）的不可选行另有 `icon.disabledChecked`、`icon.disabledUnchecked` 两个图标，还没有画面用到；第一个用到的功能要把它们也盖掉，并在 `prompts.test.ts` 里加 `NO_COLOR` 的断言。
 
 ---
 
@@ -121,7 +158,8 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 
 `cli/scripts/preview.ts` 经 `runInstaller` 按场景表驱动安装器：提问由真实的交互库渲染，按键是脚本发的，输出喂给无头终端（`@xterm/headless`），再把字符格连同样式转成 HTML，每个画面一格，深色和浅色终端各一份。它是视觉评审对照设计方向时用的画面证据。
 
-- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、按键）。
+- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、按键）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
+- 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘。

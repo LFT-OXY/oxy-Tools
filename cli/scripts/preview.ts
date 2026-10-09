@@ -13,6 +13,7 @@ import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
 
 const ROWS = 60;
 const down = (times: number): string[] => Array<string>(times).fill(KEY.down);
+const BOTH_HOSTS = ['claude', 'codex'];
 
 interface Scene {
   title: string;
@@ -83,10 +84,12 @@ const toSkills = [KEY.enter];
 const pickTwo = [...toSkills, ...down(5), KEY.space, KEY.down, KEY.space];
 const toSummary = [...pickTwo, KEY.enter];
 const install = [...toSummary, KEY.enter];
+// 检测到两个宿主时，进了 skill 分组先问装进哪些宿主：两项默认勾选，直接确认
+const twoHosts = (keys: string[]): string[] => [KEY.enter, ...keys];
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
-  { title: '主菜单', note: 'catalog.json 三个数组为空：只有 Skill 一个分组和退出' },
+  { title: '主菜单', note: '只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
   { title: '汇总确认 · 选了两个 skill', note: '列出每个 skill 将装到的目录；可开始安装、返回修改或取消', keys: toSummary },
@@ -107,9 +110,15 @@ const scenes: Scene[] = [
     catalog: queryFails({ kind: 'skill-files-unlisted', problem: 'unreachable', detail: 'ENOTFOUND', where: COMMITS_QUERY, badToken: false }),
     keys: install,
   },
-  { title: '主菜单 · 没有检测到 Claude Code', note: '可执行路径上没有 claude 命令：装不了，只能浏览', onPath: [] },
-  { title: 'skill 列表 · 没有检测到 Claude Code', note: '只能浏览：单选列表', onPath: [], keys: [...toSkills, ...down(4)] },
-  { title: 'skill 详情 · 没有检测到 Claude Code', note: '选中一个 skill 后显示版本和说明全文，再回到列表', onPath: [], keys: [...toSkills, ...down(3), KEY.enter] },
+  { title: '主菜单 · 检测到两个宿主', note: '可执行路径上有 claude 和 codex 两个命令', onPath: BOTH_HOSTS },
+  { title: '主菜单 · 只检测到 Codex', note: '另一个宿主没有检测到：说明它被跳过，组件只装进检测到的那个', onPath: ['codex'] },
+  { title: '选择宿主 · 检测到两个', note: '进 skill 分组后先问装进哪些宿主：两项都默认勾选，名字后面是各自的 skill 目录', onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '选择宿主 · 去掉一个', note: '空格去掉 Claude Code 的勾，光标移到 Codex', onPath: BOTH_HOSTS, keys: [...toSkills, KEY.space, KEY.down] },
+  { title: 'skill 多选列表 · 两个宿主', note: '上面两行是已回答的提问', onPath: BOTH_HOSTS, keys: twoHosts(pickTwo) },
+  { title: '汇总确认 · 两个宿主', note: '每个 skill 在每个宿主下各一行，名字只写在第一行', onPath: BOTH_HOSTS, keys: twoHosts(toSummary) },
+  { title: '结果 · 两个宿主', note: '按宿主分别列出，各有各的结果', onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
+  { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；skill 分组不可进入，行尾注明原因，光标落在「退出」上', onPath: [] },
+  { title: '主菜单 · 一个宿主都没有 · 在 skill 分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
@@ -119,15 +128,22 @@ const scenes: Scene[] = [
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en', argv: ['--lang', 'en'] },
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
+  { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
+  { title: '英文界面 · 一个宿主都没有', argv: ['--lang', 'en'], onPath: [] },
+  { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
+  { title: '不显示颜色 · 选择宿主', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
   { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
-  { title: '没有 Unicode · skill 详情后返回', note: '没有检测到 Claude Code', ...LEGACY_CONSOLE, onPath: [], keys: [...toSkills, KEY.enter, ...down(8), KEY.enter] },
+  { title: '没有 Unicode · 选择宿主', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];
 

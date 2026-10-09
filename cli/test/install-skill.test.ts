@@ -161,32 +161,6 @@ describe('结果', () => {
   });
 });
 
-describe('Claude Code 在不在', () => {
-  it('可执行路径上有 claude 命令时算检测到，skill 分组是可以勾选安装的列表', async () => {
-    const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
-
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓$/m);
-    expect(result.output).toContain('选择要安装的 skill');
-    expect(result.output).not.toContain('未检测到');
-  });
-
-  it('没有 claude 命令时说明没有检测到、暂时装不了，skill 只能浏览', async () => {
-    const result = await run({ onPath: [], answers: [choose('Skill'), choose('返回'), choose('退出')] });
-
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到$/m);
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code，暂时装不了 skill；仍可浏览$/m);
-    expect(result.output).toContain('浏览 skill');
-    expect(result.output).not.toContain('选择要安装的 skill');
-    expect(existsSync(skillsDir(result.home))).toBe(false);
-  });
-
-  it('可执行路径上别的命令不算数', async () => {
-    const result = await run({ onPath: ['claude-helper', 'codex'], answers: [choose('退出')] });
-
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到$/m);
-  });
-});
-
 describe('从 GitHub 下载 skill', () => {
   afterEach(() => vi.unstubAllGlobals());
 

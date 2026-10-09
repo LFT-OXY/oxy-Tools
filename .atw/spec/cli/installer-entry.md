@@ -136,7 +136,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 ```ts
 const result = await run({
-  answers: [choose('Skill'), choose('返回'), choose('退出')], // 按预设应答的提问器
+  answers: [choose('Skill'), pick('alpha'), choose('取消'), choose('退出')], // 按预设应答的提问器
   catalog: catalogDir({ index: { version: 1, skills: [...] } }), // 写到临时目录的本地样例
   env: { NO_COLOR: '1' },
   tty: { stdout: false },                                        // 哪个流不是终端
@@ -145,9 +145,9 @@ result.exitCode; result.output; result.stdout; result.stderr; result.screen; res
 result.home; result.tmp; // 临时的主目录、交给安装器放临时文件的目录
 ```
 
-- `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`interrupt()` 表示在这个提问上按 Ctrl+C。单选用了 `pick`、多选用了 `choose` 会直接报错。预设的应答没用完或不够用，测试都会失败。
-- 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框），所以“菜单里有什么”可以直接断言文字。
-- 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`，传 `[]` 就是没有检测到宿主）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。
+- `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；`interrupt()` 表示在这个提问上按 Ctrl+C。单选用了 `pick`、多选用了 `choose` 会直接报错。预设的应答没用完或不够用，测试都会失败。
+- 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法，行首一个短横、原因接在后面，并经过主题的 `disabled` 样式），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
+- 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。
 - 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。
 - `result.screen` 是最后留在画面上的文字（被擦掉重写的加载提示只算最后一次）；比较两次运行的文字时用它，不用 `output`。
 - 要核对**提问部分实际打到终端上的东西**（符号、按键提示、样式码），改用 `keys`：提问由真实的交互库渲染，脚本等画面上出现某段文字再按键。
@@ -224,6 +224,14 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 **Fix**：用 `keys` 的测试文件里先 `vi.stubEnv('FORCE_COLOR', '1')`（见 `cli/test/prompts.test.ts`），漏盖的样式才会露出来。
 
 **Prevention**：每加一种提示（`checkbox`、`password`、`confirm`），在 `prompts.test.ts` 里加一条 `NO_COLOR` 下不带样式码的测试。
+
+### 按键提示的整行断言卡不住行尾
+
+**Symptom**：`/^\s+↑↓ 移动 · ⏎ 选择$/m` 在某个用 `keys` 的测试里不匹配，去掉 `$` 就过了。
+
+**Cause**：提问回答之后，交互库把光标挪回去重画，收成的那一行在去掉控制码的文字里紧接在按键提示后面，中间没有换行。
+
+**Fix**：整行断言放在**以 Ctrl+C 结束的那个提问**上（它的按键提示后面没有重画）；已回答的提问只卡行尾（`/✓ 选择分组 · Skill$/m`）。不要靠去掉 `$` 了事——按键提示必须在 79 列以内，整行断言是唯一查得出它超宽的地方。
 
 ### 往标准输出写了出错说明
 

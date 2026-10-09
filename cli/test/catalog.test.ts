@@ -50,7 +50,7 @@ describe('写坏的条目', () => {
   it('没有坏条目时不出现提醒', async () => {
     const result = await run({ answers: [choose('退出')] });
 
-    expect(result.output).not.toContain('注意');
+    expect(result.output).not.toContain('格式有误');
   });
 
   it('全部条目都被跳过时，主菜单只剩退出', async () => {
@@ -75,7 +75,7 @@ describe('不认识的字段', () => {
     });
 
     expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
-    expect(result.output).not.toContain('注意');
+    expect(result.output).not.toContain('格式有误');
     expect(result.exitCode).toBe(0);
   });
 });
