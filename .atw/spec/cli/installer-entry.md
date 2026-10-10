@@ -47,7 +47,7 @@ export interface CommandOptions { shell: true } // command 是一整行，args �
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 ```
 
-`openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`，应用项目用它打开官方链接：
+`openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`。**安装器现在不调用它**：外部项目只列出说明与链接，不替用户打开浏览器（一次勾好几个会弹出一堆网页；任务 `10-10-catalog-purpose-categories` 工单 05 起）。它作为入口的一样可替换依赖先留着，要不要拿掉另议；下面是它自己的契约：
 
 ```ts
 export type LinkOpener = (url: string) => Promise<void>; // 打不开时拒绝
@@ -61,8 +61,6 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | 什么算打不开（拒绝） | 系统上没有这个命令（`ENOENT`）；或命令在 1.5 秒内以非零状态结束（没有能打开网址的程序） |
 | 什么算打开了 | 命令以 0 结束；或 1.5 秒后还没结束——有的系统上它要等浏览器关掉才结束，这时 `unref` 掉、不再等 |
 
-调用方（`flow.ts`）把**任何**拒绝都当作“没打开”，不当作出错：不经 `ui.failure()`，不改变退出状态。打开器看不出来的失败（远程终端里命令照常以 0 结束）靠界面上那句固定的提醒兜住，见 [终端输出](./terminal-output.md) 的「应用项目」。
-
 > **Warning**：`systemLinkOpener` 不进自动化测试（测试里链接打开器只记录）。改了它就用一个假的 `open` 命令手动核对四种结局：正常、非零退出、迟迟不结束、命令不存在，并确认网址是作为**单个参数**原样传进去的。Windows 那一支至今没有在真机上跑过。
 
 ### 3. Contracts
@@ -74,6 +72,20 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 **界面语言在一次运行的中途才定下来。** 那四种不问就退出的情况、大标志和语言提问用按系统语言建的呈现层；语言提问回答之后入口按选定的语言重建一个（`createUi({ …, lang, continued: true })`），此后的一切输出——加载提示、本机信息、菜单、提问、出错说明、目录条目的说明——都用它。重建时带上 `continued`，见 [终端输出](./terminal-output.md) 的「块与块之间的空行」。
 
 语言提问用提问器现有的单选（`ui.languageQuestion()`），不是新的提示种类。选择只留在这次运行的内存里：安装器不为它写任何文件，下一次启动照样问。在它上面按 Ctrl+C 和别的提问一样以 130 退出。
+
+**主菜单与流程**（任务 `10-10-catalog-purpose-categories` 逐张工单搬过来，这里写的是工单 05 之后的样子）
+
+| 主菜单的行 | 什么时候有 | 数量 | 选了之后 |
+|------------|------------|------|----------|
+| 各个用途，按 `purposes` 的顺序 | 进去之后至少有一行 | 进去之后列表里的行数——现在只数这个用途下的外部项目 | 混合列表：现在只有外部项目一段，多选 |
+| 旧入口 Skill、MCP、工具，排在各用途之后 | 那一类有条目 | 那一类的条目数 | 各自原来的流程，一个字不变；一个宿主都没检测到时不可进入 |
+| 退出 | 总是有 | — | 以 0 退出 |
+
+- 用途的行不靠宿主：一个都没检测到时照常进得去，外部项目照常可选。
+- 混合列表上一个都不勾就确认，回到主菜单。
+- 勾了外部项目并确认：**没有汇总，不问开始不开始**，直接列出每一个的名字、说明、完整的链接，然后回主菜单。**整个运行里不调用链接打开器。**
+- 列表里外部项目按名字排，不照目录文件里的先后。
+- 「应用项目」这个旧入口没有了：外部项目只在各自的用途下找得到。
 
 **启动参数**
 
@@ -106,7 +118,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | 2 | 启动参数不对 |
 | 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`） |
 
-单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流）、应用项目的链接在浏览器里打不开，都**不改变退出状态**：第一种只在结果里列出，第二种打出出错说明后回到主菜单，第三种只在详情下面提醒用户自己复制链接。
+单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流），都**不改变退出状态**：前一种只在结果里列出，后一种打出出错说明后回到主菜单。
 
 **目录来源**
 
@@ -128,7 +140,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
 - `catalog.json`：`{ "version": 1, "purposes": [], "skillPurposes": {}, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空。三类条目的内容都读、都校验：`apps` 的字段见下，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
-- `apps` 的一条（应用项目）：
+- `apps` 的一条（外部项目；键名没有跟着改，见 [清单与版本](../skills/manifest-versioning.md)）：
 
   ```json
   { "name": "dify", "description": { "zh": "…", "en": "…" }, "url": "https://github.com/langgenius/dify", "purpose": "dev-workflow" }
@@ -140,7 +152,7 @@ export function localCatalogSource(dir: string): CatalogSource;
   "skillPurposes": { "archify": "documents" }
   ```
 
-  读出来的结果在 `Catalog` 上：`purposes` 是清单里合规则的各项，顺序照文件；MCP、工具、应用项目各带 `purpose`（清单里的一个标识）和 `recommended`（没写是 `false`）；skill 的 `purpose` 只有在 `skillPurposes` 里给它写了、且那个用途在清单里时才有。**这些现在只是读进来，画面还没有用到**——主菜单仍是按类型的四个分组，按用途进入是后面的工单。
+  读出来的结果在 `Catalog` 上：`purposes` 是清单里合规则的各项，顺序照文件；MCP、工具、外部项目各带 `purpose`（清单里的一个标识）和 `recommended`（没写是 `false`）；skill 的 `purpose` 只有在 `skillPurposes` 里给它写了、且那个用途在清单里时才有。**画面现在只用到了外部项目的 `purpose`**：主菜单按用途清单的顺序列出下面有外部项目的各个用途（见下面「主菜单与流程」）；skill、MCP、工具还在各自的旧入口里，`recommended` 和 skill 的 `purpose` 仍只是读进来，等后面的工单。
 - 两个文件的 `version` 都是整数的格式版本号，安装器目前认识到 1。
 
 ### 4. Validation & Error Matrix
@@ -166,16 +178,16 @@ export function localCatalogSource(dir: string): CatalogSource;
 | 重名 | 只留第一条，其余计入跳过 |
 | 不认识的字段 | 忽略 |
 
-应用项目条目（`catalog.json` 的 `apps`）同样逐条校验，写坏的只跳过那一条：
+外部项目条目（`catalog.json` 的 `apps`）同样逐条校验，写坏的只跳过那一条：
 
 | 字段 | 规则 |
 |------|------|
-| `name` | 与 skill 的 `name` 同一条规则。**名字只在各自的数组里唯一**：应用项目可以和某个 skill 同名 |
+| `name` | 与 skill 的 `name` 同一条规则。**名字只在各自的数组里唯一**：外部项目可以和某个 skill 同名 |
 | `description.zh`、`description.en` | 非空文字，不含控制字符 |
 | `url` | `^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$`，且 `URL.canParse` 通过。只收 https；只含 RFC 3986 允许的字符，别的（汉字、空格）要先做百分号编码 |
 | 重名、不认识的字段 | 同上 |
 
-三类条目（MCP、工具、应用项目）另有两个共有的字段，在各自的字段都查完之后查，先 `purpose` 后 `recommended`：
+三类条目（MCP、工具、外部项目）另有两个共有的字段，在各自的字段都查完之后查，先 `purpose` 后 `recommended`：
 
 | 字段 | 规则 | 不合规则时 |
 |------|------|------------|
@@ -204,16 +216,17 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 ### 5. Good/Base/Bad Cases
 
-- Good：`index.json` 有 11 条合法 skill，`catalog.json` 三个数组为空 → 主菜单只有 Skill 一个分组和退出。
+- Good：`index.json` 有 11 条合法 skill，`catalog.json` 三个数组为空 → 主菜单只有 Skill 一个旧入口和退出。
 - Base：`index.json` 里一条的 `path` 是 `skills/../x` → 这一条被跳过，提示「目录中有 1 个条目格式有误，已跳过」，其余照常。
 - Bad：`catalog.json` 的 `version` 是 2 → 不看它的其余内容，提示升级，以 1 退出。
 - Good（语言）：系统语言是英文，不带 `--lang` 启动 → 大标志之后问 `Language / 语言`，光标在 `English` 上，按键提示是英文；下移到 `中文` 回车后，加载提示起全是中文。
 - Base（语言）：`--lang en --help` → 不问，帮助是英文；`--lang fr` → 不问，出错「无法识别的参数」，退出状态 2，说明用系统语言。
 - Bad（语言）：选完语言后目录读不了 → 出错说明用选定的语言，它的标题与语言提问收成的那一行之间空一行；以 1 退出。
-- Base（应用项目）：`apps` 里一条的 `url` 是 `http://…` → 这一条被跳过并计入提示的数量，其余应用项目照常；全部被跳过时主菜单不出现这个分组。
+- Base（外部项目）：`apps` 里一条的 `url` 是 `http://…` → 这一条被跳过并计入提示的数量，其余外部项目照常；一个用途下的外部项目全部被跳过时，主菜单不出现这个用途。
+- Good（外部项目）：进一个用途，勾两个外部项目确认 → 不问开始不开始，一个「外部项目：2 个，只给链接」分区列出各自的说明与链接，回到主菜单；`result.opened` 是空的。
 - Base（用途）：`mcps` 里一条没写 `purpose`，另一条写的用途不在 `purposes` 里 → 两条都被跳过，提示「目录中有 2 个条目格式有误，已跳过」，其余 MCP 照常。
-- Base（用途）：`skillPurposes` 给 `alpha` 写了一个清单里没有的用途 → 没有提示，`alpha` 照常在 Skill 分组里；目录校验命令报出来。
-- Bad（用途）：`purposes` 写成了对象 → 目录照常读出来，Skill 分组照常；三个数组里的条目全部被跳过并计入提示的数量。
+- Base（用途）：`skillPurposes` 给 `alpha` 写了一个清单里没有的用途 → 没有提示，`alpha` 照常在 Skill 这个旧入口里；目录校验命令报出来。
+- Bad（用途）：`purposes` 写成了对象 → 目录照常读出来，Skill 这个旧入口照常，主菜单上一个用途都没有；三个数组里的条目全部被跳过并计入提示的数量。
 
 ### 6. Tests Required
 
@@ -229,7 +242,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 | 按键提示整行在 79 列以内 | `prompts.test.ts` | 用真实的交互库断言整行；英文界面加没有 Unicode 的多选那一行正好 79 列，另量它的宽度 |
 | 语言提问：问不问、问什么、光标起始在哪、选了之后用哪种语言 | `startup.test.ts` 的「语言提问」一组、`prompts.test.ts` 的「真实的画面：语言提问」一组 | 给 `answersLanguage: true` 自己应答。问不问看 `output` 里有没有 `Language / 语言`；光标起始在哪用 `accept()` 证明（接受之后的画面是哪种语言），真实的画面上再看 `▸` 在哪一行；收成一行、按键提示的语言用 `keys` |
 | 表的栏间隔是三格 | `columns.test.ts` | 从一栏里**最长的那一格**写起，卡它后面恰好三格再是下一栏：`/beta-pack {3}Claude Code {3}新装/`。右对齐的栏（主菜单的数量）最长的一格后面不直接是下一格的字，改拿表头量这一栏从第几列开始（`startOf`）。**只卡间隔**：不写死行首缩进了几列、不卡折行点、不拿整行去比——整行相等会把缩进、勾选框和整句文案一并卡死。每张表至少一条，中文与英文各有 |
-| 块与块之间的空行：四条规则、没有连着两行空行、矮终端里提问不被顶出屏幕 | `spacing.test.ts` | 提问上下的空行是交互库画的，所以用 `keys` 加 `screenLines`，断言某一行**之后的几行**是什么（`after(lines, '? 选择分组', 2)` 得到空行和表头）。**只卡空行在不在**：别的行用宽松的正则，不写死缩进。呈现层自己打的分区（汇总、出错、帮助）用预设应答的 `result.screen` 就够。「没有连着两行空行」把脚本的每一步都停下来看一眼（每一步各跑一遍、在那一步按 Ctrl+C），提问还在问和回答之后的样子都在里面。矮终端给 `rows: 24`，画面读 `screenLines(raw, 24)` 的最后 24 行 |
+| 块与块之间的空行：四条规则、没有连着两行空行、矮终端里提问不被顶出屏幕 | `spacing.test.ts` | 提问上下的空行是交互库画的，所以用 `keys` 加 `screenLines`，断言某一行**之后的几行**是什么（`after(lines, '? 选择用途', 2)` 得到空行和表头）。**只卡空行在不在**：别的行用宽松的正则，不写死缩进。呈现层自己打的分区（汇总、出错、帮助）用预设应答的 `result.screen` 就够。「没有连着两行空行」把脚本的每一步都停下来看一眼（每一步各跑一遍、在那一步按 Ctrl+C），提问还在问和回答之后的样子都在里面。矮终端给 `rows: 24`，画面读 `screenLines(raw, 24)` 的最后 24 行 |
 | 标题区的摆法：居中、字形、上下各空一行、标志下面没有横线、产品名粗体与版本号暗淡 | `startup.test.ts` 的「启动」一组 | 它是一块固定的字符画，摆法就是它的全部内容。居中量的是左右空白差不超过一列，**不写死补了几格**；字形是各行去掉同样多的缩进后与字形逐行相等——只量整块的边距的话，各行各自居中、字形走样了也照样通过 |
 
 测试架子在 `cli/test/harness.ts`：
@@ -250,8 +263,10 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问——它上下的空行在主题的提问标记和提问样式里，有就照打——、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
 - 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
-- 链接打开器只记录：要打开的网址按先后进 `result.opened`。`browser: false` 表示浏览器打不开——网址照样记下，然后打开器拒绝；用来证明“打不开时不报错、链接文本仍在”。
-- **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单，新加的样例条目要写其中一个用途，不然那一格里它就不见了。用途的读取规则在 `cli/test/purposes.test.ts`，每种写坏的情况各一条。
+- 链接打开器只记录：要打开的网址按先后进 `result.opened`。安装器现在不调用它，所以它只用来断言「没有调用」：`expect(result.opened).toEqual([])`。
+- **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单（外部项目的场景另带一份 `SHOWCASE_PURPOSES`），新加的样例条目要写清单里的一个用途，不然那一格里它就不见了。
+- **主菜单上各个用途排在旧入口前面。** 用 `keys` 按光标走的用例，目录里一有外部项目，光标起始就落在第一个用途上，不在 Skill 上：`[HINT, KEY.down], ['▸ MCP', KEY.enter]` 这样的走法只在没有外部项目的目录里成立。要进旧入口的用例别给目录放外部项目（`spacing.test.ts` 的 `componentCatalog`）；用预设应答的 `choose('MCP')` 按字选，不受影响。
+- **断言用途的顺序时，别让数量恰好也是那个顺序**：排在后面的用途条目更多，才分得出「照用途清单」和「照数量」。用途的读取规则在 `cli/test/purposes.test.ts`，每种写坏的情况各一条。
 - 宿主的配置文件用 `home` 放：`home: { '.claude.json': JSON.stringify({ mcpServers: { x: {} } }) }`、`home: { '.codex/config.toml': '[mcp_servers.x]\n' }`。
 - 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）；`columns: 160`（终端的列数，缺省不给，安装器按 80 列算——用来证明某样东西不随窗口的宽度变，如标题区按 80 列居中）；`rows: 24`（终端的行数，缺省 40，安装器和真实的交互库拿到的都是它——用来证明矮终端里列表一屏放多少行）。
 - 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。
@@ -338,7 +353,7 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 
 **Cause**：提问回答之后，交互库把光标挪回去重画，收成的那一行在去掉控制码的文字里紧接在按键提示后面，中间没有换行。
 
-**Fix**：整行断言放在**以 Ctrl+C 结束的那个提问**上（它的按键提示后面没有重画）；已回答的提问只卡行尾（`/✓ 选择分组 · Skill$/m`）。不要靠去掉 `$` 了事——按键提示必须在 79 列以内，整行断言是查它超宽的地方；各种组合里最长的那一行（英文界面加没有 Unicode）另量了宽度，见上面例外表的「按键提示」一行。
+**Fix**：整行断言放在**以 Ctrl+C 结束的那个提问**上（它的按键提示后面没有重画）；已回答的提问只卡行尾（`/✓ 选择用途 · Skill$/m`）。不要靠去掉 `$` 了事——按键提示必须在 79 列以内，整行断言是查它超宽的地方；各种组合里最长的那一行（英文界面加没有 Unicode）另量了宽度，见上面例外表的「按键提示」一行。
 
 ### 替用户按的键按早了，或按到了别的提问上
 

@@ -113,7 +113,7 @@ describe('启动', () => {
 
     const loading = result.output.indexOf('正在读取目录');
     const summary = result.output.search(/^\s+目录\s+2 skill$/m);
-    const menu = result.output.indexOf('选择分组');
+    const menu = result.output.indexOf('选择用途');
     expect(loading).toBeGreaterThan(-1);
     expect(summary).toBeGreaterThan(loading);
     expect(menu).toBeGreaterThan(summary);
@@ -127,23 +127,23 @@ describe('语言', () => {
       answers: [choose('Skills'), pick(), choose('Exit')],
     });
 
-    expect(result.output).toContain('Pick a group');
+    expect(result.output).toContain('Pick a purpose');
     expect(result.output).toMatch(/ beta-pack\s+none\s+The second sample skill$/m);
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
   });
 
   it('--lang 强制指定语言，优先于系统语言环境', async () => {
     const english = await run({ argv: ['--lang', 'en'], env: { LANG: 'zh_CN.UTF-8' }, answers: [choose('Exit')] });
     const chinese = await run({ argv: ['--lang=zh'], env: { LANG: 'en_US.UTF-8' }, answers: [choose('退出')] });
 
-    expect(english.output).toContain('Pick a group');
-    expect(chinese.output).toContain('选择分组');
+    expect(english.output).toContain('Pick a purpose');
+    expect(chinese.output).toContain('选择用途');
   });
 
   it('LC_ALL 优先于 LANG', async () => {
     const result = await run({ env: { LC_ALL: 'zh_TW.UTF-8', LANG: 'en_US.UTF-8' }, answers: [choose('退出')] });
 
-    expect(result.output).toContain('选择分组');
+    expect(result.output).toContain('选择用途');
   });
 
   it('LC_MESSAGES 优先于 LANG，LC_ALL 又优先于它', async () => {
@@ -153,14 +153,14 @@ describe('语言', () => {
       answers: [choose('Exit')],
     });
 
-    expect(chinese.output).toContain('选择分组');
-    expect(english.output).toContain('Pick a group');
+    expect(chinese.output).toContain('选择用途');
+    expect(english.output).toContain('Pick a purpose');
   });
 
   it('环境变量里没有语言设置时看系统语言环境', async () => {
     const result = await run({ env: { LANG: '' }, systemLocale: 'zh-CN', answers: [choose('退出')] });
 
-    expect(result.output).toContain('选择分组');
+    expect(result.output).toContain('选择用途');
   });
 });
 
@@ -175,9 +175,9 @@ describe('语言提问', () => {
   });
 
   it.each([
-    ['系统语言是中文', { LANG: 'zh_CN.UTF-8' }, '选择分组'],
-    ['系统语言是英文', { LANG: 'en_US.UTF-8' }, 'Pick a group'],
-    ['系统语言是别的', { LANG: 'fr_FR.UTF-8' }, 'Pick a group'],
+    ['系统语言是中文', { LANG: 'zh_CN.UTF-8' }, '选择用途'],
+    ['系统语言是英文', { LANG: 'en_US.UTF-8' }, 'Pick a purpose'],
+    ['系统语言是别的', { LANG: 'fr_FR.UTF-8' }, 'Pick a purpose'],
   ])('%s：什么都不动直接回车，得到的就是光标起始那一项的界面', async (_label, env, menu) => {
     const result = await run({ env, answersLanguage: true, answers: [accept(), interrupt()] });
 
@@ -194,7 +194,7 @@ describe('语言提问', () => {
     const afterQuestion = result.output.slice(result.output.indexOf('English') + 'English'.length);
     expect(afterQuestion).toContain('Loading catalog');
     expect(afterQuestion).toMatch(/^\s+Catalog\s+2 skills?$/m);
-    expect(afterQuestion).toContain('Pick a group');
+    expect(afterQuestion).toContain('Pick a purpose');
     expect(afterQuestion).toMatch(/ beta-pack\s+none\s+The second sample skill$/m);
     expect(afterQuestion).not.toMatch(/[\u4e00-\u9fff]/);
   });
@@ -207,9 +207,9 @@ describe('语言提问', () => {
     });
 
     expect(result.output).toContain('正在读取目录');
-    expect(result.output).toContain('选择分组');
+    expect(result.output).toContain('选择用途');
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
-    expect(result.output).not.toContain('Pick a group');
+    expect(result.output).not.toContain('Pick a purpose');
   });
 
   it('选了与系统语言不同的一项后立刻出错：出错说明也是选定的语言', async () => {
@@ -226,10 +226,10 @@ describe('语言提问', () => {
   });
 
   it.each([
-    ['--lang zh', ['--lang', 'zh'], '退出', '选择分组'],
-    ['--lang en', ['--lang', 'en'], 'Exit', 'Pick a group'],
-    ['--lang=zh', ['--lang=zh'], '退出', '选择分组'],
-    ['--lang=en', ['--lang=en'], 'Exit', 'Pick a group'],
+    ['--lang zh', ['--lang', 'zh'], '退出', '选择用途'],
+    ['--lang en', ['--lang', 'en'], 'Exit', 'Pick a purpose'],
+    ['--lang=zh', ['--lang=zh'], '退出', '选择用途'],
+    ['--lang=en', ['--lang=en'], 'Exit', 'Pick a purpose'],
   ])('带 %s 启动时不问，第一问就是主菜单', async (_label, argv, exit, menu) => {
     const result = await run({ argv, answersLanguage: true, answers: [choose(exit)] });
 
@@ -279,7 +279,7 @@ describe('启动参数', () => {
     expect(result.output).toContain('--version');
     expect(result.output).toContain('OXY_TOOLS_CATALOG');
     expect(result.output).toContain('GITHUB_TOKEN');
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
     expect(result.exitCode).toBe(0);
   });
 
@@ -348,7 +348,7 @@ describe('没有交互式终端', () => {
     expect(result.output).toContain('出错：没有交互式终端');
     expect(result.output).toMatch(/^\s+原因\s+\S/m);
     expect(result.output).toMatch(/^\s+下一步\s+\S/m);
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
     expect(result.output).not.toMatch(STACK_FRAME);
     expect(result.exitCode).not.toBe(0);
   });

@@ -1,7 +1,7 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, McpVariable, Skill, Tool, ToolOs } from './catalog.ts';
+import type { App, Mcp, McpVariable, Purpose, Skill, Tool, ToolOs } from './catalog.ts';
 import type { Command, Host } from './hosts.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
@@ -87,8 +87,9 @@ const ERASE_LINE = '\r\x1b[2K';
 // 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
 const REASON_MARK = '\u200b';
 
-export type GroupId = 'skill' | 'mcp' | 'tool' | 'app';
-export type MenuChoice = GroupId | 'exit';
+/** 还没搬进混合列表的类型：它们在主菜单上暂时留着旧入口 */
+export type GroupId = 'skill' | 'mcp' | 'tool';
+export type MenuChoice = Purpose | GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
 
@@ -266,9 +267,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     };
   };
 
-  // 列表下方的一行：缩进三格，标签后空两格，过长则折行。它与下面的按键提示之间空一行
-  const belowList = (label: string, format: Format, text: string): string =>
-    `${hanging('   ', paint(format, pad(label, displayWidth(label) + 2)), text).join('\n')}\n`;
+  // 列表下方的一行：缩进三格，标签后空两格，过长则折行。它与下面的按键提示之间空一行。
+  // 连着几行时给 labelWidth，把各行的标签补到一样宽
+  const belowList = (label: string, format: Format, text: string, labelWidth = displayWidth(label) + 2): string =>
+    `${hanging('   ', paint(format, pad(label, labelWidth)), text).join('\n')}\n`;
 
   const cursor = paint(focus, symbols.cursor);
   const theme: PromptTheme = {
@@ -344,8 +346,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   };
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
-  // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里
-  const pageSize = (): number => Math.max(7, (out.rows ?? 24) - 8);
+  // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里。below 是列表下方另外多占的行数
+  const pageSize = (below: number): number => Math.max(7, (out.rows ?? 24) - 8 - below);
 
   // 留在屏幕上的提问（单选、多选、是否题）的主题。提问是交互库直接写到终端上的，不经过 print：做成提问就当它
   // 已经问出去、收成了一行。上面不是空行时，提问上方的那一行空行放在提问标记里——它只在还在问的时候占着，
@@ -357,12 +359,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   };
 
   // 单选和多选共用的部分。提问与列表之间空一行：接在提问的末尾，不放进列表——列表滚动时它不跟着滚走，也不占
-  // 列表的行。回答之后提问收成一行，它随之收掉
-  const list = <Row>(rows: readonly Row[]) => {
+  // 列表的行。回答之后提问收成一行，它随之收掉。below 是列表下方除说明之外另外多占的行数
+  const list = <Row>(rows: readonly Row[], below = 0) => {
     const asked = asking();
     const message: PromptTheme['style']['message'] = (text, status) =>
       `${asked.style.message(text, status)}${status === 'done' ? '' : '\n'}`;
-    return { pageSize: pageSize(), theme: { ...asked, style: { ...asked.style, message } }, rows };
+    return { pageSize: pageSize(below), theme: { ...asked, style: { ...asked.style, message } }, rows };
   };
 
   // 汇总之后的那一问：动手、返回修改、取消
@@ -593,28 +595,39 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       gap();
     },
 
-    /** lacksHost 的分组因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。 */
-    mainMenu(groups: readonly { id: GroupId; count: number; lacksHost: boolean }[]): SelectQuestion<MenuChoice> {
-      const rows = groups.map((group) => ({ ...group, ...t.groups[group.id], count: String(group.count) }));
-      const labelWidth = Math.max(displayWidth(t.groupColumn), ...rows.map((row) => displayWidth(row.label))) + GUTTER;
+    /**
+     * 各个用途在前，顺序照传进来的；旧入口排在它们后面，另带一句说明。count 是进去之后列表里的行数。
+     * lacksHost 的旧入口因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。
+     */
+    mainMenu(
+      purposes: readonly { purpose: Purpose; count: number }[],
+      groups: readonly { id: GroupId; count: number; lacksHost: boolean }[],
+    ): SelectQuestion<MenuChoice> {
+      const rows: { value: Purpose | GroupId; label: string; about: string; count: string; lacksHost: boolean }[] = [
+        ...purposes.map(({ purpose, count }) => ({ value: purpose, label: purpose.name[lang], about: '', count: String(count), lacksHost: false })),
+        ...groups.map((group) => ({ value: group.id, ...t.groups[group.id], count: String(group.count), lacksHost: group.lacksHost })),
+      ];
+      const labelWidth = Math.max(displayWidth(t.purposeColumn), ...rows.map((row) => displayWidth(row.label))) + GUTTER;
       const countWidth = Math.max(displayWidth(t.countColumn), ...rows.map((row) => row.count.length));
       const aboutWidth = USABLE - 2 - labelWidth - countWidth - GUTTER;
+      // 用途的行只有名称和数量两栏，后面不留空白
       const line = (label: string, count: string, about: string, width = aboutWidth): string =>
-        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}${' '.repeat(GUTTER)}${truncate(about, width, symbols.ellipsis)}`;
+        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}${' '.repeat(GUTTER)}${truncate(about, width, symbols.ellipsis)}`.trimEnd();
       // 原因接在说明后面，说明相应少占几列
       const reasonWidth = displayWidth(` ${symbols.separator} ${t.needsHost}`);
       const enterable = rows.find((row) => !row.lacksHost);
       return {
-        message: t.pickGroup,
+        message: t.pickPurpose,
         // 交互库的光标缺省停在第一项上，哪怕它不可选
-        ...(rows.some((row) => row.lacksHost) ? { default: enterable?.id ?? ('exit' as const) } : {}),
+        ...(rows.some((row) => row.lacksHost) ? { default: enterable?.value ?? ('exit' as const) } : {}),
         ...list([
           ...(rows.length > 0
             ? [
                 // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
-                { separator: dim(` ${line(t.groupColumn, t.countColumn, t.aboutColumn)}`) },
+                // 只有旧入口那几行带说明：一行都没有时表头不写这一栏
+                { separator: dim(` ${line(t.purposeColumn, t.countColumn, groups.length > 0 ? t.aboutColumn : '')}`) },
                 ...rows.map((row) => ({
-                  value: row.id,
+                  value: row.value,
                   short: row.label,
                   ...(row.lacksHost
                     ? {
@@ -631,43 +644,64 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       };
     },
 
-    /** 应用项目列表：名称、说明两栏。选中的值是那个应用项目，null 表示返回；cursor 是光标起始所在的那一项。 */
-    appList(apps: readonly App[], cursor?: App): SelectQuestion<App | null> {
+    /**
+     * 进入一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题；现在只有外部项目一段，它的行没有状态。
+     * 列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
+     */
+    mixedPicker(apps: readonly App[]): CheckboxQuestion<App> {
+      // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头和段标题要多缩进
+      const lead = displayWidth(symbols.checked) + 2;
+      const indent = ' '.repeat(lead - 1);
       const nameWidth = Math.max(displayWidth(t.nameColumn), ...apps.map((app) => displayWidth(app.name))) + GUTTER;
-      const aboutWidth = USABLE - 2 - nameWidth;
+      const aboutWidth = USABLE - lead - nameWidth;
+      const labelWidth = Math.max(displayWidth(t.typeLabel), displayWidth(t.aboutColumn)) + 2;
+      // 回答之后收成的那一行最多列出几个名字
+      const namesShown = 3;
+      const rows = [
+        { separator: dim(`${indent}${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
+        { separator: `${indent}${dim(symbols.rule.repeat(2))} ${t.sections.app.title} ${symbols.separator} ${t.sections.app.note}` },
+        ...apps.map((app) => ({
+          value: app,
+          short: app.name,
+          name: `${pad(app.name, nameWidth)}${aboutWidth > 0 ? truncate(app.description[lang], aboutWidth, symbols.ellipsis) : ''}`.trimEnd(),
+          // 交互库只把这一段文字交给主题：第一行是类型，其余是说明全文，由下面的 description 拆开
+          description: `${t.kinds.app}\n${app.description[lang]}`,
+          checked: false,
+        })),
+      ];
+      // 列表下方比别的列表多一行「类型」
+      const question = list(rows, 1);
       return {
-        message: t.pickApp,
-        ...(cursor ? { default: cursor } : {}),
-        ...list([
-          // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
-          { separator: dim(` ${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
-          ...apps.map((app) => ({
-            value: app,
-            short: app.name,
-            name: `${pad(app.name, nameWidth)}${truncate(app.description[lang], aboutWidth, symbols.ellipsis)}`,
-            description: app.description[lang],
-          })),
-          { separator: ' ' },
-          { value: null, short: t.back, name: t.back },
-        ]),
+        message: t.pickEntries,
+        ...question,
+        theme: {
+          ...question.theme,
+          style: {
+            ...question.theme.style,
+            description: (text) => {
+              const [kind = '', ...about] = text.split('\n');
+              return `${belowList(t.typeLabel, 'dim', kind, labelWidth)}${belowList(t.aboutColumn, 'dim', about.join('\n'), labelWidth)}`;
+            },
+            renderSelectedChoices: (selected) =>
+              selected.length > namesShown
+                ? t.pickedMany(selected.slice(0, namesShown).map((choice) => choice.short), selected.length)
+                : theme.style.renderSelectedChoices(selected),
+          },
+        },
       };
     },
 
-    /** 应用项目详情：说明全文和官方链接。链接整条写出，浏览器打不开时用户照着复制。 */
-    appDetail(app: App): void {
+    /** 勾选的外部项目各一段：名字、说明全文、官方链接。只列出来，不替用户打开。 */
+    externalProjects(apps: readonly App[]): void {
       print(
-        ...heading(app.name),
-        ...keyValue(t.aboutColumn, app.description[lang]),
-        // 链接再长也整条写在一行上，不交给折行：折开了就没法照着复制
-        `  ${dim(pad(t.linkKey, KEY_WIDTH))}${paint('underline', app.url)}`,
-      );
-    },
-
-    /** 接在详情后面：链接交给浏览器了没有。没打开不算出错，只提醒自己复制。 */
-    linkOutcome(opened: boolean): void {
-      print(
-        ...(opened ? [`  ${paint('green', symbols.done)}  ${t.linkOpened}`] : keyValue(t.noticeKey, t.linkNotOpened, attention)),
-        '',
+        ...heading(t.externalProjects(apps.length)),
+        ...apps.flatMap((app, index) => [
+          ...(index === 0 ? [] : ['']),
+          `  ${paint('bold', app.name)}`,
+          ...keyValue(t.aboutColumn, app.description[lang]),
+          // 链接再长也整条写在一行上，不交给折行：折开了就没法照着复制
+          `  ${dim(pad(t.linkKey, KEY_WIDTH))}${paint('underline', app.url)}`,
+        ]),
       );
     },
 
@@ -856,7 +890,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         ...heading(t.keyRequest(mcp.name, variable.required)),
         ...keyValue(t.variableKey, `${variable.name}${t.keyNeed(variable.required)}`),
         ...keyValue(t.purposeKey, variable.description[lang]),
-        // 申请地址和应用项目的链接一样整条写在一行上：折开了就没法照着复制
+        // 申请地址和外部项目的链接一样整条写在一行上：折开了就没法照着复制
         `  ${dim(pad(t.applyKey, KEY_WIDTH))}${paint('underline', variable.url)}`,
         ...keyValue(t.tipKey, t.keyInputHint(mcp.name, variable.required)),
         '',

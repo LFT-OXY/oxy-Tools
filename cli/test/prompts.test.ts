@@ -33,7 +33,7 @@ describe('真实的提问画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/✓ 选择分组 · Skill$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · Skill$/m);
     expect(result.output).toMatch(/^▸□ alpha\s+未装\s+第一个样例 skill.*…$/m);
     expect(result.output).toMatch(/^▸□ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+说明\s+第二个样例 skill$/m);
@@ -50,7 +50,7 @@ describe('真实的提问画面', () => {
     });
 
     expect(result.output).toMatch(/✓ 选择要安装的 skill · 返回$/m);
-    expect(result.output).toMatch(/✓ 选择分组 · 退出$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 退出$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -85,7 +85,7 @@ describe('真实的提问画面', () => {
     });
 
     expect(result.output).toMatch(/^> Skill\s+2\s/m);
-    expect(result.output).toMatch(/\+ 选择分组 - Skill$/m);
+    expect(result.output).toMatch(/\+ 选择用途 - Skill$/m);
     // 提问回答之后，收成的那一行紧接着按键提示重画，所以这里不卡行尾
     expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择/m);
     expect(result.output).not.toMatch(/[▸✓·…↑↓⏎]/);
@@ -139,9 +139,9 @@ describe('真实的画面：语言提问', () => {
 
     const lines = await screenLines(result.raw);
     expect(lines).toContain('✓ Language / 语言 · English');
-    expect(lines).toContain('? Pick a group');
+    expect(lines).toContain('? Pick a purpose');
     expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
-    expect(lines.join('\n')).not.toContain('选择分组');
+    expect(lines.join('\n')).not.toContain('选择用途');
   });
 
   it('选完语言后立刻出错：收成的那一行与出错说明之间空一行', async () => {
@@ -280,7 +280,7 @@ describe('真实的画面：一个宿主都没检测到', () => {
 
     expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
     expect(result.output).toMatch(/^▸ 退出$/m);
-    expect(result.output).toMatch(/✓ 选择分组 · 退出$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 退出$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -296,7 +296,7 @@ describe('真实的画面：一个宿主都没检测到', () => {
 
     expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
     expect(result.output).not.toContain('选择要安装的 skill');
-    expect(result.output).not.toContain('✓ 选择分组');
+    expect(result.output).not.toContain('✓ 选择用途');
     expect(result.exitCode).toBe(130);
   });
 
@@ -497,104 +497,140 @@ describe('真实的画面：skill 的状态与确认覆盖', () => {
   });
 });
 
-describe('真实的画面：应用项目', () => {
-  const withApps = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } });
-  // 主菜单上把光标从 Skill 移到应用项目再回车
-  const toApps: [string, string][] = [
+describe('真实的画面：外部项目', () => {
+  const withApps = (apps: unknown[] = SAMPLE_APPS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps } });
+  const [ATLAS, BOREALIS] = SAMPLE_APPS as [(typeof SAMPLE_APPS)[0], (typeof SAMPLE_APPS)[1]];
+  // 和 borealis 在同一个用途下的另外几个
+  const more = (...names: string[]): unknown[] => [BOREALIS, ...names.map((name) => ({ ...BOREALIS, name }))];
+  // 主菜单上光标起始在第一个用途上（联网搜索与文档检索，下面是 borealis）；开发工作流与规范下面是 atlas
+  const toFirstPurpose: [string, string][] = [[HINT, KEY.enter]];
+  const toSecondPurpose: [string, string][] = [
     [HINT, KEY.down],
-    ['▸ 应用项目', KEY.enter],
+    ['▸ 开发工作流与规范', KEY.enter],
   ];
 
-  it('列表是单选的两栏表：光标停在第一项上，下方是它的说明全文和按键提示，末尾是返回', async () => {
-    const result = await run({ catalog: withApps(), keys: [...toApps, [HINT, KEY.ctrlC]] });
+  it('主菜单：各个用途排在旧分组前面，只有名称和数量；光标停在第一个用途上', async () => {
+    const result = await run({ catalog: withApps(), keys: [[HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/✓ 选择分组 · 应用项目$/m);
+    expect(result.output).toMatch(/^▸ 联网搜索与文档检索\s+1$/m);
+    expect(result.output).toMatch(/^\s+开发工作流与规范\s+1$/m);
+    expect(result.output).toMatch(/^\s+Skill\s+2\s+装进 AI Agent 的能力包$/m);
+  });
+
+  it('列表是多选的：表头、段标题、条目；下方是光标所在行的类型、说明全文和按键提示', async () => {
+    const result = await run({ catalog: withApps(), keys: [...toSecondPurpose, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/✓ 选择用途 · 开发工作流与规范$/m);
     expect(result.output).toMatch(/^\s+名称\s+说明$/m);
-    expect(result.output).toMatch(/^▸ atlas\s+第一个样例应用项目.*…$/m);
-    expect(result.output).toMatch(/^ {2}borealis\s+第二个样例应用项目$/m);
-    expect(result.output).toMatch(/^ {2}返回$/m);
-    expect(result.output).toMatch(/^\s+说明\s+第一个样例应用项目，它的说明同样故意写得很长/m);
-    expect(result.output).toMatch(/^\s+↑↓ 移动 · ⏎ 选择$/m);
+    expect(result.output).toMatch(/^\s+── 外部项目 · 只给链接，不安装$/m);
+    expect(result.output).toMatch(/^▸□ atlas\s+第一个样例外部项目.*…$/m);
+    expect(result.output).toMatch(/^\s+类型\s+外部项目$/m);
+    expect(result.output).toMatch(/^\s+说明\s+第一个样例外部项目，它的说明同样故意写得很长/m);
+    expect(result.output).toMatch(/^\s+↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）$/m);
   });
 
-  it('选中一项：提问收成一行，打出详情并打开链接，再回到列表，光标留在这一项上', async () => {
+  it('勾一个再确认：提问收成一行，直接是说明与链接，不问开始不开始，不打开浏览器，再回到主菜单', async () => {
     const result = await run({
       catalog: withApps(),
-      keys: [...toApps, [HINT, KEY.down], ['▸ borealis', KEY.enter], ['▸ borealis', KEY.ctrlC]],
+      keys: [...toFirstPurpose, [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/✓ 选择应用项目 · borealis$/m);
-    expect(result.output).toMatch(/^── borealis ─+$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · borealis$/m);
+    expect(result.output).toMatch(/^── 外部项目：1 个，只给链接 ─+$/m);
     expect(result.output).toMatch(/^\s+链接\s+https:\/\/example\.org\/borealis$/m);
-    expect(result.opened).toEqual(['https://example.org/borealis']);
-  });
-
-  it('选「返回」回到主菜单', async () => {
-    const result = await run({
-      catalog: withApps(),
-      keys: [...toApps, [HINT, KEY.down], ['▸ borealis', KEY.down], ['▸ 返回', KEY.enter], [HINT, KEY.ctrlC]],
-    });
-
-    expect(result.output).toMatch(/✓ 选择应用项目 · 返回$/m);
-    expect(result.output.split('✓ 选择应用项目 · 返回')[1]).toMatch(/^▸ Skill\s/m);
+    expect(result.output.split('只给链接 ─')[1]).toMatch(/^▸ 联网搜索与文档检索\s/m);
+    expect(result.output).not.toContain('开始安装吗');
     expect(result.opened).toEqual([]);
   });
 
-  it('一个宿主都没检测到时，光标直接落在应用项目上，回车就进去', async () => {
-    const result = await run({ catalog: withApps(), onPath: [], keys: [[HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+  it('一个都不勾就确认：收成的一行写「返回」，回到主菜单', async () => {
+    const result = await run({ catalog: withApps(), keys: [...toFirstPurpose, [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
-    expect(result.output).toMatch(/^▸ 应用项目\s+2\s+需要自行部署，这里只给链接$/m);
-    expect(result.output).toMatch(/✓ 选择分组 · 应用项目$/m);
-    expect(result.output).toMatch(/^▸ atlas\s/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
+    expect(result.output.split('✓ 选择要安装的条目 · 返回')[1]).toMatch(/^▸ 联网搜索与文档检索\s/m);
+    expect(result.output).not.toContain('外部项目：');
   });
 
   it.each([
-    ['浏览器打开了', true],
-    ['浏览器打不开', false],
-  ])('设置了 NO_COLOR 时，列表和详情都不带样式码（%s）', async (_label, browser) => {
+    ['正好三个：全都列出', more('cirrus', 'dune'), /✓ 选择要安装的条目 · borealis、cirrus、dune$/m],
+    ['不止三个：只列前三个，后面写总数', more('cirrus', 'dune', 'ember'), /✓ 选择要安装的条目 · borealis、cirrus、dune 等 4 项$/m],
+  ])('全选之后收成的一行，%s', async (_label, apps, answered) => {
+    const last = (apps.at(-1) as { name: string }).name;
+    const result = await run({
+      catalog: withApps(apps),
+      keys: [...toFirstPurpose, [PICK_HINT, 'a'], [` ■ ${last}`, KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(answered);
+    expect(result.output).toMatch(new RegExp(`^── 外部项目：${apps.length} 个，只给链接 ─+$`, 'm'));
+  });
+
+  it('一个宿主都没检测到时，光标落在第一个用途上，回车就进去；外部项目照常勾得上', async () => {
+    const result = await run({
+      catalog: withApps(),
+      onPath: [],
+      keys: [...toFirstPurpose, [PICK_HINT, KEY.space], ['▸■ borealis', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^▸ 联网搜索与文档检索\s+1$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 联网搜索与文档检索$/m);
+  });
+
+  it('设置了 NO_COLOR 时，列表和说明与链接都不带样式码', async () => {
     const result = await run({
       catalog: withApps(),
       env: { NO_COLOR: '1' },
-      browser,
-      keys: [...toApps, [HINT, KEY.enter], ['▸ atlas', KEY.ctrlC]],
+      keys: [...toSecondPurpose, [PICK_HINT, KEY.space], ['▸■ atlas', KEY.enter], [HINT, KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/^── atlas ─+$/m);
-    expect(result.output).toContain(SAMPLE_APPS[0]?.url);
+    expect(result.output).toMatch(/^── 外部项目：1 个，只给链接 ─+$/m);
+    expect(result.output).toContain(ATLAS.url);
     expect(result.raw).not.toMatch(STYLE_CODE);
   });
 
-  it('没有 Unicode 的终端里，列表的符号和打开之后的记号都退成 ASCII', async () => {
+  it('没有 Unicode 的终端里，段标题的横线、分隔和列表的符号都退成 ASCII', async () => {
     const result = await run({
       catalog: withApps(),
       platform: 'win32',
       env: { TERM: '' },
       keys: [
-        ['回车 选择', KEY.down],
-        ['> 应用项目', KEY.enter],
-        ['回车 选择', KEY.down],
-        ['> borealis', KEY.enter],
-        ['> borealis', KEY.ctrlC],
+        ['回车 选择', KEY.enter],
+        ['回车 确认', KEY.space],
+        ['>[x] borealis', KEY.enter],
+        ['回车 选择', KEY.ctrlC],
       ],
     });
 
-    expect(result.output).toMatch(/^-- borealis -+$/m);
-    expect(result.output).toMatch(/^\s+\+\s+已在默认浏览器打开；打不开时请复制上面的链接$/m);
-    expect(result.output).not.toMatch(/[▸✓·…↑↓⏎─]/);
+    expect(result.output).toMatch(/^\s+-- 外部项目 - 只给链接，不安装$/m);
+    expect(result.output).toMatch(/^\s+名称\s+说明$/m);
+    expect(result.output).toMatch(/^-- 外部项目：1 个，只给链接 -+$/m);
+    expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎─]/);
   });
 
   it('英文界面下的列表', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withApps(),
-      keys: [['⏎ select', KEY.down], ['▸ Apps', KEY.enter], ['⏎ select', KEY.ctrlC]],
+      keys: [['⏎ select', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/✓ Pick a group · Apps$/m);
+    expect(result.output).toMatch(/✓ Pick a purpose · Web search & docs retrieval$/m);
     expect(result.output).toMatch(/^\s+Name\s+About$/m);
-    expect(result.output).toMatch(/^ {2}Back$/m);
-    expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
+    expect(result.output).toMatch(/^\s+── External projects · links only, nothing is installed$/m);
+    expect(result.output).toMatch(/^\s+Type\s+External project$/m);
+    expect(result.output).toMatch(/^\s+About\s+The second sample external project$/m);
+    expect(result.output).toMatch(/^\s+↑↓ move · space select · a all · i invert · ⏎ confirm \(none = back\)$/m);
+  });
+
+  it('英文界面下勾了不止三个：只列前三个，后面写还有几个', async () => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: withApps(more('cirrus', 'dune', 'ember', 'fjord')),
+      keys: [['⏎ select', KEY.enter], ['⏎ confirm', 'a'], [' ■ fjord', KEY.enter], ['⏎ select', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ Pick entries to install · borealis, cirrus, dune and 2 more$/m);
   });
 });
 
@@ -607,7 +643,7 @@ describe('真实的画面：MCP', () => {
   it('列表是多选：每行前面有勾选框，之后是状态和说明，下方是按键提示', async () => {
     const result = await run({ catalog: catalog(), keys: [...toMcps, [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/✓ 选择分组 · MCP$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · MCP$/m);
     expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
     expect(result.output).toMatch(/^▸□ claude-only\s+未配置\s+本地进程方式的样例 MCP.*…$/m);
     expect(result.output).toMatch(/^ □ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
@@ -732,7 +768,7 @@ describe('真实的画面：工具', () => {
   it('列表是多选：每行前面有勾选框，之后是一栏状态和说明，下方是按键提示', async () => {
     const result = await run({ catalog: catalog(), keys: [...toTools, [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/✓ 选择分组 · 工具$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 工具$/m);
     expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
     expect(result.output).toMatch(/^▸□ picky\s+未安装\s+第二个样例工具$/m);
     expect(result.output).toMatch(/^ □ fetcher\s+未安装\s+第一个样例工具.*…$/m);
@@ -829,7 +865,7 @@ describe('真实的画面：工具', () => {
       keys: [['⏎ select', KEY.down], ['▸ Tools', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/✓ Pick a group · Tools$/m);
+    expect(result.output).toMatch(/✓ Pick a purpose · Tools$/m);
     expect(result.output).toMatch(/^\s+Name\s+Status\s+About$/m);
     expect(result.output).toMatch(/^▸– picky\s+not for macOS\s+The second sample tool$/m);
     expect(result.output).toMatch(/^\s+↑↓ move · space select · a all · i invert · ⏎ confirm \(none = back\)$/m);
@@ -995,7 +1031,7 @@ describe('真实的画面：焦点色', () => {
         keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter], ['粘贴后回车', 'k'], ['粘贴后回车', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
       }),
     ],
-    ['应用项目列表', () => ({ catalog: everything(), keys: [[HINT, KEY.down], ['▸ 工具', KEY.down], ['▸ 应用项目', KEY.enter], [HINT, KEY.ctrlC]] })],
+    ['用途下的列表、外部项目的说明与链接', () => ({ catalog: everything(), keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]] })],
   ])('%s：输出里没有青色的样式码', async (_label, options) => {
     const result = await run(options());
 

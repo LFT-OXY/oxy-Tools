@@ -82,7 +82,7 @@ describe('汇总确认', () => {
     expect(result.output).toContain('将安装 1 个 skill');
     expect(existsSync(skillsDir(result.home))).toBe(false);
     expect(result.output).not.toContain('正在安装');
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 
@@ -101,7 +101,7 @@ describe('汇总确认', () => {
     const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
 
     expect(result.output).not.toContain('将安装');
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(existsSync(skillsDir(result.home))).toBe(false);
   });
 });
@@ -114,7 +114,7 @@ describe('结果', () => {
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
     expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+已安装 2\.3$/m);
     expect(result.output).toMatch(/^\s+合计\s+2 成功 · 0 失败 · 0 跳过$/m);
-    expect(result.output.indexOf('选择分组', result.output.indexOf('合计'))).toBeGreaterThan(-1);
+    expect(result.output.indexOf('选择用途', result.output.indexOf('合计'))).toBeGreaterThan(-1);
   });
 
   it('一项失败不影响其余项：两项各有一行，失败的带原因，退出状态不变', async () => {
@@ -130,7 +130,7 @@ describe('结果', () => {
     expect(readdirSync(skillsDir(result.home))).toEqual(['beta-pack']);
     expect(readdirSync(result.tmp)).toEqual([]);
     expect(result.output).not.toMatch(STACK_FRAME);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 
@@ -317,7 +317,7 @@ describe('查询 GitHub 失败', () => {
     expect(result.output).not.toMatch(STACK_FRAME);
     expect(result.output).not.toContain('正在安装');
     expect(existsSync(skillsDir(result.home))).toBe(false);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 

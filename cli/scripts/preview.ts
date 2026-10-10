@@ -30,8 +30,6 @@ interface Scene {
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径 */
   links?: Record<string, string>;
-  /** 传 false 表示浏览器打不开：链接打开器以失败告终 */
-  browser?: boolean;
   /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
   commands?: CommandRunner;
   /** 假装执行工具的安装命令：它往终端上打什么、怎么结束；缺省照 installsTool */
@@ -93,13 +91,33 @@ function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG, pin = downl
   return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]), pin };
 }
 
-// 应用项目是为预览编的样例：仓库的 catalog.json 目前是空的。样例条目的用途取自 EMPTY_CATALOG 带的那份用途清单
+// 外部项目的场景另带一份用途清单：照仓库里真实的那十个，主菜单才看得出按用途排开的样子
+const SHOWCASE_PURPOSES = [
+  ['dev-workflow', '开发工作流与规范', 'Development workflow & conventions'],
+  ['agent-behavior', 'Agent 行为约束与输出风格', 'Agent behavior & output style'],
+  ['codebase-understanding', '代码库索引与理解', 'Codebase indexing & understanding'],
+  ['context-memory', '上下文、记忆与 Token 优化', 'Context, memory & token optimization'],
+  ['web-search', '联网搜索与文档检索', 'Web search & docs retrieval'],
+  ['browser-automation', '浏览器自动化', 'Browser automation'],
+  ['design-media', 'UI 设计、图像与视频', 'UI design, images & video'],
+  ['documents', '文档处理', 'Document processing'],
+  ['prompts-writing', '提示词与写作', 'Prompts & writing'],
+  ['review-security', '代码审查、评估与安全', 'Code review, evaluation & security'],
+].map(([id, zh, en]) => ({ id, name: { zh, en } }));
+
+// 外部项目的样例：分在四个用途下，其余六个用途没有条目。有一条名字很长，一条的链接比一行长，几条的说明比一行长
 const SHOWCASE_APPS = [
-  ['dify', '开源的 LLM 应用开发平台，自带工作流编排与知识库，用 docker 部署', 'Open-source LLM app development platform with workflow orchestration and a knowledge base, deployed with docker', 'https://github.com/langgenius/dify'],
-  ['n8n', '可自托管的工作流自动化平台，内置 AI 节点', 'Self-hostable workflow automation platform with built-in AI nodes', 'https://github.com/n8n-io/n8n'],
-  ['open-webui', '自托管的大模型对话界面，可接 Ollama 与各家 API', 'Self-hosted chat interface for large models; works with Ollama and vendor APIs', 'https://github.com/open-webui/open-webui'],
-  ['ragflow', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
-].map(([name, zh, en, url]) => ({ name, description: { zh, en }, url, purpose: 'dev-workflow' }));
+  ['dify', 'dev-workflow', '开源的 LLM 应用开发平台，自带工作流编排与知识库，用 docker 部署', 'Open-source LLM app development platform with workflow orchestration and a knowledge base, deployed with docker', 'https://github.com/langgenius/dify'],
+  ['n8n', 'dev-workflow', '可自托管的工作流自动化平台，内置 AI 节点', 'Self-hostable workflow automation platform with built-in AI nodes', 'https://github.com/n8n-io/n8n'],
+  ['open-webui', 'dev-workflow', '自托管的大模型对话界面，可接 Ollama 与各家 API', 'Self-hosted chat interface for large models; works with Ollama and vendor APIs', 'https://github.com/open-webui/open-webui'],
+  ['claude-mem', 'context-memory', '自动记录 AI Agent 在会话里做过的事并压缩成摘要，在以后的会话里把相关内容带回来', 'Automatically captures what your AI agent does in a session, compresses it into summaries and brings the relevant context back in later sessions', 'https://github.com/thedotmack/claude-mem'],
+  ['opencode-dynamic-context-pruning', 'context-memory', 'OpenCode 的插件，自动清理和压缩对话上下文来减少 token 用量', 'OpenCode plugin that automatically prunes and compresses conversation context to cut token usage', 'https://github.com/Opencode-DCP/opencode-dynamic-context-pruning'],
+  ['ragflow', 'web-search', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
+  ['word-formatter-pro', 'documents', '把格式混乱的 Word 文档自动排成符合规范的版式的桌面应用', 'Desktop app that automatically reformats messy Word documents into a standards-compliant layout', 'https://github.com/cwyalpha/Word-Formatter-Pro'],
+  ['stirling-pdf', 'documents', '开源的 PDF 编辑平台，可以当桌面应用用、在浏览器里用或部署到自己的服务器，对 PDF 做编辑、签名、遮盖和转换', 'Open-source PDF editing platform that runs as a desktop app, in the browser or on your own server, for editing, signing, redacting and converting PDFs', 'https://github.com/Stirling-Tools/Stirling-PDF'],
+  ['mineru', 'documents', '把 PDF、Office 文档等复杂文件转成适合大模型读的 Markdown 或 JSON', 'Converts complex documents such as PDFs and Office files into LLM-ready Markdown or JSON', 'https://github.com/opendatalab/MinerU'],
+  ['pdf-inspector', 'documents', '检查、分类 PDF 并提取文本的 Rust 库，能分辨扫描版和文本版，也有 Python 包和命令行', 'Rust library for inspecting, classifying and extracting text from PDFs that tells scanned from text-based files, also available as a Python package and CLI', 'https://github.com/firecrawl/pdf-inspector'],
+].map(([name, purpose, zh, en, url]) => ({ name, description: { zh, en }, url, purpose }));
 
 // MCP 同样是为预览编的样例：两种连接方式都有，其中一条只支持 Codex
 const SHOWCASE_MCPS = [
@@ -187,7 +205,7 @@ const SHOWCASE_KEYED_MCPS = [
   ...SHOWCASE_MCPS.slice(2),
 ];
 const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_KEYED_MCPS });
-const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, apps: SHOWCASE_APPS });
+const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -278,12 +296,16 @@ const agreeOverwrite = [...toOverwriteQuestion, 'y', KEY.enter];
 const pickLongName = [...toSkills, ...down(4), KEY.space, KEY.enter];
 // 勾上 if5 和 pr：名字都短，备注放得下
 const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.enter];
-// 主菜单上从 Skill 下移到应用项目再进去；一个宿主都没有时光标本来就在应用项目上
-const toApps = [KEY.down, KEY.enter];
-// 选中第三个应用项目 open-webui
-const openApp = [...toApps, ...down(2), KEY.enter];
-// 选中最后一个 ragflow：它的链接比一行长
-const openLongLink = [...toApps, ...down(3), KEY.enter];
+// withApps 的主菜单上依次是四个有条目的用途，然后才是 Skill；光标起始在第一个用途上。「文档处理」是第四个
+const toDocuments = [...down(3), KEY.enter];
+// 「文档处理」里按名字排是 mineru、pdf-inspector、stirling-pdf、word-formatter-pro：勾上第一个和第三个，光标停在第三个上
+const pickTwoApps = [...toDocuments, KEY.space, ...down(2), KEY.space];
+// 只勾 stirling-pdf：它的说明比一行长
+const pickOneApp = [...toDocuments, ...down(2), KEY.space];
+// 「上下文、记忆与 Token 优化」是第二个用途：里面有名字最长的那一条
+const toContextMemory = [KEY.down, KEY.enter];
+// 「联网搜索与文档检索」是第三个用途，只有 ragflow 一条：它的链接比一行长
+const pickLongLink = [...down(2), KEY.enter, KEY.space, KEY.enter];
 
 // 主菜单上从 Skill 下移到 MCP 再进去
 const toMcps = [KEY.down, KEY.enter];
@@ -373,14 +395,16 @@ const scenes: Scene[] = [
   { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；skill 分组不可进入，行尾注明原因，光标落在「退出」上', onPath: [] },
   { title: '主菜单 · 一个宿主都没有 · 在 skill 分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
-  { title: '主菜单 · 有应用项目', note: 'catalog.json 里有应用项目时多出这个分组，「目录」一行也数上它', catalog: withApps },
-  { title: '主菜单 · 一个宿主都没有 · 有应用项目', note: '说明里补一句应用项目仍可浏览；光标直接落在应用项目上', catalog: withApps, onPath: [] },
-  { title: '应用项目列表', note: '单选的两栏表，末尾是「返回」；光标所在行的说明全文在列表下方', catalog: withApps, keys: toApps },
-  { title: '应用项目列表 · 一个宿主都没有', note: '这个分组不靠宿主，照样进得去', catalog: withApps, onPath: [], keys: [KEY.enter] },
-  { title: '应用项目详情 · 已打开浏览器', note: '说明全文和带下划线的完整链接，再说明已打开；之后回到列表，光标留在这一项上', catalog: withApps, keys: openApp },
-  { title: '应用项目详情 · 浏览器打不开', note: '不算出错：链接照样完整写出，只提醒自己复制', catalog: withApps, browser: false, keys: openApp },
-  { title: '应用项目详情 · 链接比一行长', note: '链接不截断也不折开，由终端自己折行', catalog: withApps, keys: openLongLink },
-  { title: '应用项目 · 返回主菜单', note: '看过一个之后选「返回」', catalog: withApps, keys: [...openApp, ...down(2), KEY.enter] },
+  { title: '主菜单 · 按用途进入', note: '各个用途一行一个，照用途清单的顺序，右边是条目数；十个用途里六个没有条目，不出现。Skill 这个旧入口暂时留在后面；「目录」一行数上外部项目', catalog: withApps },
+  { title: '主菜单 · 按用途进入 · 一个宿主都没有', note: '说明里补一句外部项目仍可浏览；用途照常进得去，光标在第一个用途上，旧入口不可进入', catalog: withApps, onPath: [] },
+  { title: '用途下的列表 · 只有外部项目', note: '多选。表头下面是段标题，写明只给链接；外部项目没有状态，说明紧跟在名称后面；列表下方是光标所在行的类型和说明全文', catalog: withApps, keys: toDocuments },
+  { title: '用途下的列表 · 勾了两个', note: '光标所在行的说明比一行长：下方折成两行，续行与说明的左缘对齐', catalog: withApps, keys: pickTwoApps },
+  { title: '用途下的列表 · 名字最长的条目', note: '名称一栏按最长的名字定宽，说明相应少占几列', catalog: withApps, keys: toContextMemory },
+  { title: '用途下的列表 · 一个宿主都没有', note: '外部项目不靠宿主，照常可选', catalog: withApps, onPath: [], keys: pickTwoApps },
+  { title: '用途下的列表 · 一个都不勾就返回', note: '收成的一行写「返回」，回到主菜单', catalog: withApps, keys: [...toDocuments, KEY.enter] },
+  { title: '外部项目的说明与链接 · 勾了两个', note: '只勾了外部项目：没有汇总，不问开始不开始。每个一段：名字、说明全文、带下划线的完整链接；不打开浏览器。之后回到主菜单', catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
+  { title: '外部项目的说明与链接 · 一个', note: '说明比一行长时折行', catalog: withApps, keys: [...pickOneApp, KEY.enter] },
+  { title: '外部项目的说明与链接 · 链接比一行长', note: '链接不截断也不折开，由终端自己折行', catalog: withApps, keys: pickLongLink },
   { title: '主菜单 · 有 MCP', note: 'catalog.json 里有 MCP 条目时多出这个分组，「目录」一行也数上它', catalog: withMcps },
   { title: 'MCP 多选列表', note: '状态来自 Claude Code 的用户级配置：已配置、未配置；这个宿主不支持的条目不可选，行尾注明原因', ...MCP_STATES, keys: pickMcps },
   { title: 'MCP 多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
@@ -442,10 +466,11 @@ const scenes: Scene[] = [
   { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '英文界面 · 一个宿主都没有', argv: ['--lang', 'en'], onPath: [] },
-  { title: '英文界面 · 应用项目列表', argv: ['--lang', 'en'], catalog: withApps, keys: toApps },
-  { title: '英文界面 · 应用项目详情', argv: ['--lang', 'en'], catalog: withApps, keys: openApp },
-  { title: '英文界面 · 应用项目详情 · 浏览器打不开', argv: ['--lang', 'en'], catalog: withApps, browser: false, keys: openApp },
-  { title: '英文界面 · 一个宿主都没有 · 有应用项目', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
+  { title: '英文界面 · 主菜单 · 按用途进入', argv: ['--lang', 'en'], catalog: withApps },
+  { title: '英文界面 · 用途下的列表', argv: ['--lang', 'en'], catalog: withApps, keys: pickTwoApps },
+  { title: '英文界面 · 用途下的列表 · 名字最长的条目', argv: ['--lang', 'en'], catalog: withApps, keys: toContextMemory },
+  { title: '英文界面 · 外部项目的说明与链接', argv: ['--lang', 'en'], catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
+  { title: '英文界面 · 主菜单 · 按用途进入 · 一个宿主都没有', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
   { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
   { title: '英文界面 · MCP 多选列表', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '英文界面 · MCP 多选列表 · 不可选的条目', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
@@ -465,8 +490,8 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 四种状态并存', note: '设置了 NO_COLOR：每种状态的文字本身就不同', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '不显示颜色 · 含覆盖项的汇总、确认与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
-  { title: '不显示颜色 · 应用项目详情', note: '设置了 NO_COLOR：链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: openApp },
-  { title: '不显示颜色 · 应用项目详情 · 浏览器打不开', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: withApps, browser: false, keys: openApp },
+  { title: '不显示颜色 · 用途下的列表', note: '设置了 NO_COLOR：段标题、勾选和光标都靠符号认', env: { NO_COLOR: '1' }, catalog: withApps, keys: pickTwoApps },
+  { title: '不显示颜色 · 外部项目的说明与链接', note: '设置了 NO_COLOR：名字不加粗，链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '不显示颜色 · MCP 多选列表', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '不显示颜色 · MCP 多选列表 · 不可选的条目', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
@@ -484,8 +509,9 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 四种状态并存', note: '版本变化的箭头退成 ->', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '没有 Unicode · 含覆盖项的汇总、确认与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
-  { title: '没有 Unicode · 应用项目列表', ...LEGACY_CONSOLE, catalog: withApps, keys: toApps },
-  { title: '没有 Unicode · 应用项目详情', note: '打开之后的记号退成 +', ...LEGACY_CONSOLE, catalog: withApps, keys: openApp },
+  { title: '没有 Unicode · 主菜单 · 按用途进入', ...LEGACY_CONSOLE, catalog: withApps },
+  { title: '没有 Unicode · 用途下的列表', note: '段标题前的横线退成 --，标题里的分隔退成 -', ...LEGACY_CONSOLE, catalog: withApps, keys: pickTwoApps },
+  { title: '没有 Unicode · 外部项目的说明与链接', ...LEGACY_CONSOLE, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
   { title: '没有 Unicode · MCP 多选列表 · 不可选的条目', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
@@ -571,8 +597,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
       return { exitCode: run.exitCode ?? 0 };
     },
     prompter,
-    // 预览页不真的打开浏览器
-    openLink: () => (scene.browser === false ? Promise.reject(new Error('preview has no browser')) : Promise.resolve()),
+    // 安装器不该再打开浏览器：真调用了就让这一格出错，看得出来
+    openLink: () => Promise.reject(new Error('the installer must not open a browser')),
   });
 
   await settle();

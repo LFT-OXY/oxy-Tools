@@ -35,7 +35,7 @@ export interface Messages {
   loading: { catalog: string; skillFiles: string };
   agentKey: string;
   notDetected: string;
-  /** 一个宿主都没检测到；hosts 是安装器认识的全部宿主的名字，appsBrowsable 表示目录里有应用项目可看 */
+  /** 一个宿主都没检测到；hosts 是安装器认识的全部宿主的名字，appsBrowsable 表示目录里有外部项目可看 */
   noHosts: (hosts: readonly string[], appsBrowsable: boolean) => string;
   /** 只检测到一部分宿主：missing 是没检测到的，present 是检测到的，都已按并列的写法连好 */
   hostsSkipped: (missing: string, present: string) => string;
@@ -45,13 +45,13 @@ export interface Messages {
   counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
-  pickGroup: string;
-  groupColumn: string;
+  pickPurpose: string;
+  purposeColumn: string;
   countColumn: string;
   aboutColumn: string;
   exit: string;
   back: string;
-  /** 分组不可进入的原因，接在那一行的末尾 */
+  /** 旧入口不可进入的原因，接在那一行的末尾 */
   needsHost: string;
   /** 在不可选的行上按了确认 */
   unavailable: string;
@@ -73,11 +73,18 @@ export interface Messages {
   pickSkills: string;
   pickMcps: string;
   pickTools: string;
-  pickApp: string;
+  /** 进入一个用途之后的那张列表 */
+  pickEntries: string;
+  /** 列表下方写光标所在行类型的那一行的标签 */
+  typeLabel: string;
+  /** 条目的类型：sections 是列表里段首的标题和它后面的一句说明，kinds 是列表下方「类型」一行里的写法 */
+  sections: { app: { title: string; note: string } };
+  kinds: { app: string };
+  /** 列表回答之后收成的那一行，勾得多时只列前几个名字：shown 是列出来的那几个，total 是勾选的总数 */
+  pickedMany: (shown: readonly string[], total: number) => string;
+  /** 列出勾选的外部项目的那个分区的标题 */
+  externalProjects: (count: number) => string;
   linkKey: string;
-  /** 应用项目的链接已经交给浏览器；浏览器有没有真的打开，安装器不一定看得出来 */
-  linkOpened: string;
-  linkNotOpened: string;
   /** 并列几个名字时用的分隔 */
   listSeparator: string;
   entryColumn: string;
@@ -150,7 +157,8 @@ export interface Messages {
   toolResult: (result: ToolResult, evidence: ToolEvidence) => string;
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
-  groups: Record<'skill' | 'mcp' | 'tool' | 'app', { label: string; about: string }>;
+  /** 还没搬进混合列表的类型在主菜单上的旧入口 */
+  groups: Record<'skill' | 'mcp' | 'tool', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -175,7 +183,7 @@ const zh: Messages = {
   agentKey: 'AI Agent',
   notDetected: '未检测到',
   noHosts: (hosts, appsBrowsable) =>
-    `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件${appsBrowsable ? '；应用项目仍可浏览' : ''}`,
+    `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件${appsBrowsable ? '；外部项目仍可浏览' : ''}`,
   hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
@@ -183,12 +191,12 @@ const zh: Messages = {
     ...(skills > 0 ? [`${skills} skill`] : []),
     ...(mcps > 0 ? [`${mcps} MCP`] : []),
     ...(tools > 0 ? [`${tools} 工具`] : []),
-    ...(apps > 0 ? [`${apps} 应用项目`] : []),
+    ...(apps > 0 ? [`${apps} 外部项目`] : []),
   ],
   noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
-  pickGroup: '选择分组',
-  groupColumn: '分组',
+  pickPurpose: '选择用途',
+  purposeColumn: '用途',
   countColumn: '数量',
   aboutColumn: '说明',
   exit: '退出',
@@ -207,10 +215,13 @@ const zh: Messages = {
   pickSkills: '选择要安装的 skill',
   pickMcps: '选择要安装的 MCP',
   pickTools: '选择要安装的工具',
-  pickApp: '选择应用项目',
+  pickEntries: '选择要安装的条目',
+  typeLabel: '类型',
+  sections: { app: { title: '外部项目', note: '只给链接，不安装' } },
+  kinds: { app: '外部项目' },
+  pickedMany: (shown, total) => `${shown.join('、')} 等 ${total} 项`,
+  externalProjects: (count) => `外部项目：${count} 个，只给链接`,
   linkKey: '链接',
-  linkOpened: '已在默认浏览器打开；打不开时请复制上面的链接',
-  linkNotOpened: '没能打开浏览器，请复制上面的链接自行打开',
   listSeparator: '、',
   entryColumn: '条目',
   agentColumn: 'AI Agent',
@@ -299,7 +310,6 @@ const zh: Messages = {
     skill: { label: 'Skill', about: '装进 AI Agent 的能力包' },
     mcp: { label: 'MCP', about: '写进 AI Agent 配置的 MCP 服务器' },
     tool: { label: '工具', about: '执行其官方安装命令装上的工具' },
-    app: { label: '应用项目', about: '需要自行部署，这里只给链接' },
   },
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
   keyWords: { space: '空格' },
@@ -423,7 +433,7 @@ const en: Messages = {
   agentKey: 'AI Agent',
   notDetected: 'not detected',
   noHosts: (hosts, appsBrowsable) =>
-    `${hosts.join(' and ')} not detected; components cannot be installed${appsBrowsable ? '; apps can still be browsed' : ''}`,
+    `${hosts.join(' and ')} not detected; components cannot be installed${appsBrowsable ? '; external projects can still be browsed' : ''}`,
   hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',
@@ -431,13 +441,13 @@ const en: Messages = {
     ...(skills > 0 ? [`${skills} ${skills === 1 ? 'skill' : 'skills'}`] : []),
     ...(mcps > 0 ? [`${mcps} MCP`] : []),
     ...(tools > 0 ? [`${tools} ${tools === 1 ? 'tool' : 'tools'}`] : []),
-    ...(apps > 0 ? [`${apps} ${apps === 1 ? 'app' : 'apps'}`] : []),
+    ...(apps > 0 ? [`${apps} external`] : []),
   ],
   noEntries: 'no usable entries',
   skipped: (count) => `${count} malformed catalog ${count === 1 ? 'entry was' : 'entries were'} skipped`,
-  pickGroup: 'Pick a group',
-  groupColumn: 'Group',
-  countColumn: 'Items',
+  pickPurpose: 'Pick a purpose',
+  purposeColumn: 'Purpose',
+  countColumn: 'Count',
   aboutColumn: 'About',
   exit: 'Exit',
   back: 'Back',
@@ -455,10 +465,13 @@ const en: Messages = {
   pickSkills: 'Pick skills to install',
   pickMcps: 'Pick MCP servers to install',
   pickTools: 'Pick tools to install',
-  pickApp: 'Pick an app',
+  pickEntries: 'Pick entries to install',
+  typeLabel: 'Type',
+  sections: { app: { title: 'External projects', note: 'links only, nothing is installed' } },
+  kinds: { app: 'External project' },
+  pickedMany: (shown, total) => `${shown.join(', ')} and ${total - shown.length} more`,
+  externalProjects: (count) => `External projects: ${count}, links only`,
   linkKey: 'Link',
-  linkOpened: 'Opened in your default browser; if nothing opened, copy the link above',
-  linkNotOpened: 'Could not open a browser; copy the link above and open it yourself',
   listSeparator: ', ',
   entryColumn: 'Entry',
   agentColumn: 'AI Agent',
@@ -547,7 +560,6 @@ const en: Messages = {
     skill: { label: 'Skills', about: 'Capability packs for your AI Agent' },
     mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
     tool: { label: 'Tools', about: 'Installed by running their official install commands' },
-    app: { label: 'Apps', about: 'Deploy them yourself; only links here' },
   },
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },
   keyWords: { space: 'space' },

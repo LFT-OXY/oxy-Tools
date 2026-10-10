@@ -51,7 +51,7 @@ export interface Placement {
   recommended: boolean;
 }
 
-/** 应用项目：安装器装不了，只给说明和官方链接 */
+/** 外部项目（目录文件里的键仍是 apps）：安装器装不了，只给说明和官方链接 */
 export interface App extends Placement {
   name: string;
   description: { zh: string; en: string };

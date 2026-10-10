@@ -8,13 +8,17 @@ import { screenLines } from './terminal.ts';
 const HINT = '⏎ 选择';
 const PICK_HINT = '⏎ 确认';
 const BOTH_HOSTS = ['claude', 'codex'];
+// 两个用途下各有一个外部项目，三个旧分组也都有条目：主菜单上各个用途排在旧分组前面
 const fullCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+// 没有外部项目，主菜单上只有三个旧分组：光标起始就在 Skill 上
+const componentCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS } });
 
-// 主菜单上把光标从 Skill 移到别的分组再回车
+// 主菜单上把光标从 Skill 移到别的分组再回车；目录里没有外部项目时才这样走
 const toMcps: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.enter]];
 const toTools: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.down], ['▸ 工具', KEY.enter]];
-const toApps: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.down], ['▸ 工具', KEY.down], ['▸ 应用项目', KEY.enter]];
+// fullCatalog 的主菜单上光标起始在第一个用途上，它下面是 borealis：直接回车
+const toPurpose: [string, string][] = [[HINT, KEY.enter]];
 
 // 最后留在画面上的每一行
 const screenOf = async (options: Parameters<typeof run>[0]): Promise<string[]> => screenLines((await run(options)).raw);
@@ -26,10 +30,10 @@ const after = (lines: string[], line: string | RegExp, count: number): string[] 
 };
 
 describe('提问与它下面的表或选项之间空一行', () => {
-  it('主菜单：「选择分组」与表头之间', async () => {
+  it('主菜单：「选择用途」与表头之间', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '? 选择分组', 2)).toEqual(['', expect.stringMatching(/^\s+分组\s+数量\s+说明$/)]);
+    expect(after(lines, '? 选择用途', 2)).toEqual(['', expect.stringMatching(/^\s+用途\s+数量\s+说明$/)]);
   });
 
   it('语言提问：与第一个选项之间', async () => {
@@ -49,19 +53,20 @@ describe('提问与它下面的表或选项之间空一行', () => {
     ['MCP', toMcps, '? 选择要安装的 MCP', /^\s+名称\s+Claude Code\s+说明$/],
     ['工具', toTools, '? 选择要安装的工具', /^\s+名称\s+状态\s+说明$/],
   ] as [string, [string, string][], string, RegExp][])('%s 的多选列表：与表头之间', async (_label, toList, question, header) => {
-    const lines = await screenOf({ catalog: fullCatalog(), keys: [...toList, [PICK_HINT, KEY.ctrlC]] });
+    const lines = await screenOf({ catalog: componentCatalog(), keys: [...toList, [PICK_HINT, KEY.ctrlC]] });
 
     expect(after(lines, question, 2)).toEqual(['', expect.stringMatching(header)]);
   });
 
-  it('应用项目列表：与表头之间；「返回」与条目之间仍只隔一行', async () => {
-    const lines = await screenOf({
-      catalog: fullCatalog(),
-      keys: [...toApps, [HINT, KEY.ctrlC]],
-    });
+  it('用途下的列表：与表头之间；表头、段标题、条目之间不空', async () => {
+    const lines = await screenOf({ catalog: fullCatalog(), keys: [...toPurpose, [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '? 选择应用项目', 2)).toEqual(['', expect.stringMatching(/^\s+名称\s+说明$/)]);
-    expect(after(lines, /^\s+borealis\s/, 2)).toEqual(['', expect.stringMatching(/^\s+返回$/)]);
+    expect(after(lines, '? 选择要安装的条目', 4)).toEqual([
+      '',
+      expect.stringMatching(/^\s+名称\s+说明$/),
+      expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
+      expect.stringMatching(/^▸□ borealis\s/),
+    ]);
   });
 
   it('汇总之后的确认：「开始安装吗」与三个选项之间', async () => {
@@ -70,10 +75,10 @@ describe('提问与它下面的表或选项之间空一行', () => {
     expect(after(lines, '? 开始安装吗', 4)).toEqual(['', '▸ 开始安装', '  返回修改', '  取消']);
   });
 
-  it('目录是空的：「选择分组」与「退出」之间只隔一行', async () => {
+  it('目录是空的：「选择用途」与「退出」之间只隔一行', async () => {
     const lines = await screenOf({ catalog: catalogDir({ index: { version: 1, skills: [] } }), keys: [[HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '? 选择分组', 2)).toEqual(['', '▸ 退出']);
+    expect(after(lines, '? 选择用途', 2)).toEqual(['', '▸ 退出']);
   });
 });
 
@@ -104,14 +109,15 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
     ]);
   });
 
-  it('单选列表（应用项目）同一个画法', async () => {
-    const lines = await screenOf({ catalog: fullCatalog(), keys: [...toApps, [HINT, KEY.down], ['▸ borealis', KEY.ctrlC]] });
+  it('用途下的列表：「类型」和说明两行挨着，上下各隔一行', async () => {
+    const lines = await screenOf({ catalog: fullCatalog(), keys: [...toPurpose, [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '  返回', 4)).toEqual([
+    expect(after(lines, /^▸□ borealis\s/, 5)).toEqual([
       '',
-      expect.stringMatching(/^\s+说明\s+第二个样例应用项目$/),
+      expect.stringMatching(/^\s+类型\s+外部项目$/),
+      expect.stringMatching(/^\s+说明\s+第二个样例外部项目$/),
       '',
-      expect.stringMatching(SELECT_KEYS),
+      expect.stringMatching(PICK_KEYS),
     ]);
   });
 
@@ -174,13 +180,13 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('下一个提问还在问的时候与上面已回答的一行隔一行', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择分组 · Skill', 2)).toEqual(['', '? 装进哪些 AI Agent']);
+    expect(after(lines, '✓ 选择用途 · Skill', 2)).toEqual(['', '? 装进哪些 AI Agent']);
   });
 
   it('它回答之后，两行已回答的提问紧挨着，再隔一行才是下一个提问', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择分组 · Skill', 3)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '', '? 选择要安装的 skill']);
+    expect(after(lines, '✓ 选择用途 · Skill', 3)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '', '? 选择要安装的 skill']);
   });
 
   it('是否题：问的时候与已回答的一行隔一行', async () => {
@@ -210,17 +216,31 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('回到主菜单时，新一轮的提问与上一轮之间只隔一行', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择分组 · Skill', 3)).toEqual(['✓ 选择要安装的 skill · 返回', '', '? 选择分组']);
+    expect(after(lines, '✓ 选择用途 · Skill', 3)).toEqual(['✓ 选择要安装的 skill · 返回', '', '? 选择用途']);
+  });
+
+  it('外部项目的说明与链接：与上面已回答的一行、与回到主菜单的提问之间各隔一行', async () => {
+    const lines = await screenOf({
+      catalog: fullCatalog(),
+      keys: [...toPurpose, [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(after(lines, '✓ 选择用途 · 联网搜索与文档检索', 3)).toEqual([
+      '✓ 选择要安装的条目 · borealis',
+      '',
+      expect.stringMatching(/^── 外部项目：1 个，只给链接 ─+$/),
+    ]);
+    expect(after(lines, /^\s+链接\s+https:\/\/example\.org\/borealis$/, 2)).toEqual(['', '? 选择用途']);
   });
 
   it('读不到宿主的配置：那一行「注意」上下各空一行', async () => {
     const lines = await screenOf({
-      catalog: fullCatalog(),
+      catalog: componentCatalog(),
       home: { '.claude.json': '{ 写坏了' },
       keys: [...toMcps, [PICK_HINT, KEY.ctrlC]],
     });
 
-    expect(after(lines, '✓ 选择分组 · MCP', 4)).toEqual(['', expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/), '', '? 选择要安装的 MCP']);
+    expect(after(lines, '✓ 选择用途 · MCP', 4)).toEqual(['', expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/), '', '? 选择要安装的 MCP']);
   });
 
   it('沿用的 key 留下的一行和已回答的提问同一个画法：紧挨着上一行', async () => {
@@ -270,10 +290,19 @@ describe('分区标题下方空一行', () => {
     expect(after(lines, /^── 将执行 1 条命令 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+1\s+claude mcp add/)]);
   });
 
-  it('应用项目详情', async () => {
-    const lines = await printed({ catalog: fullCatalog(), answers: [choose('应用项目'), choose('borealis'), choose('返回'), choose('退出')] });
+  it('外部项目的说明与链接：标题下方空一行，两段之间空一行', async () => {
+    const lines = await printed({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, apps: [...SAMPLE_APPS, { ...SAMPLE_APPS[1], name: 'cirrus' }] } }),
+      answers: [choose('联网搜索与文档检索'), pick('borealis', 'cirrus'), choose('退出')],
+    });
 
-    expect(after(lines, /^── borealis ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+说明\s+第二个样例应用项目$/)]);
+    expect(after(lines, /^── 外部项目：2 个，只给链接 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+borealis$/)]);
+    expect(after(lines, /^\s+borealis$/, 4)).toEqual([
+      expect.stringMatching(/^\s+说明\s+第二个样例外部项目$/),
+      expect.stringMatching(/^\s+链接\s+https:/),
+      '',
+      expect.stringMatching(/^\s+cirrus$/),
+    ]);
   });
 
   it('出错', async () => {
@@ -381,17 +410,43 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(after(visible, QUESTION, 2)).toEqual(['', expect.stringMatching(/^.□ skill-\d\d\s/)]);
   });
 
-  it('很矮的终端里主菜单也不滚动：四个分组、「退出」和表头都在', async () => {
-    const result = await run({ catalog: fullCatalog(), rows: 12, keys: [[HINT, KEY.ctrlC]] });
+  it('用途下的列表多一行「类型」：条目多到要滚动时，提问、类型、两行说明和按键提示仍都在屏幕上', async () => {
+    const apps = Array.from({ length: 30 }, (_, index) => ({ ...SAMPLE_APPS[0], name: `app-${String(index + 1).padStart(2, '0')}` }));
+    const result = await run({ catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, apps } }), rows: ROWS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+    const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
+
+    expect(visible).toContain('? 选择要安装的条目');
+    expect(visible.filter((line) => /^\s+类型\s+外部项目$/.test(line))).toHaveLength(1);
+    expect(after(visible, /^\s+说明\s/, 3)).toEqual([expect.stringMatching(/^\s+\S/), '', expect.stringMatching(/^\s+↑↓ 移动 · 空格 选择/)]);
+    // 表头、段标题和 13 个条目
+    expect(visible.filter((line) => /^.□ app-\d\d\s/.test(line))).toHaveLength(13);
+  });
+
+  it('24 行的终端里主菜单不滚动：十个用途、三个旧分组、「退出」和表头都在', async () => {
+    const purposes = Array.from({ length: 10 }, (_, index) => ({ id: `purpose-${index}`, name: { zh: `第 ${index} 个用途`, en: `Purpose ${index}` } }));
+    const apps = purposes.map(({ id }, index) => ({ ...SAMPLE_APPS[1], name: `app-${index}`, purpose: id }));
+    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes: [...purposes, ...EMPTY_CATALOG.purposes], mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps } });
+    const result = await run({ catalog, rows: ROWS, keys: [[HINT, KEY.ctrlC]] });
+    const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
+
+    expect(visible).toContain('? 选择用途');
+    expect(visible.filter((line) => /第 \d 个用途\s+1$/.test(line))).toHaveLength(10);
+    expect(after(visible, /^\s+工具\s/, 2)).toEqual(['', expect.stringMatching(/^\s+退出$/)]);
+    expect(visible.some((line) => /^\s+用途\s+数量\s+说明$/.test(line))).toBe(true);
+  });
+
+  it('很矮的终端里列表最少也有 7 行：一个用途、三个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
+    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: [SAMPLE_APPS[1]] } });
+    const result = await run({ catalog, rows: 12, keys: [[HINT, KEY.ctrlC]] });
     const lines = await screenLines(result.raw, 60);
 
-    expect(after(lines, '? 选择分组', 8)).toEqual([
+    expect(after(lines, '? 选择用途', 8)).toEqual([
       '',
-      expect.stringMatching(/^\s+分组\s+数量\s+说明$/),
-      expect.stringMatching(/^▸ Skill\s/),
+      expect.stringMatching(/^\s+用途\s+数量\s+说明$/),
+      expect.stringMatching(/^▸ 联网搜索与文档检索\s/),
+      expect.stringMatching(/^\s+Skill\s/),
       expect.stringMatching(/^\s+MCP\s/),
       expect.stringMatching(/^\s+工具\s/),
-      expect.stringMatching(/^\s+应用项目\s/),
       '',
       expect.stringMatching(/^\s+退出$/),
     ]);
@@ -468,23 +523,26 @@ describe('任何地方都没有连着两行空行', () => {
     ],
     [
       '工具：两条命令、各自的执行分区、结果',
-      () => ({ catalog: fullCatalog() }),
+      () => ({ catalog: componentCatalog() }),
       [...toTools, [PICK_HINT, 'a'], [' ■ linter', KEY.enter], [HINT, KEY.enter], [HINT, KEY.down]],
     ],
     [
-      '应用项目：看两个再返回',
+      '外部项目：勾一个看说明与链接，再进另一个用途、什么都不勾就返回',
       () => ({ catalog: fullCatalog() }),
-      [...toApps, [HINT, KEY.enter], ['▸ atlas', KEY.down], ['▸ borealis', KEY.enter], ['▸ borealis', KEY.down], ['▸ 返回', KEY.enter], [HINT, KEY.down]],
-    ],
-    [
-      '应用项目：浏览器打不开',
-      () => ({ catalog: fullCatalog(), browser: false }),
-      [...toApps, [HINT, KEY.enter], ['▸ atlas', KEY.down]],
+      [
+        ...toPurpose,
+        [PICK_HINT, KEY.space],
+        ['▸■ borealis', KEY.enter],
+        [HINT, KEY.down],
+        ['▸ 开发工作流与规范', KEY.enter],
+        [PICK_HINT, KEY.enter],
+        [HINT, KEY.down],
+      ],
     ],
     [
       '一个宿主都没检测到：在不可进入的分组上按回车',
       () => ({ catalog: fullCatalog(), onPath: [] }),
-      [[HINT, KEY.up], ['▸ 工具', KEY.enter], ['这一项现在选不了', KEY.down]],
+      [[HINT, KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ Skill', KEY.enter], ['这一项现在选不了', KEY.down]],
     ],
     [
       '自己答语言提问，选 English',

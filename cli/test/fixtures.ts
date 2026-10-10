@@ -22,7 +22,7 @@ export const SAMPLE_FILES: Record<string, string> = {
   'skills/beta-pack/SKILL.md': '# beta-pack\n',
 };
 
-/** 用途清单：两个用途，样例的 MCP、工具、应用项目各归其中一个 */
+/** 用途清单：两个用途，样例的 MCP、工具、外部项目各归其中一个 */
 export const SAMPLE_PURPOSES = [
   { id: 'web-search', name: { zh: '联网搜索与文档检索', en: 'Web search & docs retrieval' } },
   { id: 'dev-workflow', name: { zh: '开发工作流与规范', en: 'Development workflow & conventions' } },
@@ -31,15 +31,15 @@ export const SAMPLE_PURPOSES = [
 export const EMPTY_CATALOG = { version: 1, purposes: SAMPLE_PURPOSES, mcps: [], tools: [], apps: [] };
 
 export const LONG_APP_ABOUT = {
-  zh: '第一个样例应用项目，它的说明同样故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方和详情里去看',
-  en: 'The first sample app, described at such length that one list row cannot hold it, so the full text has to be read below the list and in the detail',
+  zh: '第一个样例外部项目，它的说明同样故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方和选完之后的说明里去看',
+  en: 'The first sample external project, described at such length that one list row cannot hold it, so the full text has to be read below the list and after confirming',
 };
 
 export const SAMPLE_APPS = [
   { name: 'atlas', description: LONG_APP_ABOUT, url: 'https://example.com/atlas?tab=readme&lang=zh#install', purpose: 'dev-workflow' },
   {
     name: 'borealis',
-    description: { zh: '第二个样例应用项目', en: 'The second sample app' },
+    description: { zh: '第二个样例外部项目', en: 'The second sample external project' },
     url: 'https://example.org/borealis',
     purpose: 'web-search',
   },

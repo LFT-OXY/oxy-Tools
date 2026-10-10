@@ -192,8 +192,6 @@ export interface RunOptions {
   catalog?: string | CatalogSource;
   /** 可执行路径上有哪些命令，缺省只有 claude */
   onPath?: string[];
-  /** 传 false 表示浏览器打不开：要打开的链接照样记下来，但链接打开器以失败告终 */
-  browser?: boolean;
   /**
    * 预设外部命令的结果：命令照样记下来，不执行。返回的字段盖过缺省的结果（退出状态 0）；
    * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
@@ -232,6 +230,7 @@ export interface RunResult {
   screen: string;
   /** 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的 */
   commands: { command: string; args: readonly string[]; shell?: true }[];
+  /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
   opened: string[];
   home: string;
   /** 交给安装器放临时文件的目录 */
@@ -349,10 +348,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
         return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       },
       prompter: options.keys ? interactive : scripted,
-      openLink: async (url) => {
-        opened.push(url);
-        if (options.browser === false) throw new Error('spawn xdg-open ENOENT');
-      },
+      openLink: async (url) => void opened.push(url),
     }),
     typing(),
   ]);

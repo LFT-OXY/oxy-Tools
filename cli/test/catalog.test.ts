@@ -90,7 +90,7 @@ describe('目录格式版本高于安装器所支持的版本', () => {
     expect(result.output).toContain('出错：');
     expect(result.output).toContain(file);
     expect(result.output).toContain('npx oxy-tools@latest');
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
     expect(result.output).not.toMatch(STACK_FRAME);
     expect(result.exitCode).not.toBe(0);
   });
@@ -111,7 +111,7 @@ describe('目录读取失败', () => {
     expect(result.output).toContain('https://example.invalid/catalog/');
     expect(result.output).toContain('ENOTFOUND');
     expect(result.output).toMatch(/^\s+下一步\s+\S/m);
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
     expect(result.output).not.toMatch(STACK_FRAME);
     expect(result.exitCode).not.toBe(0);
   });
@@ -148,7 +148,7 @@ describe('目录读取失败', () => {
 
     expect(result.output).toContain('出错：');
     expect(result.output).toContain(file);
-    expect(result.output).not.toContain('选择分组');
+    expect(result.output).not.toContain('选择用途');
     expect(result.output).not.toMatch(STACK_FRAME);
     expect(result.exitCode).not.toBe(0);
   });

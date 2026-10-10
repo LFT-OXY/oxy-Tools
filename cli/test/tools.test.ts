@@ -56,7 +56,7 @@ describe('工具列表', () => {
     expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
     expect(result.output).toMatch(/ linter\s+未安装\s+第二个样例工具$/m);
     expect(result.output).not.toContain('装进哪些 AI Agent');
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.commands).toEqual([]);
     expect(result.exitCode).toBe(0);
   });
@@ -194,7 +194,7 @@ describe('执行之前：展示完整的命令并确认', () => {
     expect(result.output).toContain(LINTER_COMMAND.command);
     expect(result.output.indexOf(LINTER_COMMAND.command)).toBeLessThan(result.output.indexOf('执行这些命令吗'));
     expect(result.commands).toEqual([]);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
   });
 
   it('确认的缺省是执行；展示的就是执行的那几条，一字不差', async () => {
@@ -234,7 +234,7 @@ describe('执行与复核', () => {
     expect(section).toMatch(/^\s+\$ npm install -g @example\/linter@latest$/m);
     expect(section.indexOf('$ npm install')).toBeLessThan(section.indexOf('已可用'));
     expect(result.output).toMatch(/^\s+合计\s+1 成功 · 0 失败 · 0 跳过$/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 

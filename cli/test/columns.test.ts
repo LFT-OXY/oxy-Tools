@@ -16,21 +16,22 @@ const startOf = (screen: string, cell: string, text = cell): number => {
 };
 
 describe('栏间隔：主菜单', () => {
-  it('「分组」一栏最长的一格后面三格是数量一栏；数量之后三格是说明', async () => {
+  it('「用途」一栏最长的一格后面三格是数量一栏；旧分组的数量之后三格是说明', async () => {
     const { screen } = await run({ catalog: fullCatalog(), answers: [choose('退出')] });
 
     // 数量右对齐，所以拿表头量这一栏从哪开始
-    expect(startOf(screen, '分组', '数量') - startOf(screen, '应用项目 ') - columnsOf('应用项目')).toBe(3);
+    expect(startOf(screen, '用途', '数量') - startOf(screen, '联网搜索与文档检索 ') - columnsOf('联网搜索与文档检索')).toBe(3);
     expect(screen).toMatch(/数量 {3}说明$/m);
-    expect(screen).toMatch(/2 {3}需要自行部署/);
+    expect(screen).toMatch(/2 {3}装进 AI Agent 的能力包/);
   });
 
   it('英文界面同一个间隔', async () => {
     const { screen } = await run({ catalog: fullCatalog(), argv: ['--lang', 'en'], answers: [choose('Exit')] });
 
-    expect(startOf(screen, 'Group', 'Items') - startOf(screen, 'Skills ') - columnsOf('Skills')).toBe(3);
-    expect(screen).toMatch(/Items {3}About$/m);
-    expect(screen).toMatch(/2 {3}Deploy them yourself/);
+    const longest = 'Development workflow & conventions';
+    expect(startOf(screen, 'Purpose', 'Count') - startOf(screen, `${longest} `) - columnsOf(longest)).toBe(3);
+    expect(screen).toMatch(/Count {3}About$/m);
+    expect(screen).toMatch(/2 {3}Capability packs/);
   });
 });
 
@@ -124,12 +125,15 @@ describe('栏间隔：工具', () => {
   });
 });
 
-describe('栏间隔：应用项目列表', () => {
-  it('名称与说明之间三格；最长的说明仍被截断，整行不超出第 79 列', async () => {
-    const { screen } = await run({ catalog: fullCatalog(), answers: [choose('应用项目'), choose('返回'), choose('退出')] });
+describe('栏间隔：用途下的列表', () => {
+  it('外部项目的名称与说明之间三格；最长的说明仍被截断，整行不超出第 79 列', async () => {
+    const { screen } = await run({
+      catalog: fullCatalog(),
+      answers: [choose('联网搜索与文档检索'), pick(), choose('开发工作流与规范'), pick(), choose('退出')],
+    });
 
-    expect(screen).toMatch(/borealis {3}第二个样例应用项目$/m);
-    const truncated = screen.split('\n').find((line) => /atlas\s+第一个样例应用项目/.test(line)) ?? '';
+    expect(screen).toMatch(/borealis {3}第二个样例外部项目$/m);
+    const truncated = screen.split('\n').find((line) => /atlas {3}第一个样例外部项目/.test(line)) ?? '';
     expect(truncated).toMatch(/…$/);
     expect(columnsOf(truncated)).toBeLessThanOrEqual(79);
   });
@@ -138,10 +142,10 @@ describe('栏间隔：应用项目列表', () => {
     const { screen } = await run({
       catalog: fullCatalog(),
       argv: ['--lang', 'en'],
-      answers: [choose('Apps'), choose('Back'), choose('Exit')],
+      answers: [choose('Web search & docs retrieval'), pick(), choose('Exit')],
     });
 
-    expect(screen).toMatch(/borealis {3}The second sample app$/m);
+    expect(screen).toMatch(/borealis {3}The second sample external project$/m);
   });
 });
 

@@ -42,7 +42,7 @@ describe('MCP 列表', () => {
     expect(result.output).toContain('选择要安装的 MCP');
     expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
     expect(result.output).toMatch(/ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.commands).toEqual([]);
     expect(result.exitCode).toBe(0);
   });
@@ -207,7 +207,7 @@ describe('安装 MCP：汇总确认', () => {
     expect(result.output).toContain('claude mcp add --scope user docs-local');
     expect(result.output).toContain('执行这些命令吗');
     expect(result.commands).toEqual([]);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 
@@ -322,7 +322,7 @@ describe('安装 MCP：结果', () => {
     expect(result.output).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/m);
     expect(result.output).toMatch(/^\s+✓\s+tracker-remote\s+Claude Code\s+已配置$/m);
     expect(result.output).toMatch(/^\s+合计\s+2 成功 · 0 失败 · 0 跳过$/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 

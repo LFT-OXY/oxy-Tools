@@ -202,7 +202,7 @@ describe('带 key 的 MCP：必填项留空', () => {
     expect(result.commands).toEqual([]);
     expect(result.output).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的 SEARCH_API_KEY$/m);
     expect(result.output).toMatch(/^\s+合计\s+0 成功 · 0 失败 · 1 跳过$/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 });

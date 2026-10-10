@@ -1,11 +1,11 @@
-// 交互流程：主菜单与各分组的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
+// 交互流程：主菜单、各个用途与旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
-import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Skill, type Tool } from './catalog.ts';
+import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Purpose, type Skill, type Tool } from './catalog.ts';
 import type { Host } from './hosts.ts';
 import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
 import { installCommand, installTool } from './install-tool.ts';
-import type { CommandRunner, LinkOpener } from './installer.ts';
+import type { CommandRunner } from './installer.ts';
 import { mcpStatuses } from './mcp-status.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
@@ -27,7 +27,6 @@ export interface Session {
   interrupt: AbortSignal;
   ui: Ui;
   prompter: Prompter;
-  openLink: LinkOpener;
   runCommand: CommandRunner;
   /** 钉住的来源：一次运行里只查询一次，之后安装的每个 skill 共用 */
   pinned?: PinnedSource;
@@ -41,36 +40,38 @@ export interface Session {
 export async function mainMenu(session: Session): Promise<void> {
   const { catalog, ui, prompter } = session;
   const detected = session.hosts.filter((host) => host.detected);
-  // 只列出有条目的分组；组件要装进宿主，一个宿主都没检测到时进不去。应用项目不靠宿主
+  // 进去之后一行都没有的用途不出现
+  const purposes = catalog.purposes
+    .map((purpose) => ({ purpose, count: appsIn(catalog, purpose).length }))
+    .filter(({ count }) => count > 0);
+  // 还没搬进混合列表的类型暂时留着旧入口，只列出有条目的；组件要装进宿主，一个宿主都没检测到时进不去
   const groups = [
     { id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 },
     { id: 'mcp' as const, count: catalog.mcps.length, lacksHost: detected.length === 0 },
     { id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 },
-    { id: 'app' as const, count: catalog.apps.length, lacksHost: false },
   ].filter((group) => group.count > 0);
   for (;;) {
-    const choice = await prompter.select(ui.mainMenu(groups));
+    const choice = await prompter.select(ui.mainMenu(purposes, groups));
     if (choice === 'exit') return;
-    if (choice === 'app') await browseApps(session);
-    else if (choice === 'mcp') await installMcps(session, detected);
+    if (choice === 'mcp') await installMcps(session, detected);
     else if (choice === 'tool') await installTools(session, detected);
-    else await installSkills(session, detected);
+    else if (choice === 'skill') await installSkills(session, detected);
+    else await browsePurpose(session, choice);
     ui.nextRound();
   }
 }
 
-// 应用项目装不了：显示说明和官方链接，并在浏览器里打开它；看完一个回到列表，光标留在它上面
-async function browseApps(session: Session): Promise<void> {
+// 这个用途下的外部项目，按名字排
+function appsIn(catalog: Catalog, purpose: Purpose): App[] {
+  return catalog.apps.filter((app) => app.purpose === purpose.id).sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+// 进入一个用途：现在列表里只有外部项目。它们装不了，没有要执行的东西，所以不问开始不开始，
+// 直接列出勾选的那些的说明与链接；一个都不勾就确认是回主菜单
+async function browsePurpose(session: Session, purpose: Purpose): Promise<void> {
   const { catalog, ui, prompter } = session;
-  let cursor: App | undefined;
-  for (;;) {
-    const app = await prompter.select(ui.appList(catalog.apps, cursor));
-    if (app === null) return;
-    ui.appDetail(app);
-    // 浏览器打不开不算出错：链接已经整条写在上面
-    ui.linkOutcome(await session.openLink(app.url).then(() => true, () => false));
-    cursor = app;
-  }
+  const picked = await prompter.checkbox(ui.mixedPicker(appsIn(catalog, purpose)));
+  if (picked.length > 0) ui.externalProjects(picked);
 }
 
 interface Job {

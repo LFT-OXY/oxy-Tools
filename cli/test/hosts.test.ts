@@ -155,7 +155,7 @@ describe('检测到两个宿主', () => {
     const result = await run({ onPath, answers: [choose('Skill'), pick(), choose('退出')] });
 
     expect(result.output).not.toContain('选择要安装的 skill');
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(readdirSync(result.home)).toEqual([]);
   });
 
@@ -168,7 +168,7 @@ describe('检测到两个宿主', () => {
     const [, , again = ''] = result.output.split('装进哪些 AI Agent');
     expect(again).toMatch(/^\s*□ Claude Code\s/m);
     expect(again).toMatch(/^\s*■ Codex\s/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
   });
 
   it('在汇总里选「返回修改」回到 skill 列表，不重问宿主', async () => {

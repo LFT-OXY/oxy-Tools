@@ -23,7 +23,7 @@ export interface CommandOptions {
  * 命令没能起来时拒绝
  */
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
-/** 链接打开器：在默认浏览器里打开一个网址 */
+/** 链接打开器：在默认浏览器里打开一个网址。安装器现在不调用它：外部项目只列出链接 */
 export type LinkOpener = (url: string) => Promise<void>;
 
 export interface InstallerOptions {
@@ -111,7 +111,6 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       interrupt: options.interrupt,
       ui,
       prompter: options.prompter,
-      openLink: options.openLink,
       runCommand: options.runCommand,
       keys: new Map(),
     });

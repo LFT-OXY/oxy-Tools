@@ -5,7 +5,7 @@ describe('主菜单', () => {
   it('catalog.json 三个数组为空时，只有 skill 一个分组和退出', async () => {
     const result = await run({ answers: [choose('退出')] });
 
-    expect(result.output).toContain('选择分组');
+    expect(result.output).toContain('选择用途');
     expect(result.output).toMatch(/^\s+Skill\s+2\s+/m);
     expect(result.output).toMatch(/^\s+退出$/m);
     expect(result.output).not.toContain('MCP');
@@ -23,7 +23,7 @@ describe('skill 列表', () => {
 
     expect(result.output).toMatch(/ alpha\s+未装\s+第一个样例 skill/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
-    expect(result.output.split('选择分组')).toHaveLength(3);
+    expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
   });
 
