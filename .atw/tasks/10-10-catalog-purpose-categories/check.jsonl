@@ -1,0 +1,15 @@
+{"file": ".atw/spec/cli/index.md", "reason": "CLI 层总览：自成一体的三条规矩、两个测试接缝、质量检查命令"}
+{"file": ".atw/spec/cli/installer-entry.md", "reason": "入口签名与可替换依赖、目录读取与校验的契约、测试架子的用法"}
+{"file": ".atw/spec/cli/skill-install.md", "reason": "本仓库 skill 的安装、状态、覆盖确认；项目范围要沿用这些规矩"}
+{"file": ".atw/spec/cli/mcp-install.md", "reason": "MCP 的命令写法、key 的规矩、外部命令执行器的契约、不转述宿主命令的话"}
+{"file": ".atw/spec/cli/tool-install.md", "reason": "工具的整行 shell、成败只看复核；第三方 Skill 沿用复核的做法"}
+{"file": ".atw/spec/cli/ui-design.md", "reason": "账本画法、状态的写法、各类画面的版式；新画面要先改这份"}
+{"file": ".atw/spec/cli/terminal-output.md", "reason": "呈现层的职责、不可选的行、空行与结果行的规则"}
+{"file": ".atw/spec/cli/catalog-validation.md", "reason": "目录校验命令的输出与测试写法；新增条目类型和规则落在这里"}
+{"file": ".atw/spec/skills/manifest-versioning.md", "reason": "两个目录文件的字段契约、格式版本号的兼容规则、对 A Team Workflow 的三条承诺"}
+{"file": ".atw/spec/skills/vendored-skills.md", "reason": "上游整包的现状；第三方 skill 今后不再整包引入"}
+{"file": "docs/adr/0003-third-party-skills-installed-by-skills-cli.md", "reason": "第三方 skill 由 skills CLI 装的决定、放弃的做法与代价"}
+{"file": "GLOSSARY.md", "reason": "术语：用途、推荐、外部项目、第三方 Skill、安装范围"}
+{"file": ".atw/tasks/10-10-catalog-purpose-categories/research/interview-decisions.md", "reason": "访谈 Q1–Q34 的结论与核对过的事实"}
+{"file": ".atw/tasks/10-10-catalog-purpose-categories/research/skill-intake-analysis.md", "reason": "31 个 skill 仓库的可安装性、skills CLI 的实测、归类提议"}
+{"file": ".atw/tasks/10-10-catalog-purpose-categories/research/outline-entries.md", "reason": "待录入条目的清单（汇总文档的快照）"}
