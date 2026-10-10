@@ -252,8 +252,8 @@ const toOverwriteQuestion = [...toMixedSummary, KEY.enter];
 const declineOverwrite = [...toOverwriteQuestion, KEY.enter];
 const agreeOverwrite = [...toOverwriteQuestion, 'y', KEY.enter];
 const pickLongName = [...toSkills, ...down(4), KEY.space, KEY.enter];
-// 勾上 if5、pr 和 wizard：名字都短，备注放得下
-const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.down, KEY.space, KEY.enter];
+// 勾上 if5 和 pr：名字都短，备注放得下
+const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.enter];
 // 主菜单上从 Skill 下移到应用项目再进去；一个宿主都没有时光标本来就在应用项目上
 const toApps = [KEY.down, KEY.enter];
 // 选中第三个应用项目 open-webui

@@ -27,6 +27,8 @@ type Format = Parameters<typeof styleText>[0];
 const WIDTH = 80;
 const USABLE = WIDTH - 1;
 const KEY_WIDTH = 10;
+// 表的栏间隔：每一栏最长的一格后面空这么多格，所有的表同一个数
+const GUTTER = 3;
 
 const UNICODE = {
   done: '✓',
@@ -210,13 +212,13 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
   // 两栏的表：第一栏按最长的一格定宽，第二栏折行
   const twoColumns = (rows: readonly (readonly [string, string])[]): string[] => {
-    const firstWidth = Math.max(...rows.map(([first]) => displayWidth(first))) + 2;
+    const firstWidth = Math.max(...rows.map(([first]) => displayWidth(first))) + GUTTER;
     return rows.flatMap(([first, second]) => hanging('  ', pad(first, firstWidth), second));
   };
 
-  // 每一栏取这一栏里最长的一格再加两格间隔
+  // 每一栏取这一栏里最长的一格再加栏间隔
   const columnWidths = (rows: readonly (readonly string[])[]): number[] =>
-    (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => displayWidth(row[column] ?? ''))) + 2);
+    (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => displayWidth(row[column] ?? ''))) + GUTTER);
 
   // 带表头的表：表头暗淡，哪一栏都不截断。最后一栏是备注，整张表一个放法：每一格都放得下才成一栏；
   // 有一格放不下就都另起一行，与它前一栏的左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），
@@ -561,11 +563,11 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /** lacksHost 的分组因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。 */
     mainMenu(groups: readonly { id: GroupId; count: number; lacksHost: boolean }[]): SelectQuestion<MenuChoice> {
       const rows = groups.map((group) => ({ ...group, ...t.groups[group.id], count: String(group.count) }));
-      const labelWidth = Math.max(displayWidth(t.groupColumn), ...rows.map((row) => displayWidth(row.label))) + 2;
+      const labelWidth = Math.max(displayWidth(t.groupColumn), ...rows.map((row) => displayWidth(row.label))) + GUTTER;
       const countWidth = Math.max(displayWidth(t.countColumn), ...rows.map((row) => row.count.length));
-      const aboutWidth = USABLE - 2 - labelWidth - countWidth - 2;
+      const aboutWidth = USABLE - 2 - labelWidth - countWidth - GUTTER;
       const line = (label: string, count: string, about: string, width = aboutWidth): string =>
-        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}  ${truncate(about, width, symbols.ellipsis)}`;
+        `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}${' '.repeat(GUTTER)}${truncate(about, width, symbols.ellipsis)}`;
       // 原因接在说明后面，说明相应少占几列
       const reasonWidth = displayWidth(` ${symbols.separator} ${t.needsHost}`);
       const enterable = rows.find((row) => !row.lacksHost);
@@ -600,7 +602,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /** 应用项目列表：名称、说明两栏。选中的值是那个应用项目，null 表示返回；cursor 是光标起始所在的那一项。 */
     appList(apps: readonly App[], cursor?: App): SelectQuestion<App | null> {
-      const nameWidth = Math.max(displayWidth(t.nameColumn), ...apps.map((app) => displayWidth(app.name))) + 2;
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...apps.map((app) => displayWidth(app.name))) + GUTTER;
       const aboutWidth = USABLE - 2 - nameWidth;
       return {
         message: t.pickApp,
@@ -643,7 +645,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面，没有就不写。 */
     hostPicker(choices: readonly { host: Host; location?: string }[], checked: readonly Host[]): CheckboxQuestion<Host> {
-      const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + 2;
+      const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + GUTTER;
       return {
         message: t.pickHosts,
         pageSize: pageSize(),
