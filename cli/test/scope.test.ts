@@ -132,7 +132,7 @@ describe('选择安装范围', () => {
     const result = await run({ answersScope: true, answers: [choose('推荐'), accept(), pick(), choose('退出')] });
     const row = questionOf(result.output).split('\n').find((line) => line.trimStart().startsWith('项目')) ?? '';
 
-    // 架子给的项目目录在系统的临时目录下，路径比一行长
+    // 架子给的项目目录垫了一层长名字，路径在哪个系统上都比一行长
     expect(row).toMatch(/只对当前目录生效：…\S+$/);
     expect(row.endsWith(basename(result.project))).toBe(true);
     expect(displayWidth(row)).toBeLessThanOrEqual(79);

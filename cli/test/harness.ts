@@ -269,7 +269,9 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     // junction 只在 Windows 上起作用：那里建目录的符号链接要特权，建这种不用
     symlinkSync(join(home, target), join(home, link), 'junction');
   }
-  const project = tempDir('project');
+  // 项目目录的路径要比一行长，「项目」那一行才截得到：Linux 的临时目录只是 /tmp，垫一层长名字
+  const project = join(tempDir('project'), 'a-directory-name-long-enough-to-overflow-one-line', 'workspace');
+  mkdirSync(project, { recursive: true });
   writeTree(project, options.project ?? {});
   const tmp = options.tmp ?? tempDir('tmp');
   const bin = tempDir('bin');
