@@ -9,7 +9,7 @@
 ```
 /
 ├── index.json          # 可选 skill 清单
-├── catalog.json        # 目录里 skill 以外的条目：MCP、工具、应用项目
+├── catalog.json        # 目录里本仓库 skill 以外的条目（第三方 Skill、MCP、工具、外部项目）和用途清单
 ├── README.md           # 仓库的两个用途、怎么运行安装器、许可证按目录的归属
 ├── cli/                # 安装器 oxy-tools，自成一体的 npm 包，见 CLI 层规范
 ├── .github/workflows/  # cli.yml：安装器的测试与目录校验，只管 cli/ 和两个目录文件

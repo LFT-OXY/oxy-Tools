@@ -200,7 +200,7 @@ const LONG_NAME_MCP = {
   server: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
 };
 const withLongNameMcp = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: [...SHOWCASE_MCPS, LONG_NAME_MCP] });
-// 带 key 的 MCP：context7 的 key 可选，exa 的必填（它的用途写得长，一行放不下）
+// 带 key 的 MCP：context7 的 key 可选，exa 的必填（它的说明写得长，一行放不下）
 const keyed = (name: string, required: boolean, zh: string, en: string, url: string) => [{ name, required, description: { zh, en }, url }];
 const SHOWCASE_KEYED_MCPS = [
   SHOWCASE_MCPS[0],
@@ -217,6 +217,8 @@ const SHOWCASE_KEYED_MCPS = [
 ];
 const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_KEYED_MCPS });
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
+// 目录里没有本仓库的 skill，也没有带推荐标记的条目：主菜单上没有「推荐」
+const withoutRecommended = catalogOf({ version: 1, skills: [] }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
 // 混合列表的样例：三个 skill 另外归在「文档处理」下、一个归在「UI 设计、图像与视频」下，mineru 带推荐标记
 const MIXED_CATALOG = {
   ...EMPTY_CATALOG,
@@ -272,6 +274,16 @@ const DOCUMENT_THIRD_PARTY = [
 const withFiveKinds = catalogOf(
   { version: 1, skills: SHOWCASE_SKILLS },
   { ...MIXED_CATALOG, thirdPartySkills: DOCUMENT_THIRD_PARTY, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS },
+);
+// guizang-ppt-skill 写了宿主限制，只支持 Claude Code
+const withHostLimitedThirdParty = catalogOf(
+  { version: 1, skills: SHOWCASE_SKILLS },
+  {
+    ...MIXED_CATALOG,
+    thirdPartySkills: DOCUMENT_THIRD_PARTY.map((entry) => (entry.name === 'guizang-ppt-skill' ? { ...entry, hosts: ['claude-code'] } : entry)),
+    mcps: DOCUMENT_MCPS,
+    tools: DOCUMENT_TOOLS,
+  },
 );
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
@@ -550,6 +562,7 @@ const scenes: Scene[] = [
   { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toRecommended, KEY.enter] },
   { title: '主菜单 · 按用途进入', note: '第一行是「推荐」，下面各个用途一行一个，照用途清单的顺序，右边是条目数；十个用途里六个没有条目，不出现。没有 Skill 这个分组；「目录」一行数上外部项目', catalog: withApps },
   { title: '主菜单 · 按用途进入 · 一个宿主都没有', note: '说明里补一句外部项目仍可浏览；「推荐」和用途照常进得去', catalog: withApps, onPath: [] },
+  { title: '主菜单 · 没有「推荐」', note: '目录里没有本仓库的 skill，也没有带推荐标记的条目：「推荐」那一行不出现，光标起始在第一个用途上', catalog: withoutRecommended },
   { title: '主菜单 · 有「推荐」 · skill 另有用途', note: '「推荐」数的是本仓库的全部 skill 加一个带推荐标记的外部项目；写了用途的 skill 也数进那个用途', catalog: withMixed, onPath: BOTH_HOSTS },
   { title: '「推荐」的列表 · 带推荐标记的外部项目也在', note: '上面是本仓库的全部 skill，下面是带推荐标记的外部项目；这里每一行都是推荐的，行上和「类型」里都不再写', catalog: withMixed, ...MIXED, keys: [...toRecommended, ...down(8)] },
   { title: '混合列表 · skill 加外部项目 · 两个宿主', note: '组件在上、外部项目在下，段首写着类型，两段之间空一行；skill 每个宿主一栏状态，带推荐的行说明前面写「推荐」；列表下方先是光标所在行的类型', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: toMixedDocuments(true) },
@@ -646,6 +659,7 @@ const scenes: Scene[] = [
   { title: '结果 · 四种类型 · 工具排在最后', note: '「正在安装」的标题不回头改写；工具的结论紧跟在它的输出后面，名字后面留着宿主一栏的位置；最后用「结果」分区把每一行再列一遍，合计之后才是外部项目的说明与链接', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '结果 · 四种类型 · 工具没装上', note: '命令以非零状态结束、复核也不通过：只有这一行失败，其余照常', ...FOUR_KINDS, shell: () => ({ output: 'ERROR: Could not find a version that satisfies the requirement docling[ocr]\n', exitCode: 1 }), keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '混合列表 · 有第三方 Skill 一段 · 两个宿主', note: '第三方 Skill 自成一段，排在本仓库的 skill 之后、MCP 之前，段首写明内容直接来自作者。状态只看目标位置下有没有那个目录：含多个 skill 的写已装几个、共几个；光标在它上面时「类型」写第三方 Skill', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(5)] },
+  { title: '混合列表 · 第三方 Skill 不支持其中一个宿主', note: 'guizang-ppt-skill 只支持 Claude Code：Codex 那一栏写不支持，照常勾得上，只装进支持的那个；excel 是同样情形的 MCP', ...FIVE_KINDS, catalog: withHostLimitedThirdParty, keys: [...toMixedDocuments(true), ...down(4)] },
   { title: '混合列表 · 有第三方 Skill 一段 · 一个宿主都没有', note: '和别的组件一样不可选，原因写在状态的位置', ...FIVE_KINDS, onPath: [], keys: [...toMixedDocuments(), ...down(5)] },
   { title: '第三方 Skill 的清单 · 含 3 个 skill，一个已装', note: '混合列表确认之后，含多个 skill 的条目各问一次要其中哪几个：每个 skill 一行，有各宿主下的状态和说明。按键提示写明一个都不勾就是不装这一条', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
   { title: '第三方 Skill 的清单 · 一个都不勾', note: '收成的那一行写「不装」；这一条不装，其余勾选的照常进汇总', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...toChecklist, KEY.enter] },

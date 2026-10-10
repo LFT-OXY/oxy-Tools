@@ -1,7 +1,7 @@
 # 界面设计
 
 > 安装器的画面该长什么样：颜色与符号的含义、状态的写法、各类画面的版式要点、深浅色与无颜色时的要求。内容取自任务 `10-09-oxy-tools-installer` 的 `ui-direction.md`（维护者 2026-10-09 选定的视觉方向），**任务归档后以本文件为准**。任务 `10-10-installer-startup-restyle` 的启动画面改版（维护者 2026-10-10 选定：启动时问语言、居中的渐变大标志、洋红的焦点色、「适中」一档的间距）已并入各节。
-> 任务 `10-10-catalog-purpose-categories` 的工单 01（维护者 2026-10-10 在对比页上选定）定下了按用途进入之后的画面：主菜单、选择安装范围、选择条目（混合列表，类型分段）、第三方 Skill 的清单、汇总确认、执行中与结果、外部项目。**这几节写的是定下的画法，随该任务后面的工单逐张实现。** 已经实现的（工单 05 至 09）：主菜单按用途进入、「推荐」、选择宿主放在列表之前、混合列表里本仓库的 skill、MCP、工具、外部项目四段、列表下方的「类型」一行、按类型分成小表的汇总（「将安装 N 项」）与合在一起的将执行的命令和提醒、skill 与 MCP 共用的「正在安装／结果」分区、排在最后的工具分区、外部项目的说明与链接——这几处各有取自界面预览页的示例，写着「现在的样子」。工单 09 起第三方 Skill 也实现了：混合列表里的一段、含多个 skill 的条目的清单、汇总里的小表与命令和提醒、覆盖前的另问、结果行。工单 10 起选择安装范围也实现了：本仓库的 skill 和第三方 Skill 可以装到项目。工单 11 起 MCP 也能装到项目——只有 Claude Code；Codex 的 MCP 装不到项目，它那一栏写「不支持」（验证的结论见 [安装 MCP](./mcp-install.md) 的「装到项目」）。主菜单上按类型分的旧入口到工单 08 全部取消了。没写「现在的样子」的示例取自那张对比页（手工拼的，不是安装器的输出），各张工单实现后照界面预览页重画。
+> 任务 `10-10-catalog-purpose-categories`（维护者 2026-10-10 在对比页上选定，工单 01）定下了按用途进入之后的画面：主菜单、选择安装范围、选择条目（混合列表，类型分段）、第三方 Skill 的清单、汇总确认、执行中与结果、外部项目。**这些画面都已经实现**（工单 05 至 11），各节的示例在工单 14 照界面预览页重画过，写的都是安装器现在的样子。和对比页不一样的两处：Codex 的 MCP 装不到项目，它那一栏写「不支持」（验证的结论见 [安装 MCP](./mcp-install.md) 的「装到项目」）；第三方 Skill 的命令每个 skill、每个宿主各一条（理由见 [安装 skill](./skill-install.md) 的 Design Decision）。
 > 呈现层怎么实现这些规则、交互库有哪些要配合的脾气，见 [终端输出](./terminal-output.md)。
 > 用词：正文说「宿主」；界面文案里它显示为「AI Agent」（见 `GLOSSARY.md`）。
 
@@ -222,6 +222,7 @@
 - **表格**：表头一行暗淡的列名，之后每行各栏按显示宽度补齐；同一条目的后续行不重复名字。表头永远只有一行。
 - **段标题**：只用在混合列表里，是列表的一行：缩进三格，暗淡的 `──`，空一格，默认色的标题，后面不画线。它比分区标题轻一档——分区标题把屏幕切开，段标题只是在一张表里分段。
 - **已回答的提问**收成一行：绿色的 `✓`、提问、暗淡的 `·`、回答。
+  多选（混合列表、第三方 Skill 的清单）的回答是一串名字，一行放不下时**由呈现层折行，不交给终端去折**：名字不拆开，「等 N 项」（英文 `and N more`）跟着最后一个名字，续行缩进两格、与提问的左缘对齐；连第一个名字都放不下时，回答整个从下一行起。这样折出来的每一行都在 79 列以内，只有两种情形除外，它们仍由终端折：提问本身就比一行长，或单个名字比一行长（目录里的名字没有长度上限）。
 - **按键提示**：按键本身（`↑↓`、`⏎`、空格…）用默认前景色，动作词和中间的 `·` 暗淡。整行必须在 79 列以内。
 - 一条线只做一件事，不叠双线。
 
@@ -229,10 +230,7 @@
 
 ## 各类画面的版式要点
 
-下面的画面分两种来源，每幅图上面那句话写明它取自哪里：
-
-- **取自界面预览页的**是安装器真实的输出：每一行都和预览页里对应的那一格一字不差，空行也照原样（为了短，有的只截了一格里的一段，有的删了几行条目或几行命令的输出）；条目是预览用的样例。
-- **取自对比页的**（任务 `10-10-catalog-purpose-categories` 工单 01）是维护者看过并选定的画法，手工拼的，还不是安装器的输出；条目的名字取自真实目录，状态是摆出来看画法的。写着「照规则推的」的，连对比页上也没有画。这两种在对应的工单实现之后都要照预览页重画。
+下面的画面都**取自界面预览页**，是安装器真实的输出：每一行都和预览页里对应的那一格一字不差，空行也照原样（为了短，有的只截了一格里的一段，有的删了几行条目或几行命令的输出）；条目是预览用的样例。每幅图上面那句话写明它取自哪一格。预览页里没有的情形只用文字说，并写明「预览页里没有这一格」。
 
 ### 语言提问
 
@@ -281,82 +279,13 @@
 
 ### 主菜单
 
-对比页「主菜单 · 有「推荐」」：
-
-```
-✓ Language / 语言 · 中文
-
-  AI Agent  Claude Code ✓   Codex ✓
-  目录      37 Skill · 11 MCP · 2 工具 · 57 外部项目
-────────────────────────────────────────────────────────────────────────────────
-
-? 选择用途
-
-  用途                        数量
-▸ 推荐                          13
-  开发工作流与规范               6
-  Agent 行为约束与输出风格       6
-  代码库索引与理解              12
-  上下文、记忆与 Token 优化      9
-  联网搜索与文档检索             8
-  浏览器自动化                   6
-  UI 设计、图像与视频           22
-  文档处理                      21
-  提示词与写作                   9
-  代码审查、评估与安全           7
-
-  退出
-
-   ↑↓ 移动 · ⏎ 选择
-```
-
-- 上方是本机信息的键值行，再用一条通栏横线收住，空一行：
-  - 「AI Agent」：每个宿主一格，之间空三格。检测到的后面跟绿色的 `✓`；没检测到的写「– 未检测到」，名字照常、只有短横暗淡。
-  - 「目录」：各类型的数量，用 `·` 隔开，只数有条目的类型：Skill（本仓库的和第三方的合在一起数）、MCP、工具、外部项目。
-  - 「注意」（有才写，一件事一行）：只检测到一个宿主时说明另一个被跳过、组件只装进检测到的那个；一个都没检测到时说明暂时装不了组件；目录里有写坏的条目时说明跳过了几条。
-- 菜单是两栏的表：用途、数量（右对齐）。行依次是「推荐」（里面有条目才有）、有条目的各个用途（按用途清单的顺序）；「退出」与它们之间空一行。**没有按类型分的行**：类型到了列表里才出现。
-- 数量是这一行下面条目的个数，四种类型都算。
-- 光标所在行整行加粗，行首是洋红的 `▸`；光标起始在第一行。
-- 做完一轮回到主菜单、或在汇总里选「返回修改」回到列表时，新一轮的提问与上面已回答的几行之间空一行。
-
-没有「推荐」、某个用途没有条目时，对应的行不出现（对比页「主菜单 · 没有「推荐」，「浏览器自动化」没有条目而不出现」，只截了菜单）：
-
-```
-? 选择用途
-
-  用途                        数量
-▸ 开发工作流与规范               6
-  Agent 行为约束与输出风格       6
-  代码库索引与理解              12
-  上下文、记忆与 Token 优化      9
-  联网搜索与文档检索             8
-  UI 设计、图像与视频           22
-  文档处理                      21
-  提示词与写作                   9
-  代码审查、评估与安全           7
-
-  退出
-
-   ↑↓ 移动 · ⏎ 选择
-```
-
-一个宿主都没检测到时，「推荐」和各个用途**照常进得去**，进去之后组件不可选（见「选择条目」）；本机信息多一行「注意」（预览页「主菜单 · 按用途进入 · 一个宿主都没有」，只截了本机信息）：
-
-```
-  AI Agent  Claude Code – 未检测到   Codex – 未检测到
-  目录      8 skill · 10 外部项目
-  注意      没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览
-```
-
-目录里没有外部项目时，「注意」不写后半句「；外部项目仍可浏览」。
-
-**现在的样子（工单 08 之后）**，预览页「主菜单 · 按用途进入」：
+预览页「主菜单 · 按用途进入」（从已回答的语言提问截起）：
 
 ```
 ✓ Language / 语言 · 中文
 
   AI Agent  Claude Code ✓   Codex – 未检测到
-  目录      8 skill · 10 外部项目
+  目录      8 Skill · 10 外部项目
   注意      没有检测到 Codex，已跳过；组件只装进 Claude Code
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -374,8 +303,43 @@
    ↑↓ 移动 · ⏎ 选择
 ```
 
-- 「推荐」数的是本仓库的全部 skill 加上带推荐标记的 MCP、工具和外部项目；各个用途数的是写了这个用途的本仓库 skill 加上它下面的 MCP、工具和外部项目。进去之后一行都没有的用途不出现（上面十个用途里只有四个有条目）。
-- **按类型分的入口一个都没有了**（「Skill」「MCP」「工具」「应用项目」）：表头只有「用途」「数量」两栏，主菜单上没有进不去的行。目录里只有工具时也一样，工具数在它的用途里（预览页「主菜单 · 有工具」，只截了菜单）：
+- 上方是本机信息的键值行，再用一条通栏横线收住，空一行：
+  - 「AI Agent」：每个宿主一格，之间空三格。检测到的后面跟绿色的 `✓`；没检测到的写「– 未检测到」，名字照常、只有短横暗淡。
+  - 「目录」：各类型的数量，用 `·` 隔开，只数有条目的类型：Skill（本仓库的和第三方的合在一起数）、MCP、工具、外部项目。
+  - 「注意」（有才写，一件事一行）：只检测到一个宿主时说明另一个被跳过、组件只装进检测到的那个；一个都没检测到时说明暂时装不了组件；目录里有写坏的条目时说明跳过了几条。
+- 菜单是两栏的表：用途、数量（右对齐）。行依次是「推荐」（里面有条目才有）、有条目的各个用途（按用途清单的顺序）；「退出」与它们之间空一行。**没有按类型分的行**：类型到了列表里才出现。
+- 数量是这一行下面条目的个数，四种类型都算。
+- 光标所在行整行加粗，行首是洋红的 `▸`；光标起始在第一行。
+- 做完一轮回到主菜单、或在汇总里选「返回修改」回到列表时，新一轮的提问与上面已回答的几行之间空一行。
+
+没有「推荐」时这一行不出现，光标起始在第一个用途上；某个用途没有条目时它那一行同样不出现（预览页「主菜单 · 没有「推荐」」，只截了菜单）：
+
+```
+? 选择用途
+
+  用途                        数量
+▸ 开发工作流与规范               3
+  上下文、记忆与 Token 优化      2
+  联网搜索与文档检索             1
+  文档处理                       4
+
+  退出
+
+   ↑↓ 移动 · ⏎ 选择
+```
+
+一个宿主都没检测到时，「推荐」和各个用途**照常进得去**，进去之后组件不可选（见「选择条目」）；本机信息多一行「注意」（预览页「主菜单 · 按用途进入 · 一个宿主都没有」，只截了本机信息）：
+
+```
+  AI Agent  Claude Code – 未检测到   Codex – 未检测到
+  目录      8 Skill · 10 外部项目
+  注意      没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览
+```
+
+目录里没有外部项目时，「注意」不写后半句「；外部项目仍可浏览」。
+
+- 「推荐」数的是本仓库的全部 skill 加上带推荐标记的第三方 Skill、MCP、工具和外部项目；各个用途数的是写了这个用途的本仓库 skill 加上它下面的第三方 Skill、MCP、工具和外部项目（第三方 Skill 一个条目算一个，不数它里面的 skill）。进去之后一行都没有的用途不出现（上面十个用途里只有四个有条目）。
+- **按类型分的入口一个都没有了**（0.2.0 及更早的版本里主菜单按 Skill、MCP、工具和外部项目的前身分成四组）：表头只有「用途」「数量」两栏，主菜单上没有进不去的行。目录里只有工具时也一样，工具数在它的用途里（预览页「主菜单 · 有工具」，只截了菜单）：
 
 ```
 ? 选择用途
@@ -413,7 +377,7 @@
 
 ### 选择安装范围
 
-预览页「选择安装范围 · 提问中，光标在全局」（工单 10 实现后的样子，与对比页一字不差）：
+预览页「选择安装范围 · 提问中，光标在全局」：
 
 ```
 ✓ 选择用途 · 文档处理
@@ -444,9 +408,9 @@
 
 ### 选择条目
 
-进入「推荐」或一个用途之后的那张列表：Skill、MCP、工具、外部项目在同一张表里，可以一起勾选。维护者 2026-10-10 在对比页的三种排法里选定的是「类型分段」；评审指出段标题会滚出屏幕之后，又定下列表下方加一行「类型」。
+进入「推荐」或一个用途之后的那张列表：Skill、第三方 Skill、MCP、工具、外部项目在同一张表里，可以一起勾选。维护者 2026-10-10 在对比页的三种排法里选定的是「类型分段」；评审指出段标题会滚出屏幕之后，又定下列表下方加一行「类型」。
 
-对比页「B · 文档处理 · 两个 AI Agent · 四种类型都有」：
+预览页「混合列表 · 有第三方 Skill 一段 · 两个宿主」（从已回答的提问截起）：
 
 ```
 ✓ 选择用途 · 文档处理
@@ -455,29 +419,29 @@
 
 ? 选择要安装的条目
 
-   名称                   Claude Code   Codex    说明
+   名称                 Claude Code     Codex        说明
    ── Skill
- □ archify                已装 3.0      未装     推荐 · 生成架构图、流程图、时…
+ □ archify              已装 2.16       已装 2.16    推荐 · 生成架构图、流程图…
+ □ explanation          0.9.0 → 1.0.0   已装 1.0.0   推荐 · 把任何内容改写到聪…
+ □ pr                   非本工具安装    未装         推荐 · 撰写 PR（合并请求…
    ── 第三方 Skill · 内容直接来自作者
- □ drawio-skill           未装          未装     用 draw.io 画流程图和架构图并…
- □ gorden-ppt-skill       已装          已装     套用 19 套中文模板生成和编辑…
- ■ guizang-ppt-skill      未装          未装     生成杂志风格的网页版 PPT（校…
-▸■ paper-craft-skills     已装 1/3      未装     读论文并做成深度解读、漫画或…
- □ ppt-agent-skills       未装          未装     分多步生成整套 PPT，带截图自…
+ □ drawio-skill         已装            已装         用 draw.io 画流程图和架构…
+ □ guizang-ppt-skill    未装            未装         生成杂志风格的网页版 PPT…
+▸□ paper-craft-skills   已装 1/3        未装         读论文并做成深度解读、漫…
    ── MCP
- □ excel                  已配置        不支持   创建、读取和修改 Excel 工作簿…
- □ word-document-server   未配置        未配置   创建、读取和修改 Word 文档（…
+ □ markitdown           未配置          未配置       推荐 · 把 PDF、Office 文…
+ □ excel                已配置          不支持       创建、读取和修改 Excel 工…
+ □ mistral-ocr          未配置          未配置       识别扫描件和图片里的文字…
    ── 工具
- ■ markitdown             未安装                 把 PDF、Office 文档、图片等转…
- – officecli              不支持 macOS           在命令行里读写 Word、Excel、P…
- □ pandoc                 已安装                 在 Markdown、Word、HTML、PDF…
+ □ docling              未安装                       推荐 · 把 PDF、Office 文…
+ – officecli            不支持 macOS                 在命令行里读写 Word、Exce…
+ □ pandoc               已安装                       在 Markdown、Word、HTML、…
 
    ── 外部项目 · 只给链接，不安装
- □ mineru                 把 PDF 解析成 Markdown 或 JSON，保留公式、表格和版面…
- □ pdf-inspector          判断 PDF 是扫描件还是文字版并提取文字的开发库
- ■ ppt-master             把文档、网页或一个主题做成可编辑的原生 PPTX（上万个…
- □ stirling-pdf           可自托管的 PDF 工具箱，合并、拆分、转换、OCR 都在网…
- □ word-formatter-pro     按公文和论文的格式要求一键排版 Word 文档
+ □ mineru               推荐 · 把 PDF、Office 文档等复杂文件转成适合大模型读的…
+ □ pdf-inspector        检查、分类 PDF 并提取文本的 Rust 库，能分辨扫描版和文…
+ □ stirling-pdf         开源的 PDF 编辑平台，可以当桌面应用用、在浏览器里用或…
+ □ word-formatter-pro   把格式混乱的 Word 文档自动排成符合规范的版式的桌面应用
 
    类型  第三方 Skill
    说明  读论文并做成深度解读、漫画或幻灯片（3 个 skill，其中两个要 AI Agent 能
@@ -495,7 +459,7 @@
 - 光标所在行整行加粗，状态词也跟着加粗。
 - 列表下方先是一行「类型」，再是光标所在行的说明全文，空一行，然后是按键提示。两行同一个画法：缩进三格，暗淡的标签，标签后空两格；两个标签补到一样宽，值的左缘对齐；说明过长则折行。**「类型」写的是光标所在行的类型**（`Skill`、「第三方 Skill」、`MCP`、「工具」、「外部项目」），带推荐的后面跟暗淡的 ` · ` 和「推荐」：段标题会随条目滚出屏幕，说明一栏也可能整栏不写，这一行保证光标停在哪一条都看得到它的类型和标记（维护者 2026-10-10 定的）。「这一项现在选不了」那一行是同一个画法。说明里的要紧信息（体积、要付费账号、会结束浏览器这类）在列表里可能被截掉，但勾选时光标必然在这一行，全文此时就在下方。
 - 条目一次全部列出，不分页；多到一屏放不下时才让交互库滚动。**状态每次进列表都现探测，按所选的宿主和安装范围看**。
-- **返回**：一个都不勾就确认，回到上一步；按键提示末尾用括号写明「不选则返回」（英文 `none = back`）。回答后收成的一行列出勾选的名字，用顿号隔开（英文用逗号）；勾了三个以上时只列前三个，后面写「等 N 项」（N 是勾选的总数）；一个都没勾就写「返回」。
+- **返回**：一个都不勾就确认，回到上一步；按键提示末尾用括号写明「不选则返回」（英文 `none = back`）。回答后收成的一行列出勾选的名字，用顿号隔开（英文用逗号）；勾了三个以上时只列前三个，后面写「等 N 项」（N 是勾选的总数）；一个都没勾就写「返回」。名字长到一行放不下时由呈现层折行，续行缩进两格（见「横线、分区与键值行」的「已回答的提问」；预览页「英文界面 · 第三方 Skill 的清单」开头的那两行）。
 - **不可选的条目**：整行暗淡，勾选位是 `–`，原因保持正常亮度，**写在状态的位置、占满各个状态栏**。光标移得到它上面，这时行首换成洋红粗体的 `▸`、其余仍暗淡；列表下方照样是它的类型和说明全文；按空格勾不上，列表下方多一行黄色粗体的「注意」加「这一项现在选不了」，排在类型和说明的前面，再按别的键这一行就消失。
 
 | 条目 | 什么时候不可选 | 原因 |
@@ -539,116 +503,47 @@
 - 所选的宿主里只有 Codex 时 MCP 的行不可选（预览页「混合列表 · 装到项目 · 只选了 Codex」）：markitdown、mistral-ocr 的原因是「只能装到全局」，本来就只支持 Claude Code 的 excel 仍是「需要别的 AI Agent」；列表上方那一行照样有。
 - 「推荐」那张列表是同一个画法、同一套操作；它里面每一行都是推荐的，行上不再写「推荐」。
 
-能装的条目里名字最长（27 列）、状态最宽的情形下说明一栏还剩 15 列（对比页「B · UI 设计、图像与视频 · 两个 AI Agent · 目录里最长的名字、最宽的状态」，只截了表）：
+能装的条目里名字最长的是 27 列。它和最宽的状态（两个宿主都是带版本的状态）排在同一张列表里时，中文界面的说明一栏还剩 15 列，放得下标记和几个字（定画法时在对比页上排过；预览页里没有这一格）。
+
+目录里最长的名字是一个外部项目（32 列），名称一栏按它定宽（预览页「用途下的列表 · 名字最长的条目」，只截了表和它下方的两行）：
 
 ```
-   名称                          Claude Code     Codex          说明
-   ── Skill
- □ onetake                       1.0.0 → 1.0.1   非本工具安装   推荐 · 制作 10…
-   ── 第三方 Skill · 内容直接来自作者
- □ analyse-design                未装            未装           分析一个网站或…
- □ emilkowalski-skills           未装            未装           动效与界面细节…
- □ hallmark                      已装            未装           给界面定一套有…
- □ impeccable                    未装            未装           一套前端设计规…
-▸■ nuyoah-image-reverse-prompt   未装            未装           看图反推出可用…
- ■ taste-skill                   已装 2/13       未装           一组提升界面审…
-   ── MCP
- □ shadcn-ui                     未配置          未配置         让 AI 查阅 sha…
-
+   名称                               说明
    ── 外部项目 · 只给链接，不安装
- □ ai-website-cloner-template    把一个网站克隆成 Next.js 项目的模板仓库，要整…
- □ awesome-gpt-image-2           GPT 图像模型的提示词与案例合集
- □ screenshot-to-code            把截图、设计稿转成 HTML、React 等前端代码的网…
- □ ui-ux-pro-max-skill           带检索脚本的 UI/UX 设计知识库，要用它自己的安…
+▸□ claude-mem                         自动记录 AI Agent 在会话里做过的事并压缩…
+ □ opencode-dynamic-context-pruning   OpenCode 的插件，自动清理和压缩对话上下…
+
+   类型  外部项目
+   说明  自动记录 AI Agent 在会话里做过的事并压缩成摘要，在以后的会话里把相关内
+         容带回来
 ```
 
-待录入清单里最长的名字是一个外部项目（32 列）。名称一栏按它定宽，中文界面里说明还剩 15 列（对比页「B · 上下文、记忆与 Token 优化 · 两个 AI Agent · 待录入清单里最长的名字（32 列，外部项目）」，只截了表和它下方的两行）：
+这样的名字和两个宿主的状态栏排在同一张列表里时，中文界面的说明还剩 15 列；英文界面里只剩 7 列，不足 12 列，整栏不写（定画法时在对比页上排过；预览页里没有这一格）。
 
-```
-   名称                               Claude Code   Codex       说明
-   ── 第三方 Skill · 内容直接来自作者
-▸■ caveman                            已装 3/12     已装 3/12   让 AI 用极简的…
-   ── MCP
- □ memorix                            已配置        未配置      跨 AI Agent 共…
-
-   ── 外部项目 · 只给链接，不安装
- □ claude-mem                         自动记下每次会话做了什么，下次开工时把相…
- □ context-mode                       把工具的大段输出放进沙箱处理，只把结果交…
- □ headroom                           在工具输出、日志、文件等内容送进大模型之…
- □ opencode-dynamic-context-pruning   给 OpenCode 用的插件，自动剪掉对话里用不…
- □ rtk                                把常用命令的输出压成对 AI 够用的精简版，…
-
-   类型  第三方 Skill
-   说明  让 AI 用极简的说法回答以节省 token 的一组 skill（12 个 skill，只收纯提
-         示词的那些）
-```
-
-同一张列表在英文界面里说明只剩 7 列，整栏不写（见「英文界面」）。
-
-一个宿主都没检测到时，状态只有一栏，表头是「状态」，每个组件都不可选；外部项目照常可选（对比页「B · 文档处理 · 一个 AI Agent 都没检测到（组件不可选，外部项目照常）」）：
+一个宿主都没检测到时，状态只有一栏，表头是「状态」，每个组件都不可选；外部项目照常可选（预览页「混合列表 · 有第三方 Skill 一段 · 一个宿主都没有」，从已回答的提问截起）：
 
 ```
 ✓ 选择用途 · 文档处理
 
 ? 选择要安装的条目
 
-   名称                   状态            说明
+   名称                 状态            说明
    ── Skill
- – archify                需要 AI Agent   推荐 · 生成架构图、流程图、时序图、…
+ – archify              需要 AI Agent   推荐 · 生成架构图、流程图、时序图、数…
+ – explanation          需要 AI Agent   推荐 · 把任何内容改写到聪明的 12 岁孩…
+ – pr                   需要 AI Agent   推荐 · 撰写 PR（合并请求）描述
    ── 第三方 Skill · 内容直接来自作者
- – drawio-skill           需要 AI Agent   用 draw.io 画流程图和架构图并导出图…
- – gorden-ppt-skill       需要 AI Agent   套用 19 套中文模板生成和编辑 PPT，只…
- – guizang-ppt-skill      需要 AI Agent   生成杂志风格的网页版 PPT（校验脚本需…
-▸– paper-craft-skills     需要 AI Agent   读论文并做成深度解读、漫画或幻灯片（…
- – ppt-agent-skills       需要 AI Agent   分多步生成整套 PPT，带截图自检（需要…
+ – drawio-skill         需要 AI Agent   用 draw.io 画流程图和架构图并导出图片…
+ – guizang-ppt-skill    需要 AI Agent   生成杂志风格的网页版 PPT（校验脚本需要…
+▸– paper-craft-skills   需要 AI Agent   读论文并做成深度解读、漫画或幻灯片（3…
    ── MCP
- – excel                  需要 AI Agent   创建、读取和修改 Excel 工作簿（需要…
- – word-document-server   需要 AI Agent   创建、读取和修改 Word 文档（需要 uv…
+ – markitdown           需要 AI Agent   推荐 · 把 PDF、Office 文档、图片等转成…
+ – excel                需要 AI Agent   创建、读取和修改 Excel 工作簿（需要 uv…
+ – mistral-ocr          需要 AI Agent   识别扫描件和图片里的文字，保留表格与版…
    ── 工具
- – markitdown             需要 AI Agent   把 PDF、Office 文档、图片等转成 Mark…
- – officecli              需要 AI Agent   在命令行里读写 Word、Excel、PPT 文件
- – pandoc                 需要 AI Agent   在 Markdown、Word、HTML、PDF 等几十…
-
-   ── 外部项目 · 只给链接，不安装
- □ mineru                 把 PDF 解析成 Markdown 或 JSON，保留公式、表格和版面…
- □ pdf-inspector          判断 PDF 是扫描件还是文字版并提取文字的开发库
- ■ ppt-master             把文档、网页或一个主题做成可编辑的原生 PPTX（上万个…
- □ stirling-pdf           可自托管的 PDF 工具箱，合并、拆分、转换、OCR 都在网…
- □ word-formatter-pro     按公文和论文的格式要求一键排版 Word 文档
-
-   类型  第三方 Skill
-   说明  读论文并做成深度解读、漫画或幻灯片（3 个 skill，其中两个要 AI Agent 能
-         生成图片）
-
-   ↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）
-```
-
-**现在的样子（工单 09 之后；工单 10 起已回答的几行里多了安装范围）**：第三方 Skill 一段也在了（预览页「混合列表 · 有第三方 Skill 一段 · 两个宿主」，从已回答的提问截起）：
-
-```
-✓ 选择用途 · 文档处理
-✓ 装进哪些 AI Agent · Claude Code、Codex
-✓ 装到哪里 · 全局
-
-? 选择要安装的条目
-
-   名称                 Claude Code     Codex        说明
-   ── Skill
- □ archify              已装 2.16       已装 2.16    推荐 · 生成架构图、流程图…
- □ explanation          0.9.0 → 1.0.0   已装 1.0.0   推荐 · 把任何内容改写到聪…
- □ pr                   非本工具安装    未装         推荐 · 撰写 PR（合并请求…
-   ── 第三方 Skill · 内容直接来自作者
- □ drawio-skill         已装            已装         用 draw.io 画流程图和架构…
- □ guizang-ppt-skill    未装            未装         生成杂志风格的网页版 PPT…
-▸□ paper-craft-skills   已装 1/3        未装         读论文并做成深度解读、漫…
-   ── MCP
- □ markitdown           未配置          未配置       推荐 · 把 PDF、Office 文…
- □ excel                已配置          不支持       创建、读取和修改 Excel 工…
- □ mistral-ocr          未配置          未配置       识别扫描件和图片里的文字…
-   ── 工具
- □ docling              未安装                       推荐 · 把 PDF、Office 文…
- – officecli            不支持 macOS                 在命令行里读写 Word、Exce…
- □ pandoc               已安装                       在 Markdown、Word、HTML、…
+ – docling              需要 AI Agent   推荐 · 把 PDF、Office 文档解析成结构化…
+ – officecli            需要 AI Agent   在命令行里读写 Word、Excel、PPT 文件
+ – pandoc               需要 AI Agent   在 Markdown、Word、HTML、PDF 等几十种…
 
    ── 外部项目 · 只给链接，不安装
  □ mineru               推荐 · 把 PDF、Office 文档等复杂文件转成适合大模型读的…
@@ -663,7 +558,7 @@
    ↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）
 ```
 
-目录里没有第三方 Skill 时（工单 08 之后的样子，现在仍是这样）：列表里有本仓库的 skill、MCP、工具、外部项目四段（预览页「混合列表 · 四种类型都有 · 两个宿主」）：
+这个用途下没有第三方 Skill 时没有那一段：列表里是本仓库的 skill、MCP、工具、外部项目四段（预览页「混合列表 · 四种类型都有 · 两个宿主」）：
 
 ```
 ✓ 选择用途 · 文档处理
@@ -857,7 +752,7 @@
 - 栏和混合列表一样：名称、每个所选的宿主一栏状态、说明；没有分段。每个 skill 各写各的状态，只有「未装」「已装」「不支持」三种。
 - **一个都不勾就确认：这一条不装，其余勾选的照常。** 按键提示末尾的括号里写的是「不选则不装这一条」（英文 `none = skip`，和 `none = back` 一样长）；回答后收成的一行写「不装」（英文 `skip`）。
 - 提问出现时一个都不勾。汇总里选「返回修改」再走到这一问时，上次勾的还在。
-- 回答后收成的一行列出勾选的 skill，勾了三个以上时和混合列表一样只列前三个。
+- 回答后收成的一行列出勾选的 skill，勾了三个以上时和混合列表一样只列前三个，放不下时同样由呈现层折行。
 - 说明一栏和混合列表守同一条规矩：过长则截断，不足 12 列时整栏不写；光标所在的那个 skill 的说明全文在列表下方。
 - 条目写了宿主限制的，它不支持的那个宿主一栏每个 skill 都写暗淡的「不支持」。
 
@@ -869,14 +764,14 @@
 ── exa 需要 key ────────────────────────────────────────────────────────────────
 
   变量      EXA_API_KEY（必填）
-  用途      Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建
+  说明      Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建
   申请      https://dashboard.exa.ai/api-keys
   提示      输入不会显示在屏幕上；留空回车将跳过 exa
 
 ? EXA_API_KEY (输入不显示，粘贴后回车)
 ```
 
-- 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」；四行键值：变量（注明必填或可选）、用途、申请地址（下划线，整条写在一行上）、提示（留空会怎样）。
+- 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」；四行键值：变量（注明必填或可选）、说明、申请地址（下划线，整条写在一行上）、提示（留空会怎样）。第二行的键是「说明」（英文 `About`），和列表下方、外部项目的那一行是同一个词——「用途」这个词只指主菜单上的用途。
 - 输入时屏幕上不显示任何字符，也不暴露长度；提问后面是一句暗淡的固定提示。
 - 回答之后提问整个擦掉，留下一行结局，和已回答的提问同一个画法。**填了的不写值，也不写长度**。四种结局各一行（分别见预览页「汇总确认 · 含 key」「填写 key · 可选的留空之后问下一个」「汇总确认 · 必填的 key 没填」「汇总确认 · 返回修改后再确认」）：
 
@@ -889,68 +784,7 @@
 
 ### 汇总确认
 
-对比页「汇总与将执行的命令 · 几种类型混在一起，装到项目」（第 6 条命令是拿 Codex 全局的写法占位的：工单 11 验证的结论是 **Codex 的 MCP 装不到项目**，所以安装器打出来的没有第 6 条、MCP 的小表里没有 Codex 那一行、最后一行「Codex 只对受信任的项目读…」也没有，明文那一行只写 `.mcp.json`，另多一行要在 Claude Code 里批准的提醒——见下面「装到项目 · 带 key 的 MCP（工单 11 之后）」；第 3、4 条把同一个仓库的两个 skill 合在一条命令里，**实现没有照这个**：每个 skill、每个宿主各一条，理由见 [安装 skill](./skill-install.md) 的 Design Decision，下面「现在的样子（工单 09 之后）」才是安装器打出来的）：
-
-```
-✓ paper-craft-skills 里有 3 个 skill，选择要装的 · paper-analyzer、paper-comic
-✓ EXA_API_KEY · 已填写
-
-── 将安装 5 项 ─────────────────────────────────────────────────────────────────
-
-  Skill               AI Agent      操作   位置
-  archify             Claude Code   覆盖   .claude/skills/archify
-                                           重装 3.0
-                      Codex         新装   .agents/skills/archify
-
-  第三方 Skill        AI Agent      操作   位置
-  guizang-ppt-skill   Claude Code   新装   .claude/skills/guizang-ppt-skill
-                      Codex         新装   .agents/skills/guizang-ppt-skill
-  paper-analyzer      Claude Code   覆盖   .claude/skills/paper-analyzer
-                                           已有同名目录，另行确认
-                      Codex         新装   .agents/skills/paper-analyzer
-  paper-comic         Claude Code   新装   .claude/skills/paper-comic
-                      Codex         新装   .agents/skills/paper-comic
-
-  MCP                 AI Agent      操作
-  exa                 Claude Code   新装
-                      Codex         新装
-
-  工具                操作
-  markitdown          执行安装命令
-
-── 将执行 7 条命令 ─────────────────────────────────────────────────────────────
-
-   1  npx -y skills@1 add op7418/guizang-ppt-skill --skill guizang-ppt-skill
-      --agent claude-code --yes
-   2  npx -y skills@1 add op7418/guizang-ppt-skill --skill guizang-ppt-skill
-      --agent codex --yes
-   3  npx -y skills@1 add zsyggg/paper-craft-skills --skill paper-analyzer
-      --skill paper-comic --agent claude-code --yes
-   4  npx -y skills@1 add zsyggg/paper-craft-skills --skill paper-analyzer
-      --skill paper-comic --agent codex --yes
-   5  claude mcp add --scope project exa -e EXA_API_KEY=<EXA_API_KEY> -- npx
-      -y exa-mcp-server
-   6  codex mcp add exa --env EXA_API_KEY=<EXA_API_KEY> -- npx -y
-      exa-mcp-server
-   7  pip install 'markitdown[all]'
-
-  注意      覆盖即整目录替换，目录内的本地改动会丢失
-  注意      第三方 Skill 装的是作者当时的最新版，维护者没有逐版检查
-  注意      key 以占位符显示，执行时才代入真实的值
-  注意      EXA_API_KEY 会以明文写进 .mcp.json 和 .codex/config.toml，不要把它
-            们提交或发给别人
-  注意      Codex 只对受信任的项目读 .codex/config.toml
-
-? 开始安装吗
-
-▸ 开始安装
-  返回修改
-  取消
-
-   ↑↓ 移动 · ⏎ 选择
-```
-
-**现在的样子（工单 09 之后）**：一轮里有第三方 Skill、MCP 和工具，都装到全局（预览页「汇总确认 · 含第三方 Skill」，从清单收成的那一行截起）：
+一轮里有第三方 Skill、MCP 和工具，都装到全局（预览页「汇总确认 · 含第三方 Skill」，从清单收成的那一行截起）：
 
 ```
 ✓ paper-craft-skills 里有 3 个 skill，选择要装的 · paper-analyzer、paper-comic
@@ -1003,7 +837,7 @@
    ↑↓ 移动 · ⏎ 选择
 ```
 
-**装到项目（工单 10 之后）**：位置是相对当前目录的路径，第三方 Skill 的命令没有 `--global`；这一格没有勾 MCP。覆盖前另问的也是项目里的那个路径（`? .claude/skills/paper-analyzer 已有同名目录，要覆盖它吗？ (y/N)`）。预览页「汇总确认 · 装到项目」，从清单收成的那一行截起：
+**装到项目**：位置是相对当前目录的路径，第三方 Skill 的命令没有 `--global`；这一格没有勾 MCP。覆盖前另问的也是项目里的那个路径（`? .claude/skills/paper-analyzer 已有同名目录，要覆盖它吗？ (y/N)`）。预览页「汇总确认 · 装到项目」，从清单收成的那一行截起：
 
 ```
 ✓ paper-craft-skills 里有 3 个 skill，选择要装的 · paper-analyzer、paper-comic
@@ -1049,7 +883,7 @@
 ? 开始安装吗
 ```
 
-**装到项目 · 带 key 的 MCP（工单 11 之后）**：两个宿主都选了，MCP 只装进 Claude Code——小表和命令里没有 Codex；命令带 `--scope project`；项目里已配置的先移除再添加。提醒里多两行：key 会以明文写进 `.mcp.json`（只有变量名和文件名），装进去的要批准之后才启用。预览页「汇总确认 · 装到项目 · 带 key 的 MCP」，从汇总的标题截起：
+**装到项目 · 带 key 的 MCP**：两个宿主都选了，MCP 只装进 Claude Code——小表和命令里没有 Codex；命令带 `--scope project`；项目里已配置的先移除再添加。提醒里多两行：key 会以明文写进 `.mcp.json`（只有变量名和文件名），装进去的要批准之后才启用。预览页「汇总确认 · 装到项目 · 带 key 的 MCP」，从汇总的标题截起：
 
 ```
 ── 将安装 2 项 ─────────────────────────────────────────────────────────────────
@@ -1073,7 +907,7 @@
 ? 开始安装吗
 ```
 
-没有第三方 Skill 的一轮（工单 08 之后的样子，现在仍是这样）：本仓库的 skill、MCP 和工具，都装到全局（预览页「汇总确认 · 四种类型」，从列表收成的那一行截起；勾选的四项里有一个外部项目，不在汇总里）：
+没有第三方 Skill 的一轮：本仓库的 skill、MCP 和工具，都装到全局（预览页「汇总确认 · 四种类型」，从列表收成的那一行截起；勾选的四项里有一个外部项目，不在汇总里）：
 
 ```
 ✓ 选择要安装的条目 · explanation、markitdown、docling 等 4 项
@@ -1169,7 +1003,7 @@
 - 这一轮只装本仓库的 skill 时没有「将执行 N 条命令」分区，小表之后直接是「注意」（有覆盖项才有）和确认；只装 MCP 时只有 MCP 一张小表。
 - 必填的 key 没填的 MCP 不在小表里，也不算进 N；它另有一行「注意」。
 
-下面各条是定下的画法，Skill、MCP、工具三张小表和它们的命令、提醒已经照此实现：
+各条规则：
 
 - **一个分区「将安装 N 项」**，N 是勾选的组件条目的个数，不是行数；外部项目不算在内。
 - **分区里按类型分成几张小表**，顺序与执行的先后一致：Skill、第三方 Skill、MCP、工具；这一轮没有的类型没有它的小表，小表之间空一行。
@@ -1217,7 +1051,7 @@
   合计      3 成功 · 2 失败 · 1 跳过
 ```
 
-**现在的样子（工单 08 之后）**，这一轮没有工具时：本仓库的 skill 和 MCP 在同一个分区里，skill 的各行在前；勾了外部项目的，合计之后是它们的说明与链接（预览页「结果 · skill 加 MCP · 一条命令失败」，从确认收成的那一行截到外部项目的标题）：
+这一轮没有工具时：本仓库的 skill 和 MCP 在同一个分区里，skill 的各行在前；勾了外部项目的，合计之后是它们的说明与链接（预览页「结果 · skill 加 MCP · 一条命令失败」，从确认收成的那一行截到外部项目的标题）：
 
 ```
 ✓ 开始安装吗 · 开始安装
@@ -1239,7 +1073,7 @@
 
 向 GitHub 查询失败时，出错说明之后本仓库的 skill 一个都不装、这个分区里没有它们的行，MCP 和工具照常逐项执行。
 
-**现在的样子（工单 08 之后）**，这一轮有工具时：「正在安装」的标题留着不改写，工具另起一个分区，最后「结果」分区把每一行再列一遍（预览页「结果 · 四种类型 · 工具没装上」，从「正在安装」截到合计）：
+这一轮有工具时：「正在安装」的标题留着不改写，工具另起一个分区，最后「结果」分区把每一行再列一遍（预览页「结果 · 四种类型 · 工具没装上」，从「正在安装」截到合计）：
 
 ```
 ── 正在安装 ────────────────────────────────────────────────────────────────────
@@ -1270,7 +1104,7 @@ ERROR: Could not find a version that satisfies the requirement docling[ocr]
 
 这一轮只有工具时没有「正在安装」分区，结论行里也没有宿主一栏；只装一个工具时不重复「结果」分区（预览页「结果 · 工具 · 一项成功一项失败」「结果 · 工具 · 命令非零退出但复核通过」）。
 
-**现在的样子（工单 09 之后）**，有第三方 Skill 的一轮（预览页「结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过」，从确认收成的那一行截到合计）：
+有第三方 Skill 的一轮（预览页「结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过」，从确认收成的那一行截到合计）：
 
 ```
 ✓ 开始安装吗 · 开始安装
@@ -1313,51 +1147,6 @@ Successfully installed docling-2.55.1
   合计      7 成功 · 1 失败 · 1 跳过
 ```
 
-对比页上画的是同一种情形再加本仓库的 skill（对比页「执行与结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过，工具排在最后」）：
-
-```
-✓ 开始安装吗 · 开始安装
-✓ .claude/skills/paper-analyzer 已有同名目录，要覆盖它吗？ · 否
-
-── 正在安装 ────────────────────────────────────────────────────────────────────
-
-  ✓  archify             Claude Code   已安装 3.0
-  ✓  archify             Codex         已安装 3.0
-  ✗  guizang-ppt-skill   Claude Code   失败 安装命令退出状态 1
-  ✓  guizang-ppt-skill   Codex         已安装
-  –  paper-analyzer      Claude Code   跳过 未同意覆盖，保持原样
-  ✓  paper-analyzer      Codex         已安装
-  ✓  paper-comic         Claude Code   已安装
-  ✓  paper-comic         Codex         已安装
-  ✓  exa                 Claude Code   已配置
-  ✓  exa                 Codex         已配置
-
-── markitdown ──────────────────────────────────────────────────────────────────
-
-  $ pip install 'markitdown[all]'
-Collecting markitdown[all]
-Successfully installed markitdown-0.1.3
-
-  ✓  markitdown                        已可用，在 PATH 中找到 markitdown
-
-── 结果 ────────────────────────────────────────────────────────────────────────
-
-  ✓  archify             Claude Code   已安装 3.0
-  ✓  archify             Codex         已安装 3.0
-  ✗  guizang-ppt-skill   Claude Code   失败 安装命令退出状态 1
-  ✓  guizang-ppt-skill   Codex         已安装
-  –  paper-analyzer      Claude Code   跳过 未同意覆盖，保持原样
-  ✓  paper-analyzer      Codex         已安装
-  ✓  paper-comic         Claude Code   已安装
-  ✓  paper-comic         Codex         已安装
-  ✓  exa                 Claude Code   已配置
-  ✓  exa                 Codex         已配置
-  ✓  markitdown                        已可用，在 PATH 中找到 markitdown
-
-────────────────────────────────────────────────────────────────────────────────
-  合计      9 成功 · 1 失败 · 1 跳过
-```
-
 - **执行的先后**：本仓库的 skill、第三方 Skill、MCP、工具。前三样共用「正在安装」分区；工具排在最后，因为它的命令会直接接管终端的输入输出。
 - 每行：结果符号、名字、宿主、结果词加版本或原因。第三方 Skill 的名字是装的那个 skill，每个 skill 在每个宿主下各一行。
 - 成功是绿色的「已安装」（本仓库的 skill 后面跟版本，第三方 Skill 没有版本号；MCP 是「已配置」）；「失败」红色粗体；「跳过」默认色且行首是暗淡的 `–`。原因过长时折行，续行与原因的左缘对齐。
@@ -1371,16 +1160,18 @@ Successfully installed markitdown-0.1.3
 
 ### 执行工具的安装命令
 
-对比页「执行与结果 · …，工具排在最后」里的那一个分区：
+预览页「结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过」里工具的那一个分区：
 
 ```
-── markitdown ──────────────────────────────────────────────────────────────────
+── docling ─────────────────────────────────────────────────────────────────────
 
-  $ pip install 'markitdown[all]'
-Collecting markitdown[all]
-Successfully installed markitdown-0.1.3
+  $ pip install 'docling[ocr]'
+Collecting docling[ocr]
+  Downloading docling-2.55.1-py3-none-any.whl (281 kB)
+Installing collected packages: docling
+Successfully installed docling-2.55.1
 
-  ✓  markitdown                        已可用，在 PATH 中找到 markitdown
+  ✓  docling                           已可用，在 PATH 中找到 docling
 ```
 
 - 工具的命令和别的命令一起列在汇总的「将执行 N 条命令」里，确认只问那一次。
@@ -1392,21 +1183,16 @@ Successfully installed markitdown-0.1.3
 
 目录里安装器装不了、只给说明和链接的条目。它们不单独成一个入口：在各个用途的列表最下面一段里勾选（见「选择条目」），这一轮的最后列出说明与链接。
 
-接在结果后面（对比页「外部项目的说明与链接 · 接在结果后面，两个」）：
+接在结果后面（预览页「结果 · 一次勾了 skill、MCP 和外部项目」，从合计上方的通栏横线截到回主菜单的提问）：
 
 ```
 ────────────────────────────────────────────────────────────────────────────────
-  合计      9 成功 · 1 失败 · 1 跳过
+  合计      6 成功 · 0 失败 · 0 跳过
 
-── 外部项目：2 个，只给链接 ────────────────────────────────────────────────────
-
-  ppt-master
-  说明      把文档、网页或一个主题做成可编辑的原生 PPTX（上万个文件，要按它官方
-            的方式安装）
-  链接      https://github.com/hugohe3/ppt-master
+── 外部项目：1 个，只给链接 ────────────────────────────────────────────────────
 
   mineru
-  说明      把 PDF 解析成 Markdown 或 JSON，保留公式、表格和版面结构
+  说明      把 PDF、Office 文档等复杂文件转成适合大模型读的 Markdown 或 JSON
   链接      https://github.com/opendatalab/MinerU
 
 ? 选择用途
@@ -1467,77 +1253,58 @@ Successfully installed markitdown-0.1.3
 
 版式不变，文字换成英文，**间距是同一套规则**（栏间隔三格、块与块之间的空行都一样）；宿主仍显示为 `AI Agent`。混合列表的段标题依次是 `Skills`、`Third-party skills · content comes straight from the author`、`MCP`、`Tools`、`External projects · links only, nothing is installed`（中文是 `Skill`、「第三方 Skill · 内容直接来自作者」、`MCP`、「工具」、「外部项目 · 只给链接，不安装」）；主菜单的第一行是 `Recommended`，两栏的表头是 `Purpose`、`Count`；列表里推荐的标记是 `pick · `（和中文的「推荐 · 」一样占 7 列；`recommended · ` 要 14 列，说明最窄时写不下）；列表下方「类型」一行的值是 `Skill`、`Third-party skill`、`MCP`、`Tool`、`External project`；安装范围的两项是 `Global`、`Project`；汇总里工具的操作是 `run install command`；「目录」一行里外部项目写成 `10 external`，单复数同形；外部项目那个分区的标题是 `External projects: 2, links only`；列表回答后收成的一行勾得多时写 `borealis, cirrus, dune and 2 more`（N 是没列出来的个数，中文的「等 N 项」里 N 是总数）；汇总的标题是 `Install 3 items`（一项时 `Install 1 item`），小表第一栏的表头用段标题的词 `Skills`、`MCP`，确认的提问是 `Start installing?`。`catalog.json` 里登记外部项目的那个数组键名没有跟着改，见 [清单与版本](../skills/manifest-versioning.md)。文案都在 `cli/src/messages.ts`，中英各一份。
 
-对比页「B · 英文界面 · UI design, images & video · 两个 AI Agent」：
+预览页「英文界面 · 装到项目的列表」（从已回答的提问截起）：
 
 ```
-✓ Pick a purpose · UI design, images & video
+✓ Pick a purpose · Document processing
 ✓ Install into which AI Agents · Claude Code, Codex
-✓ Install where · Global
+✓ Install where · Project
+
+  Notice    Codex MCP servers can only be installed globally: there is no
+            command that writes them into a project
 
 ? Pick entries to install
 
-   Name                          Claude Code      Codex       About
+   Name                 Claude Code     Codex         About
    ── Skills
- □ onetake                       1.0.0 → 1.0.1    unmanaged   pick · Make 10–6…
+ □ archify              none            none          pick · Generate architec…
+ □ explanation          0.9.0 → 1.0.0   none          pick · Rewrite any conte…
+ □ pr                   none            unmanaged     pick · Write pull reques…
    ── Third-party skills · content comes straight from the author
- □ analyse-design                none             none        Analyse the desi…
- □ emilkowalski-skills           none             none        A set of skills…
- □ hallmark                      installed        none        Give an interfac…
- □ impeccable                    none             none        Front-end design…
-▸■ nuyoah-image-reverse-prompt   none             none        Reverse-engineer…
- ■ taste-skill                   installed 2/13   none        A set of design-…
+ □ drawio-skill         none            none          Draw flowcharts and arch…
+ □ guizang-ppt-skill    none            none          Generate magazine-style…
+ □ paper-craft-skills   installed 1/3   none          Read papers and turn the…
    ── MCP
- □ shadcn-ui                     none             none        Let the AI look…
+▸□ markitdown           configured      unsupported   pick · Convert PDFs, Off…
+ □ excel                none            unsupported   Create, read and edit Ex…
+ □ mistral-ocr          none            unsupported   OCR for scans and images…
+   ── Tools
+ □ docling              none                          pick · Parse PDFs and Of…
+ – officecli            not for macOS                 Read and write Word, Exc…
+ □ pandoc               installed                     Convert between dozens o…
 
    ── External projects · links only, nothing is installed
- □ ai-website-cloner-template    Template repo that clones a website into a Ne…
- □ awesome-gpt-image-2           A collection of prompts and examples for the…
- □ screenshot-to-code            Web app that turns screenshots and mockups in…
- □ ui-ux-pro-max-skill           UI/UX design knowledge base with search scrip…
+ □ mineru               pick · Converts complex documents such as PDFs and Off…
+ □ pdf-inspector        Rust library for inspecting, classifying and extractin…
+ □ stirling-pdf         Open-source PDF editing platform that runs as a deskto…
+ □ word-formatter-pro   Desktop app that automatically reformats messy Word do…
 
-   Type   Third-party skill
-   About  Reverse-engineer an image into a generation prompt (prompts carry a
-          "nuyoah" signature by default)
+   Type   MCP · Recommended
+   About  Convert PDFs, Office files and images to Markdown for the AI (needs
+          uv)
 
    ↑↓ move · space select · a all · i invert · ⏎ confirm (none = back)
 ```
 
-名字最长的那张列表里说明只剩 7 列，整栏不写（对比页「B · 英文界面 · Context, memory & token optimization · 两个 AI Agent · 说明一栏放不下」）：
-
-```
-✓ Pick a purpose · Context, memory & token optimization
-✓ Install into which AI Agents · Claude Code, Codex
-✓ Install where · Global
-
-? Pick entries to install
-
-   Name                               Claude Code      Codex
-   ── Third-party skills · content comes straight from the author
-▸■ caveman                            installed 3/12   installed 3/12
-   ── MCP
- □ memorix                            configured       none
-
-   ── External projects · links only, nothing is installed
- □ claude-mem                         Automatically records what each session…
- □ context-mode                       Processes large tool output in a sandbox…
- □ headroom                           Compresses tool output, logs and files b…
- □ opencode-dynamic-context-pruning   An OpenCode plugin that prunes tool outp…
- □ rtk                                A CLI proxy that condenses common comman…
-
-   Type   Third-party skill
-   About  A set of skills that make the AI answer tersely to save tokens (12
-          skills, prompt-only ones)
-
-   ↑↓ move · space select · a all · i invert · ⏎ confirm (none = back)
-```
+名字最长的那张列表（32 列的外部项目名字，加两个宿主的状态栏）里说明只剩 7 列，不足 12 列，整栏不写：表头没有 `About`，组件的行到状态为止，外部项目的行照常有说明（定画法时在对比页上排过；预览页里没有这一格）。
 
 英文的词更长，三处看得出来：
 
-- **列表里的说明截得更多，有时整栏不写**：状态词长（`installed 2/13` 14 列，中文的「已装 2/13」9 列）。上面第一幅里说明还剩 17 列；同一张列表里两个宿主都是带版本的状态（`installed 1.0.1` 15 列）时只剩 10 列，不足 12 列，整栏不写；第二幅是名字更长的情形。光标所在行的类型、标记和说明全文都在列表下方。
+- **列表里的说明截得更多，有时整栏不写**：状态词长（`installed 2/13` 14 列，中文的「已装 2/13」9 列）。上面那一幅里说明还剩 25 列（中文的同一张列表是 27 列）；名字和状态再长一些就不足 12 列，整栏不写。光标所在行的类型、标记和说明全文都在列表下方。
 - **汇总的备注基本都是另起一行**。备注从哪一栏的左缘起，和中文的同一条规则。
 - **结果行的原因常要折行**（`failed download interrupted (HTTP 503); the target directory is unchanged`），续行与原因的左缘对齐。
 
-主菜单最宽的一行是 54 列（对比页「主菜单 · 英文」）。现在的样子（预览页「英文界面 · 主菜单 · 按用途进入」，只截了菜单）：
+十个用途都有条目时主菜单最宽的一行是 54 列（`Code review, evaluation & security` 加数量）。预览页「英文界面 · 主菜单 · 按用途进入」，只截了菜单：
 
 ```
 ? Pick a purpose
@@ -1681,6 +1448,11 @@ cd cli && npm run preview   # 输出：N 个画面 → …/cli/.preview/index.ht
    - 可以只截一段，也可以删行，但**示例里挨着的两行在那一格里也得挨着，空行照原样**。所以删条目只删中间的，不删最后一条：删了它，上一条就贴到了列表下方的空行上，画的成了一个不存在的画面。
    - 核对的办法：把预览页每一格还原成纯文本（每格的第一个 `.screen` 里一行一个 `.l`，去掉标签即是），再拿示例逐行去找。工单 06 就是这样查出两幅删了末行的示例的。仓库里没有留这个脚本：它要读 `cli/` 以外的本文件，放不进 `cli/`（见 [CLI 层总览](./index.md) 的三条规矩）。
    - 没有 Unicode 的变体和默认状态比文字时，先把默认状态的符号照「符号的含义」右栏换成 ASCII；换完仍不同的只该是符号变宽带来的栏位和截断。
+6. **一个任务收尾时整体核对一遍**（任务 `10-10-catalog-purpose-categories` 的工单 14 这样做的，查出的都是逐张工单各自看不出来的）：
+   - **规格的画面表里每个状态对到一格**，对不上的补场景。那次缺了两格：主菜单没有「推荐」、某个宿主不支持的第三方 Skill——各张工单只加了自己那一类条目的场景。
+   - **机械检查整页，不只看这次改的格子**：还原成纯文本之后量每一行的宽度（汉字算两列；通栏横线、分区标题线、网址和路径除外）、找连着的两行空行、搜不该出现的词和假 key；不显示颜色的格子要一个样式码都没有，且与同场景的默认格一字不差。英文界面里收成一行的回答超宽就是这样量出来的——它在工单 09 就记成了「已知」，但没有人把它当成要修的。
+   - **把各格里同一种东西的写法归拢到一起看**：段标题、「类型」一行的值、分区标题、小表和列表的表头、键值行的键，各按中文、英文、没有 Unicode 分开数。**同一个词指两样东西也算不一致**：那次查出「用途」既是主菜单的栏名、又是填写 key 时那一行的键。
+   - 本文件的示例全部重新逐行核对；取自对比页的换成预览页的，预览页里没有的情形只用文字说。
 
 ---
 
@@ -1744,9 +1516,10 @@ cd cli && npm run preview   # 输出：N 个画面 → …/cli/.preview/index.ht
 - 工单 06 实现时定的：在不可选的行上按空格时，「注意」排在类型和说明的前面、三行挨着（维护者定的只是「不可选的行也要显示类型和说明」）；英文界面里 `Notice` 比 `Type`、`About` 长一个字母，它的值比下面两行靠右一列，没有对齐；多出的这一行没有算进列表一屏放多少行，24 行的终端里列表恰好在滚动时画面会比屏幕高一行，再按一个键就恢复。混合列表上一个都不勾就确认，问过宿主就回宿主选择、没问过就回主菜单（沿用原先装 skill 时的做法）；列表里只有外部项目时不问装进哪些宿主；skill 一段里按名字排（本仓库的 skill 都是推荐的，「带推荐的在前」对它们不起作用）；带推荐标记的外部项目行上也写「推荐」，写在它说明的最前面；英文界面「类型」一行里推荐写整个词 `Recommended`，行上的标记才是 `pick`；一轮里要装的只有本仓库的 skill 时，汇总当时仍是原来「将安装 N 个 skill」那一张表（工单 07 已换成按类型分的小表）；汇总上选「取消」时这一轮勾的外部项目也不列；向 GitHub 查询失败时，出错说明之后照常列出勾选的外部项目。
 - 工单 07 实现时定的：「将安装 N 项」不数必填的 key 没填的 MCP（它不在小表里，另有一行「注意」；原先「将安装 N 个 MCP」也这样数）；列表回答后收成的一行数的是勾选的全部（「等 4 项」），紧接着的标题只数要装的组件（「将安装 3 项」），差的是外部项目，画面上没有另外交代——视觉评审指出过；小表第一栏的表头用段标题的那个词（英文 `Skills`，不是「类型」一行里的 `Skill`）；备注成一栏时 MCP 的小表里它紧跟「操作」，放不放得下只看有备注的行；提醒的先后把「必填的 key 没填」排在「key 以占位符显示」之后、登录的提醒之前，几行挨着（原先每行后面各空一行）；不可选的原因比状态栏宽时撑宽最后一栏状态；MCP 一段带推荐的在前、其余按名字，问 key、命令的编号、结果的行序都照这个先后（原先照目录文件）；向 GitHub 查询失败时 MCP 照常装，结果里没有 skill 的行；英文的 `Install N items`。另有两条视觉评审提过、没有改的：命令折行只按词断，可能把一个选项和它的值拆在两行（`-e` 留在行尾）；名字很长时另起一行的备注往左挪到放得下为止，左缘不对着任何一栏。
 - 工单 08 实现时定的：一张列表里只有工具和外部项目时不问装进哪些宿主，状态只有一栏「状态」（规格只说了「列表里只有外部项目时不问」）；工具可不可选看的是检测到的宿主，不是这一轮选的那几个；一个宿主都没检测到时工具的原因一律是「需要 AI Agent」，盖过「不支持这个系统」（对比页上画的就是这样，没有单独问过）；工具的状态算进第一栏状态的栏宽；汇总里工具的操作英文写 `run install command`；这一轮的结果不止一行就有「结果」分区——工单的字面是「不止一个工具时」，照的是本文件「只装了一个工具、没有别的组件时不重复」那一句；只有工具时结论行里没有宿主一栏；这一轮只有工具时没有「正在安装」分区。过渡期（工单 05 至 07）旧入口留在主菜单上的画法随之作废。
-- 工单 09 实现时定的：清单提问出现时一个都不勾，返回修改后上次勾的还在；清单回答后收成的一行勾了三个以上时只列前三个；清单的说明一栏也守「不足 12 列整栏不写」；「将安装 N 项」里一个第三方 Skill 条目算一项，清单里一个都没勾的不算（所以 N 可以比小表里的行数少，视觉评审提过可以在标题里补一句有几个 skill）；汇总里第三方 Skill 已有同名目录时操作写「覆盖」并带上「覆盖即整目录替换」那一行提醒；目标位置是文件或符号链接也算「已有同名目录」；将执行的命令每个 skill、每个宿主各一条（对比页上是每个条目、每个宿主一条；这一条和「目标位置是文件或符号链接也算」维护者 2026-10-11 确认了，已不属于「没看过」的）；复核通过而命令没有正常结束时写 `已安装；安装命令退出状态 1`；英文的 `Third-party skills are installed at the author's latest version at that moment; the maintainer has not reviewed each version`、`<路径> is already there. Overwrite it?`、备注 `already there; asked separately`、清单的提问 `<条目> has N skills; pick the ones to install`、进行中的 `installing`。视觉评审另提了两条口味上的、没有改的：命令折行可能把 `--agent` 和它的值拆在两行（工单 07 已记过同一个问题）；清单里几条说明都截在要紧的括号里，条目少时可以考虑折成两行不截断。还有一处早先就有、这次更容易碰到的：英文界面里列表收成的那一行在名字长时超过 79 列，被终端折成两行（预览页「英文界面 · 第三方 Skill 的清单」）。
+- 工单 09 实现时定的：清单提问出现时一个都不勾，返回修改后上次勾的还在；清单回答后收成的一行勾了三个以上时只列前三个；清单的说明一栏也守「不足 12 列整栏不写」；「将安装 N 项」里一个第三方 Skill 条目算一项，清单里一个都没勾的不算（所以 N 可以比小表里的行数少，视觉评审提过可以在标题里补一句有几个 skill）；汇总里第三方 Skill 已有同名目录时操作写「覆盖」并带上「覆盖即整目录替换」那一行提醒；目标位置是文件或符号链接也算「已有同名目录」；将执行的命令每个 skill、每个宿主各一条（对比页上是每个条目、每个宿主一条；这一条和「目标位置是文件或符号链接也算」维护者 2026-10-11 确认了，已不属于「没看过」的）；复核通过而命令没有正常结束时写 `已安装；安装命令退出状态 1`；英文的 `Third-party skills are installed at the author's latest version at that moment; the maintainer has not reviewed each version`、`<路径> is already there. Overwrite it?`、备注 `already there; asked separately`、清单的提问 `<条目> has N skills; pick the ones to install`、进行中的 `installing`。视觉评审另提了两条口味上的、没有改的：命令折行可能把 `--agent` 和它的值拆在两行（工单 07 已记过同一个问题）；清单里几条说明都截在要紧的括号里，条目少时可以考虑折成两行不截断。还有一处早先就有、这次更容易碰到的：英文界面里列表收成的那一行在名字长时超过 79 列，被终端折成两行（工单 14 改成了由呈现层折行，见下面那一条）。
 - 工单 10 实现时定的：列表里只有工具和外部项目时不问安装范围（规格只说了「一个宿主都没检测到时不问」；照的是「工具没有安装范围」和不问宿主的那条先例）；混合列表上返回时回的是宿主选择、之后重问安装范围，没问过宿主就回主菜单——**不回安装范围那一问**（它只有两项，没有「返回」可选）；当前目录不在主目录里时写全，太长时从前面截、留住末尾；选了项目时 MCP 不可选的原因「暂时只能装到全局」/ `global only for now`，这时不读用户级配置、也不出「读不到配置」那一行；装到项目时位置和覆盖前另问里的路径不带 `./` 前缀（`.claude/skills/alpha`），Windows 上是反斜杠；汇总里不另写一行说明这一轮装到项目——范围只在已回答的那一行和位置一栏里看得出来；skills CLI 装到项目时另在项目目录里写一个 `skills-lock.json`，画面上没有提它（实测见任务目录的 `research/project-scope-trial-record.md`）；英文的 `applies to every project on this machine`、`applies to the current directory only: `。早先就有、这次又看到的一处：英文界面的汇总里「位置」一栏在 skill 名字长时超过 79 列被终端折行（`.claude/skills/guizang-ppt-skill` 的最后一个字母落到下一行；装到全局时路径更长、折得更多）。
 - 工单 11 实现时定的：**Codex 的 MCP 装不到项目**（实现者判断那个把 `CODEX_HOME` 指到项目里的绕法不可靠，走的是规格事先定的退路；理由在 [安装 MCP](./mcp-install.md) 的 Design Decision）；它那一栏写的是和「条目不支持这个宿主」同一个词「不支持」，原因另写在列表上方的一行「注意」里（「Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令」；列表里的 MCP 本来就都不支持它时不写）；所选的宿主里只有它时 MCP 不可选，原因「只能装到全局」（`global only`，去掉了工单 10 的「暂时」）；只给 Codex 用的条目在两个宿主都选时原因也是「只能装到全局」，只给 Claude Code 用的条目在只选了 Codex 时仍是「需要别的 AI Agent」；规格没有的一行提醒「Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」（规格把「要不要批准」留给这张工单核对，核对的结论是要；评审指出不带 key 时画面上看不到写进了哪个文件，所以文件名也写在这一行里）；明文的提醒写成「`<变量名>` 会以明文写进 .mcp.json，不要提交，也不要发给别人」，可选的 key 留空的不算；这两行排在「key 以占位符显示」之后、「必填的 key 没填」之前；汇总里 MCP 的小表仍然没有「位置」一栏；英文的 `Codex MCP servers can only be installed globally: there is no command that writes them into a project`、`… will be stored in plain text in .mcp.json; do not commit or share it`、`Claude Code saves MCP servers to .mcp.json here and enables them only once you approve: it asks when you start claude here`。视觉评审提过、认为是口味而没有改的：两个宿主都选了而汇总里只有 Claude Code，解释在二十来行之上的那行「注意」里，汇总附近没有再说一遍。
+- 工单 14（收尾的整体核对）定的三件，**维护者 2026-10-11 都确认了**（评审指出前两件超出了「只修不一致」，所以单独问过）：① 多选回答后收成的那一行放不下时由呈现层折行——按名字断，「等 N 项」跟着最后一个名字，续行缩进两格、与提问的左缘对齐；连第一个名字都放不下时回答整个从下一行起（原先交给终端折，英文界面里名字一长就在词中间断开）。② 填写 key 的四行键值里第二行的键由「用途」改成「说明」（英文 `Purpose` 改成 `About`）：「用途」从这个任务起专指主菜单上的用途，原先同一屏上同一个词指两样东西。③ **汇总里「位置」一栏的路径超过 79 列时这次不改**，仍由终端折，记为待办——路径不截断、不受 79 列限制是「版式的总规则」里写明的；提过的改法是放不下时位置另起一行，要改的话另开一件事、先出画面给维护者看。另有一处没有问过、也没有改的：提问本身比一行长时（条目的名字接近 40 列、英文的清单提问）仍由终端折，真实目录里最长的第三方 Skill 条目名是 27 列，碰不到。
 - 英文的「退出」仍是 `Exit`：对比页的英文主菜单上写的是 `Quit`，没有单独问过，实现时没有改这个早就在用的词。
 
 发布前对照时发现、**没有统一**的一处，等维护者定：提问末尾带不带问号。中文的「开始安装吗」不带，「`<路径>` 不是本工具装的，要覆盖它吗？」带；英文的 `Install into which AI Agents` 不带，`Start installing?`、`Overwrite it?` 带（「执行这些命令吗」/ `Run these commands?` 随工具的旧入口在工单 08 取消了）。这几句都原样记在选定视觉方向时的记录里，统一就要改其中一边的文案。

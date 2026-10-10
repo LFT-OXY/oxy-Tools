@@ -26,7 +26,7 @@ export interface Catalog {
   thirdPartySkills: ThirdPartySkill[]; // 字段见「安装 skill」的第二个 Scenario
   mcps: Mcp[];             // 字段见「安装 MCP」
   tools: Tool[];           // 字段见「安装工具」
-  apps: App[];             // 应用项目：{ name, description: { zh, en }, url, purpose, recommended }
+  apps: App[];             // 外部项目：{ name, description: { zh, en }, url, purpose, recommended }
   purposes: Purpose[];     // 用途清单：{ id, name: { zh, en } }，顺序照文件
   skipped: SkippedEntry[]; // 被跳过的条目：校验不通过的，以及与前面重名的
   flaws: CatalogFlaw[];    // 写坏了、但没有哪个条目因它本身被跳过的地方；只有本命令报
@@ -75,7 +75,7 @@ export type CatalogFlaw = { file: string } & (
 输出的样子：
 
 ```
-目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个应用项目、10 个用途
+目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个外部项目、10 个用途
 ```
 
 通过信息把**校验过的每一类**都数出来，是 0 也写（第三方 Skill 数的是条目，不是它里面的 skill）：它说的是“这一类查过了”，和主菜单上方「目录」一行只数有条目的分组不是一回事。
@@ -113,7 +113,7 @@ export type CatalogFlaw = { file: string } & (
 | 整份读不了（`loadCatalog` 抛出 `CatalogError`：读不到、不是 JSON、缺版本号、数组字段不是数组、格式版本过高） | 标题和原因沿用 `messages.ts` 里安装器对用户说的那一句（中文），下一行是文件的位置 | 1 |
 | `skipped` 非空 | 条数，然后每条一行：哪个文件、哪个数组、第几条、名字（有的话）、问题 | 1 |
 | `flaws` 非空 | 处数，然后每处一行，说法见下面「别的写坏之处」 | 1 |
-| 都没有 | `目录校验通过：N 个 skill、T 个第三方 Skill、M 个 MCP、K 个工具、J 个应用项目、P 个用途` | 0 |
+| 都没有 | `目录校验通过：N 个 skill、T 个第三方 Skill、M 个 MCP、K 个工具、J 个外部项目、P 个用途` | 0 |
 
 单条条目的问题：
 
@@ -144,7 +144,7 @@ export type CatalogFlaw = { file: string } & (
 | `text` | 非空文字，不含控制字符 | `version`、`description.zh`、`description.en` |
 | `relative-path` | 相对路径，每段只含字母、数字、`.`、`_`、`-`，且不是 `.`、`..` | skill 的 `path`、工具的 `check.path` |
 | `object` | 是对象 | `description` |
-| `https-url` | `https://` 开头的网址，只含 RFC 3986 允许的字符 | 应用项目、MCP 和工具的 `url`、MCP 的 `server.url` |
+| `https-url` | `https://` 开头的网址，只含 RFC 3986 允许的字符 | 外部项目、MCP 和工具的 `url`、MCP 的 `server.url` |
 | `host-list` | 非空数组，每一项是宿主的标识（合 `name` 的规则） | MCP 和工具的 `hosts` |
 | `mcp-server` | `command` 与 `url` 恰好有一样 | MCP 的 `server` |
 | `command-word` | 一个词：只含字母、数字和 `@ : / . _ = + , ~ -` | MCP 的 `server.command` |
@@ -157,7 +157,7 @@ export type CatalogFlaw = { file: string } & (
 | `os-command` | 同上的一行命令，或 `null`（这个系统不支持） | 工具的 `install.macos`、`install.linux`、`install.windows` |
 | `tool-check` | `command` 与 `path` 恰好有一样 | 工具的 `check` |
 | `command-name` | 一个命令的名字：只含字母、数字和 `. _ -`，不带目录 | 工具的 `check.command` |
-| `purpose` | 用途的标识（与 `name` 同一条正则）；本仓库 skill 以外的条目都要写 | 第三方 Skill、MCP、工具、应用项目的 `purpose`（没写，或写的不是标识） |
+| `purpose` | 用途的标识（与 `name` 同一条正则）；本仓库 skill 以外的条目都要写 | 第三方 Skill、MCP、工具、外部项目的 `purpose`（没写，或写的不是标识） |
 | `skill-source` | GitHub 上的「所有者/仓库」：两段、一个斜杠，每段以字母或数字开头，只含字母、数字和 `. _ -` | 第三方 Skill 的 `source` |
 | `skill-list` | 非空数组，每一项是这个仓库里的一个 skill，名字不重复 | 第三方 Skill 的 `skills`（不是数组、是空的、有重名） |
 | `sourced-skill-name` | skill 自己声明的名字的小写写法：只含小写字母、数字和 `. _ -`，以小写字母或数字开头，不以 `.` 或 `-` 结尾，连字符不连着写 | 第三方 Skill 的 `skills[i].name` |
@@ -166,7 +166,7 @@ export type CatalogFlaw = { file: string } & (
 
 数组里某一项的字段写成 `env[0].name`：下标从 0 数起，和 JSON 里的位置一致（条目是“第几条”从 1 数起，那是给人数的）。嵌在里面的中英文说明仍用 `parseDescription`，第二个参数给它所在的字段（`env[0].`），报出来就是 `env[0].description.en`。
 
-规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，第三方 Skill 的顺序见 [安装 skill](./skill-install.md)，MCP 的见 [安装 MCP](./mcp-install.md)，工具的见 [安装工具](./tool-install.md)；四类条目各自的字段都查完之后，再查 `purpose`、`recommended`（共用 `parsePlacement`）。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
+规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，外部项目按 `name`、`description`、`url` 的顺序查，第三方 Skill 的顺序见 [安装 skill](./skill-install.md)，MCP 的见 [安装 MCP](./mcp-install.md)，工具的见 [安装工具](./tool-install.md)；四类条目各自的字段都查完之后，再查 `purpose`、`recommended`（共用 `parsePlacement`）。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
 
 每一类条目各有一个 `parseXxx(entry): Xxx | EntryProblem`，都交给 `loadCatalog` 里的 `collect(document, list, parse)`：它逐条调 `parse`，写坏的和重名的带着原因进 `skipped`。**加一类条目就是加一个 `parse` 函数、调一次 `collect`**，不要另写一遍循环。中英文说明用 `parseDescription`，各类共用。用途清单不是条目，但读法一样（逐项解析、标识重复的只留第一项），所以它和 `collect` 共用底下的 `readEntries`，只是写坏的进 `flaws` 而不是 `skipped`——`skipped` 的条数会显示给用户看，那句话说的是「条目」。
 
@@ -178,7 +178,7 @@ export type CatalogFlaw = { file: string } & (
 
 ### 5. Good/Base/Bad Cases
 
-- Good：仓库的数据（2026-10-11 录入 23 个第三方 Skill 和 7 个应用项目之后）→ `目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个应用项目、10 个用途`，退出 0。
+- Good：仓库的数据（2026-10-11 录入 23 个第三方 Skill 和 7 个外部项目之后）→ `目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个外部项目、10 个用途`，退出 0。
 - Bad：第三方 Skill 的 `source` 写成了网址，或某个 skill 的名字照上游写成了 `Humanizer-ZH` → 指出第几条、名字、`source` 或 `skills[0].name` 该是什么样，退出 1；安装器里这一条被跳过。
 - Base：工具条目的 `install` 里有一个不认识的系统名（`solaris`）→ 忽略它，照常通过。
 - Bad：`index.json` 某一条的 `path` 写成 `skills/../x` → 指出第几条、名字、`path` 该是什么样，退出 1。

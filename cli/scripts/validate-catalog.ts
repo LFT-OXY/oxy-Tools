@@ -76,7 +76,7 @@ async function validate(args: string[]): Promise<number> {
     return EXIT_FAILURE;
   }
   console.log(
-    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.thirdPartySkills.length} 个第三方 Skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目、${catalog.purposes.length} 个用途`,
+    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.thirdPartySkills.length} 个第三方 Skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个外部项目、${catalog.purposes.length} 个用途`,
   );
   return 0;
 }

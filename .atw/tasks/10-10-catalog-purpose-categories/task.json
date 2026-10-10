@@ -3,7 +3,7 @@
   "name": "catalog-purpose-categories",
   "title": "目录按用途分类，第三方 skill 改由命令安装，并收录「汇总」文档的条目",
   "description": "给目录的条目加上用途和推荐标记，安装器主菜单改为按用途进入、不分类型混合勾选；第三方 Skill 不收进仓库，由安装器静默调用 skills CLI 安装；Skill 和 MCP 可选装到全局或项目；把 Outline「汇总」文档的条目录入目录",
-  "status": "implement",
+  "status": "accept",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -23,6 +23,6 @@
   "relatedFiles": [],
   "notes": "",
   "meta": {
-    "implementation_base_sha": "39d133d945d3fa5bc7a4d98dd5ba1d3e4ca8fb19"
+    "implementation_base_sha": "181f88c5b776b928876bb3493fd6789231a7c503"
   }
 }

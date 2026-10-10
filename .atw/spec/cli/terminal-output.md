@@ -181,7 +181,7 @@ export interface ConfirmQuestion {
 ── exa 需要 key ────────────────────────────────────────────────────────────────
 
   变量      EXA_API_KEY（必填）
-  用途      Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建
+  说明      Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建
   申请      https://dashboard.exa.ai/api-keys
   提示      输入不会显示在屏幕上；留空回车将跳过 exa
 
@@ -190,7 +190,7 @@ export interface ConfirmQuestion {
 
 | 段 | 函数 | 画法 |
 |----|------|------|
-| 说明 | `ui.keyRequest(mcp, variable)` | 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」，下方空一行；四行键值：变量（后面注明必填或可选）、用途、申请、提示（留空会怎样）。**申请地址和外部项目的链接一样整条写在一行上**，带下划线，不交给折行 |
+| 说明 | `ui.keyRequest(mcp, variable)` | 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」，下方空一行；四行键值：变量（后面注明必填或可选）、说明、申请、提示（留空会怎样）。第二行的键和列表下方的「说明」是同一个词（`aboutColumn`）：2026-10-11 之前它叫「用途」，和主菜单上的「用途」撞了词。**申请地址和外部项目的链接一样整条写在一行上**，带下划线，不交给折行 |
 | 提问 | `ui.keyQuestion(variable)` → `PasswordQuestion { message, theme }` | 提问是变量名，后面一句暗淡的固定提示（`theme.style.maskedText`，文案是 `messages.ts` 的 `hiddenInput`） |
 | 结局 | `ui.keyOutcome(mcp, variable, outcome)` | 和已回答的提问同一个画法：记号、粗体的变量名、暗淡的 `·`、一句话。填了和沿用的是绿色 `✓`，留空的是暗淡 `–`。**只收结局（`'entered' \| 'blank' \| 'reused'`），不收值，也不写长度** |
 
@@ -317,7 +317,7 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 | 段标题 | 也是一行分隔行（不可选，光标跳过它）：同样的缩进，暗淡的两个横线符号，空一格，默认色的标题。横线用 `symbols.rule`，没有 Unicode 时跟着退成 `--` |
 | 外部项目的行 | 名称补到栏宽，说明从第一栏状态的位置写起、截断到第 79 列；名字长到说明一列都不剩时不写说明。这一段与上面的组件之间有一行空的分隔行，上面没有组件时没有 |
 | 列表下方 | 两行：「类型」和「说明」，各是一次 `belowList(label, format, text, labelWidth)`——第四个参数把两个标签补到一样宽，值的左缘才对齐；说明过长则折行。多出的这一行要告诉 `list(rows, below)`：第二个参数是列表下方除说明之外另外多占的行数，一屏放多少行跟着少一行（见「块与块之间的空行」） |
-| 回答后收成的一行 | 勾选的名字；勾了三个以上只列前三个，后面写「等 N 项」，N 是勾选的总数（英文是 `and N more`，那里的 N 是没列出来的个数）；一个都没勾写「返回」。文案是 `messages.ts` 的 `pickedMany(shown, total)` |
+| 回答后收成的一行 | 勾选的名字；勾了三个以上只列前三个，后面写「等 N 项」，N 是勾选的总数（英文是 `and N more`，那里的 N 是没列出来的个数）；一个都没勾写「返回」。后面那一句是 `messages.ts` 的 `pickedMore(shown, total)`。**一行放不下时由呈现层折行**（`ui.ts` 的 `pickedNames`，混合列表和第三方 Skill 的清单共用）：按名字断，「等 N 项」跟着最后一个名字，续行缩进两格；连第一个名字都放不下时回答整个从下一行起，这时 `style.answer` 在分隔符后面不留空格。交互库把收成的那一行原样打出来，里面带换行也没有问题 |
 
 **列表下方的两行是这样送到交互库手里的**：交互库只把光标所在行的 `description`（一段文字）交给 `theme.style.description`，没有别的口子。所以混合列表的每一行把 `description` 写成两行文字——第一行是类型（`marksRecommended` 时带推荐的后面跟暗淡的分隔和「推荐」），其余是说明全文——再由这个提问自己的 `style.description` 在第一个换行处拆开，画成两行。
 
@@ -509,6 +509,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 画面取的是无头终端的**整个缓冲区**（`readCells` 读到 `buffer.length`），不是屏幕上那 `ROWS` 行：汇总加结果再回到主菜单的场景会超过一屏，只读前 `ROWS` 行会把底下的截掉而不报任何错（工单 12 之前有四个画面就是这样少了末尾几行）。
 - 要看矮终端里屏幕上还剩什么，场景给 `rows`（如 `rows: 24`）：终端、提问器和安装器拿到的都是这个行数，画面**只取还在屏幕上的那几行**（从 `buffer.baseY` 读起）。「skill 多选列表 · 24 行的终端」用的是 `manySkills`（二十条样例）。
 - 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面：进「文档处理」用 `toDocuments`。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。要 skill、MCP、外部项目三种类型同表，场景用 `...THREE_KINDS`（`withThreeKinds`：在 `withMixed` 之上「文档处理」下多三个 MCP——`markitdown` 带推荐标记、`excel` 只支持 Claude Code、`mistral-ocr` 的 key 必填；主目录里 skill 的四种状态照 `MIXED`，Claude Code 里 `excel` 已配置）：`pickSkillAndMcps` 勾一个 skill 和两个 MCP，`pickThreeKinds` 再勾一个外部项目，`toThreeKindsSummary` 填好 key 停在汇总上。要四种类型同表，场景用 `...FOUR_KINDS`（`withFourKinds`：再往「文档处理」下加三个工具——`docling` 带推荐标记、安装命令里有引号，`officecli` 只支持 Linux，`pandoc` 在场景里已经装着；检测到两个宿主，缺省的假命令把 `docling` 装上）：`pickFourKinds` 四种类型各勾一个，`toFourKindsSummary` 停在汇总上（这四个都不要 key），再回车就装完。只检测到一个宿主或一个都没有时自己给 `onPath`——要 `pandoc` 显示已安装就把它也放进去。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
+- 要画出没有「推荐」的主菜单，场景用 `catalog: withoutRecommended`（`index.json` 里没有 skill，外部项目照 `withApps`）；要画出某个宿主不支持的第三方 Skill，用 `...FIVE_KINDS, catalog: withHostLimitedThirdParty`（`guizang-ppt-skill` 写了 `hosts: ['claude-code']`，主目录和可执行路径照 `FIVE_KINDS`）。
 - 要画出只有工具的列表，场景用 `...TOOLS`（`withTools`：五条为预览编的样例——两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用；主目录里 `bun` 已经装着）。它们都在「开发工作流与规范」下，主菜单上紧跟在「推荐」后面，`toTools` 下移一行进去；**段里按名字排**（bubblewrap、bun、codex-usage、openspec、uv），光标起始在不可选的 `bubblewrap` 上，按键照这个先后数：`pickTools` 勾 openspec 和 uv，`pickUv` 只勾 uv。命令是假的：场景的 `shell: (command) => ShellRun` 说它往终端上打什么（`output`）、怎么结束（`exitCode`、`cannotStart`、`hangs`）、装没装上（`installs` 往可执行路径里放一个命令，`creates` 在主目录下写出一个路径），缺省是 `installsTool`（uv 装好，别的以非零状态结束）。名字和命令都长的样例在 `withLongCommandTool`。预览页从不真的执行命令。
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（这四条样例都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面，`toMcps` 下移一行进去；`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。

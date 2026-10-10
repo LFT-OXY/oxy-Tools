@@ -1,6 +1,7 @@
 # 上游整包
 
 > 带上游许可证、整包引入的第三方 skill 怎么对待。
+> **第三方 skill 今后不再整包引入**：内容留在作者的仓库，目录只按仓库登记，由安装器调用 skills CLI 装进宿主，见 [ADR-0003](../../../docs/adr/0003-third-party-skills-installed-by-skills-cli.md)。本文说的是此前已经整包收进来的那几个，它们不变。
 
 ---
 

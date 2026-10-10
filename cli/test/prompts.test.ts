@@ -726,6 +726,40 @@ describe('真实的画面：外部项目', () => {
 
     expect(result.output).toMatch(/✓ Pick entries to install · borealis, cirrus, dune and 2 more$/m);
   });
+
+  // 名字长到收成的那一行放不下：borealis 之外的三个取自真实目录里最长的几个名字
+  const longNames = more('ai-website-cloner-template', 'awesome-design-md', 'nuyoah-image-reverse-prompt');
+
+  it('英文界面下收成的那一行放不下时由安装器折行：名字不拆开，续行缩进两格', async () => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: withApps(longNames),
+      keys: [['⏎ select', KEY.down], ['▸ Web search & docs retrieval', KEY.enter], ['⏎ confirm', 'a'], [' ■ nuyoah-image-reverse-prompt', KEY.enter], ['⏎ select', KEY.ctrlC]],
+    });
+
+    const lines = await screenLines(result.raw);
+    const at = lines.findIndex((line) => line.startsWith('✓ Pick entries to install'));
+    expect(lines.slice(at, at + 3)).toEqual([
+      '✓ Pick entries to install · ai-website-cloner-template, awesome-design-md,',
+      '  borealis and 1 more',
+      '',
+    ]);
+  });
+
+  it('中文界面下同样折行：「等 N 项」跟着最后一个名字，不单独落到下一行', async () => {
+    const result = await run({
+      catalog: withApps(longNames),
+      keys: [...toFirstPurpose, [PICK_HINT, 'a'], [' ■ nuyoah-image-reverse-prompt', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    const lines = await screenLines(result.raw);
+    const at = lines.findIndex((line) => line.startsWith('✓ 选择要安装的条目'));
+    expect(lines.slice(at, at + 3)).toEqual([
+      '✓ 选择要安装的条目 · ai-website-cloner-template、awesome-design-md、',
+      '  borealis 等 4 项',
+      '',
+    ]);
+  });
 });
 
 describe('真实的画面：MCP', () => {
@@ -899,6 +933,33 @@ describe('真实的画面：第三方 Skill', () => {
     expect(result.output).toMatch(/✓ paper-kit 里有 3 个 skill，选择要装的 · paper-reader、paper-comic$/m);
     expect(result.output).toMatch(/^\s+第三方 Skill\s+AI Agent\s+操作\s+位置\n\s+paper-reader\s+Claude Code\s+新装\s.*\n\s+paper-comic\s+Claude Code\s+新装\s/m);
     expect(result.commands).toEqual([]);
+  });
+
+  it('英文界面下条目的名字很长，收成的那一行连第一个名字都放不下：回答整个从下一行起', async () => {
+    const [kit] = SAMPLE_THIRD_PARTY;
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: [{ ...kit, name: 'opencode-dynamic-context-pruning' }] } }),
+      keys: [
+        ['⏎ select', KEY.down],
+        ['▸ Web search & docs retrieval', KEY.enter],
+        ['⏎ confirm', KEY.space],
+        ['▸■ opencode-dynamic-context-pruning', KEY.enter],
+        ['none = skip', KEY.space],
+        ['▸■ paper-reader', KEY.down],
+        ['▸□ paper-comic', KEY.space],
+        ['▸■ paper-comic', KEY.enter],
+        ['⏎ select', KEY.ctrlC],
+      ],
+    });
+
+    const lines = await screenLines(result.raw);
+    const at = lines.findIndex((line) => line.startsWith('✓ opencode-dynamic-context-pruning has 3 skills'));
+    expect(lines.slice(at, at + 3)).toEqual([
+      '✓ opencode-dynamic-context-pruning has 3 skills; pick the ones to install ·',
+      '  paper-reader, paper-comic',
+      '',
+    ]);
   });
 
   it('一个都不勾就回车：收成「不装」，没有要装的，回到主菜单', async () => {

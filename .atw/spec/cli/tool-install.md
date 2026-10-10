@@ -70,7 +70,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 | 字段 | 规则 |
 |------|------|
-| `name`、`description`、`url` | 与应用项目同一套规则（见 [入口与测试](./installer-entry.md)）。名字只在 `tools` 里唯一 |
+| `name`、`description`、`url` | 与外部项目同一套规则（见 [入口与测试](./installer-entry.md)）。名字只在 `tools` 里唯一 |
 | `hosts` | 与 MCP 的 `hosts` 同一条规则：可省略；写了就是非空数组；不认识的标识留着不管 |
 | `install` | 对象 |
 | `install.default` | **必须有**。一整行命令：`^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$`——只含看得见的 ASCII 字符，首尾不留空格。所以里面没有换行、制表符、控制码和不可见的字符（如改变文字方向的 `U+202E`） |

@@ -102,8 +102,8 @@ export interface Messages {
   pickSourcedSkills: (entry: string, count: number) => string;
   /** 清单里一个都没勾就确认，回答之后收成的那一行写的字 */
   notInstalling: string;
-  /** 列表回答之后收成的那一行，勾得多时只列前几个名字：shown 是列出来的那几个，total 是勾选的总数 */
-  pickedMany: (shown: readonly string[], total: number) => string;
+  /** 列表回答之后收成的那一行，勾得多时只列前几个名字，后面紧跟着这一句（它和最后一个名字之间的空格由这一句自己带）：shown 是列出来的个数，total 是勾选的总数 */
+  pickedMore: (shown: number, total: number) => string;
   /** 列出勾选的外部项目的那个分区的标题 */
   externalProjects: (count: number) => string;
   linkKey: string;
@@ -139,7 +139,6 @@ export interface Messages {
   /** 问 key 之前那个分区的标题；mcp 是要它的那个 MCP 的名字 */
   keyRequest: (mcp: string, required: boolean) => string;
   variableKey: string;
-  purposeKey: string;
   applyKey: string;
   tipKey: string;
   /** 接在变量名后面：必填还是可选 */
@@ -266,7 +265,7 @@ const zh: Messages = {
   kinds: { skill: 'Skill', thirdParty: '第三方 Skill', mcp: 'MCP', tool: '工具', app: '外部项目' },
   pickSourcedSkills: (entry, count) => `${entry} 里有 ${count} 个 skill，选择要装的`,
   notInstalling: '不装',
-  pickedMany: (shown, total) => `${shown.join('、')} 等 ${total} 项`,
+  pickedMore: (_shown, total) => ` 等 ${total} 项`,
   externalProjects: (count) => `外部项目：${count} 个，只给链接`,
   linkKey: '链接',
   listSeparator: '、',
@@ -291,7 +290,6 @@ const zh: Messages = {
     `${host} 的 MCP 写进当前目录的 ${file}，要你批准之后才启用：在这个目录下启动 ${command} 时它会问`,
   keyRequest: (mcp, required) => (required ? `${mcp} 需要 key` : `${mcp} 可选的 key`),
   variableKey: '变量',
-  purposeKey: '用途',
   applyKey: '申请',
   tipKey: '提示',
   keyNeed: (required) => (required ? '（必填）' : '（可选）'),
@@ -535,7 +533,7 @@ const en: Messages = {
   kinds: { skill: 'Skill', thirdParty: 'Third-party skill', mcp: 'MCP', tool: 'Tool', app: 'External project' },
   pickSourcedSkills: (entry, count) => `${entry} has ${count} skills; pick the ones to install`,
   notInstalling: 'skip',
-  pickedMany: (shown, total) => `${shown.join(', ')} and ${total - shown.length} more`,
+  pickedMore: (shown, total) => ` and ${total - shown} more`,
   externalProjects: (count) => `External projects: ${count}, links only`,
   linkKey: 'Link',
   listSeparator: ', ',
@@ -560,7 +558,6 @@ const en: Messages = {
     `${host} saves MCP servers to ${file} here and enables them only once you approve: it asks when you start ${command} here`,
   keyRequest: (mcp, required) => (required ? `${mcp} needs a key` : `${mcp}: optional key`),
   variableKey: 'Variable',
-  purposeKey: 'Purpose',
   applyKey: 'Get one',
   tipKey: 'Tip',
   keyNeed: (required) => (required ? ' (required)' : ' (optional)'),

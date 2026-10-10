@@ -23,7 +23,7 @@ export interface McpVariable {  // MCP 启动时要带上的一个环境变量�
   description: { zh: string; en: string };
   url: string;                  // 去哪申请
 }
-export interface Placement { purpose: string; recommended: boolean } // 用途（用途清单里的一个标识）、是否另外进「推荐」；MCP、工具、应用项目共有，见「入口与测试」
+export interface Placement { purpose: string; recommended: boolean } // 用途（用途清单里的一个标识）、是否另外进「推荐」；MCP、工具、外部项目共有，见「入口与测试」
 export interface Mcp extends Placement {
   name: string;
   description: { zh: string; en: string };
@@ -122,15 +122,15 @@ export function systemCommandRunner(): CommandRunner;
 
 | 字段 | 规则 |
 |------|------|
-| `name`、`description`、`url` | 与应用项目同一套规则（见 [入口与测试](./installer-entry.md)）；`url` 是官方链接，目前不显示。名字只在 `mcps` 里唯一 |
+| `name`、`description`、`url` | 与外部项目同一套规则（见 [入口与测试](./installer-entry.md)）；`url` 是官方链接，目前不显示。名字只在 `mcps` 里唯一 |
 | `hosts` | 可省略（全部支持）；写了就要是**非空**数组，每一项符合 `name` 的规则。**不认识的标识留着不管**：以后加了宿主，旧版安装器照样读得了这一条 |
 | `server` | 对象，`command` 与 `url` **恰好有一样** |
 | `server.command`、`server.args` 的每一项 | `^[A-Za-z0-9@:/._=+,~-]+$`；`args` 可省略（当作空） |
-| `server.url` | 与应用项目的 `url` 同一条规则：只收 https，只含 RFC 3986 允许的字符 |
+| `server.url` | 与外部项目的 `url` 同一条规则：只收 https，只含 RFC 3986 允许的字符 |
 | `env` | 可省略（当作空）；写了就要是数组，里面的变量名不重复。**只适用于本地进程方式**：远程地址的条目带了非空的 `env` 整条不通过（写一个空数组不算带） |
 | `env[i].name` | `^[A-Za-z_][A-Za-z0-9_]*$`：它会拼进宿主的命令（`名字=值`），也会原样打到终端上 |
 | `env[i].required` | 布尔值，**必须写**，不猜缺省 |
-| `env[i].description`、`env[i].url` | 说明同各类条目的 `description`；`url` 是申请地址，与应用项目的 `url` 同一条规则 |
+| `env[i].description`、`env[i].url` | 说明同各类条目的 `description`；`url` 是申请地址，与外部项目的 `url` 同一条规则 |
 
 `command` 和 `args` 收得这么紧，是因为它们有三个去处：原样打到终端上让用户确认、交给宿主的命令、被宿主记进配置之后每次启动都执行。规则保证里面没有空白、引号和任何 shell 会另作解释的字符，所以展示出来的那一行没有歧义，Windows 上经 `cmd.exe` 起 `.cmd` 时也不必转义引号。代价是带空格的参数、带查询串的网址参数、Windows 路径都写不进目录。这条规则是工单 08 的实现者定的，**维护者尚未确认**；要放宽先改这里和 `catalog.ts` 的 `COMMAND_WORD`，并重新核对 `ui.ts` 里展示命令时加引号的判断（`PLAIN_ARGUMENT`）。
 

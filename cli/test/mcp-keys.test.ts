@@ -49,7 +49,7 @@ describe('带 key 的 MCP：填写 key', () => {
 
     expect(result.output).toMatch(/^── search-keyed 需要 key ─+$/m);
     expect(result.output).toMatch(/^\s+变量\s+SEARCH_API_KEY（必填）$/m);
-    expect(result.output).toMatch(/^\s+用途\s+样例搜索服务的密钥$/m);
+    expect(result.output).toMatch(/^\s+说明\s+样例搜索服务的密钥$/m);
     expect(result.output).toMatch(/^\s+申请\s+https:\/\/example\.com\/search\/api-keys$/m);
     expect(result.output).toMatch(/^\s+提示\s+输入不会显示在屏幕上；留空回车将跳过 search-keyed$/m);
     expect(result.output.indexOf('https://example.com/search/api-keys')).toBeLessThan(result.output.indexOf('? SEARCH_API_KEY'));
@@ -411,7 +411,7 @@ describe('英文界面的带 key 的 MCP', () => {
 
     expect(result.output).toMatch(/^── search-keyed needs a key ─+$/m);
     expect(result.output).toMatch(/^\s+Variable\s+SEARCH_API_KEY \(required\)$/m);
-    expect(result.output).toMatch(/^\s+Purpose\s+Key for the sample search service$/m);
+    expect(result.output).toMatch(/^\s+About\s+Key for the sample search service$/m);
     expect(result.output).toMatch(/^\s+Get one\s+https:\/\/example\.com\/search\/api-keys$/m);
     expect(unwrapped(result.output)).toContain('Tip Your input is not shown on screen; press enter on an empty line to skip search-keyed');
     expect(result.output).toMatch(/^\? SEARCH_API_KEY \(input hidden; paste, then press enter\)$/m);

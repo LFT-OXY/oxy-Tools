@@ -109,14 +109,14 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('MCP 条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个外部项目');
     expect(result.exitCode).toBe(0);
   });
 
   it('工具条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、2 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、2 个工具、0 个外部项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -205,7 +205,7 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('带环境变量的 MCP 条目没有问题时照常通过', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [...SAMPLE_MCPS, KEYED_MCP] } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、3 个 MCP、0 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、3 个 MCP、0 个工具、0 个外部项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -233,7 +233,7 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('第三方 Skill 条目也校验：没有问题时通过的那一行里说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个第三方 Skill、0 个 MCP、0 个工具、0 个应用项目、2 个用途');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个第三方 Skill、0 个 MCP、0 个工具、0 个外部项目、2 个用途');
     expect(result.exitCode).toBe(0);
   });
 
@@ -309,14 +309,14 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('应用项目条目也校验：没有问题时说明有几个', async () => {
+  it('外部项目条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、2 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、2 个外部项目');
     expect(result.exitCode).toBe(0);
   });
 
-  it('应用项目写坏时，指明是 catalog.json 的 apps 第几条、叫什么、哪个字段', async () => {
+  it('外部项目写坏时，指明是 catalog.json 的 apps 第几条、叫什么、哪个字段', async () => {
     const broken = { ...SAMPLE_APPS[0], name: 'broken', url: 'http://example.com/broken' };
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: [SAMPLE_APPS[1], broken] } }));
 
@@ -326,7 +326,7 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.exitCode).toBe(1);
   });
 
-  it('skill 和应用项目各有写坏的：都报出来', async () => {
+  it('skill 和外部项目各有写坏的：都报出来', async () => {
     const result = await validate(
       catalogDir({
         index: { version: 1, skills: [good, skill({ version: undefined })] },
@@ -343,14 +343,14 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('用途清单也校验：没有问题时说明有几个用途', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, skillPurposes: { alpha: 'web-search' } } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个应用项目、2 个用途');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个外部项目、2 个用途');
     expect(result.exitCode).toBe(0);
   });
 
   it('没有用途清单的旧格式目录，里面没有条目时照常通过', async () => {
     const result = await validate(catalogDir({ catalog: { version: 1, mcps: [], tools: [], apps: [] } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、0 个应用项目、0 个用途');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、0 个外部项目、0 个用途');
     expect(result.exitCode).toBe(0);
   });
 

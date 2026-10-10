@@ -310,6 +310,30 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   const belowList = (label: string, format: Format, text: string, labelWidth = displayWidth(label) + 2): string =>
     `${hanging('   ', paint(format, pad(label, labelWidth)), text).join('\n')}\n`;
 
+  // 多选回答之后收成的那一行里的名字：勾得多时只列前几个。一行放不下时在这里折行，不交给终端去折——
+  // 名字不拆开，续行缩进两格、与提问的左缘对齐；连第一个名字都放不下时整个从下一行起
+  const pickedNames = (message: string, selected: readonly { short: string }[]): string => {
+    const shown = selected.slice(0, NAMES_SHOWN).map((choice) => choice.short);
+    const more = selected.length > NAMES_SHOWN ? t.pickedMore(shown.length, selected.length) : '';
+    const comma = t.listSeparator.trimEnd();
+    const gap = t.listSeparator.slice(comma.length);
+    const lines: string[] = [];
+    let line = '';
+    let room = USABLE - displayWidth(`${symbols.done} ${message} ${symbols.separator} `);
+    shown.forEach((name, at) => {
+      const piece = `${name}${at === shown.length - 1 ? more : comma}`;
+      const joined = line === '' ? piece : `${line}${gap}${piece}`;
+      if (displayWidth(joined) <= room) {
+        line = joined;
+        return;
+      }
+      lines.push(line);
+      line = piece;
+      room = USABLE - 2;
+    });
+    return [...lines, line].join('\n  ');
+  };
+
   const cursor = paint(focus, symbols.cursor);
   const theme: PromptTheme = {
     prefix: { idle: paint([focus, 'bold'], '?'), done: paint('green', symbols.done) },
@@ -323,7 +347,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
     style: {
       message: (text) => paint('bold', text),
-      answer: (text) => `${dim(symbols.separator)} ${text}`,
+      // 回答整个从下一行起时（见 pickedNames），分隔符后面不留空格
+      answer: (text) => `${dim(symbols.separator)}${text.startsWith('\n') ? '' : ' '}${text}`,
       // 光标所在行整行加粗。行内片段的收尾码会把粗体一并关掉，所以每次收尾后重申一次
       highlight: (text) => paint('bold', text.replaceAll('\x1b[22m', '\x1b[22m\x1b[1m')),
       description: (text) => belowList(t.aboutColumn, 'dim', text),
@@ -818,10 +843,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
               return underCursor === undefined ? notice : notice.replace(/\n$/, '');
             },
             keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underCursor)}\n`}${question.theme.style.keysHelpTip(keys)}`,
-            renderSelectedChoices: (selected) =>
-              selected.length > NAMES_SHOWN
-                ? t.pickedMany(selected.slice(0, NAMES_SHOWN).map((choice) => choice.short), selected.length)
-                : theme.style.renderSelectedChoices(selected),
+            renderSelectedChoices: (selected) => (selected.length === 0 ? theme.style.renderSelectedChoices(selected) : pickedNames(t.pickEntries, selected)),
           },
         },
       };
@@ -865,8 +887,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           checked: checked.includes(skill),
         })),
       ]);
+      const message = t.pickSourcedSkills(entry.name, entry.skills.length);
       return {
-        message: t.pickSourcedSkills(entry.name, entry.skills.length),
+        message,
         ...question,
         theme: {
           ...question.theme,
@@ -874,10 +897,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             ...question.theme.style,
             // 这里一个都不勾不是返回，是不装这一条：按键提示和收成的那一行都照这个意思写
             keysHelpTip: (keys) => question.theme.style.keysHelpTip(keys.map(([key, action]) => [key, action === 'submit' ? 'submitOrSkip' : action])),
-            renderSelectedChoices: (selected) =>
-              selected.length > NAMES_SHOWN
-                ? t.pickedMany(selected.slice(0, NAMES_SHOWN).map((choice) => choice.short), selected.length)
-                : selected.map((choice) => choice.short).join(t.listSeparator) || t.notInstalling,
+            renderSelectedChoices: (selected) => (selected.length === 0 ? t.notInstalling : pickedNames(message, selected)),
           },
         },
       };
@@ -1160,7 +1180,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       print(
         ...heading(t.keyRequest(mcp.name, variable.required)),
         ...keyValue(t.variableKey, `${variable.name}${t.keyNeed(variable.required)}`),
-        ...keyValue(t.purposeKey, variable.description[lang]),
+        ...keyValue(t.aboutColumn, variable.description[lang]),
         // 申请地址和外部项目的链接一样整条写在一行上：折开了就没法照着复制
         `  ${dim(pad(t.applyKey, KEY_WIDTH))}${paint('underline', variable.url)}`,
         ...keyValue(t.tipKey, t.keyInputHint(mcp.name, variable.required)),

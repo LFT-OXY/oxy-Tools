@@ -8,8 +8,8 @@
 
 本仓库是**目录加安装器**（术语见仓库根 `GLOSSARY.md`）：
 
-- **目录**是维护者策展的全部条目：`skills/` 下的各个 skill 和登记它们的 skill 清单 `index.json`，加上登记 MCP、工具、应用项目的 `catalog.json`。
-- **安装器**是 `cli/` 下发布到 npm 的 `oxy-tools`：每次运行时从本仓库现拉目录，把组件装进宿主（Claude Code、Codex）；应用项目只给链接。
+- **目录**是维护者策展的全部条目：`skills/` 下的各个 skill 和登记它们的 skill 清单 `index.json`，加上 `catalog.json`：它登记第三方 Skill、MCP、工具、外部项目，以及用途清单和本仓库 skill 另外归在哪个用途下。
+- **安装器**是 `cli/` 下发布到 npm 的 `oxy-tools`：每次运行时从本仓库现拉目录，把组件装进宿主（Claude Code、Codex）；外部项目只给链接。
 
 `index.json` 另有一个读者：A Team Workflow（`atw init` 的额外 skill 安装、`atw update` 的版本检查）。本仓库对它有三条承诺，见 [清单与版本](./manifest-versioning.md)。
 
