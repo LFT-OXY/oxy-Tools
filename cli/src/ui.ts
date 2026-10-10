@@ -151,10 +151,10 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
   const symbols = unicode ? UNICODE : ASCII;
   const attention: Format = ['yellow', 'bold'];
 
-  // 画面上是否已经有内容，两个输出流合起来算
-  let blank = true;
-  // 分区标题上方空一行，画面的第一行除外
-  const gapAbove = (): string[] => (blank ? [] : ['']);
+  // 接下来的分区标题上方是否已经有留白：画面还是空的，或刚打出的标题区自己以空行收尾。两个输出流合起来算
+  let spaced = true;
+  // 分区标题上方空一行，上面已经有留白时除外
+  const gapAbove = (): string[] => (spaced ? [] : ['']);
 
   // 每个输出流各自决定上不上色：是终端、且没有设置 NO_COLOR 才上色。
   // 不理会 FORCE_COLOR，所以它和 NO_COLOR 同时设置时以 NO_COLOR 为准
@@ -168,7 +168,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       dim,
       print(...lines: string[]): void {
         stream.write(`${lines.join('\n')}\n`);
-        blank = false;
+        spaced = false;
       },
       rule: (): string => dim(symbols.rule.repeat(WIDTH)),
       // 分区标题：标题嵌在线里，线一直画到第 80 列
@@ -432,15 +432,15 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       print(text);
     },
 
-    /** 启动时的 OXY 大标志：产品名、版本号和一句话说明压在右下角，下面一条通栏横线。 */
+    /** 启动时的标题区：OXY 大标志，下方隔一行是产品名和版本号，都按 80 列居中（不看终端的实际宽度），四周留白。 */
     logo(version: string): void {
-      const corner = [`${paint('bold', 'oxy-tools')} ${dim(version)}`, dim(t.tagline)];
-      const art = symbols.logo.map((row, index) => {
-        const right = corner[index - (symbols.logo.length - corner.length)];
-        const left = unicode ? row : paint('bold', row);
-        return right ? `${left}${' '.repeat(WIDTH - displayWidth(row) - displayWidth(right))}${right}` : left;
-      });
-      print('', ...art, rule());
+      // 整块按最宽的一行居中，各行补同样多的空格，字形才不走样
+      const centered = (text: string, width = displayWidth(text)): string => `${' '.repeat(Math.floor((WIDTH - width) / 2))}${text}`;
+      const artWidth = Math.max(...symbols.logo.map(displayWidth));
+      const art = symbols.logo.map((row) => centered(unicode ? row : paint('bold', row), artWidth));
+      const name = centered(`${paint('bold', 'oxy-tools')} ${dim(version)}`);
+      print('', ...art, '', name, '');
+      spaced = true;
     },
 
     /** 读取目录、查询文件列表时的进行中提示，行首的符号转动；done() 把这一行擦掉。 */
@@ -497,7 +497,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
 
     help(version: string): void {
       print(
-        `${paint('bold', 'oxy-tools')} ${dim(version)}  ${dim(t.tagline)}`,
+        `${paint('bold', 'oxy-tools')} ${dim(version)}`,
         '',
         section(t.help.usage),
         `  ${t.help.usageLine}`,

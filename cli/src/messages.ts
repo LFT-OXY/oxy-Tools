@@ -32,7 +32,6 @@ export interface FailureText {
 }
 
 export interface Messages {
-  tagline: string;
   loading: { catalog: string; skillFiles: string };
   agentKey: string;
   notDetected: string;
@@ -172,7 +171,6 @@ export interface Messages {
 }
 
 const zh: Messages = {
-  tagline: '策展式 AI 工具链安装器',
   loading: { catalog: '正在读取目录', skillFiles: '正在查询 skill 的文件列表' },
   agentKey: 'AI Agent',
   notDetected: '未检测到',
@@ -421,7 +419,6 @@ const zh: Messages = {
 };
 
 const en: Messages = {
-  tagline: 'Curated AI toolchain installer',
   loading: { catalog: 'Loading catalog', skillFiles: 'Looking up skill files' },
   agentKey: 'AI Agent',
   notDetected: 'not detected',

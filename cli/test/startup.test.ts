@@ -1,25 +1,111 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { STACK_FRAME, STYLE_CODE, choose, interrupt, pick, run } from './harness.ts';
+import { STACK_FRAME, STYLE_CODE, catalogDir, choose, interrupt, pick, run } from './harness.ts';
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
   version: string;
 };
-const LOGO_TOP = ' ██████  ██   ██ ██    ██';
+const LOGO = [
+  ' ██████  ██   ██ ██    ██',
+  '██    ██  ██ ██   ██  ██',
+  '██    ██   ███     ████',
+  '██    ██  ██ ██     ██',
+  ' ██████  ██   ██    ██',
+];
+const ASCII_LOGO = [
+  '  ___  __  ____   __',
+  ' / _ \\ \\ \\/ /\\ \\ / /',
+  '| | | | \\  /  \\ V /',
+  '| |_| | /  \\   | |',
+  ' \\___/ /_/\\_\\  |_|',
+];
+const WIDTH = 80;
+
+// 一块文字在 80 列里左右各留多少空白：左边看缩进最少的一行，右边看最长的一行
+const margins = (rows: string[]): { left: number; right: number } => ({
+  left: Math.min(...rows.map((row) => row.length - row.trimStart().length)),
+  right: WIDTH - Math.max(...rows.map((row) => row.length)),
+});
+const centered = (rows: string[]): boolean => Math.abs(margins(rows).left - margins(rows).right) <= 1;
+
+// 画面上的标题区：标志上方的几行、标志的几行、它下面的几行。art 是标志的字形，靠它的第一行认出标志在哪
+function titleArea(screen: string, art: string[]): { above: string[]; logo: string[]; below: string[] } {
+  const lines = screen.split('\n');
+  const top = lines.findIndex((line) => line.trimStart() === art[0]?.trimStart());
+  return { above: lines.slice(0, top), logo: lines.slice(top, top + art.length), below: lines.slice(top + art.length) };
+}
+// 各行去掉同样多的缩进：字形没有走样的话，剩下的就是字形本身
+const unindented = (rows: string[]): string[] => rows.map((row) => row.slice(margins(rows).left));
 
 describe('启动', () => {
-  it('最先打出 OXY 大标志，带产品名、版本号和一句话说明', async () => {
+  it('最先打出 OXY 大标志，上方空一行，在 80 列里居中，字形不变，旁边没有别的字', async () => {
     const result = await run({ answers: [choose('退出')] });
 
-    expect(result.output.trimStart().startsWith(LOGO_TOP.trimStart())).toBe(true);
-    expect(result.output).toContain(`oxy-tools ${version}`);
-    expect(result.output).toContain('策展式 AI 工具链安装器');
+    const { above, logo } = titleArea(result.screen, LOGO);
+    expect(above).toEqual(['']);
+    expect(unindented(logo)).toEqual(LOGO);
+    expect(centered(logo)).toBe(true);
+  });
+
+  it('窗口比 80 列宽时，大标志和产品名仍按 80 列居中', async () => {
+    const result = await run({ columns: 160, answers: [choose('退出')] });
+
+    const { logo, below } = titleArea(result.screen, LOGO);
+    expect(unindented(logo)).toEqual(LOGO);
+    expect(centered(logo)).toBe(true);
+    expect(centered([below[1] ?? ''])).toBe(true);
+  });
+
+  it('标志下方空一行是居中的产品名和版本号，再空一行才是别的内容', async () => {
+    const result = await run({ answers: [choose('退出')] });
+
+    const [gap, name = '', gapBelow, next] = titleArea(result.screen, LOGO).below;
+    expect([gap, name.trim(), gapBelow]).toEqual(['', `oxy-tools ${version}`, '']);
+    expect(centered([name])).toBe(true);
+    expect(next).toMatch(/^\s+AI Agent\s/);
+  });
+
+  it('产品名是粗体，版本号暗淡', async () => {
+    const result = await run({ answers: [choose('退出')] });
+
+    expect(result.raw).toContain(`\x1b[1moxy-tools\x1b[22m \x1b[2m${version}\x1b[22m`);
+  });
+
+  it('标志下面不画通栏横线，本机信息下方的那一条还在', async () => {
+    const result = await run({ onPath: ['claude', 'codex'], answers: [choose('退出')] });
+
+    const lines = result.screen.split('\n');
+    const rules = lines.flatMap((line, index) => (line === '─'.repeat(WIDTH) ? [index] : []));
+    expect(rules).toHaveLength(1);
+    expect(lines[(rules[0] ?? 0) - 1]).toMatch(/^\s+目录\s/);
+  });
+
+  it.each([
+    ['中文界面', ['--lang', 'zh'], '退出'],
+    ['英文界面', ['--lang', 'en'], 'Exit'],
+  ])('%s：终端上没有那句标语', async (_label, argv, exit) => {
+    const started = await run({ argv, answers: [choose(exit)] });
+    const help = await run({ argv: [...argv, '--help'] });
+
+    for (const { output } of [started, help]) {
+      expect(output).not.toContain('策展式 AI 工具链安装器');
+      expect(output).not.toContain('Curated AI toolchain installer');
+    }
+  });
+
+  it('启动后立刻出错：标题区与出错说明之间只隔一行', async () => {
+    const result = await run({ catalog: catalogDir({ index: null }) });
+
+    const lines = result.screen.split('\n');
+    const name = lines.findIndex((line) => line.trim() === `oxy-tools ${version}`);
+    expect(lines[name + 1]).toBe('');
+    expect(lines[name + 2]).toMatch(/^── 出错：/);
   });
 
   it('大标志一次运行只出现一次，回到主菜单时不重复', async () => {
     const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
 
-    expect(result.output.split(LOGO_TOP)).toHaveLength(2);
+    expect(result.output.split(LOGO[0] ?? '')).toHaveLength(2);
   });
 
   it('读取目录时有进行中提示，读完后显示目录里有什么，再进入主菜单', async () => {
@@ -42,7 +128,6 @@ describe('语言', () => {
     });
 
     expect(result.output).toContain('Pick a group');
-    expect(result.output).toContain('Curated AI toolchain installer');
     expect(result.output).toMatch(/ beta-pack\s+none\s+The second sample skill$/m);
     expect(result.output).not.toContain('选择分组');
   });
@@ -79,6 +164,19 @@ describe('启动参数', () => {
     expect(result.output).toContain('GITHUB_TOKEN');
     expect(result.output).not.toContain('选择分组');
     expect(result.exitCode).toBe(0);
+  });
+
+  it('--help 的第一行只有产品名和版本号', async () => {
+    const result = await run({ argv: ['--help'] });
+
+    expect(result.output.split('\n')[0]).toBe(`oxy-tools ${version}`);
+    expect(result.raw.split('\n')[0]).toBe(`\x1b[1moxy-tools\x1b[22m \x1b[2m${version}\x1b[22m`);
+  });
+
+  it.each([[['--help']], [['--version']], [['--frobnicate']]])('%s 不打印大标志', async (argv) => {
+    const result = await run({ argv });
+
+    expect(result.output).not.toContain('█');
   });
 
   it('--help 的输出不是终端时不带样式码，是终端时带', async () => {
@@ -219,6 +317,19 @@ describe('没有 Unicode 的终端', () => {
     expect(result.output).toMatch(/^\s+\+\s+beta-pack\s+Claude Code\s+已安装 2\.3$/m);
     expect(result.output).toMatch(/^\s+合计\s+1 成功 - 0 失败 - 0 跳过$/m);
     expect(result.output).not.toMatch(/[█─▸✓✗■□–·…⠋⠙⠹]/);
+  });
+
+  it('ASCII 字符画同样居中，下方空一行是产品名和版本号，下面不画横线', async () => {
+    const result = await run({ platform: 'win32', env: { TERM: '' }, onPath: ['claude', 'codex'], answers: [choose('退出')] });
+
+    const { above, logo, below } = titleArea(result.screen, ASCII_LOGO);
+    const [gap, name = '', gapBelow] = below;
+    expect(above).toEqual(['']);
+    expect(unindented(logo)).toEqual(ASCII_LOGO);
+    expect(centered(logo)).toBe(true);
+    expect([gap, name.trim(), gapBelow]).toEqual(['', `oxy-tools ${version}`, '']);
+    expect(centered([name])).toBe(true);
+    expect(result.screen.split('\n').filter((line) => line === '-'.repeat(WIDTH))).toHaveLength(1);
   });
 });
 

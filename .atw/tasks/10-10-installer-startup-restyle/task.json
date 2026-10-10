@@ -1,0 +1,28 @@
+{
+  "id": "installer-startup-restyle",
+  "name": "installer-startup-restyle",
+  "title": "安装器启动画面改版：语言选择、渐变大标志、去标语、放宽间距",
+  "description": "启动后先问语言；大标志改成渐变像素风；去掉终端上的标语；各画面块与块之间放宽间距",
+  "status": "implement",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "autuhae",
+  "assignee": "autuhae",
+  "createdAt": "2026-10-10",
+  "completedAt": null,
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "implementation_base_sha": "12c259fe63bbefe4de7d70edd77b064f00c5387b"
+  }
+}

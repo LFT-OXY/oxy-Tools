@@ -1,0 +1,7 @@
+{"file": ".atw/spec/cli/index.md", "reason": "CLI 层总览：自成一体的三条规矩、入口与两个测试接缝、开发前清单与质量检查命令"}
+{"file": ".atw/spec/cli/ui-design.md", "reason": "界面设计规范：本任务先改它再改实现；没改到的部分（状态的写法、符号、各画面的版式）仍是评审的依据"}
+{"file": ".atw/spec/cli/terminal-output.md", "reason": "呈现层的职责、上不上色的判断、交互库各提示的主题怎么盖全、改写已打出的行；标志的渐变是其中「上色只用 styleText」的例外"}
+{"file": ".atw/spec/cli/installer-entry.md", "reason": "入口的签名与契约、启动参数与环境变量、测试架子的用法与每条新行为要有的测试"}
+{"file": ".atw/tasks/10-10-installer-startup-restyle/ui-direction.md", "reason": "维护者选定的画面：标题区、语言提问、间距五条规则，以及没选的候选和原因；视觉评审对照它"}
+{"file": "GLOSSARY.md", "reason": "领域术语：安装器、目录、组件、宿主（界面显示为 AI Agent）"}
+{"file": "docs/adr/0001-installer-lives-in-skill-repo.md", "reason": "安装器自成一体的决定：不引用 cli/ 以外的文件，仓库根不放包描述文件"}

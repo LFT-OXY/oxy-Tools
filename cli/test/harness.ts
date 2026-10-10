@@ -206,6 +206,8 @@ export interface RunOptions {
   tty?: boolean | Streams;
   platform?: NodeJS.Platform;
   systemLocale?: string;
+  /** 终端的列数；缺省不给，安装器按 80 列算 */
+  columns?: number;
 }
 
 export interface RunResult {
@@ -307,7 +309,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...options.env },
       platform: options.platform ?? 'linux',
       systemLocale: options.systemLocale ?? 'en-US',
-      stdout: { isTTY: tty.stdout ?? true, rows: ROWS, write: record('stdout') },
+      stdout: { isTTY: tty.stdout ?? true, rows: ROWS, columns: options.columns, write: record('stdout') },
       stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
       stdinIsTTY: tty.stdin ?? true,
       catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,

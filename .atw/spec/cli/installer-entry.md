@@ -171,7 +171,15 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 ### 6. Tests Required
 
-测试只经 `runInstaller` 断言——给定目录、主目录、应答，看终端上输出了什么、退出状态是多少、记录到哪些命令和链接。不为内部模块单独写测试，不断言颜色和版式。唯一的另一个接缝是目录校验命令，它的测试把命令当子进程跑，见 [目录校验与 CI](./catalog-validation.md)。
+测试只经 `runInstaller` 断言——给定目录、主目录、应答，看终端上输出了什么、退出状态是多少、记录到哪些命令和链接。不为内部模块单独写测试。唯一的另一个接缝是目录校验命令，它的测试把命令当子进程跑，见 [目录校验与 CI](./catalog-validation.md)。
+
+**观感不靠测试把关**：栏宽、缩进、各画面的版式交给界面预览页和视觉评审，测试不卡死它们（见下面 Wrong 的例子）。例外是规格点名要卡住的几样，它们是对外的行为：
+
+| 断言什么 | 在哪 | 怎么断言 |
+|----------|------|----------|
+| 上不上色 | `startup.test.ts` 的「颜色」一组、`prompts.test.ts` | 原始输出（`result.raw`）里有没有样式码；`NO_COLOR` 下画面文字不变 |
+| 按键提示整行在 79 列以内 | `prompts.test.ts` | 用真实的交互库断言整行 |
+| 标题区的摆法：居中、字形、上下各空一行、标志下面没有横线、产品名粗体与版本号暗淡 | `startup.test.ts` 的「启动」一组 | 它是一块固定的字符画，摆法就是它的全部内容。居中量的是左右空白差不超过一列，**不写死补了几格**；字形是各行去掉同样多的缩进后与字形逐行相等——只量整块的边距的话，各行各自居中、字形走样了也照样通过 |
 
 测试架子在 `cli/test/harness.ts`：
 
@@ -191,7 +199,7 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 - 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
 - 链接打开器只记录：要打开的网址按先后进 `result.opened`。`browser: false` 表示浏览器打不开——网址照样记下，然后打开器拒绝；用来证明“打不开时不报错、链接文本仍在”。
 - 宿主的配置文件用 `home` 放：`home: { '.claude.json': JSON.stringify({ mcpServers: { x: {} } }) }`、`home: { '.codex/config.toml': '[mcp_servers.x]\n' }`。
-- 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）。
+- 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）；`columns: 160`（终端的列数，缺省不给，安装器按 80 列算——用来证明某样东西不随窗口的宽度变，如标题区按 80 列居中）。
 - 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。
 - `result.screen` 是最后留在画面上的文字（被擦掉重写的加载提示只算最后一次）；比较两次运行的文字时用它，不用 `output`。它只懂 `\r\x1b[2K`。要断言**挪过光标之后**屏幕上到底剩下什么（提问被擦掉了没有、「结果」的标题改写到了哪一行），用 `cli/test/terminal.ts` 的 `screenLines(result.raw)`：它把原始输出放进无头终端（`@xterm/headless`，80 列），读出每一行。
 - 断言“某个值不出现在任何输出里”时查 `result.raw + result.stdout + result.stderr`，不只查 `output`。
