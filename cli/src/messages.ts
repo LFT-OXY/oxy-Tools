@@ -60,6 +60,11 @@ export interface Messages {
   needsHost: string;
   /** 在不可选的行上按了确认 */
   unavailable: string;
+  /** 安装范围的提问；两项各有名字和一句说明，「项目」的说明后面接当前目录 */
+  pickScope: string;
+  scopes: { global: { name: string; about: string }; project: { name: string; about: string } };
+  /** 选了项目范围时 MCP 不可选的原因 */
+  mcpGlobalOnly: string;
   nameColumn: string;
   /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号。第三方 Skill 的未装、已装也用这两个词 */
   skillStatus: { none: string; installed: string; unmanaged: string };
@@ -227,6 +232,9 @@ const zh: Messages = {
   back: '返回',
   needsHost: '需要 AI Agent',
   unavailable: '这一项现在选不了',
+  pickScope: '装到哪里',
+  scopes: { global: { name: '全局', about: '对这台机器上的所有项目生效' }, project: { name: '项目', about: '只对当前目录生效：' } },
+  mcpGlobalOnly: '暂时只能装到全局',
   nameColumn: '名称',
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
@@ -486,6 +494,12 @@ const en: Messages = {
   back: 'Back',
   needsHost: 'needs an AI Agent',
   unavailable: 'This item cannot be selected right now',
+  pickScope: 'Install where',
+  scopes: {
+    global: { name: 'Global', about: 'applies to every project on this machine' },
+    project: { name: 'Project', about: 'applies to the current directory only: ' },
+  },
+  mcpGlobalOnly: 'global only for now',
   nameColumn: 'Name',
   skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
   mcpStatus: { none: 'none', configured: 'configured', unknown: 'unknown', unsupported: 'unsupported' },

@@ -23,6 +23,8 @@ export type CommandOptions =
       shell?: never;
       /** 不经 shell 的方式下另外带上的环境变量，盖在命令继承来的环境之上 */
       env: Readonly<Record<string, string>>;
+      /** 在哪个目录下运行；不给就是进程自己的当前目录 */
+      cwd?: string;
     };
 /**
  * 外部命令执行器：缺省不经过 shell，不把命令的输出打到终端上，它也读不到用户的输入；options 见 CommandOptions。
@@ -45,6 +47,8 @@ export interface InstallerOptions {
   stdinIsTTY: boolean;
   catalogSource: CatalogSource;
   homeDir: string;
+  /** 项目目录：运行安装器时所在的目录。安装范围选「项目」时装到它下面 */
+  projectDir: string;
   /** 放临时文件的目录 */
   tempDir: string;
   /** 用户在提问之外按 Ctrl+C 时触发。触发后进程随即退出，所以监听它的收尾只能是同步的 */
@@ -96,7 +100,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const localCatalog = env['OXY_TOOLS_CATALOG'];
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
-    const hosts = detectHosts(env, options.homeDir);
+    const hosts = detectHosts(env, options.homeDir, options.projectDir);
     ui.catalogSummary({
       hosts,
       // 本仓库的和第三方的合在一起数
@@ -113,6 +117,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       env,
       platform: options.platform,
       homeDir: options.homeDir,
+      projectDir: options.projectDir,
       tempDir: options.tempDir,
       githubToken: env['GITHUB_TOKEN'] || undefined,
       interrupt: options.interrupt,

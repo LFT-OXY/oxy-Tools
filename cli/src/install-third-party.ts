@@ -1,5 +1,5 @@
 // 安装第三方 Skill：调用通用的 skill 安装程序（Vercel 的 skills CLI），结束后看目标位置下有没有装出来。
-import type { Command, Host } from './hosts.ts';
+import type { Command, Host, Scope } from './hosts.ts';
 import { errorCode } from './install-mcp.ts';
 import type { CommandRunner } from './installer.ts';
 
@@ -20,16 +20,21 @@ export interface ThirdPartyResult {
 }
 
 /**
- * 把 source（GitHub 上的「所有者/仓库」）里的 skill 这一个装进 host 的全局 skill 目录的命令。
+ * 把 source（GitHub 上的「所有者/仓库」）里的 skill 这一个装进 host 的命令：全局时带全局选项，装到它的全局 skill 目录；
+ * 项目时不带，装到运行这条命令时所在目录下它的 skill 目录。
  * 一条命令一个 skill、一个宿主：一次只给一个宿主时落下的是真实目录，各项的结果也互不相干。
  * source 要紧跟 add：--skill 和 --agent 会把后面不以 - 开头的词都收走
  */
-export function skillsCliCommand(source: string, skill: string, host: Host): SkillsCliCommand {
-  return { command: 'npx', args: ['-y', SKILLS_CLI, 'add', source, '--skill', skill, '--agent', host.skillsCli.agent, '--yes', '--global'] };
+export function skillsCliCommand(source: string, skill: string, host: Host, scope: Scope): SkillsCliCommand {
+  return {
+    command: 'npx',
+    args: ['-y', SKILLS_CLI, 'add', source, '--skill', skill, '--agent', host.skillsCli.agent, '--yes', ...(scope === 'global' ? ['--global'] : [])],
+  };
 }
 
 /**
  * 执行 command（就是事先展示给用户确认的那一条）：不经 shell，它的输出不上屏，也读不到用户的输入；结束后用 check 复核。
+ * cwd 是在哪个目录下运行：装到项目时是项目目录，装到全局时不给。
  * 不抛错：命令非零退出、没能起来，都只是结论里的一句话。
  */
 export async function installThirdPartySkill(
@@ -37,10 +42,12 @@ export async function installThirdPartySkill(
   host: Host,
   runCommand: CommandRunner,
   check: () => boolean,
+  cwd?: string,
 ): Promise<ThirdPartyResult> {
   let run: ThirdPartyResult['run'];
   try {
-    run = { kind: 'exit', code: (await runCommand(command.command, command.args, { env: { ...NO_TELEMETRY, ...host.skillsCli.env } })).exitCode };
+    const options = { env: { ...NO_TELEMETRY, ...host.skillsCli.env }, ...(cwd === undefined ? {} : { cwd }) };
+    run = { kind: 'exit', code: (await runCommand(command.command, command.args, options)).exitCode };
   } catch (error) {
     run = { kind: 'not-started', detail: errorCode(error) };
   }

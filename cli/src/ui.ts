@@ -2,7 +2,7 @@
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
 import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool, ToolOs } from './catalog.ts';
-import type { Command, Host } from './hosts.ts';
+import type { Command, Host, Scope } from './hosts.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
@@ -634,9 +634,11 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 列表里根本没有它们。所选的宿主一个都不支持的第三方 Skill 和 MCP、装不了的工具同样不可选；原因都写在状态的位置。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
+     * scope 是所选的安装范围：选了项目时 MCP 还装不了，它们的行不可选。
      */
     mixedPicker({
       hosts,
+      scope,
       skills,
       thirdParty,
       mcps,
@@ -646,6 +648,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       marksRecommended,
     }: {
       hosts: readonly Host[];
+      scope: Scope;
       skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
       thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[] }[];
       mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
@@ -702,7 +705,13 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             about: mcp.description[lang],
             recommended: mcp.recommended,
             cells: statuses.map(mcpStatusCell),
-            ...(hostless ? { unavailable: t.needsHost } : statuses.every((status) => status === 'unsupported') ? { unavailable: t.unsupportedByHosts } : {}),
+            ...(hostless
+              ? { unavailable: t.needsHost }
+              : scope === 'project'
+                ? { unavailable: t.mcpGlobalOnly }
+                : statuses.every((status) => status === 'unsupported')
+                  ? { unavailable: t.unsupportedByHosts }
+                  : {}),
           })),
         },
         {
@@ -894,6 +903,24 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       return {
         message: t.pickHosts,
         ...list(hosts.map((host) => ({ value: host, short: host.name, name: host.name, checked: checked.includes(host) }))),
+      };
+    },
+
+    /**
+     * 装到全局还是项目：两项各带一句说明，光标起始在全局。directory 是当前目录（给用户看的写法），暗淡地接在「项目」
+     * 的说明后面，只是告知；一行放不下时从前面截，留住末尾的几级。
+     */
+    scopePicker(directory: string): SelectQuestion<Scope> {
+      const nameWidth = Math.max(displayWidth(t.scopes.global.name), displayWidth(t.scopes.project.name)) + GUTTER;
+      // 单选的每一行前面是光标和一个空格
+      const room = USABLE - 2 - nameWidth - displayWidth(t.scopes.project.about);
+      let shown = directory;
+      for (const rest = [...directory]; displayWidth(shown) > room && rest.length > 0; shown = `${symbols.ellipsis}${rest.join('')}`) rest.shift();
+      const row = (value: Scope, about: string) => ({ value, short: t.scopes[value].name, name: `${pad(t.scopes[value].name, nameWidth)}${about}` });
+      return {
+        message: t.pickScope,
+        default: 'global',
+        ...list([row('global', t.scopes.global.about), row('project', `${t.scopes.project.about}${dim(shown)}`)]),
       };
     },
 

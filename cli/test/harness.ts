@@ -15,7 +15,7 @@ import {
   type SelectQuestion,
 } from '../src/prompter.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
-import { LANGUAGE_QUESTION, keyboardPrompter } from './terminal.ts';
+import { LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
 
 export {
   EMPTY_CATALOG,
@@ -185,6 +185,8 @@ export interface RunOptions {
    * 传 true 则它和别的提问一样，用掉 answers 的第一个应答，或由 keys 的脚本来按
    */
   answersLanguage?: boolean;
+  /** 安装范围的提问由谁应答：缺省同样由架子替用户按回车（全局）；传 true 则由 answers 或 keys 应答 */
+  answersScope?: boolean;
   /**
    * 改用真实的交互库渲染提问，并按脚本发按键：等画面上新出现 waitFor 这段文字，再按下 key。
    * 用来核对提问部分实际打到终端上的东西。
@@ -199,9 +201,16 @@ export interface RunOptions {
    * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
    * 它自己抛出则表示执行器当场抛出、连承诺都没返回
    */
-  commandResult?: (command: string, args: readonly string[], context: { home: string }) => Partial<CommandResult> | Error | undefined;
+  commandResult?: (
+    command: string,
+    args: readonly string[],
+    /** cwd 是这条命令被指定在哪个目录下运行，没指定时没有 */
+    context: { home: string; cwd?: string },
+  ) => Partial<CommandResult> | Error | undefined;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
+  /** 项目目录（运行安装器时所在的目录）的初始状态：相对路径 → 文件内容 */
+  project?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径，都相对主目录 */
   links?: Record<string, string>;
   /** 用户在提问之外按 Ctrl+C 的信号 */
@@ -232,12 +241,14 @@ export interface RunResult {
   screen: string;
   /**
    * 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的；
-   * 不经 shell 而另带了环境变量的（第三方 Skill 的安装命令）多一个 env
+   * 不经 shell 而另带了环境变量的（第三方 Skill 的安装命令）多一个 env，指定了在哪个目录下运行的再多一个 cwd
    */
-  commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>> }[];
+  commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>>; cwd?: string }[];
   /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
   opened: string[];
   home: string;
+  /** 交给安装器当项目目录的那个临时目录 */
+  project: string;
   /** 交给安装器放临时文件的目录 */
   tmp: string;
 }
@@ -257,6 +268,8 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     // junction 只在 Windows 上起作用：那里建目录的符号链接要特权，建这种不用
     symlinkSync(join(home, target), join(home, link), 'junction');
   }
+  const project = tempDir('project');
+  writeTree(project, options.project ?? {});
   const tmp = options.tmp ?? tempDir('tmp');
   const bin = tempDir('bin');
   for (const command of options.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
@@ -289,6 +302,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
     record('stdout')(`${lines.join('\n')}\n`);
     if (question.message === LANGUAGE_QUESTION && !options.answersLanguage) return accept()(question, prompt);
+    if (SCOPE_QUESTIONS.includes(question.message) && !options.answersScope) return accept()(question, prompt);
     const answer = answers.shift();
     if (!answer) {
       unanswered = question.message;
@@ -304,28 +318,28 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   };
 
   const rows = options.rows ?? ROWS;
-  const { keyboard, prompter: real } = keyboardPrompter(record('stdout'), rows, options.answersLanguage);
+  const { keyboard, prompter: real, accepts } = keyboardPrompter(record('stdout'), rows, options.answersLanguage, options.answersScope);
   // 画面上到这里为止的字，脚本已经认过了
   let seen = 0;
-  // 假键盘正替用户应答语言提问。它的按键提示和主菜单的是同一句：等它收成一行，脚本才开始认画面上的字
-  let answeringLanguage = false;
+  // 假键盘正替用户应答语言提问或安装范围的提问。它们的按键提示和主菜单的是同一句：等它收成一行，脚本才开始认画面上的字
+  let answeringForUser = false;
   const interactive: Prompter = {
     ...real,
     select: async (question) => {
-      if (question.message !== LANGUAGE_QUESTION || options.answersLanguage) return real.select(question);
-      answeringLanguage = true;
+      if (!accepts(question.message)) return real.select(question);
+      answeringForUser = true;
       try {
         return await real.select(question);
       } finally {
         seen = plain(textOf()).length;
-        answeringLanguage = false;
+        answeringForUser = false;
       }
     },
   };
   const typing = async (): Promise<void> => {
     for (const [waitFor, key] of options.keys ?? []) {
       const deadline = Date.now() + 2000;
-      while (answeringLanguage || !plain(textOf()).slice(seen).includes(waitFor)) {
+      while (answeringForUser || !plain(textOf()).slice(seen).includes(waitFor)) {
         if (Date.now() > deadline) throw new Error(`画面上一直没有出现「${waitFor}」：\n${plain(textOf()).slice(seen)}`);
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
@@ -345,11 +359,18 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       stdinIsTTY: tty.stdin ?? true,
       catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
       homeDir: home,
+      projectDir: project,
       tempDir: tmp,
       interrupt: options.interrupt ?? new AbortController().signal,
       runCommand: (command, args, runOptions) => {
-        commands.push({ command, args, ...(runOptions?.shell ? { shell: true as const } : runOptions ? { env: runOptions.env } : {}) });
-        const preset = options.commandResult?.(command, args, { home });
+        const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
+        commands.push({
+          command,
+          args,
+          ...(runOptions?.shell ? { shell: true as const } : runOptions ? { env: runOptions.env } : {}),
+          ...(cwd === undefined ? {} : { cwd }),
+        });
+        const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
         return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       },
       prompter: options.keys ? interactive : scripted,
@@ -375,6 +396,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     commands,
     opened,
     home,
+    project,
     tmp,
   };
 }

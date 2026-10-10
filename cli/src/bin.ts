@@ -34,6 +34,7 @@ process.exitCode = await runInstaller({
   stdinIsTTY: process.stdin.isTTY === true,
   catalogSource: githubCatalogSource(),
   homeDir: homedir(),
+  projectDir: process.cwd(),
   tempDir: tmpdir(),
   interrupt: interrupt.signal,
   runCommand: systemCommandRunner(),

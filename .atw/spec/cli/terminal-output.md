@@ -207,6 +207,20 @@ export interface ConfirmQuestion {
 
 ---
 
+## 选择安装范围
+
+`ui.scopePicker(directory)` 给出一个单选（`SelectQuestion<Scope>`）：两行依次是全局、项目，没有表头，`default` 是 `'global'`（光标起始在全局）。每行是名字补到栏宽（两个名字里长的那个加栏间隔）再接一句说明；回答后收成一行，写的是名字（`short`）。
+
+| 项 | 约定 |
+|----|------|
+| 当前目录 | `directory` 是流程交进来的、给用户看的写法：项目目录在主目录里时把主目录写成 `~`（`~/work/my-app`），不在主目录里时照原样写全（`flow.ts` 的 `homeRelative`）。呈现层把它暗淡地接在「项目」那句说明的后面，只是告知，不为它另设确认 |
+| 放不下时 | 这一行（光标的两格、名字一栏、说明、目录）超过 79 列就**从前面截**目录，以省略号开头、留住末尾的几级——认得出是哪个目录靠的是最后几级，`truncate` 截的是末尾，这里不用它。目录以外的部分不截 |
+| 不显示颜色、没有 Unicode | 只按现有的规则退：目录不再暗淡；省略号是 `symbols.ellipsis`（`...`） |
+
+汇总和覆盖前另问里的位置不归这里管：流程按安装范围把它写好再交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。呈现层不知道安装范围，只有 `mixedPicker` 收一个 `scope`：选了项目时 MCP 的行不可选，原因是 `mcpGlobalOnly`（「暂时只能装到全局」），写在状态的位置；一个宿主都没检测到的原因排在它前面（工单 11 让 MCP 能装到项目时去掉）。
+
+---
+
 ## 汇总：按类型分的小表与备注
 
 `ui.installSummary({ skills, thirdParty, mcps, tools })` 打一个分区「将安装 N 项」，里面每种类型一张小表（这一轮没有的类型没有它的小表），小表之间空一行，分区以空行收尾。小表由 `ui.ts` 的 `summaryTables(tables)` 一起排，**几张表合起来算栏宽**：
@@ -500,4 +514,5 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（这四条样例都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面，`toMcps` 下移一行进去；`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
-- 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问的做法。
+- **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
+- 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问和安装范围提问的做法：假键盘等那一问最后一个选项的名字画出来才按回车。

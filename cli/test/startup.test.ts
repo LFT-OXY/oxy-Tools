@@ -406,7 +406,9 @@ describe('颜色', () => {
     const mono = await run({ env: { NO_COLOR: '1' }, answers: answers() });
 
     expect(mono.raw).not.toMatch(STYLE_CODE);
-    expect(mono.screen).toBe(styled.screen);
+    // 安装范围的提问里写着项目目录，两次运行各是一个临时目录：名字末尾随机的那一段不比
+    const steady = (screen: string): string => screen.replace(/oxy-tools-project-\w+/, 'oxy-tools-project');
+    expect(steady(mono.screen)).toBe(steady(styled.screen));
   });
 
   it('NO_COLOR 只要存在就算数，哪怕是空的', async () => {

@@ -1,5 +1,5 @@
 // 交互流程：主菜单、「推荐」与各个用途的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import {
   CatalogError,
   type App,
@@ -13,7 +13,7 @@ import {
   type ThirdPartySkill,
   type Tool,
 } from './catalog.ts';
-import type { Host } from './hosts.ts';
+import type { Host, Scope } from './hosts.ts';
 import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
 import { installThirdPartySkill, skillsCliCommand, type SkillsCliCommand } from './install-third-party.ts';
@@ -35,6 +35,8 @@ export interface Session {
   env: Environment;
   platform: NodeJS.Platform;
   homeDir: string;
+  /** 项目目录：运行安装器时所在的目录 */
+  projectDir: string;
   tempDir: string;
   githubToken: string | undefined;
   /** 用户在提问之外按 Ctrl+C 的信号 */
@@ -117,7 +119,9 @@ function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
 async function browse(session: Session, detected: readonly Host[], listing: Listing): Promise<void> {
   // 列表里没有 skill、第三方 Skill 和 MCP 就没有要装进宿主的东西，不问装进哪些：工具不装进宿主
   await withHosts(session, listing.skills.length + listing.thirdParty.length + listing.mcps.length > 0 ? detected : [], async (hosts) => {
-    const plan = await planEntries(session, detected, hosts, listing);
+    // 每次进入列表都问，不记上一次的选择；没有要装进的宿主就没有范围可言（工具没有安装范围）
+    const scope = hosts.length > 0 ? await session.prompter.select(session.ui.scopePicker(homeRelative(session, session.projectDir))) : 'global';
+    const plan = await planEntries(session, detected, hosts, scope, listing);
     if (plan === 'back') return 'back';
     if (plan === 'cancel') return 'done';
     await runJobs(session, plan);
@@ -129,6 +133,8 @@ async function browse(session: Session, detected: readonly Host[], listing: List
 interface Job {
   skill: Skill;
   host: Host;
+  /** 装进哪个 skill 目录：按所选的安装范围定 */
+  skillsDir: string;
   target: InstallTarget;
   /** 目标不是本工具装的，而用户没同意覆盖：这一项不装 */
   declined?: boolean;
@@ -138,9 +144,13 @@ interface ThirdPartyJob {
   /** 要装的那一个 skill 的名字：条目里勾选的每个 skill 在每个支持它的所选宿主下各是一项 */
   skill: string;
   host: Host;
+  /** 装完之后去哪个 skill 目录下复核：按所选的安装范围定 */
+  skillsDir: string;
   target: ThirdPartyTarget;
   /** 汇总里展示的就是它，之后执行的也是它 */
   command: SkillsCliCommand;
+  /** 在哪个目录下执行：装到项目时是项目目录，装到全局时没有 */
+  cwd?: string;
   /** 目标位置已有同名目录，而用户没同意覆盖：这一项不装 */
   declined?: boolean;
 }
@@ -191,17 +201,28 @@ async function withHosts(
 }
 
 // 勾选条目、从含多个 skill 的第三方 Skill 里挑、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
-// hosts 是这一轮要装进的宿主，是空的时 skill、第三方 Skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些
-async function planEntries(session: Session, detected: readonly Host[], hosts: readonly Host[], listing: Listing): Promise<Plan | 'back' | 'cancel'> {
+// hosts 是这一轮要装进的宿主，是空的时 skill、第三方 Skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些。
+// scope 是这一轮的安装范围：skill 和第三方 Skill 的目录、状态、位置都按它来；工具不受它影响
+async function planEntries(
+  session: Session,
+  detected: readonly Host[],
+  hosts: readonly Host[],
+  scope: Scope,
+  listing: Listing,
+): Promise<Plan | 'back' | 'cancel'> {
   const { ui, prompter } = session;
+  const skillsDirOf = (host: Host): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
+  // 给用户看的位置：全局的以 ~ 开头，项目的写成相对项目目录的路径
+  const located = (path: string): string => (scope === 'project' ? relative(session.projectDir, path) : homeRelative(session, path));
   let picked: (Skill | ThirdPartySkill | Mcp | Tool | App)[] = [];
   // 含多个 skill 的第三方 Skill 上次勾了其中哪几个：返回修改后再问时还在
   const chosen = new Map<ThirdPartySkill, SourcedSkill[]>();
   for (;;) {
     // 状态每次进列表都现探测
-    const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
-    const thirdParty = listing.thirdParty.map((entry) => ({ entry, statuses: hosts.map((host) => thirdPartyStatus(entry, host)) }));
-    const statuses = mcpStatuses(listing.mcps, hosts);
+    const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, skillsDirOf(host))) }));
+    const thirdParty = listing.thirdParty.map((entry) => ({ entry, statuses: hosts.map((host) => thirdPartyStatus(entry, host, skillsDirOf(host))) }));
+    // 项目范围下 MCP 还装不了，它们的行不可选：不去读用户级配置
+    const statuses = scope === 'project' ? [] : mcpStatuses(listing.mcps, hosts);
     const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
     if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
     const mcps = listing.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
@@ -219,7 +240,7 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
       return { tool, command, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
     });
     picked = await prompter.checkbox(
-      ui.mixedPicker({ hosts, skills, thirdParty, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
+      ui.mixedPicker({ hosts, scope, skills, thirdParty, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
@@ -230,12 +251,13 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
         hosts.map((host) => ({
           skill,
           host,
+          skillsDir: skillsDirOf(host),
           target: {
             name: skill.name,
             host: host.name,
-            location: homeRelative(session, join(host.skillsDir, skill.name)),
+            location: located(join(skillsDirOf(host), skill.name)),
             version: skill.version,
-            status: skillStatus(skill, host.skillsDir),
+            status: skillStatus(skill, skillsDirOf(host)),
           },
         })),
       );
@@ -254,14 +276,16 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
           thirdPartyJobs.push({
             skill: name,
             host,
+            skillsDir: skillsDirOf(host),
             target: {
               entry: entry.name,
               name,
               host: host.name,
-              location: homeRelative(session, join(host.skillsDir, name)),
-              exists: isPresent(host.skillsDir, name),
+              location: located(join(skillsDirOf(host), name)),
+              exists: isPresent(skillsDirOf(host), name),
             },
-            command: skillsCliCommand(entry.source, name, host),
+            command: skillsCliCommand(entry.source, name, host, scope),
+            ...(scope === 'project' ? { cwd: session.projectDir } : {}),
           });
         }
       }
@@ -359,7 +383,7 @@ async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJo
     mcpJobs.map((job) => job.target),
     toolJobs.map((job) => job.target),
   );
-  for (const { skill, host, target, declined } of skillJobs) {
+  for (const { skill, skillsDir, target, declined } of skillJobs) {
     if (declined || !source) {
       progress.skill.skip(target);
       continue;
@@ -367,7 +391,7 @@ async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJo
     const settle = progress.skill.begin(target);
     let outcome: InstallOutcome;
     try {
-      await installSkill(skill, host.skillsDir, { source, tempDir: session.tempDir, interrupt });
+      await installSkill(skill, skillsDir, { source, tempDir: session.tempDir, interrupt });
       outcome = { ok: true, version: skill.version };
     } catch (error) {
       if (interrupt.aborted || !(error instanceof SkillInstallError)) {
@@ -378,14 +402,14 @@ async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJo
     }
     settle(outcome);
   }
-  for (const { skill, host, target, command, declined } of thirdPartyJobs) {
+  for (const { skill, host, skillsDir, target, command, cwd, declined } of thirdPartyJobs) {
     if (declined) {
       progress.thirdParty.skip(target);
       continue;
     }
     const settle = progress.thirdParty.begin(target);
     // 成功与否看复核，不看命令的退出状态
-    settle(await installThirdPartySkill(command, host, session.runCommand, () => hasSkillFile(host.skillsDir, skill)));
+    settle(await installThirdPartySkill(command, host, session.runCommand, () => hasSkillFile(skillsDir, skill), cwd));
   }
   for (const { mcp, target, steps, missingVariable } of mcpJobs) {
     if (missingVariable !== undefined) {
@@ -443,9 +467,10 @@ function evidenceOf(session: Session, { check }: Tool): ToolTarget['evidence'] {
   return 'command' in check ? check : { path: homeRelative(session, join(session.homeDir, ...check.path.split('/'))) };
 }
 
-// 给用户看的路径：主目录写成 ~
+// 给用户看的路径：主目录里的把主目录写成 ~，别处的照原样
 function homeRelative(session: Session, path: string): string {
-  return join('~', relative(session.homeDir, path));
+  const inside = relative(session.homeDir, path);
+  return inside.startsWith('..') || isAbsolute(inside) ? path : join('~', inside);
 }
 
 // 查询失败时说明原因，返回 undefined；安装器不因此退出

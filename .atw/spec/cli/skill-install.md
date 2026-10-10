@@ -18,11 +18,14 @@ export interface Host {
   id: string;         // 目录里指代它的名字：claude-code、codex
   name: string;       // 界面上显示的名字
   detected: boolean;
-  skillsDir: string;  // 用户级的 skill 目录
+  skillsDir: string;         // 全局的 skill 目录（用户级），装在这里对所有项目生效
+  projectSkillsDir: string;  // 项目范围的 skill 目录：项目目录下的那一个，装在这里只对这个项目生效
   // …关于 MCP 的几样（configuredMcps、addMcp、removeMcp、remoteMcpLogin）见「安装 MCP」
 }
 // 安装器认识的全部宿主，检测到的和没检测到的都在；顺序就是界面上的顺序
-export function detectHosts(env: Environment, homeDir: string): Host[];
+export function detectHosts(env: Environment, homeDir: string, projectDir: string): Host[];
+// 安装范围：全局，或项目（运行安装器时所在的目录）。工具没有安装范围
+export type Scope = 'global' | 'project';
 
 // cli/src/skill-status.ts
 export type SkillStatus =
@@ -84,7 +87,8 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | 只有一个 | 没检测到的写「– 未检测到」，另有一行「注意」说明它被跳过、组件只装进检测到的那个 | 不问，直接用它 |
 | 一个都没有 | 每个都写「– 未检测到」，一行「注意」说明暂时装不了组件 | 照常进得去，不问宿主；skill 的行不可选，状态的位置写「需要 AI Agent」，外部项目照常可选 |
 
-- **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, host.skillsDir, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
+- **装到哪个目录由安装范围定**（任务 `10-10-catalog-purpose-categories` 工单 10 起）：全局是 `host.skillsDir`，项目是 `host.projectSkillsDir`。两个宿主项目范围的目录与 skills CLI 不带全局选项时落的位置一致（2026-10-11 实测，记录在任务 `10-10-catalog-purpose-categories` 的 `research/project-scope-trial-record.md`）——Claude Code 是 `<项目目录>/.claude/skills`，Codex 是 `<项目目录>/.agents/skills`。`installSkill`、`skillStatus` 只认交给它的那个目录，所以**装到项目时的状态判断、版本对比、不是本工具装的目录另问且缺省不覆盖，做法与全局时一字不差**，只是换了目录；选了项目就不读也不写全局的那个目录。汇总和另问里的位置：全局的以 `~` 开头，项目的写成相对项目目录的路径（`.claude/skills/alpha`）。在主目录里运行安装器又选了项目时两个目录重合，不特别处理。
+- **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, <按安装范围定的那个目录>, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
 - 钉住的来源整次运行共用，不因宿主多而多查询。
 - 问不问宿主、勾完之后怎么返回，都在 `flow.ts` 的 `withHosts` 里；这一问同时管 skill 和 MCP。
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；混合列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，不重问宿主。
@@ -204,10 +208,13 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - Base：`~/.claude/skills/alpha` 是指向 `~/my-skills/alpha` 的符号链接，同意覆盖 → 那里变成装好的真目录，`~/my-skills/alpha` 的文件清单和内容都没变。
 - Bad：查询被限流 → 打出「出错：GitHub 限流」和两条出路，什么都没装，回到主菜单；同一次运行里再装一次会重新查询。
 - Bad：一个宿主都没检测到 → 「推荐」进得去，skill 的行都不可选，主目录里什么都不多。
+- Good：安装范围选了项目，勾了 `alpha` → `<项目目录>/.claude/skills/alpha` 里有内容和安装标记，汇总里位置写 `.claude/skills/alpha`；主目录下一个文件都没多、原有的一个字节都没变。
+- Base：全局装过 `alpha` 1.0.0，项目里没有，选了项目 → 列表里写「未装」，汇总是「新装」，不另问；全局那一份原样留着。
+- Base：项目里的 `.claude/skills/alpha` 是用户自己放的，选了项目 → 另问的是 `.claude/skills/alpha 不是本工具装的，要覆盖它吗？`，直接回车就不动它；全局有没有同名目录都不影响这一问。
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（只有 Claude Code 时的安装）、`cli/test/hosts.test.ts`（宿主探测与宿主选择）和 `cli/test/skill-status.test.ts`（状态、覆盖、单独确认、符号链接）；真实的多选画面、不可选的行和是否题在 `prompts.test.ts`：
+都经 `runInstaller`，在 `cli/test/install-skill.test.ts`（只有 Claude Code 时的安装）、`cli/test/hosts.test.ts`（宿主探测与宿主选择）和 `cli/test/skill-status.test.ts`（状态、覆盖、单独确认、符号链接）、`cli/test/scope.test.ts`（安装范围：装到项目时落在哪、状态与另问按项目目录、主目录不变）；真实的多选画面、不可选的行和是否题在 `prompts.test.ts`：
 
 - 装一个、装多个：断言主目录里的文件内容、标记的四个字段、主目录里没有多出别的东西、`result.tmp` 是空的。
 - 整体替换：主目录里事先放一个同名目录，断言旧文件不在了。
@@ -265,6 +272,17 @@ if (lstatSync(target).isSymbolicLink()) return { kind: 'unmanaged' };
 const entries = catalog.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
 ```
 
+上面这一段是加安装范围之前的写法，目录写死成了全局的。现在状态、位置、安装、复核、同名目录的另问**都从同一个按安装范围定的目录来**（`flow.ts` 的 `planEntries`）：
+
+```ts
+// 错：选了项目，状态却看的是全局——列表写「已装」，汇总说「覆盖」，装的却是项目里一个空位置
+skillStatus(skill, host.skillsDir);
+
+// 对：一处定目录，后面每一步都用它；一项安装把它带在自己身上（Job.skillsDir），执行时不再回头找宿主要
+const skillsDirOf = (host: Host): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
+skillStatus(skill, skillsDirOf(host));
+```
+
 ```ts
 // 新内容先弄到目标旁边（同一个文件系统），再用两次同步的改名替换，放不上去就挪回来
 await moveNextTo(work, staged);
@@ -289,7 +307,7 @@ interrupt.addEventListener('abort', discard);
 
 ### 1. Scope / Trigger
 
-第三方 Skill 的内容不在本仓库，目录只按仓库登记；安装器在后台调用通用的 skill 安装程序（Vercel 的 skills CLI）把它装进宿主的 skill 目录，决定见 [ADR-0003](../../../docs/adr/0003-third-party-skills-installed-by-skills-cli.md)。凡是改那条命令的写法、带哪些环境变量、怎么判装没装上、覆盖前问不问、条目的字段与校验，都落在这份契约上。这里写的是装到全局；装到项目随安装范围的工单加。
+第三方 Skill 的内容不在本仓库，目录只按仓库登记；安装器在后台调用通用的 skill 安装程序（Vercel 的 skills CLI）把它装进宿主的 skill 目录，决定见 [ADR-0003](../../../docs/adr/0003-third-party-skills-installed-by-skills-cli.md)。凡是改那条命令的写法、带哪些环境变量、怎么判装没装上、覆盖前问不问、条目的字段与校验，都落在这份契约上。装到全局和装到项目（工单 10 起）只差两处：命令带不带 `--global`、在哪个目录下运行。
 
 ### 2. Signatures
 
@@ -310,18 +328,19 @@ skillsCli: { agent: string; env: Readonly<Record<string, string>> }; // skills C
 
 // cli/src/third-party-status.ts
 export type ThirdPartyStatus = 'unsupported' | boolean[]; // 这个宿主它不支持；或各个 skill 装没装，与 entry.skills 一一对应
-export function thirdPartyStatus(entry: ThirdPartySkill, host: Host): ThirdPartyStatus;
+export function thirdPartyStatus(entry: ThirdPartySkill, host: Host, skillsDir: string): ThirdPartyStatus; // skillsDir 是按安装范围定的那个目录
 export function isPresent(skillsDir: string, name: string): boolean;    // <skillsDir>/<name> 那里有没有东西：目录、文件、符号链接都算
 export function hasSkillFile(skillsDir: string, name: string): boolean; // 复核：<skillsDir>/<name>/SKILL.md 在不在
 
 // cli/src/install-third-party.ts
 export type SkillsCliCommand = Command & { args: string[] };
-export function skillsCliCommand(source: string, skill: string, host: Host): SkillsCliCommand;
+export function skillsCliCommand(source: string, skill: string, host: Host, scope: Scope): SkillsCliCommand; // 全局才带 --global
 export interface ThirdPartyResult {
   installed: boolean;       // 复核通过没有：成功与否只看它
   run: { kind: 'exit'; code: number } | { kind: 'not-started'; detail: string | undefined };
 }
-export async function installThirdPartySkill(command: SkillsCliCommand, host: Host, runCommand: CommandRunner, check: () => boolean): Promise<ThirdPartyResult>;
+// cwd 是在哪个目录下运行：装到项目时给项目目录，装到全局时不给
+export async function installThirdPartySkill(command: SkillsCliCommand, host: Host, runCommand: CommandRunner, check: () => boolean, cwd?: string): Promise<ThirdPartyResult>;
 ```
 
 ### 3. Contracts
@@ -376,18 +395,21 @@ export async function installThirdPartySkill(command: SkillsCliCommand, host: Ho
 npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里的名字> --yes --global
 ```
 
+装到项目时没有最后的 `--global`，别的一个字不变；并且**在项目目录下运行**（外部命令执行器的 `cwd`）——skills CLI 不带全局选项时装进它的当前目录。
+
 | 项 | 约定 |
 |----|------|
 | 版本 | 钉在实测过的主版本 `skills@1`，写在 `install-third-party.ts` 里，不随它的最新版漂移 |
 | 参数的先后 | `source` 紧跟 `add`，在 `--skill` 之前：skills CLI 的 `--skill`、`--agent` 会把后面不以 `-` 开头的词都收走 |
 | 一条命令一个 skill、一个宿主 | 展示的和执行的才能是同一份（没同意覆盖的那一项整条不执行，别的命令一个字不用改）；一条命令对一行结果，退出状态说得清是谁的；一次只给一个宿主时落下的是真实目录而不是符号链接。代价见下面的 Design Decision |
 | 怎么执行 | 外部命令执行器不经 shell 的那种方式：命令和参数分开传，输出不上屏，也读不到用户的输入。它自己的字符画、框线、进度到不了终端，也没有机会提问 |
-| 额外的环境变量 | `DISABLE_TELEMETRY=1`、`DO_NOT_TRACK=1`（关掉它的遥测，两个它都认）；外加这个宿主的 `skillsCli.env` |
+| 额外的环境变量 | `DISABLE_TELEMETRY=1`、`DO_NOT_TRACK=1`（关掉它的遥测，两个它都认）；外加这个宿主的 `skillsCli.env`。两种安装范围带的是同一份 |
+| 在哪个目录下运行 | 装到全局：不指定（进程自己的当前目录，它不影响全局的落点）。装到项目：项目目录。展示的命令里不写目录——项目目录就是用户运行安装器时所在的目录，照着敲落在同一处 |
 | 列在哪 | 「将执行的命令」里，排在 MCP 和工具的前面，完整展示。环境变量不写在里面 |
 
 `skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 是空的。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
 
-> **Warning**：skills CLI 另外会往用户的状态目录里写一个 `skills/.skill-lock.json`（`XDG_STATE_HOME` 下，记着装了哪些 skill、来源和时间）。安装器不读它，也不清它；手动核对时要把 `XDG_*` 也指到临时目录。
+> **Warning**：skills CLI 另外会往用户的状态目录里写一个 `skills/.skill-lock.json`（`XDG_STATE_HOME` 下，记着装了哪些 skill、来源和时间）。安装器不读它，也不清它；手动核对时要把 `XDG_*` 也指到临时目录。**装到项目时它不写那一个，改在项目目录的最上层写一个 `skills-lock.json`**（和 `.claude`、`.agents` 并排；2026-10-11 实测）。安装器同样不读、不清，汇总里也不提它——用户的项目里会多出这个文件，要不要在画面上交代一句，维护者还没有定。
 
 **成败看复核**
 
@@ -413,6 +435,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 | 有 | 以 0 退出 | `✓ … 已安装`（没有版本号） |
 | 有 | 非零退出，或没能运行 | `✓ … 已安装；安装命令退出状态 1`——覆盖已有目录而命令失败时，那里留着的是原来的那一份，所以要说 |
 | 没有 | 以 0 退出 | `✗ … 失败 安装命令已结束，但目标位置没有 SKILL.md` |
+| 没有（装到项目，而命令把它装到了别处，比如全局） | 以 0 退出 | 同上一行：复核只看按安装范围定的那个目录，别处有没有不算 |
 | 没有 | 非零退出 | `✗ … 失败 安装命令退出状态 1` |
 | 没有 | 没能运行 | `✗ … 失败 安装命令没能运行（ENOENT）`；错误没带错误码时不写括号 |
 
@@ -433,7 +456,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/third-party.test.ts`；条目校验的说法在 `validate-catalog.test.ts`，真实的清单画面在 `prompts.test.ts`。
+都经 `runInstaller`，在 `cli/test/third-party.test.ts`（装到全局）和 `cli/test/scope.test.ts` 的「把第三方 Skill 装到项目」一组（命令不带 `--global`、在项目目录下运行、复核和同名目录的另问按项目目录）；条目校验的说法在 `validate-catalog.test.ts`，真实的清单画面在 `prompts.test.ts`。
 
 - 假的执行器不会真的装东西：让 `commandResult` 在「执行」那条命令时往第三个参数给的 `home` 里写出 `<skill 目录>/<名字>/SKILL.md`（模拟装上了），或什么都不写（模拟没装上）。
 - 记录到的命令在 `result.commands` 里多两样：不经 shell 的带着 `env`（额外的环境变量，没有就没有这个键），整行交给 shell 的仍是 `shell: true`。**期望值写成字面的命令**。

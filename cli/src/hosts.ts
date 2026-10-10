@@ -5,6 +5,9 @@ import { parse as parseToml } from 'smol-toml';
 import { isRecord, type Mcp } from './catalog.ts';
 import type { Environment } from './ui.ts';
 
+/** 安装范围：全局，或项目（运行安装器时所在的目录）。工具没有安装范围 */
+export type Scope = 'global' | 'project';
+
 /** 命令里带着 key 的一个参数：执行时是「变量名=值」，给用户看时值的位置是占位符 */
 export interface KeyArgument {
   variable: string;
@@ -24,6 +27,8 @@ export interface Host {
   detected: boolean;
   /** 用户级的 skill 目录，装在这里对所有项目生效 */
   skillsDir: string;
+  /** 项目范围的 skill 目录：项目目录下的那一个，装在这里只对这个项目生效 */
+  projectSkillsDir: string;
   /**
    * 第三方 Skill 经通用的 skill 安装程序（skills CLI）装进这个宿主时：agent 是它那边指代这个宿主的名字，
    * env 是要另外带上的环境变量——带上了它才把全局的 skill 装到 skillsDir
@@ -43,18 +48,19 @@ export interface Host {
 }
 
 /** 一个宿主的适配：每个宿主回答同样的问题。 */
-type HostAdapter = (env: Environment, homeDir: string) => Host;
+type HostAdapter = (env: Environment, homeDir: string, projectDir: string) => Host;
 
 /**
  * Claude Code：以 claude 命令是否可用判断在不在。用户级的 MCP 记在配置目录的 .claude.json 顶层的 mcpServers 里，
  * 配置目录缺省是主目录，可由 CLAUDE_CONFIG_DIR 改到别处；添加和移除都指定用户级范围。
  * 本地进程的启动命令在各系统上原样交给它：原生 Windows 上也不包 cmd /c（2.1.119 起它自己起得来 npx 这类 .cmd）。
  */
-const claudeCode: HostAdapter = (env, homeDir) => ({
+const claudeCode: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'claude-code',
   name: 'Claude Code',
   detected: isOnPath('claude', env),
   skillsDir: join(homeDir, '.claude', 'skills'),
+  projectSkillsDir: join(projectDir, '.claude', 'skills'),
   // skills CLI 认 CLAUDE_CONFIG_DIR（装到它下面的 skills），本安装器的 skill 目录不认：清空它，两边才是同一个目录
   skillsCli: { agent: 'claude-code', env: { CLAUDE_CONFIG_DIR: '' } },
   configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
@@ -79,11 +85,12 @@ const claudeCode: HostAdapter = (env, homeDir) => ({
  * 用户级的 MCP 记在 config.toml 的 mcp_servers 表里，这个文件缺省在主目录的 .codex 下，可由 CODEX_HOME 改到别处；
  * 它的添加和移除命令只管用户级配置，没有范围可选。远程地址的服务器支持 OAuth 时，添加命令写完配置会接着走浏览器登录。
  */
-const codex: HostAdapter = (env, homeDir) => ({
+const codex: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'codex',
   name: 'Codex',
   detected: isOnPath('codex', env),
   skillsDir: join(homeDir, '.agents', 'skills'),
+  projectSkillsDir: join(projectDir, '.agents', 'skills'),
   skillsCli: { agent: 'codex', env: {} },
   configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
   addMcp: ({ name, server }, variables) => ({
@@ -105,8 +112,8 @@ const codex: HostAdapter = (env, homeDir) => ({
 const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex];
 
 /** 安装器认识的全部宿主，各自在不在。 */
-export function detectHosts(env: Environment, homeDir: string): Host[] {
-  return ADAPTERS.map((adapter) => adapter(env, homeDir));
+export function detectHosts(env: Environment, homeDir: string, projectDir: string): Host[] {
+  return ADAPTERS.map((adapter) => adapter(env, homeDir, projectDir));
 }
 
 // 配置文件里 table 这张表下有哪些名字。文件不存在就是一个都没有（宿主还没写过配置）；

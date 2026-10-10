@@ -324,7 +324,7 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('它回答之后，两行已回答的提问紧挨着，再隔一行才是下一个提问', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · 推荐', 3)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '', '? 选择要安装的条目']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 4)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '✓ 装到哪里 · 全局', '', '? 选择要安装的条目']);
   });
 
   it('是否题：问的时候与已回答的一行隔一行', async () => {
@@ -354,7 +354,7 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('回到主菜单时，新一轮的提问与上一轮之间只隔一行', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · 推荐', 3)).toEqual(['✓ 选择要安装的条目 · 返回', '', '? 选择用途']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 4)).toEqual(['✓ 装到哪里 · 全局', '✓ 选择要安装的条目 · 返回', '', '? 选择用途']);
   });
 
   it('外部项目的说明与链接：与上面已回答的一行、与回到主菜单的提问之间各隔一行', async () => {
@@ -378,7 +378,13 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
       keys: [...toMcps, [PICK_HINT, KEY.ctrlC]],
     });
 
-    expect(after(lines, '✓ 选择用途 · 联网搜索与文档检索', 4)).toEqual(['', expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/), '', '? 选择要安装的条目']);
+    expect(after(lines, '✓ 选择用途 · 联网搜索与文档检索', 5)).toEqual([
+      '✓ 装到哪里 · 全局',
+      '',
+      expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/),
+      '',
+      '? 选择要安装的条目',
+    ]);
   });
 
   it('沿用的 key 留下的一行和已回答的提问同一个画法：紧挨着上一行', async () => {

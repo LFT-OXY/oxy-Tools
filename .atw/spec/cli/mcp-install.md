@@ -161,6 +161,7 @@ export function systemCommandRunner(): CommandRunner;
 - 不另问“要不要覆盖”：MCP 没有“是不是本工具装的”这个概念，再装一次就是覆盖。
 - 每个 MCP 在每个**支持它的**所选宿主下各是一项，各有一行结果，互不影响；一项失败不影响其余项，退出状态不变。
 - 所选宿主一个都不支持的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因「需要别的 AI Agent」写在状态的位置、占满各个状态栏；只有一部分不支持的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
+- **安装范围选了项目时每个 MCP 都不可选**，原因是「暂时只能装到全局」（任务 `10-10-catalog-purpose-categories` 工单 10 的临时做法，工单 11 让 MCP 能装到项目时去掉）。这时**不做状态探测**：不读用户级配置，也不出「读不到配置」那一行——那份配置和这一轮无关。本文件写的状态、命令、配置文件都是全局（用户级）的。
 
 **在混合列表里（`flow.ts` 的 `planEntries`、`runJobs`）**
 
@@ -195,9 +196,10 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 | 怎么起 | `cross-spawn`，不经过 shell；Windows 上宿主的命令常是 npm 装出来的 `.cmd`，Node 不许直接起，`cross-spawn` 替我们经 `cmd.exe` 起并把参数转义好 |
 | 输入输出 | `stdio: 'ignore'`：命令的输出**不上屏**（进行中的那一行在转，混进别的字会乱），它也不从终端读输入 |
 | 环境 | 继承进程自己的环境。第三个参数给了 `{ env }` 时，那几个变量盖在继承来的环境之上（`{ ...process.env, ...env }`），别的不动；值是空字符串就是把那个变量清空。只有安装第三方 Skill 用它：关掉 skills CLI 的遥测、清空 `CLAUDE_CONFIG_DIR`，见 [安装 skill](./skill-install.md) |
+| 运行目录 | 不指定时是进程自己的当前目录。第三个参数给了 `cwd` 时在那个目录下运行（`spawn` 的 `cwd`）。只有把第三方 Skill 装到项目时用它：skills CLI 不带全局选项时装进它的当前目录，见 [安装 skill](./skill-install.md)。装 MCP 的命令现在都不指定 |
 | 结果 | 结束了就兑现 `{ exitCode }`（被信号结束算 1）；起不来（命令不存在）就拒绝，错误带 `code` |
 
-> **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。带 `env` 的那一支 2026-10-10 用真实的 `npx skills` 在临时主目录里核对过一次（macOS）：遥测的两个变量和清空的 `CLAUDE_CONFIG_DIR` 都传到了，输出没有漏到终端上，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`。
+> **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。带 `env` 的那一支 2026-10-10 用真实的 `npx skills` 在临时主目录里核对过一次（macOS）：遥测的两个变量和清空的 `CLAUDE_CONFIG_DIR` 都传到了，输出没有漏到终端上，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`。 带 `cwd` 的那一支 2026-10-11 同样用真实的 `npx skills` 核对过一次（macOS）：从另一个目录起脚本，skill 落在 `cwd` 指的目录里，起脚本的目录没有多出东西，记录在同一个任务的 `research/project-scope-trial-record.md`。
 >
 > 它起子进程时继承的是**进程自己的环境**，不是传给 `runInstaller` 的 `env`（正式运行时两者是同一份）。用真实的 `claude`、`codex` 做端到端核对时，`CLAUDE_CONFIG_DIR` 和 `CODEX_HOME` 要在起脚本的 shell 里 `export` 到临时目录，脚本开头先断言它们确实指向临时目录再动手；只放进 `env` 的话，状态探测看的是临时目录，命令却写进了真实的配置（工单 09 时出过一次，当场用宿主的移除命令撤回了）。
 >

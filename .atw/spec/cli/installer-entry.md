@@ -30,7 +30,8 @@ export interface InstallerOptions {
   runCommand: CommandRunner;      // 外部命令执行器
   prompter: Prompter;             // 提问器
   openLink: LinkOpener;           // 链接打开器
-  // 两样运行环境的事实，和 env、platform 同类，不算外部依赖
+  // 三样运行环境的事实，和 env、platform 同类，不算外部依赖
+  projectDir: string;             // 项目目录：运行安装器时所在的目录（bin.ts 给 process.cwd()），安装范围选「项目」时装到它下面
   tempDir: string;                // 放临时文件的目录（bin.ts 给 os.tmpdir()）
   interrupt: AbortSignal;         // 用户在提问之外按 Ctrl+C 时触发
 }
@@ -40,12 +41,13 @@ export interface InstallerOptions {
 
 `interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
 
-`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 和第三方 Skill 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`；不经 shell 的那种可以用第三个参数的 `env` 另外带上几个变量（安装第三方 Skill 用，见 [安装 skill](./skill-install.md)）。
+`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 和第三方 Skill 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`；不经 shell 的那种可以用第三个参数的 `env` 另外带上几个变量、用 `cwd` 指定在哪个目录下运行（安装第三方 Skill 用：装到项目时要在项目目录下运行，见 [安装 skill](./skill-install.md)）。
 
 ```ts
 export type CommandOptions =
   | { shell: true }                                             // command 是一整行，args 是空的
-  | { shell?: never; env: Readonly<Record<string, string>> };   // 不经 shell，另带这几个环境变量，盖在继承来的环境之上
+  | { shell?: never; env: Readonly<Record<string, string>>; cwd?: string };
+  // 不经 shell：env 是另带的环境变量，盖在继承来的环境之上；cwd 是在哪个目录下运行，不给就是进程自己的当前目录
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 ```
 
@@ -86,9 +88,11 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 - **主菜单上只有这三种行**：按类型分的入口（「Skill」「MCP」「工具」「应用项目」）全部取消了，类型到了列表里才出现。所以主菜单上没有不可进入的行。
 - **「推荐」由两部分组成**：本仓库的全部 skill（自动，不看任何标注，也去不掉），加上 `recommended` 为真的其它条目（第三方 Skill、MCP、工具、外部项目）。没有写用途的本仓库 skill 只在「推荐」里；写了用途的在「推荐」和那个用途下两处都出现。带推荐标记的其它条目同样两处都出现。
 - 「推荐」和用途的行不靠宿主：一个都没检测到时照常进得去，组件（skill、第三方 Skill、MCP、工具）的行不可选并写明「需要 AI Agent」，外部项目照常可选。
-- 进去之后的顺序：选宿主 → 混合列表 → 含多个 skill 的第三方 Skill 各自的清单 → 逐个 MCP 问 key → 汇总与将执行的命令 → 确认 → 覆盖前的单独询问（先本仓库的 skill，再第三方 Skill） → 安装 → 结果 → 外部项目的说明与链接 → 回主菜单。
+- 进去之后的顺序：选宿主 → 选安装范围 → 混合列表 → 含多个 skill 的第三方 Skill 各自的清单 → 逐个 MCP 问 key → 汇总与将执行的命令 → 确认 → 覆盖前的单独询问（先本仓库的 skill，再第三方 Skill） → 安装 → 结果 → 外部项目的说明与链接 → 回主菜单。
 - **选宿主只在检测到不止一个、且这张列表里有 skill、第三方 Skill 或 MCP 时问**，一轮只问一次；只检测到一个就直接用它。列表里只有工具和外部项目时不问：没有要装进宿主的东西（工具不装进宿主，它的状态和可不可选都与选了哪些宿主无关）。这一问同时管 skill 和 MCP。
-- 混合列表上一个都不勾就确认是回到上一步：问过宿主就回去重问（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，勾选还在（四种类型的都在），不重问宿主；填过的 key 不再问。
+- **选安装范围紧跟在选宿主之后**（任务 `10-10-catalog-purpose-categories` 工单 10 起）：单选，全局在前、项目在后，光标起始在全局，按回车就过。**这一轮有要装进的宿主才问**——一个宿主都没检测到、或列表里只有工具和外部项目时不问（工具没有安装范围）。**每次进入列表都问，不记上一次的选择**：一次运行里再进一个用途、或从列表退回宿主选择再进来，光标都回到全局。界面上不为项目的路径另设确认。
+- 「项目」就是 `options.projectDir`。选了它：本仓库的 skill 和第三方 Skill 落在项目目录下各宿主项目范围的 skill 目录里（`Host.projectSkillsDir`），状态、覆盖前的另问、复核都按那个目录来，主目录下的全局 skill 目录不读也不写；汇总和另问里的位置写成相对项目目录的路径（`.claude/skills/alpha`），全局的仍以 `~` 开头。工具不受影响。**MCP 这时还装不了**：它的行不可选，状态的位置写「暂时只能装到全局」，也不去读用户级配置（工单 11 补上）。
+- 混合列表上一个都不勾就确认是回到上一步：问过宿主就回去重问（之前勾的还在），接着重问安装范围；没问过宿主就是主菜单。汇总里的「返回修改」回混合列表，勾选还在（四种类型的都在），不重问宿主和安装范围；填过的 key 不再问。
 - 列表里组件在上、外部项目在下；组件按类型分段，先 skill，再第三方 Skill，再 MCP，再工具。skill 一段和外部项目一段按名字排；第三方 Skill、MCP、工具三段带推荐的在前、其余按名字（「推荐」那张列表里每一条都是推荐的，就只按名字）。都不照目录文件里的先后。
 - **汇总是一个分区「将安装 N 项」**，N 是会装的组件条目数（外部项目不算，必填的 key 没填的 MCP 不算，清单里一个都没勾的第三方 Skill 也不算）；里面按类型分成小表。这一轮有第三方 Skill、MCP 或工具要装时接着是「将执行 N 条命令」，第三方 Skill 的在前、MCP 的其次、工具的在后。确认的提问统一是「开始安装吗」：开始安装、返回修改、取消。
 - **执行的先后：本仓库的 skill、第三方 Skill、MCP、工具**，一项失败不影响其余项。前三样共用一个「正在安装」分区；工具排在最后，每个一个以它名字为标题的分区——它的命令会直接接管终端的输入输出。向 GitHub 查询失败时本仓库的 skill 一个都不装、结果里也没有它们的行，出错说明之后第三方 Skill、MCP 和工具照常装（第三方 Skill 不经那次查询），再列出勾选的外部项目。
@@ -244,6 +248,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 | 断言什么 | 在哪 | 怎么断言 |
 |----------|------|----------|
+| 安装范围：问不问、两项与顺序、光标起始、每次都问、返回时回到哪；装到项目时 skill 和第三方 Skill 落在哪、状态和另问按哪个目录、汇总里的位置、工具不受影响、MCP 不可选 | `scope.test.ts`；栏间隔在 `columns.test.ts` 的「栏间隔：选择安装范围」 | 给 `answersScope: true` 自己应答（`choose('项目')`、`accept()`）。落在哪看 `result.project` 和 `result.home` 两个目录里有什么——「主目录没有变化」把每个文件的内容都比一遍，不只比文件清单；命令看 `result.commands` 里有没有 `--global` 和 `cwd`。假的 skills CLI 要照真的来：带全局选项的往 `home` 写，不带的往 `cwd` 写，这样「装到了全局而项目里没有」才判得出失败。提问的行只卡文字和先后，不写死缩进；真实的画面（光标在哪、收成一行、在不可选的 MCP 上按空格勾不上）在同一个文件末尾用 `keys` |
 | 上不上色 | `startup.test.ts` 的「颜色」一组、`prompts.test.ts` | 原始输出（`result.raw`）里有没有样式码；`NO_COLOR` 下画面文字不变 |
 | 大标志的三档颜色 | `startup.test.ts` 的「大标志的颜色」一组 | 从原始输出里读出每个方块前面生效的前景色码，按它在字形里的列号归拢（`logoColors`）：渐变那一档卡两端、正中和两个四分点的色值，且同一列同色；洋红那一档每个方块都是 `35`、没有 `38;2;`；`NO_COLOR` 与 `COLORTERM` 同时设置时一个样式码都没有。期望的色值是照色标手算的，不从实现里取 |
 | 焦点符号是洋红、输出里没有青色 | `prompts.test.ts` 的「焦点色」一组 | 用真实的交互库（`keys`）：`?`、`▸`、`■`、转动符号前面紧挨着洋红的码；四种提示连同各自出错时多出来的那一行都走一遍，原始输出里没有 `36`、`96`。那个文件强行打开了 Node 的上色，主题漏盖了哪个样式函数，交互库自带的青色就会在这里漏出来 |
@@ -266,13 +271,16 @@ const result = await run({
 });
 result.exitCode; result.output; result.stdout; result.stderr; result.screen; result.commands; result.opened;
 result.home; result.tmp; // 临时的主目录、交给安装器放临时文件的目录
+result.project;          // 临时的项目目录（options.projectDir）；初始内容用 run({ project: { 相对路径: 内容 } }) 给
 ```
 
 - **语言提问缺省由架子替用户按回车**，接受光标起始所在的那一项：`answers` 和 `keys` 里都不用写它。光标的起始位置是按系统语言定的，所以靠 `env: { LANG: … }`、`systemLocale` 决定界面语言的测试照旧成立，带 `--lang` 的也一样（那时根本不问）。专门测语言提问的用例给 `answersLanguage: true`：它就和别的提问一样，用掉 `answers` 的第一个应答，或由 `keys` 的脚本来按。用 `keys` 时架子等语言提问画出来才按回车，并且等它收成一行之后才开始认脚本要等的字——语言提问自己的按键提示不算数。
 
+- **安装范围的提问同样缺省由架子替用户按回车**（全局）：`answers` 和 `keys` 里都不用写它，所以不测安装范围的用例的应答序列和加这一问之前一样；它照样被记进 `output`。专门测它的用例给 `answersScope: true`，自己应答（`choose('项目')`、`accept()`，或由 `keys` 来按）。架子靠提问的文案认它（`test/terminal.ts` 的 `SCOPE_QUESTIONS`，中英各一句），改了文案要跟着改。
+
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问——它上下的空行在主题的提问标记和提问样式里，有就照打——、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
-- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的；不经 shell 而另带了环境变量的多一个 `env`——第三方 Skill 的安装命令，断言「不是 shell 方式」「带着关遥测的变量」看的就是这两样），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
+- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的；不经 shell 而另带了环境变量的多一个 `env`——第三方 Skill 的安装命令，断言「不是 shell 方式」「带着关遥测的变量」看的就是这两样），缺省都以 0 退出。不经 shell 而指定了在哪个目录下运行的再多一个 `cwd`（装到项目的第三方 Skill；装到全局的没有这个键）。`commandResult: (command, args, { home, cwd }) => …` 预设结果（`cwd` 就是那条命令的运行目录，没指定时是 `undefined`）：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
 - 链接打开器只记录：要打开的网址按先后进 `result.opened`。安装器现在不调用它，所以它只用来断言「没有调用」：`expect(result.opened).toEqual([])`。
 - **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单（外部项目的场景另带一份 `SHOWCASE_PURPOSES`），新加的样例条目要写清单里的一个用途，不然那一格里它就不见了。
 - **主菜单上第一行是「推荐」，各个用途排在它后面。** 用 `keys` 按光标走的用例，光标起始在「推荐」上（目录里一个 skill 都没有、也没有带推荐标记的条目时才落在第一个用途上）：`[HINT, KEY.enter]` 进的是「推荐」，再下移一行是第一个有条目的用途。第三方 Skill、MCP、工具和外部项目都会让它们的用途出现在主菜单上，所以要按「下移几行」走的用例得数清中间有几个用途；用预设应答的 `choose('联网搜索与文档检索')` 按字选，不受影响。
@@ -367,6 +375,14 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 **Cause**：提问回答之后，交互库把光标挪回去重画，收成的那一行在去掉控制码的文字里紧接在按键提示后面，中间没有换行。
 
 **Fix**：整行断言放在**以 Ctrl+C 结束的那个提问**上（它的按键提示后面没有重画）；已回答的提问只卡行尾（`/✓ 选择用途 · Skill$/m`）。不要靠去掉 `$` 了事——按键提示必须在 79 列以内，整行断言是查它超宽的地方；各种组合里最长的那一行（英文界面加没有 Unicode）另量了宽度，见上面例外表的「按键提示」一行。
+
+### 两次运行的画面逐字相等，却因为项目目录不相等
+
+**Symptom**：比较两次 `run()` 的 `screen`（如「设置了 NO_COLOR 时文字不变」）失败，差的只是安装范围提问里「项目」那一行末尾的几个字符。
+
+**Cause**：那一行写着当前目录。架子给每次运行各建一个临时的项目目录（`oxy-tools-project-XXXXXX`），名字末尾是随机的；它不在临时主目录里，所以写的是全路径（放不下时从前面截，留下的正是末尾随机的那一段）。
+
+**Fix**：比之前把那一段抹平（`screen.replace(/oxy-tools-project-\w+/, 'oxy-tools-project')`），或让流程不经过这一问。**不要**为此把项目目录挪进临时主目录：断言「主目录里只多出装好的 skill」的用例会多看到一个目录。
 
 ### 替用户按的键按早了，或按到了别的提问上
 

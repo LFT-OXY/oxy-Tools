@@ -32,6 +32,8 @@ interface Scene {
   home?: Record<string, string>;
   /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径 */
   links?: Record<string, string>;
+  /** 项目目录（主目录下的 work/my-app）里事先有什么：相对路径 → 文件内容 */
+  project?: Record<string, string>;
   /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
   commands?: CommandRunner;
   /**
@@ -45,6 +47,8 @@ interface Scene {
   keys?: string[];
   /** 语言提问也由 keys 来按，不给 keys 就停在它上面；缺省由假键盘替用户按回车，keys 里不用写它 */
   answersLanguage?: boolean;
+  /** 安装范围的提问也由 keys 来按，不给 keys 就停在它上面；缺省由假键盘替用户按回车（全局），keys 里不用写它 */
+  answersScope?: boolean;
   /** 终端只有这么多行，画面只取还在屏幕上的部分；缺省是够高的终端，连同滚上去的都取 */
   rows?: number;
 }
@@ -463,6 +467,22 @@ const pickFromChecklist = [...toChecklist, KEY.space, KEY.down, KEY.space];
 const toThirdPartySummary = [...pickFromChecklist, KEY.enter];
 // 开始安装；paper-analyzer 在 Claude Code 下已有同名目录，另问时直接回车（不覆盖）
 const installThirdParty = [...toThirdPartySummary, KEY.enter, KEY.enter];
+// 装到项目：两个宿主都选之后停在安装范围的提问上（场景要给 answersScope）；下移到「项目」再回车就进了列表
+const toScope = toMixedDocuments(true);
+const intoProject = [...toScope, KEY.down, KEY.enter];
+// 项目里 explanation 是本工具装的旧版，pr 是手动放的，paper-analyzer 在 Claude Code 下已有同名目录；全局照 FIVE_KINDS
+const PROJECT: Pick<Scene, 'project' | 'answersScope'> = {
+  answersScope: true,
+  project: {
+    ...installedSkill(CLAUDE_SKILLS, 'explanation', '0.9.0'),
+    [`${CODEX_SKILLS}/pr/SKILL.md`]: '# 自己写的 pr\n',
+    [`${CLAUDE_SKILLS}/paper-analyzer/SKILL.md`]: '# paper-analyzer\n',
+  },
+};
+// 项目范围下 MCP 的三行不可选：勾上 explanation、guizang-ppt-skill、paper-craft-skills 和 docling，光标停在 docling 上
+const pickIntoProject = [...intoProject, KEY.down, KEY.space, ...down(3), KEY.space, KEY.down, KEY.space, ...down(4), KEY.space];
+// 确认列表，在清单里勾上 paper-analyzer 和 paper-comic，再确认就到汇总
+const toProjectSummary = [...pickIntoProject, KEY.enter, KEY.space, KEY.down, KEY.space, KEY.enter];
 // guizang-ppt-skill 装进 Claude Code 的那条命令以 1 退出
 const GUIZANG_FAILS = { thirdPartyFails: ['guizang-ppt-skill@claude-code'] };
 
@@ -557,6 +577,12 @@ const scenes: Scene[] = [
   { title: '主菜单 · 有 MCP', note: '没有「MCP」这个分组：MCP 数在它的用途里，「目录」一行照旧按类型数', catalog: withMcps },
   { title: '混合列表 · 只有 MCP 的用途', note: 'MCP 自成一段。状态来自 Claude Code 的用户级配置：已配置、未配置；这个宿主不支持的条目不可选，原因写在状态的位置', ...MCP_STATES, keys: pickMcps },
   { title: '混合列表 · 在不可选的 MCP 上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明，它的类型和说明照样在', ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '选择安装范围 · 提问中，光标在全局', note: '选完宿主之后问；两项各带一句说明，「项目」后面暗淡地写出当前目录，只是告知。光标起始在全局，按一下回车就过', ...FIVE_KINDS, ...PROJECT, keys: toScope },
+  { title: '选择安装范围 · 只检测到一个宿主', note: '不问宿主，直接问装到哪里', ...FIVE_KINDS, onPath: ['claude', 'pandoc'], ...PROJECT, keys: toMixedDocuments() },
+  { title: '选择安装范围 · 已回答，收成一行', note: '下移到「项目」再回车：收成一行，接着是列表', ...FIVE_KINDS, ...PROJECT, keys: intoProject },
+  { title: '混合列表 · 装到项目 · 两个宿主', note: 'Skill 和第三方 Skill 的状态看的是项目目录下各宿主的 skill 目录，全局装过的不算；MCP 这时还装不了，行不可选，状态的位置写原因；工具不受安装范围影响', ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
+  { title: '汇总确认 · 装到项目', note: '位置一栏是相对当前目录的路径，不是主目录下的路径；第三方 Skill 的命令不带 --global。工具照原样', ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
+  { title: '确认覆盖与结果 · 装到项目', note: '另问的是项目里的那个路径，直接回车就是不覆盖；装完的结果照常', ...FIVE_KINDS, ...PROJECT, keys: [...toProjectSummary, KEY.enter, KEY.enter] },
   { title: '选择宿主 · 只有 MCP 的用途', note: '列表里有组件就问；名字后面不写目录', catalog: withMcps, onPath: BOTH_HOSTS, keys: toMcps },
   { title: '混合列表 · MCP · 配置文件读不了', note: 'Codex 的配置读不出来：列表上方说明，它那一栏都是「未知」，没有报错；只有一个宿主支持的条目仍可选', ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '汇总确认 · 一个 MCP 装进两个宿主', note: '两条完整的命令都列出来，确认后才执行', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts(pickOneMcp) },
@@ -632,6 +658,9 @@ const scenes: Scene[] = [
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
   { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toRecommended },
+  { title: '英文界面 · 选择安装范围', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toScope },
+  { title: '英文界面 · 装到项目的列表', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
+  { title: '英文界面 · 装到项目的汇总', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
   { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
   { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
@@ -662,6 +691,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
   { title: '英文界面 · 出错', argv: ['--lang', 'en'], catalog: offline },
   { title: '英文界面 · 帮助', note: 'npx oxy-tools --help --lang en', argv: ['--help', '--lang', 'en'] },
+  { title: '不显示颜色 · 选择安装范围', note: '设置了 NO_COLOR：光标靠 ▸ 认，当前目录不再暗淡', env: { NO_COLOR: '1' }, ...FIVE_KINDS, ...PROJECT, keys: toScope },
   { title: '不显示颜色 · 语言提问', note: '设置了 NO_COLOR：光标靠 ▸ 认，不靠颜色', env: { NO_COLOR: '1' }, answersLanguage: true },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
@@ -689,6 +719,7 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 工具的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...TOOLS, keys: runTools },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
+  { title: '没有 Unicode · 选择安装范围', note: '光标退成 >，按键提示里的按键改用文字', ...FIVE_KINDS, ...PROJECT, ...LEGACY_CONSOLE, keys: toScope },
   { title: '没有 Unicode · 语言提问', note: '光标退成 >，按键提示里的按键改用文字；三段固定的字不变', ...LEGACY_CONSOLE, answersLanguage: true },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
@@ -753,7 +784,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     while (Date.now() - lastWrite < 60 && Date.now() < deadline) await sleep(10);
   };
 
-  const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage);
+  const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage, scene.answersScope);
   const tty = scene.tty ?? true;
   const bin = scratchDir('bin');
   for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
@@ -766,6 +797,13 @@ async function play(scene: Scene): Promise<Cell[][]> {
     mkdirSync(dirname(join(home, link)), { recursive: true });
     symlinkSync(join(home, target), join(home, link), 'junction');
   }
+  // 项目目录放在主目录里：画面上写成 ~/work/my-app
+  const project = join(home, 'work', 'my-app');
+  mkdirSync(project, { recursive: true });
+  for (const [path, content] of Object.entries(scene.project ?? {})) {
+    mkdirSync(dirname(join(project, path)), { recursive: true });
+    writeFileSync(join(project, path), content);
+  }
   const finished = runInstaller({
     argv: scene.argv ?? [],
     env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
@@ -776,16 +814,18 @@ async function play(scene: Scene): Promise<Cell[][]> {
     stdinIsTTY: tty,
     catalogSource: scene.catalog ?? sample,
     homeDir: home,
+    projectDir: project,
     tempDir: scratchDir('tmp'),
     interrupt: new AbortController().signal,
     runCommand: async (command, args, options) => {
       if (!options?.shell) {
         if (scene.commands || command !== 'npx') return (scene.commands ?? (async () => ok))(command, args);
-        // skills CLI 的安装命令：假装装上了，往那个宿主的 skill 目录里写出 SKILL.md
+        // skills CLI 的安装命令：假装装上了，往那个宿主的 skill 目录里写出 SKILL.md——带全局选项的在主目录下，
+        // 不带的在它运行时所在的目录下
         const skill = args[args.indexOf('--skill') + 1] ?? '';
         const agent = args[args.indexOf('--agent') + 1] ?? '';
         if (scene.thirdPartyFails?.includes(`${skill}@${agent}`)) return { exitCode: 1 };
-        const target = join(home, agent === 'codex' ? CODEX_SKILLS : CLAUDE_SKILLS, skill, 'SKILL.md');
+        const target = join(options?.cwd ?? home, agent === 'codex' ? CODEX_SKILLS : CLAUDE_SKILLS, skill, 'SKILL.md');
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, `# ${skill}\n`);
         return ok;

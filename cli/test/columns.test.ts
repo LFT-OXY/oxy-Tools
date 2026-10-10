@@ -37,6 +37,23 @@ describe('栏间隔：主菜单', () => {
   });
 });
 
+describe('栏间隔：选择安装范围', () => {
+  it('名字一栏最长的一格后面三格是说明，两行的说明从同一列起', async () => {
+    const { screen } = await run({ answers: [choose('推荐'), pick(), choose('退出')] });
+
+    expect(startOf(screen, '全局 ', '对这台机器') - startOf(screen, '全局 ') - columnsOf('全局')).toBe(3);
+    expect(startOf(screen, '项目 ', '只对当前目录')).toBe(startOf(screen, '全局 ', '对这台机器'));
+  });
+
+  it('英文界面同一个间隔', async () => {
+    const { screen } = await run({ argv: ['--lang', 'en'], answers: [choose('Recommended'), pick(), choose('Exit')] });
+
+    // 两个名字里长的是 Project
+    expect(startOf(screen, 'Project ', 'applies') - startOf(screen, 'Project ') - columnsOf('Project')).toBe(3);
+    expect(startOf(screen, 'Global ', 'applies')).toBe(startOf(screen, 'Project ', 'applies'));
+  });
+});
+
 describe('栏间隔：skill', () => {
   // alpha 是用户自己放的：它在 Claude Code 那一栏的状态最长
   const home = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
