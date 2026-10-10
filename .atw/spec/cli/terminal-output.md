@@ -30,7 +30,7 @@ throw new Error('unsafe path');            // → 下载中断（unsafe path）
 throw new UnsafePathError();               // → SkillInstallProblem { kind: 'unsafe-path' }
 ```
 
-**文案有长度上限的地方要自己算**：按键提示是交互库原样打出来的一行，呈现层不替它折行，中英文都必须在 79 列以内（英文的「⏎ confirm (none = back)」就是这么来的——原先那句超了两列，被终端折成两行）。加了按键提示的文案，就在 `prompts.test.ts` 里用真实的交互库断言整行。
+**文案有长度上限的地方要自己算**：按键提示是交互库原样打出来的一行，呈现层不替它折行，中英文都必须在 79 列以内（英文的「⏎ confirm (none = back)」就是这么来的——原先那句超了两列，被终端折成两行）。加了按键提示的文案，就在 `prompts.test.ts` 里用真实的交互库断言整行。最紧的是英文界面加没有 Unicode 的多选那一行：按键换成了 `up/down`、`enter`，整行正好 79 列，那条测试除了断言整行还量了宽度。
 
 ---
 
@@ -182,8 +182,9 @@ export interface ConfirmQuestion {
 
 ```
 ── exa 需要 key ────────────────────────────────────────────────────────────────
+
   变量      EXA_API_KEY（必填）
-  用途      Exa 搜索 API 的密钥
+  用途      Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建
   申请      https://dashboard.exa.ai/api-keys
   提示      输入不会显示在屏幕上；留空回车将跳过 exa
 
@@ -192,7 +193,7 @@ export interface ConfirmQuestion {
 
 | 段 | 函数 | 画法 |
 |----|------|------|
-| 说明 | `ui.keyRequest(mcp, variable)` | 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」；四行键值：变量（后面注明必填或可选）、用途、申请、提示（留空会怎样）。**申请地址和应用项目的链接一样整条写在一行上**，带下划线，不交给折行 |
+| 说明 | `ui.keyRequest(mcp, variable)` | 每个 key 一个分区。标题必填的是「<MCP> 需要 key」，可选的是「<MCP> 可选的 key」，下方空一行；四行键值：变量（后面注明必填或可选）、用途、申请、提示（留空会怎样）。**申请地址和应用项目的链接一样整条写在一行上**，带下划线，不交给折行 |
 | 提问 | `ui.keyQuestion(variable)` → `PasswordQuestion { message, theme }` | 提问是变量名，后面一句暗淡的固定提示（`theme.style.maskedText`，文案是 `messages.ts` 的 `hiddenInput`） |
 | 结局 | `ui.keyOutcome(mcp, variable, outcome)` | 和已回答的提问同一个画法：记号、粗体的变量名、暗淡的 `·`、一句话。填了和沿用的是绿色 `✓`，留空的是暗淡 `–`。**只收结局（`'entered' \| 'blank' \| 'reused'`），不收值，也不写长度** |
 

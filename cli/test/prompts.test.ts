@@ -258,6 +258,20 @@ describe('真实的多选画面', () => {
     expect(result.output).toMatch(/^\s+上下键 移动 - 空格 选择 - a 全选 - i 反选 - 回车 确认（不选则返回）$/m);
     expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎]/);
   });
+
+  it('英文界面加没有 Unicode：最长的那一行按键提示仍在 79 列以内', async () => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['enter select', KEY.enter], ['enter confirm', KEY.ctrlC]],
+    });
+
+    // 按键换成了英文单词，这是各种组合里最长的一行：再长一列就被终端折成两行
+    const hint = result.output.split('\n').find((line) => line.includes('enter confirm')) ?? '';
+    expect(hint).toMatch(/^\s+up\/down move - space select - a all - i invert - enter confirm \(none = back\)$/);
+    expect(hint.length).toBeLessThanOrEqual(79);
+  });
 });
 
 describe('真实的画面：一个宿主都没检测到', () => {
