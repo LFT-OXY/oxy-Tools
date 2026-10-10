@@ -144,3 +144,36 @@
 - 另起一行的备注与路径同色同左缘、容易连读（视觉评审的口味意见）：要不要再缩进两格，由维护者定
 - 规范里手算的列数（63、70、19、86）只有 79 有测试守着，文案一改会悄悄过期：要不要删掉或补测试
 - ✗ 不加粗是这次才写进规范的，记在未确认一节，维护者有异议再改
+
+
+## Session 4: 「目录按用途分类」任务归档
+<!-- atw-session: v=2 fp=175b6eea179497b6 -->
+
+**Date**: 2026-10-11
+**Task**: 「目录按用途分类」任务归档
+**Branch**: `main`
+
+### Summary
+
+任务 10-10-catalog-purpose-categories（目录按用途分类，第三方 skill 改由命令安装，并收录「汇总」文档的条目）在维护者说「归档」后归档。这次会话只做了归档，没有改代码；任务的规划与 14 张工单是此前几次会话提交的（b04b055 到 95d79f5，共 15 个提交），不在这条记录里。
+
+### Main Changes
+
+- 归档前核对：tickets.py summary 显示 14 张工单全部 done，工作区干净
+- 归档命令第一次拒绝：task.json 里 branch 和 base_branch 都是 main。这个仓库直接提交到 main、没有 PR（pr_url 为空，此前归档的两个任务也是同样的记录），改用 --skip-branch-validation 归档成功，归档提交是 ca93921
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] [--] 这次会话没有跑 typecheck 和测试，也没有重新逐条核对 prd.md 的验收标准；维护者的「归档」视为验收
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 以后直接提交到 main 的任务归档时都会碰到同一条分支核对，需要带 --skip-branch-validation
