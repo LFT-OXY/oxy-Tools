@@ -32,10 +32,27 @@ export interface Skill {
   version: string;
   path: string;
   description: { zh: string; en: string };
+  /** 另外归到的那个用途。本仓库的 skill 都属于「推荐」，大多数没有用途 */
+  purpose?: string;
+}
+
+/** 用途：条目要解决的问题所属的类别，与它是哪种类型无关 */
+export interface Purpose {
+  /** 标识：条目的 purpose 写的就是它 */
+  id: string;
+  name: { zh: string; en: string };
+}
+
+/** 本仓库 skill 以外的条目在目录里归到哪 */
+export interface Placement {
+  /** 用途：用途清单里某一项的标识 */
+  purpose: string;
+  /** 另外出现在「推荐」里 */
+  recommended: boolean;
 }
 
 /** 应用项目：安装器装不了，只给说明和官方链接 */
-export interface App {
+export interface App extends Placement {
   name: string;
   description: { zh: string; en: string };
   /** 官方链接 */
@@ -55,7 +72,7 @@ export interface McpVariable {
   url: string;
 }
 
-export interface Mcp {
+export interface Mcp extends Placement {
   name: string;
   description: { zh: string; en: string };
   /** 官方链接 */
@@ -74,7 +91,7 @@ export type ToolOs = 'macos' | 'linux' | 'windows';
 export type ToolCheck = { command: string } | { path: string };
 
 /** 工具：安装器替用户执行它的官方安装命令，结束后用 check 复核 */
-export interface Tool {
+export interface Tool extends Placement {
   name: string;
   description: { zh: string; en: string };
   /** 官方链接 */
@@ -107,13 +124,16 @@ export type FieldRule =
   | 'shell-command'
   | 'os-command'
   | 'tool-check'
-  | 'command-name';
+  | 'command-name'
+  | 'purpose';
 
 export type EntryProblem =
   | { kind: 'not-object' }
   | { kind: 'bad-field'; field: string; rule: FieldRule }
   // 与前面的某一条重名
-  | { kind: 'duplicate' };
+  | { kind: 'duplicate' }
+  // 写的用途不在用途清单里
+  | { kind: 'unlisted-purpose'; purpose: string };
 
 /** 被跳过的一条 */
 export interface SkippedEntry {
@@ -128,13 +148,30 @@ export interface SkippedEntry {
   problem: EntryProblem;
 }
 
+/** 目录里写坏了、但没有哪个条目因它本身被跳过的一处。安装器不提它，只有目录校验命令报 */
+export type CatalogFlaw = { file: string } & (
+  // 用途清单不是数组：当作空的
+  | { kind: 'purposes-not-array' }
+  // 用途清单的第几项（从 1 数起）写坏了，或标识与前面的重复：这一项不算数
+  | { kind: 'purpose'; position: number; id: string | undefined; problem: EntryProblem }
+  // 本仓库 skill 的用途不是对象：当作没写
+  | { kind: 'skill-purposes-not-object' }
+  // 本仓库 skill 的用途里，有一个名字不是 skill 清单里读得出来的 skill；名字本身不合规则时没有
+  | { kind: 'unknown-skill'; skill: string | undefined }
+  // 给这个 skill 写的用途不是用途的标识（purpose 没有），或不在用途清单里：它照常是目录里的 skill，只是没有用途
+  | { kind: 'skill-purpose'; skill: string; purpose: string | undefined }
+);
+
 export interface Catalog {
   skills: Skill[];
   mcps: Mcp[];
   tools: Tool[];
   apps: App[];
+  /** 用途清单，顺序照目录文件 */
+  purposes: Purpose[];
   /** 被跳过的条目：校验不通过的，以及与前面重名的 */
   skipped: SkippedEntry[];
+  flaws: CatalogFlaw[];
 }
 
 /** 出问题的那个目录文件在哪 */
@@ -197,32 +234,58 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
     readDocument(source, 'catalog.json'),
   ]);
   const skipped: SkippedEntry[] = [];
+  const flaws: CatalogFlaw[] = [];
   // 逐条读一个数组：写坏的和重名的带着原因进 skipped，其余收下。名字只在各自的数组里唯一
   const collect = <Entry extends { name: string }>(
     document: Document,
     list: string,
     parse: (entry: unknown) => Entry | EntryProblem,
-  ): Entry[] => {
-    const entries = new Map<string, Entry>();
-    for (const [index, entry] of requireArray(document, list).entries()) {
-      const skip = (name: string | undefined, problem: EntryProblem): void =>
-        void skipped.push({ file: document.file, list, position: index + 1, name, problem });
-      const parsed = parse(entry);
-      if (isProblem(parsed)) skip(nameOf(entry), parsed);
-      // 重名的只留第一条
-      else if (entries.has(parsed.name)) skip(parsed.name, { kind: 'duplicate' });
-      else entries.set(parsed.name, parsed);
-    }
-    return [...entries.values()];
-  };
-  const skills = collect(skillList, 'skills', parseSkill);
-  // catalog.json 里的数组可以缺省，缺省当作空
-  const optional = <Entry extends { name: string }>(list: string, parse: (entry: unknown) => Entry | EntryProblem): Entry[] =>
-    otherEntries.data[list] === undefined ? [] : collect(otherEntries, list, parse);
+  ): Entry[] =>
+    readEntries(requireArray(document, list), 'name', parse, (position, name, problem) =>
+      skipped.push({ file: document.file, list, position, name, problem }),
+    );
+  const purposes = readPurposes(otherEntries, flaws);
+  const listed = new Set(purposes.map(({ id }) => id));
+  const skills = withPurposes(collect(skillList, 'skills', parseSkill), otherEntries, listed, flaws);
+  // catalog.json 里的数组可以缺省，缺省当作空。这三类条目都要有一个清单里的用途
+  const optional = <Entry extends { name: string }>(
+    list: string,
+    parse: (entry: unknown, listed: ReadonlySet<string>) => Entry | EntryProblem,
+  ): Entry[] => (otherEntries.data[list] === undefined ? [] : collect(otherEntries, list, (entry) => parse(entry, listed)));
   const mcps = optional('mcps', parseMcp);
   const tools = optional('tools', parseTool);
   const apps = optional('apps', parseApp);
-  return { skills, mcps, tools, apps, skipped };
+  return { skills, mcps, tools, apps, purposes, skipped, flaws };
+}
+
+// 逐项读一个数组：写坏的和标识重复的连同原因交给 reject，其余收下。key 是每一项里当标识用的那个字段
+function readEntries<Key extends string, Entry extends Record<Key, string>>(
+  items: readonly unknown[],
+  key: Key,
+  parse: (item: unknown) => Entry | EntryProblem,
+  reject: (position: number, id: string | undefined, problem: EntryProblem) => void,
+): Entry[] {
+  const entries = new Map<string, Entry>();
+  for (const [index, item] of items.entries()) {
+    const parsed = parse(item);
+    // 写坏的那一项叫什么：标识合规则才认，它接下来要被打到终端上
+    if (isProblem(parsed)) reject(index + 1, isRecord(item) && isName(item[key]) ? item[key] : undefined, parsed);
+    // 重复的只留第一项
+    else if (entries.has(parsed[key])) reject(index + 1, parsed[key], { kind: 'duplicate' });
+    else entries.set(parsed[key], parsed);
+  }
+  return [...entries.values()];
+}
+
+// 用途清单可以缺省。它写坏了不让整份目录读不了：不是数组就当作空的，写坏的一项不算数，
+// 用到它们的条目随后因「用途不在清单里」被跳过
+function readPurposes({ data, file }: Document, flaws: CatalogFlaw[]): Purpose[] {
+  const { purposes = [] } = data;
+  if (!Array.isArray(purposes)) {
+    flaws.push({ file, kind: 'purposes-not-array' });
+    return [];
+  }
+  return readEntries(purposes, 'id', parsePurpose, (position, id, problem) => flaws.push({ file, kind: 'purpose', position, id, problem }));
 }
 
 /** 默认的目录来源：GitHub 上本仓库 main 分支的原始文件。 */
@@ -413,6 +476,28 @@ const TOOL_OSES: readonly ToolOs[] = ['macos', 'linux', 'windows'];
 const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
 const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
 
+// 本仓库个别 skill 另外归到一个用途下，记在 catalog.json 里（skill 清单的格式不动）。
+// 写坏的一项只是不起作用：那个 skill 照常在目录里，只是没有用途
+function withPurposes(skills: Skill[], { data, file }: Document, listed: ReadonlySet<string>, flaws: CatalogFlaw[]): Skill[] {
+  const { skillPurposes = {} } = data;
+  if (!isRecord(skillPurposes)) {
+    flaws.push({ file, kind: 'skill-purposes-not-object' });
+    return skills;
+  }
+  const names = new Set(skills.map(({ name }) => name));
+  const purposeOf = new Map<string, string>();
+  for (const [skill, purpose] of Object.entries(skillPurposes)) {
+    if (!names.has(skill)) flaws.push({ file, kind: 'unknown-skill', skill: isName(skill) ? skill : undefined });
+    else if (!isName(purpose)) flaws.push({ file, kind: 'skill-purpose', skill, purpose: undefined });
+    else if (!listed.has(purpose)) flaws.push({ file, kind: 'skill-purpose', skill, purpose });
+    else purposeOf.set(skill, purpose);
+  }
+  return skills.map((skill) => {
+    const purpose = purposeOf.get(skill.name);
+    return purpose === undefined ? skill : { ...skill, purpose };
+  });
+}
+
 // 不认识的字段一律忽略；这一条写坏了就返回头一处问题
 function parseSkill(entry: unknown): Skill | EntryProblem {
   if (!isRecord(entry)) return { kind: 'not-object' };
@@ -425,17 +510,28 @@ function parseSkill(entry: unknown): Skill | EntryProblem {
   return { name, version, path, description };
 }
 
-function parseApp(entry: unknown): App | EntryProblem {
+function parsePurpose(entry: unknown): Purpose | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const { id } = entry;
+  if (!isName(id)) return bad('id', 'name');
+  const name = parseBilingual(entry['name'], 'name');
+  if (isProblem(name)) return name;
+  return { id, name };
+}
+
+function parseApp(entry: unknown, listed: ReadonlySet<string>): App | EntryProblem {
   if (!isRecord(entry)) return { kind: 'not-object' };
   const { name, url } = entry;
   if (!isName(name)) return bad('name', 'name');
   const description = parseDescription(entry['description']);
   if (isProblem(description)) return description;
   if (!isHttpsUrl(url)) return bad('url', 'https-url');
-  return { name, description, url };
+  const placement = parsePlacement(entry, listed);
+  if (isProblem(placement)) return placement;
+  return { name, description, url, ...placement };
 }
 
-function parseMcp(entry: unknown): Mcp | EntryProblem {
+function parseMcp(entry: unknown, listed: ReadonlySet<string>): Mcp | EntryProblem {
   if (!isRecord(entry)) return { kind: 'not-object' };
   const { name, url, hosts, server } = entry;
   if (!isName(name)) return bad('name', 'name');
@@ -450,10 +546,12 @@ function parseMcp(entry: unknown): Mcp | EntryProblem {
   if (isProblem(env)) return env;
   // 远程地址的服务器不是我们起的进程，没有地方放环境变量；两个宿主的添加命令也都不收
   if ('url' in connection && env.length > 0) return bad('env', 'local-only');
-  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection, env };
+  const placement = parsePlacement(entry, listed);
+  if (isProblem(placement)) return placement;
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), server: connection, env, ...placement };
 }
 
-function parseTool(entry: unknown): Tool | EntryProblem {
+function parseTool(entry: unknown, listed: ReadonlySet<string>): Tool | EntryProblem {
   if (!isRecord(entry)) return { kind: 'not-object' };
   const { name, url, hosts } = entry;
   if (!isName(name)) return bad('name', 'name');
@@ -466,7 +564,18 @@ function parseTool(entry: unknown): Tool | EntryProblem {
   if (isProblem(install)) return install;
   const check = parseToolCheck(entry['check']);
   if (isProblem(check)) return check;
-  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), install, check };
+  const placement = parsePlacement(entry, listed);
+  if (isProblem(placement)) return placement;
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), install, check, ...placement };
+}
+
+// 本仓库 skill 以外的条目有且只有一个用途，没有的不归进什么「其他」，而是跳过
+function parsePlacement(entry: Record<string, unknown>, listed: ReadonlySet<string>): Placement | EntryProblem {
+  const { purpose, recommended = false } = entry;
+  if (!isName(purpose)) return bad('purpose', 'purpose');
+  if (!listed.has(purpose)) return { kind: 'unlisted-purpose', purpose };
+  if (typeof recommended !== 'boolean') return bad('recommended', 'boolean');
+  return { purpose, recommended };
 }
 
 function parseToolInstall(install: unknown): Tool['install'] | EntryProblem {
@@ -525,16 +634,16 @@ function parseMcpServer(server: unknown): McpServer | EntryProblem {
 
 // 中英文一句话说明，各类条目都有；within 是它所在的字段（MCP 的环境变量也各有一份说明）
 function parseDescription(description: unknown, within = ''): { zh: string; en: string } | EntryProblem {
-  if (!isRecord(description)) return bad(`${within}description`, 'object');
-  const { zh, en } = description;
-  if (!isText(zh)) return bad(`${within}description.zh`, 'text');
-  if (!isText(en)) return bad(`${within}description.en`, 'text');
-  return { zh, en };
+  return parseBilingual(description, `${within}description`);
 }
 
-// 写坏的条目叫什么：名字合规则才认，它接下来要被打到终端上
-function nameOf(entry: unknown): string | undefined {
-  return isRecord(entry) && isName(entry['name']) ? entry['name'] : undefined;
+// 中英文各一份的文字；field 是它所在的字段
+function parseBilingual(value: unknown, field: string): { zh: string; en: string } | EntryProblem {
+  if (!isRecord(value)) return bad(field, 'object');
+  const { zh, en } = value;
+  if (!isText(zh)) return bad(`${field}.zh`, 'text');
+  if (!isText(en)) return bad(`${field}.en`, 'text');
+  return { zh, en };
 }
 
 function isName(value: unknown): value is string {

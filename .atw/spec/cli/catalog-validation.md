@@ -8,7 +8,7 @@
 
 ### 1. Scope / Trigger
 
-维护者提交前、CI 在推送后，用同一条命令确认：仓库里的 `index.json` 和 `catalog.json`，安装器整份读得了，而且一条都不会跳过。凡是给目录加一类条目、加一个字段、改一条校验规则，都落在这份契约上。
+维护者提交前、CI 在推送后，用同一条命令确认：仓库里的 `index.json` 和 `catalog.json`，安装器整份读得了，一条都不会跳过，而且用途清单和本仓库 skill 的用途没有写坏的地方。凡是给目录加一类条目、加一个字段、改一条校验规则，都落在这份契约上。
 
 ### 2. Signatures
 
@@ -25,8 +25,10 @@ export interface Catalog {
   skills: Skill[];
   mcps: Mcp[];             // 字段见「安装 MCP」
   tools: Tool[];           // 字段见「安装工具」
-  apps: App[];             // 应用项目：{ name, description: { zh, en }, url }
+  apps: App[];             // 应用项目：{ name, description: { zh, en }, url, purpose, recommended }
+  purposes: Purpose[];     // 用途清单：{ id, name: { zh, en } }，顺序照文件
   skipped: SkippedEntry[]; // 被跳过的条目：校验不通过的，以及与前面重名的
+  flaws: CatalogFlaw[];    // 写坏了、但没有哪个条目因它本身被跳过的地方；只有本命令报
 }
 export interface SkippedEntry {
   file: string;             // 所在的目录文件
@@ -38,15 +40,24 @@ export interface SkippedEntry {
 export type EntryProblem =
   | { kind: 'not-object' }
   | { kind: 'bad-field'; field: string; rule: FieldRule }
-  | { kind: 'duplicate' };
+  | { kind: 'duplicate' }
+  | { kind: 'unlisted-purpose'; purpose: string }; // 写的用途不在用途清单里
 export type FieldRule =
   | 'name' | 'text' | 'relative-path' | 'object' | 'https-url'
   | 'host-list' | 'mcp-server' | 'command-word' | 'command-word-list'
   | 'env-list' | 'env-name' | 'boolean' | 'local-only'
-  | 'shell-command' | 'os-command' | 'tool-check' | 'command-name';
+  | 'shell-command' | 'os-command' | 'tool-check' | 'command-name'
+  | 'purpose';
+export type CatalogFlaw = { file: string } & (
+  | { kind: 'purposes-not-array' }
+  | { kind: 'purpose'; position: number; id: string | undefined; problem: EntryProblem }
+  | { kind: 'skill-purposes-not-object' }
+  | { kind: 'unknown-skill'; skill: string | undefined }               // 名字本身不合规则时没有 skill
+  | { kind: 'skill-purpose'; skill: string; purpose: string | undefined } // 写的不是标识时没有 purpose
+);
 ```
 
-命令只做三件事：用 `localCatalogSource(<目录>)` 调 `loadCatalog`，把结果说成人话，定退出状态。**它自己不含任何校验规则**——这样“命令通过”和“安装器一条不跳”永远是一回事。
+命令只做三件事：用 `localCatalogSource(<目录>)` 调 `loadCatalog`，把结果说成人话，定退出状态。**它自己不含任何校验规则**——这样“命令通过”和“安装器读到的目录一处都没写坏”永远是一回事：规则都在 `catalog.ts`，写坏的条目进 `skipped`，别的写坏之处进 `flaws`，命令只管把两样都说出来。
 
 它和界面预览页一样是仅供开发的脚本：放在 `cli/scripts/`，用 `node --experimental-strip-types` 直接跑，不进 `dist/`，不随 npm 包发布。目录由参数给出，脚本和 `package.json` 里都不写死 `..`——`cli/` 的代码不引用 `cli/` 以外的文件（ADR-0001），路径是运行的人给的。
 
@@ -63,7 +74,7 @@ export type FieldRule =
 输出的样子：
 
 ```
-目录校验通过：11 个 skill、0 个 MCP、0 个工具、0 个应用项目
+目录校验通过：12 个 skill、0 个 MCP、0 个工具、0 个应用项目、10 个用途
 ```
 
 通过信息把**校验过的每一类**都数出来，是 0 也写：它说的是“这一类查过了”，和主菜单上方「目录」一行只数有条目的分组不是一回事。
@@ -78,6 +89,16 @@ export type FieldRule =
 ```
 
 ```
+目录校验未通过：有 2 个条目会被安装器跳过，另有 2 处写坏了
+  catalog.json 的 mcps 第 1 条（exa）：purpose 要是用途清单（purposes）里一个用途的标识（由小写字母和数字组成，分成几段时用连字符连接）；除本仓库的 skill 外，每个条目都要写
+  catalog.json 的 tools 第 2 条（uv）：用途 dev-workflwo 不在用途清单（purposes）里
+  catalog.json 的 purposes 第 3 项（web-search）：与前面的用途标识重复，只有第一项算数
+  catalog.json 的 skillPurposes 里 archify 的用途 document 不在用途清单（purposes）里
+```
+
+第一行照实数：只有被跳过的条目时是「有 N 个条目会被安装器跳过」，只有别的写坏之处时是「有 N 处写坏了」，两样都有时如上。被跳过的条目在前，别的在后。
+
+```
 目录校验未通过：目录格式有误
   catalog.json 的 tools 不是数组
   /path/to/repo/catalog.json
@@ -90,7 +111,8 @@ export type FieldRule =
 | 没给目录，或多给了参数 | 用法 | 2 |
 | 整份读不了（`loadCatalog` 抛出 `CatalogError`：读不到、不是 JSON、缺版本号、数组字段不是数组、格式版本过高） | 标题和原因沿用 `messages.ts` 里安装器对用户说的那一句（中文），下一行是文件的位置 | 1 |
 | `skipped` 非空 | 条数，然后每条一行：哪个文件、哪个数组、第几条、名字（有的话）、问题 | 1 |
-| 都没有 | `目录校验通过：N 个 skill、M 个 MCP、K 个工具、J 个应用项目` | 0 |
+| `flaws` 非空 | 处数，然后每处一行，说法见下面「别的写坏之处」 | 1 |
+| 都没有 | `目录校验通过：N 个 skill、M 个 MCP、K 个工具、J 个应用项目、P 个用途` | 0 |
 
 单条条目的问题：
 
@@ -99,6 +121,21 @@ export type FieldRule =
 | `not-object` | 条目不是对象 | 条目不是对象 |
 | `bad-field` | `field` 这个字段不合 `rule` | 字段名 + 这条规则该是什么样 |
 | `duplicate` | 与前面的某一条重名 | 与前面的条目重名 |
+| `unlisted-purpose` | `purpose` 是个合规则的标识，但用途清单里没有它（清单本身写坏时，用了坏掉那一项的条目也落在这里） | 用途 `<写的标识>` 不在用途清单（purposes）里 |
+
+没有用途的条目是 `bad-field`（字段 `purpose`、规则 `purpose`），和「用途不在清单里」是两个原因、两句说法：前者是漏写或写的不是标识，后者多半是拼错了，所以把写的那个标识照打出来——它已经过了 `name` 的正则，打到终端上是安全的。
+
+别的写坏之处（`Catalog.flaws`）：
+
+| `kind` | 含义 | 命令怎么说 |
+|--------|------|------------|
+| `purposes-not-array` | 用途清单不是数组 | `catalog.json 的 purposes 不是数组：安装器会把它当作空的，除本仓库的 skill 外的条目都会被跳过` |
+| `purpose` | 用途清单的第几项写坏了，或标识与前面的重复 | `catalog.json 的 purposes 第 N 项（标识）：` 加问题——不是对象、字段该是什么样（`id` 用规则 `name`，`name`、`name.zh`、`name.en` 用 `object`、`text`）、`与前面的用途标识重复，只有第一项算数` |
+| `skill-purposes-not-object` | 本仓库 skill 的用途不是对象 | `catalog.json 的 skillPurposes 不是对象：要写成「skill 的名字: 用途的标识」` |
+| `unknown-skill` | `skillPurposes` 的一个键不是 `index.json` 里读得出来的 skill（拼错了，或那个 skill 自己被跳过了） | `catalog.json 的 skillPurposes 里 <名字> 不是 index.json 里的 skill` |
+| `skill-purpose` | 给这个 skill 写的用途不是标识，或不在用途清单里 | `catalog.json 的 skillPurposes 里 <名字> 的用途要是用途清单（purposes）里一个用途的标识（…）`；`… <名字> 的用途 <标识> 不在用途清单（purposes）里` |
+
+`skillPurposes` 的键不合 `name` 的正则时，说法里不打这个键（`有一个名字不是 index.json 里的 skill`），理由同 `SkippedEntry.name`。说法都在 `scripts/validate-catalog.ts` 的 `describeFlaw`：加一种 `CatalogFlaw` 就要在那里加一句，类型检查会拦住漏的。
 
 | `FieldRule` | 规则 | 现在用在 |
 |-------------|------|----------|
@@ -119,12 +156,15 @@ export type FieldRule =
 | `os-command` | 同上的一行命令，或 `null`（这个系统不支持） | 工具的 `install.macos`、`install.linux`、`install.windows` |
 | `tool-check` | `command` 与 `path` 恰好有一样 | 工具的 `check` |
 | `command-name` | 一个命令的名字：只含字母、数字和 `. _ -`，不带目录 | 工具的 `check.command` |
+| `purpose` | 用途的标识（与 `name` 同一条正则）；本仓库 skill 以外的条目都要写 | MCP、工具、应用项目的 `purpose`（没写，或写的不是标识） |
+
+规则 `name` 现在还用在用途清单每一项的 `id` 上，`object`、`text` 用在它的 `name`、`name.zh`、`name.en` 上，`boolean` 用在三类条目的 `recommended` 上。
 
 数组里某一项的字段写成 `env[0].name`：下标从 0 数起，和 JSON 里的位置一致（条目是“第几条”从 1 数起，那是给人数的）。嵌在里面的中英文说明仍用 `parseDescription`，第二个参数给它所在的字段（`env[0].`），报出来就是 `env[0].description.en`。
 
-规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，MCP 的顺序见 [安装 MCP](./mcp-install.md)，工具的见 [安装工具](./tool-install.md)。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
+规则本身（正则）见 [入口与测试](./installer-entry.md) 的校验表。一条条目只报头一处问题：skill 按 `name`、`version`、`path`、`description` 的顺序查，应用项目按 `name`、`description`、`url` 的顺序查，MCP 的顺序见 [安装 MCP](./mcp-install.md)，工具的见 [安装工具](./tool-install.md)；三类条目各自的字段都查完之后，再查 `purpose`、`recommended`（三类共用 `parsePlacement`）。命令里每条规则的说法是 `scripts/validate-catalog.ts` 的 `RULES`：加一种 `FieldRule` 就要在那里加一句，类型检查会拦住漏的。
 
-每一类条目各有一个 `parseXxx(entry): Xxx | EntryProblem`，都交给 `loadCatalog` 里的 `collect(document, list, parse)`：它逐条调 `parse`，写坏的和重名的带着原因进 `skipped`。**加一类条目就是加一个 `parse` 函数、调一次 `collect`**，不要另写一遍循环。中英文说明用 `parseDescription`，各类共用。
+每一类条目各有一个 `parseXxx(entry): Xxx | EntryProblem`，都交给 `loadCatalog` 里的 `collect(document, list, parse)`：它逐条调 `parse`，写坏的和重名的带着原因进 `skipped`。**加一类条目就是加一个 `parse` 函数、调一次 `collect`**，不要另写一遍循环。中英文说明用 `parseDescription`，各类共用。用途清单不是条目，但读法一样（逐项解析、标识重复的只留第一项），所以它和 `collect` 共用底下的 `readEntries`，只是写坏的进 `flaws` 而不是 `skipped`——`skipped` 的条数会显示给用户看，那句话说的是「条目」。
 
 `SkippedEntry.name` 只在名字合规则时才有：它会被原样打到终端上，而写坏的名字里可能夹着控制码。
 
@@ -134,9 +174,10 @@ export type FieldRule =
 
 ### 5. Good/Base/Bad Cases
 
-- Good：仓库当前的数据 → `目录校验通过：11 个 skill、0 个 MCP、0 个工具、0 个应用项目`，退出 0。
+- Good：仓库当前的数据 → `目录校验通过：12 个 skill、0 个 MCP、0 个工具、0 个应用项目、10 个用途`，退出 0。
 - Base：工具条目的 `install` 里有一个不认识的系统名（`solaris`）→ 忽略它，照常通过。
 - Bad：`index.json` 某一条的 `path` 写成 `skills/../x` → 指出第几条、名字、`path` 该是什么样，退出 1。
+- Bad：`skillPurposes` 里 `archify` 的用途拼错了 → 安装器一条都不跳，但命令指出是哪个 skill、写的是什么，退出 1。
 
 ### 6. Tests Required
 
@@ -149,7 +190,7 @@ expect(result.exitCode).toBe(1);
 ```
 
 - 样例目录用 `harness.ts` 的 `catalogDir()`。**不拿仓库真实的目录数据做测试**——测试不读 `cli/` 以外的文件；真实数据由 CI 的 `catalog` 作业跑。
-- 每加一类条目、一个字段、一种 `EntryProblem`：加一条“写坏时指明哪一条、哪个字段”的用例；每加一种整份读不了的情况：在“整份读不了”的表里加一行。
+- 每加一类条目、一个字段、一种 `EntryProblem`、一种 `CatalogFlaw`：加一条“写坏时指明哪一条、哪个字段”的用例；每加一种整份读不了的情况：在“整份读不了”的表里加一行。
 - 这个文件的超时放宽到 30 秒：每条用例各起一个 Node 进程，Windows 的 CI 机器上起得慢。
 
 ### 7. Wrong vs Correct

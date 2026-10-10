@@ -84,6 +84,10 @@
 ```json
 {
   "version": 1,
+  "purposes": [
+    { "id": "web-search", "name": { "zh": "联网搜索与文档检索", "en": "Web search & docs retrieval" } }
+  ],
+  "skillPurposes": { "archify": "documents" },
   "mcps": [],
   "tools": [],
   "apps": []
@@ -93,11 +97,17 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `version`（顶层） | 整数 | 格式版本号，当前为 `1`，见下节。加条目时不动它 |
+| `purposes` | 数组 | 用途清单，**有序**：数组里的先后就是用途的先后。可缺省，缺省当作空 |
+| `purposes[].id` | 字符串 | 用途的标识，小写 kebab-case（字符集与条目的 `name` 相同），在清单里唯一。条目的 `purpose` 写的就是它 |
+| `purposes[].name.zh`、`purposes[].name.en` | 字符串 | 用途的中英文名称，显示给用户看的 |
+| `skillPurposes` | 对象 | 本仓库个别 skill 的用途：键是 skill 的 `name`（要在 `index.json` 里有），值是一个用途的标识。可缺省。**只写要另外出现在某个用途下的 skill**，不写的只在「推荐」里 |
 | `mcps` | 数组 | MCP 条目。可缺省，缺省当作空 |
 | `tools` | 数组 | 工具条目。可缺省 |
 | `apps` | 数组 | 应用项目条目。可缺省 |
 
 三个数组现在都是空的，条目由维护者自己给出。主菜单只列有条目的分组。
+
+`purposes` 现在有 10 个用途，`skillPurposes` 里有 4 个 skill（`archify`、`onetake`、`unlazy`、`shuorenhua`）。增删改一个用途只要提交本仓库，不用发 npm 版本。**本仓库 skill 的用途记在这里而不是 `index.json`**：skill 清单在对 A Team Workflow 的承诺之内，给它的条目加字段会不会坏在本仓库内无从验证。本仓库的 skill 不靠任何标注就属于「推荐」，所以大多数 skill 在 `skillPurposes` 里没有、也不该有。
 
 **三类条目共有的字段**
 
@@ -106,6 +116,8 @@
 | `name` | 是 | 小写 kebab-case，字符集与 skill 的 `name` 相同。**只在各自的数组里唯一**：应用项目可以和某个 skill 同名；同一个数组里重名的只留第一条 |
 | `description.zh`、`description.en` | 是 | 中英文各一句说明，写法同 `index.json` |
 | `url` | 是 | 官方链接。只收 `https://` 开头的网址，别的字符（汉字、空格）先做百分号编码。应用项目的会显示出来并在浏览器里打开；MCP 和工具的目前不显示 |
+| `purpose` | 是 | 这一条的用途：`purposes` 里某一项的 `id`。有且只有一个。没写、或写的标识不在 `purposes` 里，这一条都会被安装器跳过 |
+| `recommended` | 否 | 布尔。`true` 表示这一条另外出现在「推荐」里；省略等于 `false` |
 
 **MCP 条目另有**
 
@@ -120,6 +132,7 @@
   "name": "exa",
   "description": { "zh": "…", "en": "…" },
   "url": "https://…",
+  "purpose": "web-search",
   "hosts": ["claude-code", "codex"],
   "server": { "command": "npx", "args": ["-y", "exa-mcp-server"] },
   "env": [
@@ -144,6 +157,7 @@
   "name": "uv",
   "description": { "zh": "…", "en": "…" },
   "url": "https://docs.astral.sh/uv/",
+  "purpose": "dev-workflow",
   "install": {
     "default": "curl -LsSf https://astral.sh/uv/install.sh | sh",
     "windows": "powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\""
@@ -156,11 +170,11 @@
 
 **这些字段的内容会被执行。** 目录是安装器运行时拉取的远程数据：MCP 的 `server` 会拼进宿主的命令并记进它的配置，工具的 `install` 会整行交给 shell。安装器执行前都完整展示并取得确认，但往 `catalog.json` 加条目仍然等于往用户的机器上放命令——只放官方给出的安装方式。
 
-写坏的条目只有那一条被安装器跳过，其余照常；不认识的字段一律忽略。每个字段逐字的规则和为什么收得这么紧：
+写坏的条目只有那一条被安装器跳过，其余照常；不认识的字段一律忽略。`purposes` 和 `skillPurposes` 写坏了不会让整份目录读不了：`purposes` 里写坏的一项不算数（用它的条目跟着被跳过），`skillPurposes` 里写坏的一项只是不起作用（那个 skill 照常在「推荐」里）——这两样安装器都不提，由目录校验命令报出来。每个字段逐字的规则和为什么收得这么紧：
 
 | 条目 | 在哪 |
 |------|------|
-| 共有字段、应用项目 | [CLI 层的入口与测试](../cli/installer-entry.md) 的“Validation & Error Matrix” |
+| 共有字段（含 `purpose`、`recommended`）、应用项目、`purposes`、`skillPurposes` | [CLI 层的入口与测试](../cli/installer-entry.md) 的“Validation & Error Matrix” |
 | MCP | [CLI 层的安装 MCP](../cli/mcp-install.md) 的“Contracts” |
 | 工具 | [CLI 层的安装工具](../cli/tool-install.md) 的“Contracts” |
 
@@ -176,12 +190,23 @@
 |------|--------------|------------------|
 | 增删条目 | 不升 | 照常 |
 | **新增可选字段** | **不升** | 忽略不认识的字段，照常 |
+| 新增顶层的键（如 `purposes`、`skillPurposes`） | 不升 | 同上：不认识的键不读 |
 | 给 `hosts` 加一个新的宿主标识 | 不升 | 不认识的标识留着不管 |
 | **不兼容的改动**，如改字段名、改字段的类型或含义 | **必须升** | 遇到比自己认识的更高的版本号，不尝试解析，提示 `npx oxy-tools@latest` 并以非零状态退出 |
 
 - 安装器认识到哪个版本，记在 `cli/src/catalog.ts` 的 `SUPPORTED_FORMAT`；升格式版本号就要连着改它并发一个 npm 版本。升版本号还没有发生过，具体怎么操作（先发安装器还是先推数据、哪些改动算不兼容）没有约定，第一次遇到时向维护者确认，并把结论补进本节。
 - `index.json` 在 A Team Workflow 的承诺之内，升它的格式版本号之前见下节。
-- **第一版发布之前的例外**：`catalog.json` 的条目格式是按两个宿主实际接受的配置方式定的，还没有经过真实条目检验。`oxy-tools` 发布到 npm 之前（2026-10-09 时尚未发布），维护者加入第一批真实条目时发现装不进现有格式，可以直接改格式而不升版本号。发布之后这条例外作废。
+- **改了格式就拿已发布的旧版实际读一遍。**「旧版会忽略不认识的字段」是推断，要看到画面才算数。都在临时目录里做，只看画面、不装东西：
+
+  ```bash
+  W=$(mktemp -d) && cd "$W" && npm init -y >/dev/null && npm install oxy-tools@0.2.0
+  export HOME="$W/home" CLAUDE_CONFIG_DIR="$W/home/claude" CODEX_HOME="$W/home/codex"   # 不碰真实的主目录和宿主配置
+  mkdir -p "$HOME" && OXY_TOOLS_CATALOG=<本仓库根> npx --no-install oxy-tools --lang zh
+  ```
+
+  安装器要交互式终端：自己在终端里跑，或用伪终端驱动（见 [CLI 层](../cli/index.md) 的「发布前在本机核对」）。看三样：「目录」一行的数量对、没有「条目格式有误」的提醒、主菜单是它原来的分组。2026-10-10 加 `purposes`、`skillPurposes` 时用 0.2.0 这样核对过：`目录  12 skill`，主菜单 `Skill 12` 和 `退出`，进入后照常列出 skill。
+- **第一版发布之前的例外已经作废**：`oxy-tools` 发布到 npm 之前，`catalog.json` 的格式可以直接改而不升版本号。它已经发布（0.2.0），此后对格式的每一处改动都照上表办。
+- **「必填」是对新版安装器说的，不是对格式版本说的。** 条目的 `purpose` 是 0.2.0 之后加的：0.2.0 不认识它、照旧显示它的四个分组；认识它的版本遇到没有 `purpose` 的条目会跳过。所以它算「新增可选字段」，格式版本号没有升。往目录里加条目时照新版的要求写全。
 
 ---
 
@@ -216,7 +241,7 @@ A Team Workflow 安装额外 skill 时读本仓库。它依赖下面三样（[AD
 | 缺 `zh` 或 `en` | 某个语言的列表里缺说明 |
 | JSON 语法错误 | 整个清单读不了 |
 
-安装器读不读得了 `index.json` 和 `catalog.json`、会不会跳过其中的条目（缺字段、字段不合规则、重名、JSON 语法错误、格式版本号不对），由目录校验命令查：在 `cli/` 下运行 `npm run validate-catalog -- ..`，通过时输出 `目录校验通过：N 个 skill、M 个 MCP、K 个工具、J 个应用项目`；CI 在推送后也跑这一条（见 [CLI 层的目录校验与 CI](../cli/catalog-validation.md)）。**改了这两个文件的任何一个，提交前都跑它。**
+安装器读不读得了 `index.json` 和 `catalog.json`、会不会跳过其中的条目（缺字段、字段不合规则、重名、没有用途或用途不在清单里、JSON 语法错误、格式版本号不对），以及用途清单和本仓库 skill 的用途有没有写坏，由目录校验命令查：在 `cli/` 下运行 `npm run validate-catalog -- ..`，通过时输出 `目录校验通过：N 个 skill、M 个 MCP、K 个工具、J 个应用项目、P 个用途`；CI 在推送后也跑这一条（见 [CLI 层的目录校验与 CI](../cli/catalog-validation.md)）。**改了这两个文件的任何一个，提交前都跑它。**
 
 清单与 `skills/` 对不对得上，那条命令不查——它不读 `skills/`。这一部分没有签入的脚本，也没有既定的流程。下面这段检查的是上表前三项、键集合和排序，在仓库根运行，通过时输出 `index.json 通过（N 个 skill）`：
 

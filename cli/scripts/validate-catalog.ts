@@ -1,6 +1,14 @@
 // 目录校验命令（仅供开发）：用安装器自己的校验逻辑检查一个本地目录里的 index.json 和 catalog.json。
 // 维护者提交前和 CI 跑的是同一条：npm run validate-catalog -- <目录>
-import { CatalogError, loadCatalog, localCatalogSource, type FieldRule, type SkippedEntry } from '../src/catalog.ts';
+import {
+  CatalogError,
+  loadCatalog,
+  localCatalogSource,
+  type CatalogFlaw,
+  type EntryProblem,
+  type FieldRule,
+  type SkippedEntry,
+} from '../src/catalog.ts';
 import { MESSAGES } from '../src/messages.ts';
 
 const EXIT_FAILURE = 1;
@@ -8,8 +16,10 @@ const EXIT_USAGE = 2;
 
 const COMMAND_WORD = '只含字母、数字和 @ : / . _ = + , ~ -，不含空白和引号';
 const SHELL_COMMAND = '只含看得见的 ASCII 字符，首尾不留空格，不换行';
+const KEBAB_CASE = '由小写字母和数字组成，分成几段时用连字符连接';
+const PURPOSE_ID = `用途清单（purposes）里一个用途的标识（${KEBAB_CASE}）`;
 const RULES: Record<FieldRule, string> = {
-  name: '要由小写字母和数字组成，分成几段时用连字符连接',
+  name: `要${KEBAB_CASE}`,
   text: '要是非空文字，且不含控制字符',
   'relative-path': '要是相对路径：用 / 分段，每段只含字母、数字和 . _ -，且不是 . 或 ..',
   object: '要是对象',
@@ -26,6 +36,7 @@ const RULES: Record<FieldRule, string> = {
   'os-command': `要是一行命令（${SHELL_COMMAND}），或用 null 表示这个系统不支持`,
   'tool-check': '里 command（看这个命令在不在可执行路径上）和 path（看主目录下这个相对路径存不存在）要恰好有一样',
   'command-name': '要是一个命令的名字：只含字母、数字和 . _ -，不带目录',
+  purpose: `要是${PURPOSE_ID}；除本仓库的 skill 外，每个条目都要写`,
 };
 
 process.exitCode = await validate(process.argv.slice(2));
@@ -49,25 +60,57 @@ async function validate(args: string[]): Promise<number> {
     if ('where' in catalog.failure) console.error(`  ${catalog.failure.where}`);
     return EXIT_FAILURE;
   }
-  if (catalog.skipped.length > 0) {
-    console.error(`目录校验未通过：有 ${catalog.skipped.length} 个条目会被安装器跳过`);
-    for (const entry of catalog.skipped) console.error(`  ${describe(entry)}`);
+  const { skipped, flaws } = catalog;
+  if (skipped.length > 0 || flaws.length > 0) {
+    const found = [
+      ...(skipped.length > 0 ? [`有 ${skipped.length} 个条目会被安装器跳过`] : []),
+      ...(flaws.length > 0 ? [`${skipped.length > 0 ? '另' : ''}有 ${flaws.length} 处写坏了`] : []),
+    ];
+    console.error(`目录校验未通过：${found.join('，')}`);
+    for (const entry of skipped) console.error(`  ${describe(entry)}`);
+    for (const flaw of flaws) console.error(`  ${describeFlaw(flaw)}`);
     return EXIT_FAILURE;
   }
   console.log(
-    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目`,
+    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目、${catalog.purposes.length} 个用途`,
   );
   return 0;
 }
 
 function describe({ file, list, position, name, problem }: SkippedEntry): string {
   const where = `${file} 的 ${list} 第 ${position} 条${name === undefined ? '' : `（${name}）`}`;
+  return `${where}：${explain(problem, { notObject: '条目不是对象', duplicate: '与前面的条目重名' })}`;
+}
+
+function explain(problem: EntryProblem, said: { notObject: string; duplicate: string }): string {
   switch (problem.kind) {
     case 'not-object':
-      return `${where}：条目不是对象`;
+      return said.notObject;
     case 'duplicate':
-      return `${where}：与前面的条目重名`;
+      return said.duplicate;
     case 'bad-field':
-      return `${where}：${problem.field} ${RULES[problem.rule]}`;
+      return `${problem.field} ${RULES[problem.rule]}`;
+    case 'unlisted-purpose':
+      return `用途 ${problem.purpose} 不在用途清单（purposes）里`;
+  }
+}
+
+// 没有让哪个条目被跳过的写坏之处：安装器不提，这里要说
+function describeFlaw(flaw: CatalogFlaw): string {
+  switch (flaw.kind) {
+    case 'purposes-not-array':
+      return `${flaw.file} 的 purposes 不是数组：安装器会把它当作空的，除本仓库的 skill 外的条目都会被跳过`;
+    case 'purpose': {
+      const where = `${flaw.file} 的 purposes 第 ${flaw.position} 项${flaw.id === undefined ? '' : `（${flaw.id}）`}`;
+      return `${where}：${explain(flaw.problem, { notObject: '不是对象', duplicate: '与前面的用途标识重复，只有第一项算数' })}`;
+    }
+    case 'skill-purposes-not-object':
+      return `${flaw.file} 的 skillPurposes 不是对象：要写成「skill 的名字: 用途的标识」`;
+    case 'unknown-skill':
+      return `${flaw.file} 的 skillPurposes 里${flaw.skill === undefined ? '有一个名字' : ` ${flaw.skill} `}不是 index.json 里的 skill`;
+    case 'skill-purpose': {
+      const where = `${flaw.file} 的 skillPurposes 里 ${flaw.skill} 的用途`;
+      return flaw.purpose === undefined ? `${where}要是${PURPOSE_ID}` : `${where} ${flaw.purpose} 不在用途清单（purposes）里`;
+    }
   }
 }

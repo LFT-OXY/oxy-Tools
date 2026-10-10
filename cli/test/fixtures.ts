@@ -22,7 +22,13 @@ export const SAMPLE_FILES: Record<string, string> = {
   'skills/beta-pack/SKILL.md': '# beta-pack\n',
 };
 
-export const EMPTY_CATALOG = { version: 1, mcps: [], tools: [], apps: [] };
+/** 用途清单：两个用途，样例的 MCP、工具、应用项目各归其中一个 */
+export const SAMPLE_PURPOSES = [
+  { id: 'web-search', name: { zh: '联网搜索与文档检索', en: 'Web search & docs retrieval' } },
+  { id: 'dev-workflow', name: { zh: '开发工作流与规范', en: 'Development workflow & conventions' } },
+];
+
+export const EMPTY_CATALOG = { version: 1, purposes: SAMPLE_PURPOSES, mcps: [], tools: [], apps: [] };
 
 export const LONG_APP_ABOUT = {
   zh: '第一个样例应用项目，它的说明同样故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方和详情里去看',
@@ -30,8 +36,13 @@ export const LONG_APP_ABOUT = {
 };
 
 export const SAMPLE_APPS = [
-  { name: 'atlas', description: LONG_APP_ABOUT, url: 'https://example.com/atlas?tab=readme&lang=zh#install' },
-  { name: 'borealis', description: { zh: '第二个样例应用项目', en: 'The second sample app' }, url: 'https://example.org/borealis' },
+  { name: 'atlas', description: LONG_APP_ABOUT, url: 'https://example.com/atlas?tab=readme&lang=zh#install', purpose: 'dev-workflow' },
+  {
+    name: 'borealis',
+    description: { zh: '第二个样例应用项目', en: 'The second sample app' },
+    url: 'https://example.org/borealis',
+    purpose: 'web-search',
+  },
 ];
 
 export const LONG_MCP_ABOUT = {
@@ -45,12 +56,14 @@ export const SAMPLE_MCPS = [
     name: 'docs-local',
     description: LONG_MCP_ABOUT,
     url: 'https://example.com/docs-local',
+    purpose: 'web-search',
     server: { command: 'npx', args: ['-y', '@example/docs-mcp@latest'] },
   },
   {
     name: 'tracker-remote',
     description: { zh: '远程地址方式的样例 MCP', en: 'A sample MCP reached at a remote address' },
     url: 'https://example.org/tracker',
+    purpose: 'dev-workflow',
     server: { url: 'https://mcp.example.org/mcp' },
   },
 ];
@@ -60,6 +73,7 @@ export const KEYED_MCP = {
   name: 'search-keyed',
   description: { zh: '需要 API key 的样例 MCP', en: 'A sample MCP that needs an API key' },
   url: 'https://example.com/search-keyed',
+  purpose: 'web-search',
   server: { command: 'npx', args: ['-y', '@example/search-mcp'] },
   env: [
     {
@@ -82,6 +96,7 @@ export const SAMPLE_TOOLS = [
     name: 'fetcher',
     description: LONG_TOOL_ABOUT,
     url: 'https://example.com/fetcher',
+    purpose: 'web-search',
     install: {
       default: 'curl -LsSf https://example.com/fetcher/install.sh | sh',
       windows: 'powershell -ExecutionPolicy ByPass -c "irm https://example.com/fetcher/install.ps1 | iex"',
@@ -92,6 +107,7 @@ export const SAMPLE_TOOLS = [
     name: 'linter',
     description: { zh: '第二个样例工具', en: 'The second sample tool' },
     url: 'https://example.org/linter',
+    purpose: 'dev-workflow',
     install: { default: 'npm install -g @example/linter@latest' },
     check: { path: '.linter/bin/linter' },
   },

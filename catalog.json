@@ -1,5 +1,23 @@
 {
   "version": 1,
+  "purposes": [
+    { "id": "dev-workflow", "name": { "zh": "开发工作流与规范", "en": "Development workflow & conventions" } },
+    { "id": "agent-behavior", "name": { "zh": "Agent 行为约束与输出风格", "en": "Agent behavior & output style" } },
+    { "id": "codebase-understanding", "name": { "zh": "代码库索引与理解", "en": "Codebase indexing & understanding" } },
+    { "id": "context-memory", "name": { "zh": "上下文、记忆与 Token 优化", "en": "Context, memory & token optimization" } },
+    { "id": "web-search", "name": { "zh": "联网搜索与文档检索", "en": "Web search & docs retrieval" } },
+    { "id": "browser-automation", "name": { "zh": "浏览器自动化", "en": "Browser automation" } },
+    { "id": "design-media", "name": { "zh": "UI 设计、图像与视频", "en": "UI design, images & video" } },
+    { "id": "documents", "name": { "zh": "文档处理", "en": "Document processing" } },
+    { "id": "prompts-writing", "name": { "zh": "提示词与写作", "en": "Prompts & writing" } },
+    { "id": "review-security", "name": { "zh": "代码审查、评估与安全", "en": "Code review, evaluation & security" } }
+  ],
+  "skillPurposes": {
+    "archify": "documents",
+    "onetake": "design-media",
+    "unlazy": "agent-behavior",
+    "shuorenhua": "prompts-writing"
+  },
   "mcps": [],
   "tools": [],
   "apps": []

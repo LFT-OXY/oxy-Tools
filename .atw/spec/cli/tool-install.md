@@ -16,7 +16,7 @@
 // cli/src/catalog.ts
 export type ToolOs = 'macos' | 'linux' | 'windows';
 export type ToolCheck = { command: string } | { path: string }; // 命令在不在可执行路径上，或主目录下的相对路径存不存在
-export interface Tool {
+export interface Tool extends Placement { // Placement：{ purpose, recommended }，见「安装 MCP」的签名
   name: string;
   description: { zh: string; en: string };
   url: string;        // 官方链接，目前不显示
@@ -57,6 +57,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
   "name": "uv",
   "description": { "zh": "…", "en": "…" },
   "url": "https://docs.astral.sh/uv/",
+  "purpose": "dev-workflow",
   "hosts": ["claude-code"],
   "install": {
     "default": "curl -LsSf https://astral.sh/uv/install.sh | sh",
@@ -131,7 +132,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 ### 4. Validation & Error Matrix
 
-目录里写坏的工具条目只跳过那一条，带着原因进 `Catalog.skipped`。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`install`、`install.default`、`install.macos` / `linux` / `windows`、`check`、`check.path` / `check.command` 的顺序查。新增的 `FieldRule` 见 [目录校验与 CI](./catalog-validation.md)。
+目录里写坏的工具条目只跳过那一条，带着原因进 `Catalog.skipped`。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`install`、`install.default`、`install.macos` / `linux` / `windows`、`check`、`check.path` / `check.command` 的顺序查；工具自己的字段都查完之后，最后是三类条目共有的 `purpose`（必须写，且在用途清单里）、`recommended`，规则见 [入口与测试](./installer-entry.md) 的校验表。新增的 `FieldRule` 见 [目录校验与 CI](./catalog-validation.md)。
 
 执行的结论（`installTool` 从不抛错，结论由 `messages.ts` 的 `toolResult` 说成话）：
 

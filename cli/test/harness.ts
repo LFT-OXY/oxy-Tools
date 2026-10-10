@@ -27,6 +27,7 @@ export {
   SAMPLE_APPS,
   SAMPLE_FILES,
   SAMPLE_MCPS,
+  SAMPLE_PURPOSES,
   SAMPLE_SKILLS,
   SAMPLE_TOOLS,
 } from './fixtures.ts';

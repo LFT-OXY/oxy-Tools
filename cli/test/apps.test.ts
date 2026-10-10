@@ -138,6 +138,8 @@ describe('写坏的应用项目条目', () => {
     name: 'broken',
     description: { zh: '写坏的应用项目', en: 'A broken app' },
     url: 'https://example.com/broken',
+    // 带上用途：每条用例里写坏的只有它自己改掉的那个字段
+    purpose: 'dev-workflow',
     ...overrides,
   });
 

@@ -127,12 +127,20 @@ export function localCatalogSource(dir: string): CatalogSource;
 **目录文件**
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
-- `catalog.json`：`{ "version": 1, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空。三类条目的内容都读、都校验：`apps` 的字段见下，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
+- `catalog.json`：`{ "version": 1, "purposes": [], "skillPurposes": {}, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空。三类条目的内容都读、都校验：`apps` 的字段见下，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
 - `apps` 的一条（应用项目）：
 
   ```json
-  { "name": "dify", "description": { "zh": "…", "en": "…" }, "url": "https://github.com/langgenius/dify" }
+  { "name": "dify", "description": { "zh": "…", "en": "…" }, "url": "https://github.com/langgenius/dify", "purpose": "dev-workflow" }
   ```
+- `purposes`（用途清单）和 `skillPurposes`（本仓库个别 skill 的用途）也可以缺省：
+
+  ```json
+  "purposes": [{ "id": "dev-workflow", "name": { "zh": "开发工作流与规范", "en": "Development workflow & conventions" } }],
+  "skillPurposes": { "archify": "documents" }
+  ```
+
+  读出来的结果在 `Catalog` 上：`purposes` 是清单里合规则的各项，顺序照文件；MCP、工具、应用项目各带 `purpose`（清单里的一个标识）和 `recommended`（没写是 `false`）；skill 的 `purpose` 只有在 `skillPurposes` 里给它写了、且那个用途在清单里时才有。**这些现在只是读进来，画面还没有用到**——主菜单仍是按类型的四个分组，按用途进入是后面的工单。
 - 两个文件的 `version` 都是整数的格式版本号，安装器目前认识到 1。
 
 ### 4. Validation & Error Matrix
@@ -167,6 +175,29 @@ export function localCatalogSource(dir: string): CatalogSource;
 | `url` | `^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$`，且 `URL.canParse` 通过。只收 https；只含 RFC 3986 允许的字符，别的（汉字、空格）要先做百分号编码 |
 | 重名、不认识的字段 | 同上 |
 
+三类条目（MCP、工具、应用项目）另有两个共有的字段，在各自的字段都查完之后查，先 `purpose` 后 `recommended`：
+
+| 字段 | 规则 | 不合规则时 |
+|------|------|------------|
+| `purpose` | 必须有，且是用途的标识（与 `name` 同一条正则） | 跳过这一条，原因是 `bad-field`、规则 `purpose` |
+| `purpose` | 这个标识在用途清单里 | 跳过这一条，原因是 `unlisted-purpose`，带着写的那个标识 |
+| `recommended` | 可以省略（当作 `false`）；写了就得是布尔 | 跳过这一条，原因是 `bad-field`、规则 `boolean` |
+
+本仓库 skill 以外的条目**有且只有一个用途**，没有用途的不归进什么「其他」，而是跳过——和别的写坏的条目一样连同原因进 `Catalog.skipped`，主菜单上方照旧只提示数量。没有 `purposes` 的旧格式目录因此读得了、不崩：里面的 skill 照常，三个数组里的条目全部因为没有用途被跳过。
+
+用途清单和本仓库 skill 的用途**写坏了也不让整份目录读不了**，受影响的东西各自降级：
+
+| 哪里写坏 | 安装器怎么读 | 记进哪 |
+|----------|--------------|--------|
+| `purposes` 不是数组 | 当作空的清单：三个数组里的条目都因「用途不在清单里」被跳过 | `Catalog.flaws`（`purposes-not-array`），条目各自进 `skipped` |
+| `purposes` 的一项不是对象；`id` 不合 `name` 的正则；`name` 不是对象；`name.zh`、`name.en` 不是非空文字或含控制字符 | 这一项不算数；用它的条目因「用途不在清单里」被跳过 | `flaws`（`purpose`，带第几项、标识、问题） |
+| `purposes` 里两项的 `id` 相同 | 只留第一项 | `flaws`（`purpose`，问题是 `duplicate`） |
+| `skillPurposes` 不是对象 | 当作没写：没有哪个 skill 有用途 | `flaws`（`skill-purposes-not-object`） |
+| `skillPurposes` 的键不是 `index.json` 里读得出来的 skill | 这一项不起作用 | `flaws`（`unknown-skill`） |
+| `skillPurposes` 的值不是用途的标识，或不在用途清单里 | **这个 skill 不跳过**：它没有用途，照常是目录里的一个 skill | `flaws`（`skill-purpose`，带 skill 的名字；写的是个标识时带上它） |
+
+`Catalog.flaws` 里的东西安装器一句都不提（它不影响用户能装什么），只有目录校验命令报，见 [目录校验与 CI](./catalog-validation.md)。本仓库的 skill 没有用途是常态，不是问题：凡是放进仓库的 skill 都属于「推荐」，只有个别的另外归到一个用途下。
+
 `url` 收得这么紧是因为它有两个去处：原样打到终端上让用户复制，和交给系统的打开命令。规则保证里面没有空白、引号、反斜杠、控制字符和不可见的字符（如改变文字方向的 `U+202E`），所以它在终端上不会被折开、看到的就是打开的、在任何系统的命令行上都是一个参数。这条规则是工单 07 的实现者定的，**维护者尚未确认**；要放宽（比如收 `http`）先改这里和 `catalog.ts` 的 `HTTPS_URL`。
 
 其他不能继续的情况：标准输入或标准输出不是终端 →「没有交互式终端」，不打印大标志，不问语言，不读目录；任何没预料到的异常 →「意外错误」，原因取消息的第一行（为空时用错误的类型名），不打印堆栈。
@@ -180,6 +211,9 @@ export function localCatalogSource(dir: string): CatalogSource;
 - Base（语言）：`--lang en --help` → 不问，帮助是英文；`--lang fr` → 不问，出错「无法识别的参数」，退出状态 2，说明用系统语言。
 - Bad（语言）：选完语言后目录读不了 → 出错说明用选定的语言，它的标题与语言提问收成的那一行之间空一行；以 1 退出。
 - Base（应用项目）：`apps` 里一条的 `url` 是 `http://…` → 这一条被跳过并计入提示的数量，其余应用项目照常；全部被跳过时主菜单不出现这个分组。
+- Base（用途）：`mcps` 里一条没写 `purpose`，另一条写的用途不在 `purposes` 里 → 两条都被跳过，提示「目录中有 2 个条目格式有误，已跳过」，其余 MCP 照常。
+- Base（用途）：`skillPurposes` 给 `alpha` 写了一个清单里没有的用途 → 没有提示，`alpha` 照常在 Skill 分组里；目录校验命令报出来。
+- Bad（用途）：`purposes` 写成了对象 → 目录照常读出来，Skill 分组照常；三个数组里的条目全部被跳过并计入提示的数量。
 
 ### 6. Tests Required
 
@@ -217,6 +251,7 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问——它上下的空行在主题的提问标记和提问样式里，有就照打——、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
 - 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
 - 链接打开器只记录：要打开的网址按先后进 `result.opened`。`browser: false` 表示浏览器打不开——网址照样记下，然后打开器拒绝；用来证明“打不开时不报错、链接文本仍在”。
+- **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单，新加的样例条目要写其中一个用途，不然那一格里它就不见了。用途的读取规则在 `cli/test/purposes.test.ts`，每种写坏的情况各一条。
 - 宿主的配置文件用 `home` 放：`home: { '.claude.json': JSON.stringify({ mcpServers: { x: {} } }) }`、`home: { '.codex/config.toml': '[mcp_servers.x]\n' }`。
 - 运行环境的初始状态：`onPath: ['claude']`（可执行路径上有哪些命令，缺省只有 `claude`——也就是只检测到一个宿主、不问装进哪个；`['claude', 'codex']` 是两个都检测到，传 `[]` 就是一个都没有）；`home: { '.claude/skills/x/SKILL.md': '…' }`（主目录里事先有什么）；`links: { '.claude/skills/x': 'my-skills/x' }`（主目录里事先有的符号链接，链接 → 它指向哪，都是相对主目录的路径；在 Windows 上建的是不需要特权的 junction）；`catalogDir({ content: {...} })`（本地样例目录里各个 skill 的文件，缺省是 `SAMPLE_FILES`）；`interrupt: controller.signal` 和 `tmp`（要在中途触发中断并当场查看临时目录时用）；`columns: 160`（终端的列数，缺省不给，安装器按 80 列算——用来证明某样东西不随窗口的宽度变，如标题区按 80 列居中）；`rows: 24`（终端的行数，缺省 40，安装器和真实的交互库拿到的都是它——用来证明矮终端里列表一屏放多少行）。
 - 默认来源（GitHub）的行为用 `cli/test/github.ts` 的 `fakeGitHub()`：它替换全局的 `fetch`，照真实接口的样子答复提交号、文件树和原始文件，记下每个请求（`requests`、`queries()`、`downloads()`）；`intercept` 可以抢在正常答复之前让某个请求失败。用完 `vi.unstubAllGlobals()`。

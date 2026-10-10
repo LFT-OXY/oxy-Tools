@@ -21,7 +21,8 @@ export interface McpVariable {  // MCP 启动时要带上的一个环境变量�
   description: { zh: string; en: string };
   url: string;                  // 去哪申请
 }
-export interface Mcp {
+export interface Placement { purpose: string; recommended: boolean } // 用途（用途清单里的一个标识）、是否另外进「推荐」；MCP、工具、应用项目共有，见「入口与测试」
+export interface Mcp extends Placement {
   name: string;
   description: { zh: string; en: string };
   url: string;        // 官方链接
@@ -83,12 +84,15 @@ export function systemCommandRunner(): CommandRunner;
   "name": "context7",
   "description": { "zh": "…", "en": "…" },
   "url": "https://github.com/upstash/context7",
+  "purpose": "web-search",
   "hosts": ["claude-code", "codex"],
   "server": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] }
 }
 ```
 
 远程地址的写成 `"server": { "url": "https://mcp.example.com/mcp" }`。
+
+`purpose` 必须写，且是 `catalog.json` 的 `purposes` 里某一项的 `id`；另可写 `"recommended": true`。没写用途、或用途不在清单里的条目会被跳过，规则见 [入口与测试](./installer-entry.md) 的校验表。
 
 需要 API key 的再加一个 `env`：
 
@@ -196,7 +200,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 ### 4. Validation & Error Matrix
 
-目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args`、`env`（逐项按 `name`、`required`、`description`、`url`，再查重名）、最后是“远程地址不许带 `env`”的顺序查。
+目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args`、`env`（逐项按 `name`、`required`、`description`、`url`，再查重名）、“远程地址不许带 `env`”的顺序查；MCP 自己的字段都查完之后，最后是三类条目共有的 `purpose`、`recommended`。
 
 单项安装失败（`installMcp` 抛 `McpInstallError`）：只这一项失败，结果里这一行写「失败」加原因，退出状态不变。
 

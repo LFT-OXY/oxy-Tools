@@ -3,7 +3,17 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, SAMPLE_TOOLS, STACK_FRAME, catalogDir } from './harness.ts';
+import {
+  EMPTY_CATALOG,
+  KEYED_MCP,
+  SAMPLE_APPS,
+  SAMPLE_MCPS,
+  SAMPLE_PURPOSES,
+  SAMPLE_SKILLS,
+  SAMPLE_TOOLS,
+  STACK_FRAME,
+  catalogDir,
+} from './harness.ts';
 
 const good = SAMPLE_SKILLS[1];
 const skill = (overrides: Record<string, unknown>): Record<string, unknown> => ({
@@ -247,6 +257,158 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.stderr).toContain('有 2 个条目');
     expect(result.stderr).toMatch(/index\.json 的 skills 第 2 条（broken）：version /);
     expect(result.stderr).toMatch(/catalog\.json 的 apps 第 1 条（borealis）：description\.en .*非空文字/);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('用途清单也校验：没有问题时说明有几个用途', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, skillPurposes: { alpha: 'web-search' } } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个工具、0 个应用项目、2 个用途');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('没有用途清单的旧格式目录，里面没有条目时照常通过', async () => {
+    const result = await validate(catalogDir({ catalog: { version: 1, mcps: [], tools: [], apps: [] } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、0 个工具、0 个应用项目、0 个用途');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it.each([
+    ['mcps', SAMPLE_MCPS],
+    ['tools', SAMPLE_TOOLS],
+    ['apps', SAMPLE_APPS],
+  ])('%s 的条目没有用途时，说出每个条目都要写用途', async (list, [first, second]) => {
+    const { purpose: _purpose, ...broken } = { ...first!, name: 'broken' };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, [list]: [second, broken] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 ${list} 第 2 条（broken）：purpose .*用途清单.*标识.*每个条目都要写`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['不是文字', 42],
+    ['不是标识', 'Web Search'],
+    ['夹着终端控制码', 'web\x1b[2Jsearch'],
+  ])('条目的用途%s时，和没有用途是同一句说法，不把写的东西原样打出来', async (_label, purpose) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ ...SAMPLE_MCPS[0], purpose }] } }));
+
+    expect(result.stderr).toMatch(/catalog\.json 的 mcps 第 1 条（docs-local）：purpose .*用途清单.*标识/);
+    expect(result.stderr).not.toContain('\x1b');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['mcps', SAMPLE_MCPS],
+    ['tools', SAMPLE_TOOLS],
+    ['apps', SAMPLE_APPS],
+  ])('%s 的条目的用途不在用途清单里时，说出写的是哪个用途', async (list, [first, second]) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, [list]: [second, { ...first, name: 'broken', purpose: 'web-serach' }] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 ${list} 第 2 条（broken）：用途 web-serach 不在用途清单（purposes）里`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('条目的推荐标记不是布尔时，说出这个字段该是什么样的', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: [{ ...SAMPLE_TOOLS[0], recommended: 'yes' }] } }));
+
+    expect(result.stderr).toMatch(/catalog\.json 的 tools 第 1 条（fetcher）：recommended .*true 或 false/);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('条目自己的字段和用途都写坏时，只报头一处：自己的字段', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [{ ...SAMPLE_MCPS[0], server: {}, purpose: 'nowhere' }] } }));
+
+    expect(result.stderr).toMatch(/catalog\.json 的 mcps 第 1 条（docs-local）：server /);
+    expect(result.stderr).not.toContain('nowhere');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['是对象', { 'web-search': SAMPLE_PURPOSES[0] }],
+    ['是文字', 'web-search'],
+    ['是 null', null],
+  ])('用途清单不是数组（%s）时，说明它会被当作空的；没有条目也不算通过', async (_label, purposes) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, purposes } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 处写坏了');
+    expect(result.stderr).toMatch(/catalog\.json 的 purposes 不是数组/);
+    expect(result.stderr).not.toMatch(STACK_FRAME);
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('用途清单不是数组时，被连带跳过的条目和清单本身都报出来', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, purposes: {}, mcps: SAMPLE_MCPS } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 2 个条目会被安装器跳过，另有 1 处写坏了');
+    expect(result.stderr).toMatch(/catalog\.json 的 mcps 第 1 条（docs-local）：用途 web-search 不在用途清单（purposes）里/);
+    expect(result.stderr).toMatch(/catalog\.json 的 mcps 第 2 条（tracker-remote）：用途 dev-workflow 不在用途清单（purposes）里/);
+    expect(result.stderr).toMatch(/catalog\.json 的 purposes 不是数组/);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['不是对象', 'web-search', '', '不是对象'],
+    ['标识不合规则', { ...SAMPLE_PURPOSES[0], id: 'Web Search' }, '', 'id .*小写字母'],
+    ['没有标识', { name: SAMPLE_PURPOSES[0]!.name }, '', 'id .*小写字母'],
+    ['缺名称', { id: 'web-search' }, '（web-search）', 'name .*对象'],
+    ['缺中文名称', { id: 'web-search', name: { en: 'Web search' } }, '（web-search）', 'name\\.zh .*非空文字'],
+    ['缺英文名称', { id: 'web-search', name: { zh: '联网搜索' } }, '（web-search）', 'name\\.en .*非空文字'],
+    ['名称里夹着终端控制码', { id: 'web-search', name: { zh: '联网搜索\x1b[2J', en: 'Web search' } }, '（web-search）', 'name\\.zh .*控制字符'],
+    ['标识与前面的重复', SAMPLE_PURPOSES[1], '（dev-workflow）', '与前面的用途标识重复'],
+  ])('用途清单的一项%s时，指明是第几项、哪个字段；没有条目用到它也不算通过', async (_label, broken, named, problem) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, purposes: [SAMPLE_PURPOSES[1], broken] } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 处写坏了');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 purposes 第 2 项${named}：${problem}`));
+    expect(result.stderr).not.toContain('\x1b');
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['用途不在清单里', { alpha: 'web-serach' }, ' alpha 的用途 web-serach 不在用途清单（purposes）里'],
+    ['用途不是标识', { alpha: 42 }, ' alpha 的用途要是.*标识'],
+    ['目录里没有这个 skill', { 'no-such-skill': 'web-search' }, ' no-such-skill 不是 index\\.json 里的 skill'],
+    ['skill 的名字不合规则', { 'bad\x1b[2Jname': 'web-search' }, '有一个名字不是 index\\.json 里的 skill'],
+  ])('给本仓库 skill 写的用途有问题（%s）：安装器不跳过它，但命令报出来', async (_label, skillPurposes, problem) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, skillPurposes } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 处写坏了');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 skillPurposes 里${problem}`));
+    expect(result.stderr).not.toContain('\x1b');
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('被跳过的 skill 不算目录里的 skill：给它写用途同样报出来', async () => {
+    const result = await validate(
+      catalogDir({
+        index: { version: 1, skills: [good, skill({ version: undefined })] },
+        catalog: { ...EMPTY_CATALOG, skillPurposes: { broken: 'web-search' } },
+      }),
+    );
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 个条目会被安装器跳过，另有 1 处写坏了');
+    expect(result.stderr).toMatch(/catalog\.json 的 skillPurposes 里 broken 不是 index\.json 里的 skill/);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['是数组', ['alpha']],
+    ['是文字', 'alpha'],
+    ['是 null', null],
+  ])('本仓库 skill 的用途不是对象（%s）时，说明该怎么写', async (_label, skillPurposes) => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, skillPurposes } }));
+
+    expect(result.stderr).toContain('目录校验未通过：有 1 处写坏了');
+    expect(result.stderr).toMatch(/catalog\.json 的 skillPurposes 不是对象/);
+    expect(result.stdout).not.toContain('通过');
     expect(result.exitCode).toBe(1);
   });
 

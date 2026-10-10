@@ -93,13 +93,13 @@ function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG, pin = downl
   return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]), pin };
 }
 
-// 应用项目是为预览编的样例：仓库的 catalog.json 目前是空的
+// 应用项目是为预览编的样例：仓库的 catalog.json 目前是空的。样例条目的用途取自 EMPTY_CATALOG 带的那份用途清单
 const SHOWCASE_APPS = [
   ['dify', '开源的 LLM 应用开发平台，自带工作流编排与知识库，用 docker 部署', 'Open-source LLM app development platform with workflow orchestration and a knowledge base, deployed with docker', 'https://github.com/langgenius/dify'],
   ['n8n', '可自托管的工作流自动化平台，内置 AI 节点', 'Self-hostable workflow automation platform with built-in AI nodes', 'https://github.com/n8n-io/n8n'],
   ['open-webui', '自托管的大模型对话界面，可接 Ollama 与各家 API', 'Self-hosted chat interface for large models; works with Ollama and vendor APIs', 'https://github.com/open-webui/open-webui'],
   ['ragflow', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
-].map(([name, zh, en, url]) => ({ name, description: { zh, en }, url }));
+].map(([name, zh, en, url]) => ({ name, description: { zh, en }, url, purpose: 'dev-workflow' }));
 
 // MCP 同样是为预览编的样例：两种连接方式都有，其中一条只支持 Codex
 const SHOWCASE_MCPS = [
@@ -107,7 +107,7 @@ const SHOWCASE_MCPS = [
   { name: 'context7', zh: '按需拉取各种库的最新文档', en: 'Pull up-to-date documentation for libraries on demand', server: { command: 'npx', args: ['-y', '@upstash/context7-mcp'] } },
   { name: 'linear', zh: '读写 Linear 的 issue 与项目，登录交给 AI Agent 自己的流程', en: 'Read and write Linear issues and projects; signing in is left to the AI Agent', server: { url: 'https://mcp.linear.app/mcp' } },
   { name: 'openai-docs', zh: '查询 OpenAI 开发者文档', en: 'Search the OpenAI developer docs', hosts: ['codex'], server: { url: 'https://developers.openai.com/mcp' } },
-].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}` }));
+].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}`, purpose: 'web-search' }));
 
 // 工具也是为预览编的样例：两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用
 const SHOWCASE_TOOLS = [
@@ -128,12 +128,13 @@ const SHOWCASE_TOOLS = [
     check: { command: 'bwrap' },
   },
   { name: 'codex-usage', zh: '统计 Codex 的用量与花费', en: 'Report Codex usage and cost', hosts: ['codex'], install: { default: 'npm install -g codex-usage' }, check: { command: 'codex-usage' } },
-].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}` }));
+].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}`, purpose: 'dev-workflow' }));
 // 名字和命令都长的工具：命令在汇总里折行
 const LONG_COMMAND_TOOL = {
   name: 'rustup-toolchain-installer',
   description: { zh: 'Rust 工具链的安装与版本管理器', en: 'Installer and version manager for the Rust toolchain' },
   url: 'https://example.com/rustup',
+  purpose: 'dev-workflow',
   install: { default: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path" },
   check: { path: '.cargo/bin/rustup' },
 };
@@ -166,6 +167,7 @@ const LONG_NAME_MCP = {
   name: 'modelcontextprotocol-server-sequential-thinking',
   description: { zh: '把复杂问题拆成一步步的思考过程', en: 'Break a complex problem down into a step-by-step thinking process' },
   url: 'https://example.com/sequential-thinking',
+  purpose: 'web-search',
   server: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
 };
 const withLongNameMcp = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: [...SHOWCASE_MCPS, LONG_NAME_MCP] });
@@ -178,6 +180,7 @@ const SHOWCASE_KEYED_MCPS = [
     name: 'exa',
     description: { zh: '面向 AI 的网页搜索与正文抓取，需要 API key', en: 'Web search and page content retrieval built for AI; needs an API key' },
     url: 'https://example.com/exa',
+    purpose: 'web-search',
     server: { command: 'npx', args: ['-y', 'exa-mcp-server'] },
     env: keyed('EXA_API_KEY', true, 'Exa 搜索 API 的密钥；注册后有免费额度，在控制台的 API Keys 页创建', 'Key for the Exa search API; sign-up includes a free quota, and keys are created on the API Keys page of the dashboard', 'https://dashboard.exa.ai/api-keys'),
   },
