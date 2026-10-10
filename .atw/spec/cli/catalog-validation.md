@@ -74,7 +74,7 @@ export type CatalogFlaw = { file: string } & (
 输出的样子：
 
 ```
-目录校验通过：12 个 skill、0 个 MCP、0 个工具、0 个应用项目、10 个用途
+目录校验通过：12 个 skill、11 个 MCP、0 个工具、10 个应用项目、10 个用途
 ```
 
 通过信息把**校验过的每一类**都数出来，是 0 也写：它说的是“这一类查过了”，和主菜单上方「目录」一行只数有条目的分组不是一回事。
@@ -174,7 +174,7 @@ export type CatalogFlaw = { file: string } & (
 
 ### 5. Good/Base/Bad Cases
 
-- Good：仓库当前的数据 → `目录校验通过：12 个 skill、0 个 MCP、0 个工具、0 个应用项目、10 个用途`，退出 0。
+- Good：仓库的数据（2026-10-10 录入 21 个 MCP 条目之后）→ `目录校验通过：12 个 skill、11 个 MCP、0 个工具、10 个应用项目、10 个用途`，退出 0。
 - Base：工具条目的 `install` 里有一个不认识的系统名（`solaris`）→ 忽略它，照常通过。
 - Bad：`index.json` 某一条的 `path` 写成 `skills/../x` → 指出第几条、名字、`path` 该是什么样，退出 1。
 - Bad：`skillPurposes` 里 `archify` 的用途拼错了 → 安装器一条都不跳，但命令指出是哪个 skill、写的是什么，退出 1。

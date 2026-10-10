@@ -18,7 +18,204 @@
     "unlazy": "agent-behavior",
     "shuorenhua": "prompts-writing"
   },
-  "mcps": [],
+  "mcps": [
+    {
+      "name": "acemcp",
+      "description": { "zh": "代码库索引与语义搜索的 MCP 服务器（需要 uv，以及自备的索引服务地址和令牌；没有带真实的地址和令牌验证过）", "en": "MCP server for codebase indexing and semantic search (needs uv, plus your own indexing service URL and token; not verified with a real URL and token)" },
+      "url": "https://github.com/qy527145/acemcp",
+      "purpose": "codebase-understanding",
+      "server": { "command": "uvx", "args": ["acemcp"] },
+      "env": [
+        {
+          "name": "ACEMCP_BASE_URL",
+          "required": false,
+          "description": { "zh": "索引服务的 API 地址；留空的话装好后在 ~/.acemcp/settings.toml 里填 BASE_URL", "en": "API URL of the indexing service; leave blank to set BASE_URL in ~/.acemcp/settings.toml later" },
+          "url": "https://github.com/qy527145/acemcp#%E9%85%8D%E7%BD%AE"
+        },
+        {
+          "name": "ACEMCP_TOKEN",
+          "required": false,
+          "description": { "zh": "索引服务的认证令牌；留空的话装好后在 ~/.acemcp/settings.toml 里填 TOKEN", "en": "Auth token of the indexing service; leave blank to set TOKEN in ~/.acemcp/settings.toml later" },
+          "url": "https://github.com/qy527145/acemcp#%E9%85%8D%E7%BD%AE"
+        }
+      ]
+    },
+    {
+      "name": "code-review-graph",
+      "description": { "zh": "给代码库建一张本地的结构图谱，让 AI 审查和改代码时只读相关的部分（需要 uv）", "en": "Builds a local structural graph of your codebase so AI reads only the relevant parts when reviewing or changing code (needs uv)" },
+      "url": "https://github.com/tirth8205/code-review-graph",
+      "purpose": "codebase-understanding",
+      "server": { "command": "uvx", "args": ["code-review-graph", "serve"] }
+    },
+    {
+      "name": "memorix",
+      "description": { "zh": "跨 AI Agent 共用的本地记忆层，在不同 Agent 和会话之间保留项目知识", "en": "Local memory layer shared across AI agents, keeping project knowledge between agents and sessions" },
+      "url": "https://github.com/AVIDS2/memorix",
+      "purpose": "context-memory",
+      "server": { "command": "npx", "args": ["-y", "memorix", "serve"] }
+    },
+    {
+      "name": "context7",
+      "description": { "zh": "把各种库最新的、对应版本的官方文档和代码示例取进对话", "en": "Pulls up-to-date, version-specific library docs and code examples into the conversation" },
+      "url": "https://github.com/upstash/context7",
+      "purpose": "web-search",
+      "server": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] },
+      "env": [
+        {
+          "name": "CONTEXT7_API_KEY",
+          "required": false,
+          "description": { "zh": "Context7 的 API key，填了限额更高；不填也能用", "en": "Context7 API key for higher rate limits; works without one" },
+          "url": "https://context7.com/dashboard"
+        }
+      ]
+    },
+    {
+      "name": "firecrawl-mcp",
+      "description": { "zh": "用 Firecrawl 搜索、抓取和提取网页内容（没有带 key 验证过）", "en": "Searches, scrapes and extracts web content through Firecrawl (not verified with a real key)" },
+      "url": "https://github.com/firecrawl/firecrawl-mcp-server",
+      "purpose": "web-search",
+      "server": { "command": "npx", "args": ["-y", "firecrawl-mcp"] },
+      "env": [
+        {
+          "name": "FIRECRAWL_API_KEY",
+          "required": true,
+          "description": { "zh": "Firecrawl 的 API key", "en": "Firecrawl API key" },
+          "url": "https://www.firecrawl.dev/app/api-keys"
+        }
+      ]
+    },
+    {
+      "name": "grok-search",
+      "description": { "zh": "用 Grok 做联网搜索，用 Tavily 抓取网页和梳理站点结构（需要 uv；没有带 key 验证过）", "en": "Web search through Grok, with page fetching and site mapping through Tavily (needs uv; not verified with real keys)" },
+      "url": "https://github.com/GuDaStudio/GrokSearch",
+      "purpose": "web-search",
+      "server": { "command": "uvx", "args": ["--from", "git+https://github.com/GuDaStudio/GrokSearch@grok-with-tavily", "grok-search"] },
+      "env": [
+        {
+          "name": "GROK_API_URL",
+          "required": true,
+          "description": { "zh": "Grok 接口的地址，要是 OpenAI 兼容格式，如 https://你的服务地址/v1", "en": "Grok API URL in OpenAI-compatible format, e.g. https://your-endpoint/v1" },
+          "url": "https://github.com/GuDaStudio/GrokSearch#readme"
+        },
+        {
+          "name": "GROK_API_KEY",
+          "required": true,
+          "description": { "zh": "Grok 接口的密钥", "en": "Grok API key" },
+          "url": "https://github.com/GuDaStudio/GrokSearch#readme"
+        },
+        {
+          "name": "TAVILY_API_KEY",
+          "required": false,
+          "description": { "zh": "Tavily 的 API key；不填的话抓取网页和梳理站点这两个工具用不了", "en": "Tavily API key; without it the page fetching and site mapping tools are unavailable" },
+          "url": "https://www.tavily.com/"
+        }
+      ]
+    },
+    {
+      "name": "chrome-devtools",
+      "description": { "zh": "让 AI 操控并检查一个真实的 Chrome 浏览器，做自动化操作、调试和性能分析", "en": "Lets AI control and inspect a live Chrome browser for automation, debugging and performance analysis" },
+      "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "purpose": "browser-automation",
+      "server": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"] }
+    },
+    {
+      "name": "playwright",
+      "description": { "zh": "基于 Playwright 的浏览器自动化，靠页面的结构化快照操作网页，不需要截图", "en": "Browser automation built on Playwright, driving pages through structured snapshots instead of screenshots" },
+      "url": "https://github.com/microsoft/playwright-mcp",
+      "purpose": "browser-automation",
+      "server": { "command": "npx", "args": ["@playwright/mcp@latest"] }
+    },
+    {
+      "name": "shadcn-ui",
+      "description": { "zh": "让 AI 查阅 shadcn/ui 的组件、区块、示例和元数据，支持 React、Svelte、Vue 和 React Native", "en": "Gives AI access to shadcn/ui components, blocks, examples and metadata for React, Svelte, Vue and React Native" },
+      "url": "https://github.com/Jpisnice/shadcn-ui-mcp-server",
+      "purpose": "design-media",
+      "server": { "command": "npx", "args": ["@jpisnice/shadcn-ui-mcp-server"] },
+      "env": [
+        {
+          "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "required": false,
+          "description": { "zh": "GitHub 的访问令牌（不需要勾任何权限），填了每小时可请求 5000 次；不填也能用", "en": "GitHub access token (no scopes needed) for 5000 requests per hour; works without one" },
+          "url": "https://github.com/settings/tokens"
+        }
+      ]
+    },
+    {
+      "name": "excel",
+      "description": { "zh": "创建、读取和修改 Excel 工作簿（需要 uv；这样装不限定它能打开哪个文件夹里的文件）", "en": "Creates, reads and edits Excel workbooks (needs uv; installed this way it is not restricted to a folder)" },
+      "url": "https://github.com/haris-musa/excel-mcp-server",
+      "purpose": "documents",
+      "server": { "command": "uvx", "args": ["excel-mcp-server", "stdio"] }
+    },
+    {
+      "name": "word-document-server",
+      "description": { "zh": "创建、读取和修改 Word 文档（需要 uv；上游仓库已归档，不再更新）", "en": "Creates, reads and edits Word documents (needs uv; the upstream repository is archived and no longer updated)" },
+      "url": "https://github.com/GongRzhe/Office-Word-MCP-Server",
+      "purpose": "documents",
+      "server": { "command": "uvx", "args": ["--from", "office-word-mcp-server", "word_mcp_server"] }
+    }
+  ],
   "tools": [],
-  "apps": []
+  "apps": [
+    {
+      "name": "cunzhi",
+      "description": { "zh": "AI 想提前结束对话时弹出对话框，让你接着追问，直到问题真正解决", "en": "Pops up a dialog when the AI tries to wrap up early, so you can keep going until the problem is actually solved" },
+      "url": "https://github.com/imhuso/cunzhi",
+      "purpose": "agent-behavior"
+    },
+    {
+      "name": "codebase-memory-mcp",
+      "description": { "zh": "把代码库索引成知识图谱的 MCP 服务器，供 AI 查代码结构、调用链和改动的影响面", "en": "MCP server that indexes a codebase into a knowledge graph for structure, call-chain and change-impact queries" },
+      "url": "https://github.com/DeusData/codebase-memory-mcp",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "graft",
+      "description": { "zh": "给代码库建图谱并接进 Claude Code、Codex 等编码 Agent，让它们带着代码库的上下文工作", "en": "Builds a graph of your codebase and wires it into coding agents such as Claude Code and Codex for codebase-aware context" },
+      "url": "https://github.com/trailhq/Graft",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "ace-tool",
+      "description": { "zh": "代码库索引、语义搜索和提示词增强的 MCP 服务器", "en": "MCP server for codebase indexing, semantic search and prompt enhancement" },
+      "url": "https://github.com/MistRipple/ace-tool",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "ace-tool-rs",
+      "description": { "zh": "用 Rust 写的 MCP 服务器，做代码库索引、语义搜索和提示词增强", "en": "MCP server written in Rust for codebase indexing, semantic search and prompt enhancement" },
+      "url": "https://github.com/missdeer/ace-tool-rs",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "codegraph",
+      "description": { "zh": "在本地给代码库建语义图谱，让编码 Agent 用更少的工具调用拿到准确的上下文", "en": "Builds a local semantic graph of your codebase so coding agents get accurate context with fewer tool calls" },
+      "url": "https://github.com/colbymchenry/codegraph",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "fastcode",
+      "description": { "zh": "带网页界面和命令行的代码理解 Agent，自己调用大模型回答关于代码库的问题，也提供 MCP 模式", "en": "Code-understanding agent with a web UI and CLI that answers questions about a codebase using an LLM, also available as an MCP server" },
+      "url": "https://github.com/HKUDS/FastCode",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "context-mode",
+      "description": { "zh": "把工具的大段输出放进沙箱处理，只把结果交给 AI，节省上下文窗口并保留会话记忆", "en": "Processes large tool outputs in a sandbox and hands only the result to the AI, saving context window and keeping session memory" },
+      "url": "https://github.com/mksglu/context-mode",
+      "purpose": "context-memory"
+    },
+    {
+      "name": "headroom",
+      "description": { "zh": "在工具输出、日志、文件等内容送进大模型之前先压缩，减少 token 用量", "en": "Compresses tool outputs, logs, files and other content before they reach the LLM to cut token usage" },
+      "url": "https://github.com/headroomlabs-ai/headroom",
+      "purpose": "context-memory"
+    },
+    {
+      "name": "grok-search-rs",
+      "description": { "zh": "用 Rust 写的轻量 MCP 服务器，经 Grok 或 OpenAI 兼容的接口联网搜索，并用 Tavily、Firecrawl 抓取网页", "en": "Lightweight MCP server written in Rust for web search through Grok or OpenAI-compatible APIs, with page fetching through Tavily and Firecrawl" },
+      "url": "https://github.com/Episkey-G/GrokSearch-rs",
+      "purpose": "web-search"
+    }
+  ]
 }
