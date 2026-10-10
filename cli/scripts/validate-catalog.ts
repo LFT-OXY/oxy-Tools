@@ -37,6 +37,10 @@ const RULES: Record<FieldRule, string> = {
   'tool-check': '里 command（看这个命令在不在可执行路径上）和 path（看主目录下这个相对路径存不存在）要恰好有一样',
   'command-name': '要是一个命令的名字：只含字母、数字和 . _ -，不带目录',
   purpose: `要是${PURPOSE_ID}；除本仓库的 skill 外，每个条目都要写`,
+  'skill-source': '要是 GitHub 上的「所有者/仓库」：两段，中间一个斜杠，每段以字母或数字开头，只含字母、数字和 . _ -',
+  'skill-list': '要是非空的数组，每一项是这个仓库里的一个 skill，名字不重复',
+  'sourced-skill-name':
+    '要是 skill 自己声明的名字的小写写法：只含小写字母、数字和 . _ -，以小写字母或数字开头，不以 . 或 - 结尾，连字符不连着写（装出来的目录就叫这个名字）',
 };
 
 process.exitCode = await validate(process.argv.slice(2));
@@ -72,7 +76,7 @@ async function validate(args: string[]): Promise<number> {
     return EXIT_FAILURE;
   }
   console.log(
-    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目、${catalog.purposes.length} 个用途`,
+    `目录校验通过：${catalog.skills.length} 个 skill、${catalog.thirdPartySkills.length} 个第三方 Skill、${catalog.mcps.length} 个 MCP、${catalog.tools.length} 个工具、${catalog.apps.length} 个应用项目、${catalog.purposes.length} 个用途`,
   );
   return 0;
 }

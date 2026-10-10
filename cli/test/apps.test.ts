@@ -37,7 +37,7 @@ describe('主菜单按用途进入', () => {
   it('「目录」一行把外部项目数上；主菜单上没有「应用项目」这个分组', async () => {
     const result = await run({ catalog: withApps(), answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 外部项目$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 2 外部项目$/m);
     expect(result.output).not.toContain('应用项目');
   });
 
@@ -239,7 +239,7 @@ describe('写坏的外部项目条目', () => {
     const result = await run({ catalog: withApps([entry, good]), answers: browse });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 1 外部项目$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 1 外部项目$/m);
     expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+1$/m);
     expect(result.output).toMatch(/ borealis\s+第二个样例外部项目$/m);
     expect(result.output).not.toContain('broken');

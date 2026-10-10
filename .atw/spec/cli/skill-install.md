@@ -285,6 +285,209 @@ interrupt.addEventListener('abort', discard);
 
 ---
 
+## Scenario: 把一个第三方 Skill 装进宿主
+
+### 1. Scope / Trigger
+
+第三方 Skill 的内容不在本仓库，目录只按仓库登记；安装器在后台调用通用的 skill 安装程序（Vercel 的 skills CLI）把它装进宿主的 skill 目录，决定见 [ADR-0003](../../../docs/adr/0003-third-party-skills-installed-by-skills-cli.md)。凡是改那条命令的写法、带哪些环境变量、怎么判装没装上、覆盖前问不问、条目的字段与校验，都落在这份契约上。这里写的是装到全局；装到项目随安装范围的工单加。
+
+### 2. Signatures
+
+```ts
+// cli/src/catalog.ts
+export interface SourcedSkill { name: string; description: { zh: string; en: string } } // 条目里的一个 skill
+export interface ThirdPartySkill extends Placement {
+  name: string;
+  description: { zh: string; en: string };
+  url: string;
+  hosts?: string[];        // 支持的宿主；省略表示全部支持（写法同 MCP）
+  source: string;          // GitHub 上的「所有者/仓库」
+  skills: SourcedSkill[];  // 至少一个
+}
+
+// cli/src/hosts.ts —— Host 多一样
+skillsCli: { agent: string; env: Readonly<Record<string, string>> }; // skills CLI 里指代这个宿主的名字，和让它装到 skillsDir 要带的环境变量
+
+// cli/src/third-party-status.ts
+export type ThirdPartyStatus = 'unsupported' | boolean[]; // 这个宿主它不支持；或各个 skill 装没装，与 entry.skills 一一对应
+export function thirdPartyStatus(entry: ThirdPartySkill, host: Host): ThirdPartyStatus;
+export function isPresent(skillsDir: string, name: string): boolean;    // <skillsDir>/<name> 那里有没有东西：目录、文件、符号链接都算
+export function hasSkillFile(skillsDir: string, name: string): boolean; // 复核：<skillsDir>/<name>/SKILL.md 在不在
+
+// cli/src/install-third-party.ts
+export type SkillsCliCommand = Command & { args: string[] };
+export function skillsCliCommand(source: string, skill: string, host: Host): SkillsCliCommand;
+export interface ThirdPartyResult {
+  installed: boolean;       // 复核通过没有：成功与否只看它
+  run: { kind: 'exit'; code: number } | { kind: 'not-started'; detail: string | undefined };
+}
+export async function installThirdPartySkill(command: SkillsCliCommand, host: Host, runCommand: CommandRunner, check: () => boolean): Promise<ThirdPartyResult>;
+```
+
+### 3. Contracts
+
+**条目（`catalog.json` 的 `thirdPartySkills`）**
+
+```json
+{
+  "name": "paper-craft-skills",
+  "description": { "zh": "…", "en": "…" },
+  "url": "https://github.com/zsyggg/paper-craft-skills",
+  "purpose": "documents",
+  "source": "zsyggg/paper-craft-skills",
+  "skills": [
+    { "name": "paper-analyzer", "description": { "zh": "…", "en": "…" } },
+    { "name": "paper-comic", "description": { "zh": "…", "en": "…" } }
+  ]
+}
+```
+
+| 字段 | 规则 | `FieldRule` |
+|------|------|-------------|
+| `name`、`description`、`url`、`purpose`、`recommended` | 同别的条目。名字只在这个数组里唯一 | — |
+| `hosts` | 可省略；写了就是非空数组，每项是宿主的标识。不认识的宿主留着不管 | `host-list` |
+| `source` | `^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$`：两段、一个斜杠，每段以字母或数字开头 | `skill-source` |
+| `skills` | 非空数组，每项是对象，名字不重复 | `skill-list`（不是数组、是空的、有重名）、`object`（`skills[i]`） |
+| `skills[i].name` | `^[a-z0-9](?:(?:[a-z0-9._]\|-(?!-))*[a-z0-9_])?$`：只含小写字母、数字和 `. _ -`，以小写字母或数字开头，不以 `.` 或 `-` 结尾，连字符不连着写 | `sourced-skill-name` |
+| `skills[i].description.zh`、`.en` | 非空文字，不含控制字符 | `text` |
+
+- 一条只报头一处问题，顺序：`name`、`description`、`url`、`hosts`、`source`、`skills`（逐项 `name`、`description`，再查重名），最后是共有的 `purpose`、`recommended`。写坏的只跳过那一条。
+- **`source` 和 skill 的名字会成为一条外部命令的参数**，所以只收安全的字符，理由同 MCP 的启动命令。每段都要以字母或数字开头，比规格里的字面说法多一条：以 `-` 开头的会被 skills CLI 当成选项，以 `.` 开头的（`./x`、`../x`）会被它当成本地路径。
+- **skill 的名字要写成小写**。skills CLI 按名字选 skill 时不分大小写，但装出来的目录名是它把名字转成小写、把小写字母、数字、`.`、`_` 之外的字符连成的一段换成一个连字符、再去掉首尾的 `.` 和 `-` 之后的样子（读它 1.7.2 的源码 `sanitizeName` 确认的）。安装器的状态和复核看的是 `<skillsDir>/<目录里登记的名字>`，所以只收经它那样处理之后一字不变的名字：上游声明成 `Humanizer-ZH` 的，登记成 `humanizer-zh`。规格的字面只说了「字母或数字开头，后面只有字母、数字、点、下划线、连字符」，这里多出来的三条（小写、不以 `.` 或 `-` 结尾、连字符不连着写）都出自这个理由；维护者 2026-10-11 确认了「只收小写」和来源「每段以字母或数字开头」这两处收紧。
+- `Catalog.thirdPartySkills` 是读出来的条目；数组可以缺省，缺省当作空。
+
+**状态**
+
+只看目标位置 `<skillsDir>/<skill 的名字>` 下有没有东西（`lstat` 成功就算有：目录、文件、符号链接都算）。不比较版本，不写也不认安装标记，没有「非本工具安装」这一种。
+
+| 条目 | 列表里那一栏 |
+|------|--------------|
+| 只含一个 skill | `未装` / `已装` |
+| 含多个 skill | 一个都没装 `未装`；否则 `已装 <已装几个>/<共几个>` |
+| `hosts` 里没有这个宿主 | `不支持` |
+
+一个宿主都没检测到时不可选（「需要 AI Agent」）；所选的宿主一个都不支持时不可选（「需要别的 AI Agent」）；只支持其中一部分时可选，只装进支持的那些。清单里各个 skill 各写各的：`未装`、`已装`、`不支持`。
+
+**命令**
+
+每个要装的 skill 在每个支持它的所选宿主下各是一项，各有一条命令、一行结果：
+
+```
+npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里的名字> --yes --global
+```
+
+| 项 | 约定 |
+|----|------|
+| 版本 | 钉在实测过的主版本 `skills@1`，写在 `install-third-party.ts` 里，不随它的最新版漂移 |
+| 参数的先后 | `source` 紧跟 `add`，在 `--skill` 之前：skills CLI 的 `--skill`、`--agent` 会把后面不以 `-` 开头的词都收走 |
+| 一条命令一个 skill、一个宿主 | 展示的和执行的才能是同一份（没同意覆盖的那一项整条不执行，别的命令一个字不用改）；一条命令对一行结果，退出状态说得清是谁的；一次只给一个宿主时落下的是真实目录而不是符号链接。代价见下面的 Design Decision |
+| 怎么执行 | 外部命令执行器不经 shell 的那种方式：命令和参数分开传，输出不上屏，也读不到用户的输入。它自己的字符画、框线、进度到不了终端，也没有机会提问 |
+| 额外的环境变量 | `DISABLE_TELEMETRY=1`、`DO_NOT_TRACK=1`（关掉它的遥测，两个它都认）；外加这个宿主的 `skillsCli.env` |
+| 列在哪 | 「将执行的命令」里，排在 MCP 和工具的前面，完整展示。环境变量不写在里面 |
+
+`skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 是空的。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
+
+> **Warning**：skills CLI 另外会往用户的状态目录里写一个 `skills/.skill-lock.json`（`XDG_STATE_HOME` 下，记着装了哪些 skill、来源和时间）。安装器不读它，也不清它；手动核对时要把 `XDG_*` 也指到临时目录。
+
+**成败看复核**
+
+命令结束后 `<skillsDir>/<名字>/SKILL.md` 在才算装上，不看退出状态；`installThirdPartySkill` 不抛错。各种结局的结果行见下面的出错矩阵。
+
+**流程里的位置（`flow.ts`）**
+
+- 混合列表里第三方 Skill 自成一段，排在本仓库的 skill 之后、MCP 之前；段内带推荐的在前，其余按名字。
+- 列表确认之后、问 key 之前，**每个勾选的、含多个 skill 的条目各问一次**要其中哪几个（多选，起始一个都不勾）；只含一个的不问。清单里一个都不勾就确认：这一条不装，其余勾选的照常。汇总里选「返回修改」再走到这一问时，上次勾的还在。
+- 汇总里它们自成一张小表「第三方 Skill」，一行是一个 skill 在一个宿主下，带位置；目标位置已有东西的操作是「覆盖」，备注「已有同名目录，另行确认」。「将安装 N 项」数的是条目（清单里一个都没勾的不算）。
+- 这一轮有第三方 Skill 要装时，命令下面多一行「注意」：装的是作者当时的最新版，维护者没有逐版检查。排在覆盖的提醒之后。
+- **目标位置已有东西的，选了「开始安装」之后、执行之前逐项另问**，缺省不覆盖——skills CLI 自己遇到同名目录是直接覆盖的。排在本仓库 skill 的那几问之后。没同意的那一项不执行命令，结果里是「跳过 未同意覆盖，保持原样」。想更新一个已经装过的第三方 Skill 也要答一次「是」。
+- 执行的先后：本仓库的 skill、第三方 Skill、MCP、工具。前三样共用「正在安装」分区，进行中的那一行写「正在安装…」。
+
+### 4. Validation & Error Matrix
+
+目录里写坏的第三方 Skill 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表）；`thirdPartySkills` 存在但不是数组时整份目录读不了（目录格式有误，指出字段）。
+
+单项安装的结局，只这一项受影响，退出状态不变：
+
+| 复核 | 命令 | 结果行 |
+|------|------|--------|
+| 有 | 以 0 退出 | `✓ … 已安装`（没有版本号） |
+| 有 | 非零退出，或没能运行 | `✓ … 已安装；安装命令退出状态 1`——覆盖已有目录而命令失败时，那里留着的是原来的那一份，所以要说 |
+| 没有 | 以 0 退出 | `✗ … 失败 安装命令已结束，但目标位置没有 SKILL.md` |
+| 没有 | 非零退出 | `✗ … 失败 安装命令退出状态 1` |
+| 没有 | 没能运行 | `✗ … 失败 安装命令没能运行（ENOENT）`；错误没带错误码时不写括号 |
+
+- 原因里不转述 skills CLI 的话（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）；完整的命令在汇总里，用户可以照着自己跑一遍看原因。
+- 执行器当场抛出（没返回承诺）的也算「没能运行」，不取错误的消息。
+- 没同意覆盖的那一项不执行命令，结果是「跳过 未同意覆盖，保持原样」，计入合计的跳过。
+
+### 5. Good/Base/Bad Cases
+
+- Good：只检测到 Claude Code，勾了只含一个 skill 的条目 → 不多问，汇总一行「新装」、一条命令、一行提醒；确认后记录到的正好是那一条（带着三个环境变量，不是 shell 方式），结果「已安装」。
+- Good：两个宿主都选了，勾了含三个 skill 的条目，清单里勾两个 → 四条命令（每个 skill、每个宿主一条），汇总和结果各四行，「将安装 1 项」。
+- Base：清单里一个都不勾 → 这一条不装；同一轮勾的别的条目照常进汇总；只勾了它时没有汇总，直接回主菜单。
+- Base：`~/.claude/skills/note-taker` 已经在（哪怕里面没有 `SKILL.md`，哪怕是个文件或符号链接）→ 列表里「已装」，汇总里「覆盖」加备注和一行覆盖的提醒；选了开始安装之后另问，直接回车（否）→ 那条命令不执行，原样留着，结果「跳过」。
+- Base：条目的 `hosts` 是 `["codex"]`，两个宿主都选了 → Claude Code 那一栏「不支持」，只有装进 Codex 的那一条命令；只检测到 Claude Code 时这一行不可选。
+- Bad：命令以 0 退出但目标位置没有 `SKILL.md`（上游改了 skill 的名字，目录里登记的对不上）→ `失败 安装命令已结束，但目标位置没有 SKILL.md`，别的项照常。
+- Bad：机器上没有 `npx` → `失败 安装命令没能运行（ENOENT）`，安装器不退出。
+- Bad：`source` 写成 `../repo`，或 skill 的名字写成 `--all` → 这一条被跳过，目录校验命令指出字段。
+
+### 6. Tests Required
+
+都经 `runInstaller`，在 `cli/test/third-party.test.ts`；条目校验的说法在 `validate-catalog.test.ts`，真实的清单画面在 `prompts.test.ts`。
+
+- 假的执行器不会真的装东西：让 `commandResult` 在「执行」那条命令时往第三个参数给的 `home` 里写出 `<skill 目录>/<名字>/SKILL.md`（模拟装上了），或什么都不写（模拟没装上）。
+- 记录到的命令在 `result.commands` 里多两样：不经 shell 的带着 `env`（额外的环境变量，没有就没有这个键），整行交给 shell 的仍是 `shell: true`。**期望值写成字面的命令**。
+- 向 GitHub 查询失败要用 `fakeGitHub()` 单独证一条：本仓库的 skill 一个都不装，第三方 Skill 照常（它不经那次查询）。
+- 真实的清单画面在 `prompts.test.ts` 的「真实的画面：第三方 Skill」：按键提示整行、收成一行（勾了的名字、「不装」）、`NO_COLOR`、没有 Unicode、英文加没有 Unicode 时按键提示仍在 79 列以内。空行的规则在 `spacing.test.ts`，栏间隔在 `columns.test.ts`。
+- 至少覆盖：只含一个 skill 的直接装；含多个的出清单、勾几个装几个、一个不勾则不装而其余照常；每个宿主一条命令；带着关遥测的环境变量、不是 shell 方式；退出 0 而没有 `SKILL.md` 判失败；非零退出与没能运行时结果行的写法；已有同名目录时另问、`accept()` 证明缺省不覆盖、没同意的不执行命令；宿主限制（一栏「不支持」、只装进支持的；一个都不支持时不可选）；写坏的条目被跳过；取消则一条命令都不执行；一项失败不影响其余项。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// 把同一个仓库里勾选的几个 skill 合进一条命令：用户随后没同意覆盖其中一个，执行的就不是展示的那一条了
+['add', source, '--skill', ...names, '--agent', agent, '--yes', '--global']
+```
+
+```ts
+// 看退出状态判成败：名字对不上时它照样可能以 0 退出，什么都没装
+outcome = result.exitCode === 0 ? 'installed' : 'failed';
+```
+
+```ts
+// 来源放在 --skill 后面：它会被当成又一个 skill 的名字收走
+['add', '--skill', name, source]
+```
+
+#### Correct
+
+```ts
+// 一条命令一个 skill、一个宿主；汇总里展示的 Command 对象就是之后执行的那一个
+const command = skillsCliCommand(entry.source, name, host);
+// 成败只看复核
+const result = await installThirdPartySkill(command, host, runCommand, () => hasSkillFile(host.skillsDir, name));
+```
+
+### 已知的限制
+
+- **两个条目里有同名的 skill，或第三方 Skill 和本仓库的 skill 同名**：它们的目标位置是同一个目录。同一轮里一起勾选时，后装的盖掉先装的，而且不会另问——状态是在执行之前探测的，那时目录还不在。安装器和目录校验命令现在都不查这个，靠录入时避开（见 [清单与版本](../skills/manifest-versioning.md)）。
+- **装到的是作者当时的最新版**，不钉版本、不比较版本、没有更新提示和卸载；想更新一个已经装过的就再装一次并同意覆盖。
+- **只在 macOS 上用真实的 skills CLI（1.7.2）核对过**，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`；Windows 上经 `npx.cmd` 起它时参数的转义、Linux 上的表现都没有实测，自动化测试用的是假的执行器，测不到。
+- skills CLI 升了主版本（`skills@2`）之后要重新核对三件事再改钉的版本：参数的读法（`--skill`、`--agent` 收走后面的词）、目录名怎么取（`sanitizeName`）、遥测和 `CLAUDE_CONFIG_DIR` 两处环境变量。
+
+---
+
+## Design Decision: 第三方 Skill 一条命令只装一个 skill
+
+**Context**：skills CLI 的 `--skill` 可以一次跟几个名字，一条命令能把同一个仓库里勾选的几个 skill 一起装进一个宿主。对比页上画的也是这种（每个条目、每个宿主一条）。
+
+**Decision**：每个 skill、每个宿主各一条命令。理由有二：覆盖前的询问排在确认之后，合在一条命令里的话，用户没同意其中一个时执行的就不是展示的那一条了；结果行本来就是每个 skill 每个宿主一行，一条命令对一行，退出状态才说得清是谁的——合在一起时名字对不上的那个 skill（上游改了名）它并不报错，只装对得上的、照样以 0 退出（2026-10-10 实测），非零退出时又分不出是哪一个没装上。
+
+**代价**：同一个仓库勾了几个 skill 就要拉几次（每次约 4 秒，仓库大的更久）；将执行的命令也多出几条。实现工单 09 时定的，维护者 2026-10-11 确认（两种做法的代价都说明过之后选的这一种）。
+
+---
+
 ## Design Decision: 宿主在不在，看可执行路径而不是去执行它
 
 **Context**：规格说“以 `claude` 命令是否可用判断”。可以经外部命令执行器跑一次 `claude --version`，也可以自己在可执行路径上找。

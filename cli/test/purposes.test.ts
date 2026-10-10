@@ -15,7 +15,7 @@ describe('条目的用途', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 1 MCP$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 1 MCP$/m);
     expect(result.output).toMatch(/ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
     expect(result.output).not.toContain('docs-local');
     expect(result.exitCode).toBe(0);
@@ -28,7 +28,7 @@ describe('条目的用途', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 1 MCP$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 1 MCP$/m);
     expect(result.output).toMatch(/ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
     expect(result.output).not.toContain('docs-local');
     expect(result.exitCode).toBe(0);
@@ -45,7 +45,7 @@ describe('推荐标记', () => {
       answers: [choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 MCP$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 2 MCP$/m);
     expect(result.output).not.toContain('格式有误');
     expect(result.exitCode).toBe(0);
   });
@@ -95,7 +95,7 @@ describe('写坏的用途清单', () => {
       answers: [choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 MCP$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 2 MCP$/m);
     expect(result.output).not.toContain('格式有误');
     expect(result.exitCode).toBe(0);
   });
@@ -111,7 +111,7 @@ describe('写坏的用途清单', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 6 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill$/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('出错');
     expect(result.output).not.toMatch(STACK_FRAME);
@@ -132,7 +132,7 @@ describe('本仓库 skill 的用途', () => {
   ])('%s：skill 都不跳过，也不提示', async (_label, skillPurposes) => {
     const result = await run({ catalog: withSkillPurposes(skillPurposes), answers: [choose('推荐'), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill$/m);
     expect(result.output).toMatch(/ alpha\s+未装\s/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('格式有误');
@@ -148,7 +148,7 @@ describe('没有用途清单的旧格式目录', () => {
       answers: [choose('推荐'), pick(), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill$/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('格式有误');
     expect(result.exitCode).toBe(0);
@@ -161,7 +161,7 @@ describe('没有用途清单的旧格式目录', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 3 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill$/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('出错');
     expect(result.output).not.toMatch(STACK_FRAME);

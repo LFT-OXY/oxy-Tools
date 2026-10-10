@@ -40,10 +40,12 @@ export interface InstallerOptions {
 
 `interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
 
-`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`。
+`runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 和第三方 Skill 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`；不经 shell 的那种可以用第三个参数的 `env` 另外带上几个变量（安装第三方 Skill 用，见 [安装 skill](./skill-install.md)）。
 
 ```ts
-export interface CommandOptions { shell: true } // command 是一整行，args 是空的
+export type CommandOptions =
+  | { shell: true }                                             // command 是一整行，args 是空的
+  | { shell?: never; env: Readonly<Record<string, string>> };   // 不经 shell，另带这几个环境变量，盖在继承来的环境之上
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 ```
 
@@ -73,25 +75,25 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 语言提问用提问器现有的单选（`ui.languageQuestion()`），不是新的提示种类。选择只留在这次运行的内存里：安装器不为它写任何文件，下一次启动照样问。在它上面按 Ctrl+C 和别的提问一样以 130 退出。
 
-**主菜单与流程**（任务 `10-10-catalog-purpose-categories` 逐张工单搬过来，这里写的是工单 08 之后的样子）
+**主菜单与流程**（任务 `10-10-catalog-purpose-categories` 逐张工单搬过来，这里写的是工单 09 之后的样子）
 
 | 主菜单的行 | 什么时候有 | 数量 | 选了之后 |
 |------------|------------|------|----------|
-| 「推荐」，第一行 | 里面至少有一行 | 本仓库的全部 skill，加上带推荐标记的 MCP、工具和外部项目 | 混合列表 |
-| 各个用途，按 `purposes` 的顺序 | 进去之后至少有一行 | 进去之后列表里的行数：写了这个用途的本仓库 skill，加上这个用途下的 MCP、工具和外部项目 | 混合列表 |
+| 「推荐」，第一行 | 里面至少有一行 | 本仓库的全部 skill，加上带推荐标记的第三方 Skill、MCP、工具和外部项目 | 混合列表 |
+| 各个用途，按 `purposes` 的顺序 | 进去之后至少有一行 | 进去之后列表里的行数：写了这个用途的本仓库 skill，加上这个用途下的第三方 Skill、MCP、工具和外部项目（第三方 Skill 一个条目一行，不数它里面的 skill） | 混合列表 |
 | 退出 | 总是有 | — | 以 0 退出 |
 
 - **主菜单上只有这三种行**：按类型分的入口（「Skill」「MCP」「工具」「应用项目」）全部取消了，类型到了列表里才出现。所以主菜单上没有不可进入的行。
-- **「推荐」由两部分组成**：本仓库的全部 skill（自动，不看任何标注，也去不掉），加上 `recommended` 为真的其它条目（MCP、工具、外部项目）。没有写用途的本仓库 skill 只在「推荐」里；写了用途的在「推荐」和那个用途下两处都出现。带推荐标记的其它条目同样两处都出现。
-- 「推荐」和用途的行不靠宿主：一个都没检测到时照常进得去，组件（skill、MCP、工具）的行不可选并写明「需要 AI Agent」，外部项目照常可选。
-- 进去之后的顺序：选宿主 → 混合列表 → 逐个 MCP 问 key → 汇总与将执行的命令 → 确认 → 覆盖前的单独询问 → 安装 → 结果 → 外部项目的说明与链接 → 回主菜单。
-- **选宿主只在检测到不止一个、且这张列表里有 skill 或 MCP 时问**，一轮只问一次；只检测到一个就直接用它。列表里只有工具和外部项目时不问：没有要装进宿主的东西（工具不装进宿主，它的状态和可不可选都与选了哪些宿主无关）。这一问同时管 skill 和 MCP。
+- **「推荐」由两部分组成**：本仓库的全部 skill（自动，不看任何标注，也去不掉），加上 `recommended` 为真的其它条目（第三方 Skill、MCP、工具、外部项目）。没有写用途的本仓库 skill 只在「推荐」里；写了用途的在「推荐」和那个用途下两处都出现。带推荐标记的其它条目同样两处都出现。
+- 「推荐」和用途的行不靠宿主：一个都没检测到时照常进得去，组件（skill、第三方 Skill、MCP、工具）的行不可选并写明「需要 AI Agent」，外部项目照常可选。
+- 进去之后的顺序：选宿主 → 混合列表 → 含多个 skill 的第三方 Skill 各自的清单 → 逐个 MCP 问 key → 汇总与将执行的命令 → 确认 → 覆盖前的单独询问（先本仓库的 skill，再第三方 Skill） → 安装 → 结果 → 外部项目的说明与链接 → 回主菜单。
+- **选宿主只在检测到不止一个、且这张列表里有 skill、第三方 Skill 或 MCP 时问**，一轮只问一次；只检测到一个就直接用它。列表里只有工具和外部项目时不问：没有要装进宿主的东西（工具不装进宿主，它的状态和可不可选都与选了哪些宿主无关）。这一问同时管 skill 和 MCP。
 - 混合列表上一个都不勾就确认是回到上一步：问过宿主就回去重问（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，勾选还在（四种类型的都在），不重问宿主；填过的 key 不再问。
-- 列表里组件在上、外部项目在下；组件按类型分段，先 skill，再 MCP，再工具。skill 一段和外部项目一段按名字排；MCP、工具两段带推荐的在前、其余按名字（「推荐」那张列表里每一条都是推荐的，就只按名字）。都不照目录文件里的先后。
-- **汇总是一个分区「将安装 N 项」**，N 是会装的组件条目数（外部项目不算，必填的 key 没填的 MCP 也不算）；里面按类型分成小表。这一轮有 MCP 或工具要装时接着是「将执行 N 条命令」，MCP 的在前、工具的在后。确认的提问统一是「开始安装吗」：开始安装、返回修改、取消。
-- **执行的先后：本仓库的 skill、MCP、工具**，一项失败不影响其余项。skill 和 MCP 共用一个「正在安装」分区；工具排在最后，每个一个以它名字为标题的分区——它的命令会直接接管终端的输入输出。向 GitHub 查询失败时 skill 一个都不装、结果里也没有它们的行，出错说明之后 MCP 和工具照常装，再列出勾选的外部项目。
+- 列表里组件在上、外部项目在下；组件按类型分段，先 skill，再第三方 Skill，再 MCP，再工具。skill 一段和外部项目一段按名字排；第三方 Skill、MCP、工具三段带推荐的在前、其余按名字（「推荐」那张列表里每一条都是推荐的，就只按名字）。都不照目录文件里的先后。
+- **汇总是一个分区「将安装 N 项」**，N 是会装的组件条目数（外部项目不算，必填的 key 没填的 MCP 不算，清单里一个都没勾的第三方 Skill 也不算）；里面按类型分成小表。这一轮有第三方 Skill、MCP 或工具要装时接着是「将执行 N 条命令」，第三方 Skill 的在前、MCP 的其次、工具的在后。确认的提问统一是「开始安装吗」：开始安装、返回修改、取消。
+- **执行的先后：本仓库的 skill、第三方 Skill、MCP、工具**，一项失败不影响其余项。前三样共用一个「正在安装」分区；工具排在最后，每个一个以它名字为标题的分区——它的命令会直接接管终端的输入输出。向 GitHub 查询失败时本仓库的 skill 一个都不装、结果里也没有它们的行，出错说明之后第三方 Skill、MCP 和工具照常装（第三方 Skill 不经那次查询），再列出勾选的外部项目。
 - **外部项目的说明与链接排在结果之后**。汇总上选了「取消」则这一轮什么都不做，外部项目也不列。
-- 没有要确认的东西时不问：只勾了外部项目，**没有汇总，不问开始不开始**，直接列出每一个的名字、说明、完整的链接；勾上的组件全是必填的 key 没填的 MCP 时同样没有汇总，直接是「结果」分区（每个宿主一行跳过），再是勾选的外部项目。**整个运行里不调用链接打开器。**
+- 没有要确认的东西时不问：只勾了外部项目，**没有汇总，不问开始不开始**，直接列出每一个的名字、说明、完整的链接；勾上的组件全是必填的 key 没填的 MCP 时同样没有汇总，直接是「结果」分区（每个宿主一行跳过），再是勾选的外部项目；勾上的组件只有第三方 Skill、而清单里一个都没勾时，什么都不装，直接回主菜单（勾了外部项目的照常列出）。**整个运行里不调用链接打开器。**
 
 **启动参数**
 
@@ -145,7 +147,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 **目录文件**
 
 - `index.json`：`{ "version": 1, "skills": [...] }`，字段见 [清单与版本](../skills/manifest-versioning.md)。
-- `catalog.json`：`{ "version": 1, "purposes": [], "skillPurposes": {}, "mcps": [], "tools": [], "apps": [] }`。三个数组可以缺省，缺省当作空。三类条目的内容都读、都校验：`apps` 的字段见下，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
+- `catalog.json`：`{ "version": 1, "purposes": [], "skillPurposes": {}, "thirdPartySkills": [], "mcps": [], "tools": [], "apps": [] }`。四个数组可以缺省，缺省当作空。四类条目的内容都读、都校验：`apps` 的字段见下，`thirdPartySkills` 的见 [安装 skill](./skill-install.md) 的第二个 Scenario，`mcps` 的见 [安装 MCP](./mcp-install.md)，`tools` 的见 [安装工具](./tool-install.md)。
 - `apps` 的一条（外部项目；键名没有跟着改，见 [清单与版本](../skills/manifest-versioning.md)）：
 
   ```json
@@ -158,7 +160,7 @@ export function localCatalogSource(dir: string): CatalogSource;
   "skillPurposes": { "archify": "documents" }
   ```
 
-  读出来的结果在 `Catalog` 上：`purposes` 是清单里合规则的各项，顺序照文件；MCP、工具、外部项目各带 `purpose`（清单里的一个标识）和 `recommended`（没写是 `false`）；skill 的 `purpose` 只有在 `skillPurposes` 里给它写了、且那个用途在清单里时才有。**画面用到了 skill 的 `purpose`，MCP、工具和外部项目的 `purpose` 和 `recommended`**：主菜单的「推荐」和各个用途怎么数、进去之后列什么，见上面「主菜单与流程」。
+  读出来的结果在 `Catalog` 上：`purposes` 是清单里合规则的各项，顺序照文件；第三方 Skill、MCP、工具、外部项目各带 `purpose`（清单里的一个标识）和 `recommended`（没写是 `false`）；skill 的 `purpose` 只有在 `skillPurposes` 里给它写了、且那个用途在清单里时才有。**画面用到了 skill 的 `purpose`，MCP、工具和外部项目的 `purpose` 和 `recommended`**：主菜单的「推荐」和各个用途怎么数、进去之后列什么，见上面「主菜单与流程」。
 - 两个文件的 `version` 都是整数的格式版本号，安装器目前认识到 1。
 
 ### 4. Validation & Error Matrix
@@ -169,7 +171,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 |------|------|
 | `readText` 抛出（断网、HTTP 非 2xx、文件不存在） | 无法读取目录，原因里带简短的技术原因（错误码或 `HTTP 404`），位置单独一行 |
 | 不是合法的 JSON；顶层不是对象；`version` 不是正整数 | 目录格式有误 |
-| `skills` 不是数组；`mcps`/`tools`/`apps` 存在但不是数组 | 目录格式有误，指出字段 |
+| `skills` 不是数组；`thirdPartySkills`/`mcps`/`tools`/`apps` 存在但不是数组 | 目录格式有误，指出字段 |
 | `version` 大于安装器认识的版本 | 目录格式版本不受支持，提示 `npx oxy-tools@latest`；**不尝试解析** |
 
 单条 skill 条目写坏时只跳过这一条，连同原因记进 `Catalog.skipped`（哪个文件、哪个数组、第几条、哪个字段，类型见 [目录校验与 CI](./catalog-validation.md)）；主菜单上方只提示数量，逐条的原因由目录校验命令说：
@@ -193,7 +195,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 | `url` | `^https:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$`，且 `URL.canParse` 通过。只收 https；只含 RFC 3986 允许的字符，别的（汉字、空格）要先做百分号编码 |
 | 重名、不认识的字段 | 同上 |
 
-三类条目（MCP、工具、外部项目）另有两个共有的字段，在各自的字段都查完之后查，先 `purpose` 后 `recommended`：
+四类条目（第三方 Skill、MCP、工具、外部项目）另有两个共有的字段，在各自的字段都查完之后查，先 `purpose` 后 `recommended`：
 
 | 字段 | 规则 | 不合规则时 |
 |------|------|------------|
@@ -201,13 +203,13 @@ export function localCatalogSource(dir: string): CatalogSource;
 | `purpose` | 这个标识在用途清单里 | 跳过这一条，原因是 `unlisted-purpose`，带着写的那个标识 |
 | `recommended` | 可以省略（当作 `false`）；写了就得是布尔 | 跳过这一条，原因是 `bad-field`、规则 `boolean` |
 
-本仓库 skill 以外的条目**有且只有一个用途**，没有用途的不归进什么「其他」，而是跳过——和别的写坏的条目一样连同原因进 `Catalog.skipped`，主菜单上方照旧只提示数量。没有 `purposes` 的旧格式目录因此读得了、不崩：里面的 skill 照常，三个数组里的条目全部因为没有用途被跳过。
+本仓库 skill 以外的条目**有且只有一个用途**，没有用途的不归进什么「其他」，而是跳过——和别的写坏的条目一样连同原因进 `Catalog.skipped`，主菜单上方照旧只提示数量。没有 `purposes` 的旧格式目录因此读得了、不崩：里面的 skill 照常，四个数组里的条目全部因为没有用途被跳过。
 
 用途清单和本仓库 skill 的用途**写坏了也不让整份目录读不了**，受影响的东西各自降级：
 
 | 哪里写坏 | 安装器怎么读 | 记进哪 |
 |----------|--------------|--------|
-| `purposes` 不是数组 | 当作空的清单：三个数组里的条目都因「用途不在清单里」被跳过 | `Catalog.flaws`（`purposes-not-array`），条目各自进 `skipped` |
+| `purposes` 不是数组 | 当作空的清单：四个数组里的条目都因「用途不在清单里」被跳过 | `Catalog.flaws`（`purposes-not-array`），条目各自进 `skipped` |
 | `purposes` 的一项不是对象；`id` 不合 `name` 的正则；`name` 不是对象；`name.zh`、`name.en` 不是非空文字或含控制字符 | 这一项不算数；用它的条目因「用途不在清单里」被跳过 | `flaws`（`purpose`，带第几项、标识、问题） |
 | `purposes` 里两项的 `id` 相同 | 只留第一项 | `flaws`（`purpose`，问题是 `duplicate`） |
 | `skillPurposes` 不是对象 | 当作没写：没有哪个 skill 有用途 | `flaws`（`skill-purposes-not-object`） |
@@ -222,7 +224,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 ### 5. Good/Base/Bad Cases
 
-- Good：`index.json` 有 11 条合法 skill，`catalog.json` 三个数组为空 → 主菜单只有「推荐」（数量 11）和退出。
+- Good：`index.json` 有 11 条合法 skill，`catalog.json` 四个数组为空 → 主菜单只有「推荐」（数量 11）和退出。
 - Base：`index.json` 里一条的 `path` 是 `skills/../x` → 这一条被跳过，提示「目录中有 1 个条目格式有误，已跳过」，其余照常。
 - Bad：`catalog.json` 的 `version` 是 2 → 不看它的其余内容，提示升级，以 1 退出。
 - Good（语言）：系统语言是英文，不带 `--lang` 启动 → 大标志之后问 `Language / 语言`，光标在 `English` 上，按键提示是英文；下移到 `中文` 回车后，加载提示起全是中文。
@@ -232,7 +234,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 - Good（外部项目）：进一个用途，勾两个外部项目确认 → 不问开始不开始，一个「外部项目：2 个，只给链接」分区列出各自的说明与链接，回到主菜单；`result.opened` 是空的。
 - Base（用途）：`mcps` 里一条没写 `purpose`，另一条写的用途不在 `purposes` 里 → 两条都被跳过，提示「目录中有 2 个条目格式有误，已跳过」，其余 MCP 照常。
 - Base（用途）：`skillPurposes` 给 `alpha` 写了一个清单里没有的用途 → 没有提示，`alpha` 照常在「推荐」里，只是不在任何用途下；目录校验命令报出来。
-- Bad（用途）：`purposes` 写成了对象 → 目录照常读出来，「推荐」照常，主菜单上一个用途都没有；三个数组里的条目全部被跳过并计入提示的数量。
+- Bad（用途）：`purposes` 写成了对象 → 目录照常读出来，「推荐」照常，主菜单上一个用途都没有；四个数组里的条目全部被跳过并计入提示的数量。
 
 ### 6. Tests Required
 
@@ -270,10 +272,11 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问——它上下的空行在主题的提问标记和提问样式里，有就照打——、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
-- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
+- 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的；不经 shell 而另带了环境变量的多一个 `env`——第三方 Skill 的安装命令，断言「不是 shell 方式」「带着关遥测的变量」看的就是这两样），缺省都以 0 退出。`commandResult: (command, args, { home }) => …` 预设结果：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
 - 链接打开器只记录：要打开的网址按先后进 `result.opened`。安装器现在不调用它，所以它只用来断言「没有调用」：`expect(result.opened).toEqual([])`。
 - **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单（外部项目的场景另带一份 `SHOWCASE_PURPOSES`），新加的样例条目要写清单里的一个用途，不然那一格里它就不见了。
-- **主菜单上第一行是「推荐」，各个用途排在它后面。** 用 `keys` 按光标走的用例，光标起始在「推荐」上（目录里一个 skill 都没有、也没有带推荐标记的条目时才落在第一个用途上）：`[HINT, KEY.enter]` 进的是「推荐」，再下移一行是第一个有条目的用途。MCP、工具和外部项目都会让它们的用途出现在主菜单上，所以要按「下移几行」走的用例得数清中间有几个用途；用预设应答的 `choose('联网搜索与文档检索')` 按字选，不受影响。
+- **主菜单上第一行是「推荐」，各个用途排在它后面。** 用 `keys` 按光标走的用例，光标起始在「推荐」上（目录里一个 skill 都没有、也没有带推荐标记的条目时才落在第一个用途上）：`[HINT, KEY.enter]` 进的是「推荐」，再下移一行是第一个有条目的用途。第三方 Skill、MCP、工具和外部项目都会让它们的用途出现在主菜单上，所以要按「下移几行」走的用例得数清中间有几个用途；用预设应答的 `choose('联网搜索与文档检索')` 按字选，不受影响。
+- **第三方 Skill 从用途进（带推荐标记的也在「推荐」里）。** 样例是 `fixtures.ts` 的 `SAMPLE_THIRD_PARTY`：两条都在「联网搜索与文档检索」下，`paper-kit` 含三个 skill（勾了它会多出一张清单，要多预设一个 `pick(...)`），`solo-notes` 只含一个叫 `note-taker` 的 skill（条目的名字和 skill 的名字故意不同：汇总、命令、结果里出现的是 skill 的名字）。`EMPTY_CATALOG` 里没有它们，要用时自己拼 `{ ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY }`。假的执行器不会真的装东西：让 `commandResult` 在「执行」那条命令时往 `home` 里写出 `<skill 目录>/<名字>/SKILL.md`（`third-party.test.ts` 的 `installs()`），不写就是「命令结束了但没装上」。
 - **工具没有自己的入口，从用途进。** 样例的两个工具分在两个用途下（`fetcher` 在「联网搜索与文档检索」，`linter` 在「开发工作流与规范」）；要它们在同一张列表里，用 `underWebSearch(...SAMPLE_TOOLS)` 归到一个用途（`tools.test.ts` 的 `withTools` 就是这样）。目录里只有工具时这张列表没有 skill 和 MCP，所以检测到两个宿主也不问装进哪些。**样例的工具和 MCP、外部项目共用那两个用途**：往目录里加 `tools: SAMPLE_TOOLS` 会让两个用途的数量各加一、两张列表各多出工具一段，光标起始也落到工具上——要一张只有外部项目（或只有 MCP）的列表，就别带工具，或像 `spacing.test.ts` 的 `componentCatalog` 那样把工具挪到另一个用途下。
 - **MCP 没有自己的入口，从用途进。** 样例的两个 MCP 分在两个用途下（`docs-local` 在「联网搜索与文档检索」，`tracker-remote` 在「开发工作流与规范」）；要它们在同一张列表里，用 `underWebSearch(...SAMPLE_MCPS)` 归到一个用途。样例的 skill 没写用途、只在「推荐」里，所以这样进去是一张只有 MCP 一段的列表；要三种类型同表，给目录加 `skillPurposes: { alpha: 'web-search' }` 和 `apps: SAMPLE_APPS`（`mixed.test.ts` 的 `MIXED`）。**一段里的先后是按名字排的，不是目录文件里的先后**：预设 key 的应答、断言命令的先后时照名字来。
 - **断言用途的顺序时，别让数量恰好也是那个顺序**：排在后面的用途条目更多，才分得出「照用途清单」和「照数量」。用途的读取规则在 `cli/test/purposes.test.ts`，每种写坏的情况各一条。

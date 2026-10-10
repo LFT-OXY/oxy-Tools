@@ -34,6 +34,11 @@ interface Scene {
   links?: Record<string, string>;
   /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
   commands?: CommandRunner;
+  /**
+   * 假装 skills CLI 装第三方 Skill 时装不上的那些，写成「skill 的名字@宿主在 skills CLI 里的名字」：它们的命令以 1 退出、
+   * 什么都不写；别的都装得上（往那个宿主的 skill 目录里写出 SKILL.md）
+   */
+  thirdPartyFails?: string[];
   /** 假装执行工具的安装命令：它往终端上打什么、怎么结束；缺省照 installsTool */
   shell?: (command: string) => ShellRun;
   /** 依次按下的键；画面停在按完之后的样子 */
@@ -237,6 +242,33 @@ const DOCUMENT_TOOLS = [
   { name: 'pandoc', zh: '在 Markdown、Word、HTML、PDF 等几十种文档格式之间互相转换', en: 'Convert between dozens of document formats such as Markdown, Word, HTML and PDF', install: { default: 'brew install pandoc' }, check: { command: 'pandoc' } },
 ].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}`, purpose: 'documents' }));
 const withFourKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS });
+// 再加上第三方 Skill 一段：三条都在「文档处理」下，一条含三个 skill。名字和来源取自待录入的清单，说明是为预览写的
+const DOCUMENT_THIRD_PARTY = [
+  { name: 'drawio-skill', source: 'Agents365-ai/drawio-skill', zh: '用 draw.io 画流程图和架构图并导出图片（需要 Python 3）', en: 'Draw flowcharts and architecture diagrams with draw.io and export them as images (needs Python 3)' },
+  { name: 'guizang-ppt-skill', source: 'op7418/guizang-ppt-skill', zh: '生成杂志风格的网页版 PPT（校验脚本需要 Node.js）', en: 'Generate magazine-style web slide decks (the validation script needs Node.js)' },
+  {
+    name: 'paper-craft-skills',
+    source: 'zsyggg/paper-craft-skills',
+    zh: '读论文并做成深度解读、漫画或幻灯片（3 个 skill，其中两个要 AI Agent 能生成图片）',
+    en: 'Read papers and turn them into write-ups, comics or slides (3 skills; two need an AI Agent that can generate images)',
+    skills: [
+      { name: 'paper-analyzer', description: { zh: '把一篇论文读成深度解读文章（需要 Python）', en: 'Turn a paper into an in-depth write-up (needs Python)' } },
+      { name: 'paper-comic', description: { zh: '把论文的要点画成一组漫画（要 AI Agent 能生成图片）', en: 'Draw the key points of a paper as a comic (needs an AI Agent that can generate images)' } },
+      { name: 'paper-deck', description: { zh: '把论文做成一套幻灯片（要 AI Agent 能生成图片）', en: 'Turn a paper into a slide deck (needs an AI Agent that can generate images)' } },
+    ],
+  },
+].map(({ zh, en, skills, ...entry }) => ({
+  ...entry,
+  description: { zh, en },
+  url: `https://github.com/${entry.source}`,
+  purpose: 'documents',
+  // 只含一个 skill 的：那个 skill 和条目同名
+  skills: skills ?? [{ name: entry.name, description: { zh, en } }],
+}));
+const withFiveKinds = catalogOf(
+  { version: 1, skills: SHOWCASE_SKILLS },
+  { ...MIXED_CATALOG, thirdPartySkills: DOCUMENT_THIRD_PARTY, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS },
+);
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -409,6 +441,30 @@ const FOUR_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'>
   onPath: [...BOTH_HOSTS, 'pandoc'],
   shell: installsDocling,
 };
+// 加上第三方 Skill 一段：主目录照 FOUR_KINDS，另外 drawio-skill 两个宿主下都装过，paper-analyzer 只在 Claude Code 下装过
+const FIVE_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'> = {
+  ...FOUR_KINDS,
+  catalog: withFiveKinds,
+  home: {
+    ...FOUR_KINDS.home,
+    [`${CLAUDE_SKILLS}/drawio-skill/SKILL.md`]: '# drawio-skill\n',
+    [`${CODEX_SKILLS}/drawio-skill/SKILL.md`]: '# drawio-skill\n',
+    [`${CLAUDE_SKILLS}/paper-analyzer/SKILL.md`]: '# paper-analyzer\n',
+  },
+};
+// withFiveKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，drawio-skill、guizang-ppt-skill、paper-craft-skills
+// 三条第三方 Skill，markitdown、excel、mistral-ocr 三个 MCP，docling、officecli、pandoc 三个工具，再是四个外部项目：
+// 勾上 guizang-ppt-skill、paper-craft-skills、markitdown 和 docling，光标停在 docling 上
+const pickWithThirdParty = [...down(4), KEY.space, KEY.down, KEY.space, KEY.down, KEY.space, ...down(3), KEY.space];
+// 确认列表就是 paper-craft-skills 的清单（只有它含多个 skill）：勾上 paper-analyzer 和 paper-comic，光标停在 paper-comic 上
+const toChecklist = [...pickWithThirdParty, KEY.enter];
+const pickFromChecklist = [...toChecklist, KEY.space, KEY.down, KEY.space];
+// 这几个都不要 key：确认清单就到汇总
+const toThirdPartySummary = [...pickFromChecklist, KEY.enter];
+// 开始安装；paper-analyzer 在 Claude Code 下已有同名目录，另问时直接回车（不覆盖）
+const installThirdParty = [...toThirdPartySummary, KEY.enter, KEY.enter];
+// guizang-ppt-skill 装进 Claude Code 的那条命令以 1 退出
+const GUIZANG_FAILS = { thirdPartyFails: ['guizang-ppt-skill@claude-code'] };
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -553,6 +609,14 @@ const scenes: Scene[] = [
   { title: '执行 · 工具排在最后 · 进行中', note: 'skill 和 MCP 已经在「正在安装」分区里装完；工具另起一个以它名字为标题的分区，第一行是要执行的命令，命令自己的输出原样透传，顶格、不加样式', ...FOUR_KINDS, shell: doclingStillRunning, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '结果 · 四种类型 · 工具排在最后', note: '「正在安装」的标题不回头改写；工具的结论紧跟在它的输出后面，名字后面留着宿主一栏的位置；最后用「结果」分区把每一行再列一遍，合计之后才是外部项目的说明与链接', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '结果 · 四种类型 · 工具没装上', note: '命令以非零状态结束、复核也不通过：只有这一行失败，其余照常', ...FOUR_KINDS, shell: () => ({ output: 'ERROR: Could not find a version that satisfies the requirement docling[ocr]\n', exitCode: 1 }), keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '混合列表 · 有第三方 Skill 一段 · 两个宿主', note: '第三方 Skill 自成一段，排在本仓库的 skill 之后、MCP 之前，段首写明内容直接来自作者。状态只看目标位置下有没有那个目录：含多个 skill 的写已装几个、共几个；光标在它上面时「类型」写第三方 Skill', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(5)] },
+  { title: '混合列表 · 有第三方 Skill 一段 · 一个宿主都没有', note: '和别的组件一样不可选，原因写在状态的位置', ...FIVE_KINDS, onPath: [], keys: [...toMixedDocuments(), ...down(5)] },
+  { title: '第三方 Skill 的清单 · 含 3 个 skill，一个已装', note: '混合列表确认之后，含多个 skill 的条目各问一次要其中哪几个：每个 skill 一行，有各宿主下的状态和说明。按键提示写明一个都不勾就是不装这一条', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
+  { title: '第三方 Skill 的清单 · 一个都不勾', note: '收成的那一行写「不装」；这一条不装，其余勾选的照常进汇总', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...toChecklist, KEY.enter] },
+  { title: '汇总确认 · 含第三方 Skill', note: '第三方 Skill 自成一张小表，一行是要装的一个 skill；已有同名目录的写覆盖，备注说另行确认。将执行的命令先是第三方 Skill 的（每个 skill、每个宿主一条），再是 MCP 的、工具的；下面提醒装的是作者当时的最新版', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
+  { title: '确认覆盖 · 第三方 Skill 已有同名目录', note: '选了「开始安装」之后逐项另问，缺省不覆盖', ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary, KEY.enter] },
+  { title: '正在安装 · 第三方 Skill', note: '进行中的那一行写「正在安装」；安装程序自己的输出不上屏，画面上只有这一行', ...FIVE_KINDS, commands: () => new Promise<never>(() => {}), keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过', note: '失败的那一行只说哪一步、退出状态几；没同意覆盖的跳过；其余照常。成功的写「已安装」，没有版本号。工具排在最后', ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '执行工具的安装命令 · 只有工具 · 进行中', note: '这一轮只有工具时没有「正在安装」分区', ...TOOLS, shell: firstStillRunning, keys: [...pickUv, KEY.enter, KEY.enter] },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
@@ -591,6 +655,8 @@ const scenes: Scene[] = [
   { title: '英文界面 · 主菜单 · 四种类型都有', argv: ['--lang', 'en'], ...FOUR_KINDS },
   { title: '英文界面 · 混合列表 · 四种类型', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
   { title: '英文界面 · 混合列表 · 光标在不可选的工具上', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7)] },
+  { title: '英文界面 · 第三方 Skill 的清单', argv: ['--lang', 'en'], ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
+  { title: '英文界面 · 含第三方 Skill 的汇总与结果', argv: ['--lang', 'en'], ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '英文界面 · 四种类型的汇总与结果', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '英文界面 · 混合列表 · 只有工具', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
@@ -616,6 +682,8 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 填写 key', note: '设置了 NO_COLOR：申请地址没有下划线，文字照旧', env: { NO_COLOR: '1' }, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '不显示颜色 · 含 key 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
   { title: '不显示颜色 · 混合列表 · 四种类型', note: '设置了 NO_COLOR：类型靠段标题认，状态和不可选的原因都是字', env: { NO_COLOR: '1' }, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '不显示颜色 · 第三方 Skill 的清单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
+  { title: '不显示颜色 · 含第三方 Skill 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '不显示颜色 · 四种类型的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '不显示颜色 · 混合列表 · 只有工具', note: '设置了 NO_COLOR：状态和不可选的原因都是字，不靠颜色', env: { NO_COLOR: '1' }, ...TOOLS, keys: pickTools },
   { title: '不显示颜色 · 工具的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...TOOLS, keys: runTools },
@@ -642,6 +710,8 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
   { title: '没有 Unicode · 混合列表 · 四种类型', note: '段标题前的横线退成 --，不可选的勾选位退成 [-]，各栏照样对齐', ...LEGACY_CONSOLE, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '没有 Unicode · 第三方 Skill 的清单', ...LEGACY_CONSOLE, ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
+  { title: '没有 Unicode · 含第三方 Skill 的汇总与结果', ...LEGACY_CONSOLE, ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '没有 Unicode · 四种类型的汇总与结果', ...LEGACY_CONSOLE, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '没有 Unicode · 混合列表 · 只有工具', note: '不可选的勾选位退成 [-]，各栏照样对齐；这个系统是 Windows，不支持它的那条写明原因', ...LEGACY_CONSOLE, ...TOOLS, keys: pickTools },
   { title: '没有 Unicode · 工具的汇总与结果', ...LEGACY_CONSOLE, ...TOOLS, shell: installsToolOnWindows, keys: runTools },
@@ -709,7 +779,17 @@ async function play(scene: Scene): Promise<Cell[][]> {
     tempDir: scratchDir('tmp'),
     interrupt: new AbortController().signal,
     runCommand: async (command, args, options) => {
-      if (!options?.shell) return (scene.commands ?? (async () => ok))(command, args);
+      if (!options?.shell) {
+        if (scene.commands || command !== 'npx') return (scene.commands ?? (async () => ok))(command, args);
+        // skills CLI 的安装命令：假装装上了，往那个宿主的 skill 目录里写出 SKILL.md
+        const skill = args[args.indexOf('--skill') + 1] ?? '';
+        const agent = args[args.indexOf('--agent') + 1] ?? '';
+        if (scene.thirdPartyFails?.includes(`${skill}@${agent}`)) return { exitCode: 1 };
+        const target = join(home, agent === 'codex' ? CODEX_SKILLS : CLAUDE_SKILLS, skill, 'SKILL.md');
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, `# ${skill}\n`);
+        return ok;
+      }
       // 工具的安装命令：真的执行时它的输出直接接在终端上，这里照样写到同一个终端里
       const run = (scene.shell ?? installsTool)(command);
       write(run.output);

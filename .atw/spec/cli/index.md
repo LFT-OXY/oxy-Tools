@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层写的都是已经落地的做法（只有一处例外：[界面设计](./ui-design.md) 里按用途进入的几节是已定下、还在逐张实现的画法，那份文件的开头有说明）：启动、读目录、主菜单、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后四种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
+本层写的都是已经落地的做法（只有一处例外：[界面设计](./ui-design.md) 里按用途进入的几节是已定下、还在逐张实现的画法，那份文件的开头有说明）：启动、读目录、主菜单、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、第三方 Skill 的安装（调用 skills CLI，装到全局）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
 
 ```
 cli/
@@ -22,6 +22,8 @@ cli/
 │   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录、怎么拼添加和移除 MCP 的命令、去哪看 MCP 配没配过
 │   ├── install-skill.ts  # 安装 skill：只认“条目 + 目标目录”
 │   ├── skill-status.ts   # 状态探测：一个 skill 在某个 skill 目录下的现状，只看目标目录
+│   ├── install-third-party.ts  # 安装第三方 Skill：拼出 skills CLI 的那条命令，执行后看目标位置有没有 SKILL.md
+│   ├── third-party-status.ts   # 状态探测：第三方 Skill 的各个 skill 在某个宿主下装没装，只看目标位置有没有东西
 │   ├── install-mcp.ts    # 安装 MCP：要执行哪几条宿主的命令，依次执行
 │   ├── mcp-status.ts     # 状态探测：一个 MCP 在某个宿主下的现状，只读它的用户级配置
 │   ├── install-tool.ts   # 安装工具：按系统选命令，执行后用条目声明的检查方式复核
@@ -90,7 +92,7 @@ cli/
 | 文档 | 内容 |
 |------|------|
 | [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、链接打开器的契约（现在不调用它）、退出状态、主菜单与流程、目录读取与校验的契约（含外部项目条目的字段，用途清单、条目的用途与推荐标记、本仓库 skill 的用途）、测试架子的用法 |
-| [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、skill 的四种状态、覆盖与单独确认、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵 |
+| [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、skill 的四种状态、覆盖与单独确认、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵；第二个 Scenario 是第三方 Skill：`catalog.json` 的条目与校验、skills CLI 那条命令的写法与环境变量、状态只看目录在不在、成败看复核、覆盖前另问、清单 |
 | [安装 MCP](./mcp-install.md) | `catalog.json` 的 MCP 条目与校验（含环境变量）、两个宿主的命令写法与配置文件、三种状态加「不支持」、已配置与状态未知时怎么装、带 key 的 MCP 怎么问怎么传、key 的值不许去的地方、外部命令执行器的契约、Codex 添加远程地址时当场登录的提醒、出错矩阵 |
 | [安装工具](./tool-install.md) | `catalog.json` 的工具条目与校验、安装命令是一整行 shell、按系统选命令、两种检查方式与两种状态、哪些条目不可选、它在混合流程里排在哪、成功与否只看复核的结论矩阵、外部命令执行器的 shell 模式与手动核对的办法、已知的限制 |
 | [界面设计](./ui-design.md) | 画面该长什么样：视觉方向「账本」、版式的总规则、颜色与符号的含义、状态的写法、标题区、各类画面的版式要点、深浅色与不显示颜色和没有 Unicode 时的要求、界面预览页的生成命令和用法、还没经维护者确认的画法 |
@@ -109,6 +111,7 @@ cli/
 - [ ] 要碰用户输入的 key（问、记、传、报错）→ [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」：值只进内存、命令参数和宿主的配置，不进呈现层、不进错误的原因、不进任何文件
 - [ ] 要让列表里的某一行不可选 → [终端输出](./terminal-output.md) 的「不可选的行」
 - [ ] 要执行任何外部命令，动 MCP 条目的字段、命令的拼法、看哪个配置文件，或给宿主加一条 MCP 的行为 → [安装 MCP](./mcp-install.md)：命令先完整展示、确认了才执行；展示的和执行的是同一份
+- [ ] 要动第三方 Skill 条目的字段、skills CLI 那条命令的参数或版本、带哪些环境变量、怎么判装没装上 → [安装 skill](./skill-install.md) 的第二个 Scenario：来源和 skill 的名字是外部命令的参数，只收安全的字符；成败只看复核
 - [ ] 要动工具条目的字段、安装命令的校验、按系统选命令、检查方式、成败怎么判，或外部命令执行器的 shell 模式 → [安装工具](./tool-install.md)：整行 shell 只许来自 `install` 字段，成败只看复核
 - [ ] 要读 `cli/` 以外的文件、或在仓库根加包描述文件 → 不行，见上面「自成一体的三条规矩」和 ADR-0001
 - [ ] 要改 `index.json` 或 `catalog.json` 的格式 → 先读 ADR-0002 和 [清单与版本](../skills/manifest-versioning.md)：字段契约、格式版本号的兼容规则、对 A Team Workflow 的三条承诺都在那里
@@ -145,6 +148,7 @@ cli/
 | 没有交互式终端 | `npx --no-install oxy-tools </dev/null \| cat`：说明在标准错误，退出状态 1 |
 | 目录格式版本过高 | 伪终端里 `OXY_TOOLS_CATALOG=<version 写成 99 的样例目录> node dist/bin.js` |
 | 断网 | 伪终端里 `sandbox-exec -p '(version 1)(allow default)(deny network*)' node dist/bin.js`（macOS），走的是缺省的 GitHub 目录来源 |
+| 第三方 Skill | 同下一行的做法，另把 `XDG_CONFIG_HOME`、`XDG_STATE_HOME`、`XDG_DATA_HOME`、`XDG_CACHE_HOME`、`npm_config_cache` 也指到临时目录并断言（skills CLI 往状态目录里写一个 `.skill-lock.json`）；`CLAUDE_CONFIG_DIR` 故意指到不是 `<HOME>/.claude` 的目录。样例目录里登记一条真实的小仓库。完了查两个宿主的 skill 目录下各有 `SKILL.md` 且是真实目录、`CLAUDE_CONFIG_DIR` 指的目录是空的、录下的原始输出里搜不到 skills CLI 的框线和字符画、真实主目录的 skill 目录前后没变。Windows 和 Linux 上至今没有跑过。上一次的记录和驱动脚本的写法在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md` |
 | skill、MCP、工具的整条流程 | 伪终端里跑 `node dist/bin.js`，事先 `export HOME=<临时目录> CLAUDE_CONFIG_DIR=<临时目录> CODEX_HOME=<临时目录> OXY_TOOLS_CATALOG=<样例目录>`，脚本开头断言这几个都指向临时目录。执行的是真实的 `claude`、`codex`，写的是临时配置；完了查临时配置里有那几条、终端的原始输出里搜不到填的 key、真实配置里没有样例的名字 |
 | 不显示颜色 | 同上再加 `NO_COLOR=1`：原始输出里一个样式码（`ESC[…m`）都没有 |
 | 深色与浅色的真实终端 | 在终端程序里各用一套深色、一套浅色的配色跑同一条流程，看每个画面；观感的结论记进 [界面设计](./ui-design.md) |

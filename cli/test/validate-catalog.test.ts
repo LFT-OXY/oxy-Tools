@@ -10,6 +10,7 @@ import {
   SAMPLE_MCPS,
   SAMPLE_PURPOSES,
   SAMPLE_SKILLS,
+  SAMPLE_THIRD_PARTY,
   SAMPLE_TOOLS,
   STACK_FRAME,
   catalogDir,
@@ -108,14 +109,14 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('MCP 条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
   it('工具条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、2 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、2 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -204,7 +205,7 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('带环境变量的 MCP 条目没有问题时照常通过', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [...SAMPLE_MCPS, KEYED_MCP] } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、3 个 MCP、0 个工具、0 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、3 个 MCP、0 个工具、0 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -229,10 +230,89 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it('第三方 Skill 条目也校验：没有问题时通过的那一行里说明有几个', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY } }));
+
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个第三方 Skill、0 个 MCP、0 个工具、0 个应用项目、2 个用途');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('第三方 Skill 可以写宿主限制；来源的两段和 skill 的名字里可以有点、下划线和连字符', async () => {
+    const skills = ['a', 'v1.2_final', 'snake__case_', 'dotted..name', 'kebab-case-9'].map((name) => ({ ...SAMPLE_THIRD_PARTY[1]?.skills[0], name }));
+    const entry = { ...SAMPLE_THIRD_PARTY[1], hosts: ['claude-code'], source: 'Some_Org.x/repo-name.v2', skills };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: [entry] } }));
+
+    expect(result.stdout).toContain('1 个第三方 Skill');
+    expect(result.exitCode).toBe(0);
+  });
+
+  const [KIT] = SAMPLE_THIRD_PARTY as [(typeof SAMPLE_THIRD_PARTY)[0]];
+  const [READER] = KIT.skills as [(typeof KIT.skills)[0]];
+  it.each([
+    ['source', { source: undefined }, '所有者/仓库'],
+    ['source', { source: 'paper-kit' }, '所有者/仓库'],
+    ['source', { source: 'https://github.com/example-labs/paper-kit' }, '所有者/仓库'],
+    ['source', { source: 'example-labs/paper-kit/skills' }, '所有者/仓库'],
+    ['source', { source: 'example labs/paper-kit' }, '所有者/仓库'],
+    // 会被 skills CLI 当成本地路径、当成选项的写法
+    ['source', { source: '../paper-kit' }, '每段以字母或数字开头'],
+    ['source', { source: '--all/paper-kit' }, '每段以字母或数字开头'],
+    ['source', { source: 'example-labs/-g' }, '每段以字母或数字开头'],
+    ['skills', { skills: undefined }, '非空的数组'],
+    ['skills', { skills: [] }, '非空的数组'],
+    ['skills', { skills: 'paper-reader' }, '非空的数组'],
+    ['skills', { skills: [READER, READER] }, '名字不重复'],
+    ['skills[0]', { skills: ['paper-reader'] }, '对象'],
+    ['skills[0].name', { skills: [{ ...READER, name: undefined }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: '--yes' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: 'paper reader' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: '../escape' }] }, '小写写法'],
+    // skills CLI 装出来的目录名是小写的，首尾的点和连字符会被去掉，连着的连字符会并成一个
+    ['skills[0].name', { skills: [{ ...READER, name: 'Paper-Reader' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: 'paper-reader-' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: 'paper--reader' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: 'paper-reader.' }] }, '小写写法'],
+    ['skills[0].name', { skills: [{ ...READER, name: '_paper-reader' }] }, '小写写法'],
+    ['skills[1].name', { skills: [READER, { ...READER, name: '' }] }, '小写写法'],
+    ['skills[0].description', { skills: [{ ...READER, description: '读论文' }] }, '对象'],
+    ['skills[0].description.en', { skills: [{ ...READER, description: { zh: '读论文' } }] }, '非空文字'],
+    ['hosts', { hosts: [] }, '非空的数组'],
+    ['url', { url: 'http://github.com/example-labs/paper-kit' }, 'https:// 开头的网址'],
+    ['purpose', { purpose: undefined }, '用途清单'],
+  ])('第三方 Skill 的 %s 写坏时，指明是 thirdPartySkills 第几条、叫什么、哪个字段', async (field, overrides, rule) => {
+    const broken = { ...KIT, name: 'broken', ...overrides };
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: [SAMPLE_THIRD_PARTY[1], broken] } }));
+
+    const where = field.replace(/[.[\]]/g, '\\$&');
+    expect(result.stderr).toMatch(new RegExp(`catalog\\.json 的 thirdPartySkills 第 2 条（broken）：${where} .*${rule}`));
+    expect(result.stdout).not.toContain('通过');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('第三方 Skill 的用途不在用途清单里、与前面的条目重名、不是对象，各有各的说法', async () => {
+    const result = await validate(
+      catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: [KIT, { ...KIT, purpose: 'nowhere', name: 'lost' }, KIT, 'paper-kit'] } }),
+    );
+
+    expect(result.stderr).toContain('有 3 个条目会被安装器跳过');
+    expect(result.stderr).toMatch(/thirdPartySkills 第 2 条（lost）：用途 nowhere 不在用途清单/);
+    expect(result.stderr).toMatch(/thirdPartySkills 第 3 条（paper-kit）：与前面的条目重名/);
+    expect(result.stderr).toMatch(/thirdPartySkills 第 4 条：条目不是对象/);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('thirdPartySkills 不是数组时整份读不了，指出这个字段', async () => {
+    const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: {} } }));
+
+    expect(result.stderr).toContain('目录校验未通过：目录格式有误');
+    expect(result.stderr).toContain('thirdPartySkills 不是数组');
+    expect(result.exitCode).toBe(1);
+  });
+
   it('应用项目条目也校验：没有问题时说明有几个', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、0 个工具、2 个应用项目');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、2 个应用项目');
     expect(result.exitCode).toBe(0);
   });
 
@@ -263,14 +343,14 @@ describe('目录校验命令', { timeout: 30_000 }, () => {
   it('用途清单也校验：没有问题时说明有几个用途', async () => {
     const result = await validate(catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, skillPurposes: { alpha: 'web-search' } } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、2 个 MCP、0 个工具、0 个应用项目、2 个用途');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、2 个 MCP、0 个工具、0 个应用项目、2 个用途');
     expect(result.exitCode).toBe(0);
   });
 
   it('没有用途清单的旧格式目录，里面没有条目时照常通过', async () => {
     const result = await validate(catalogDir({ catalog: { version: 1, mcps: [], tools: [], apps: [] } }));
 
-    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个 MCP、0 个工具、0 个应用项目、0 个用途');
+    expect(result.stdout).toContain('目录校验通过：2 个 skill、0 个第三方 Skill、0 个 MCP、0 个工具、0 个应用项目、0 个用途');
     expect(result.exitCode).toBe(0);
   });
 

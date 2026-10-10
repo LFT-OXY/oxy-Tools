@@ -33,7 +33,7 @@ describe('写坏的条目', () => {
     const result = await run({ catalog: catalogDir({ index: { version: 1, skills: [entry, good] } }), answers: browse });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+目录\s+1 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+1 Skill$/m);
     expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).not.toContain('broken');
     expect(result.exitCode).toBe(0);

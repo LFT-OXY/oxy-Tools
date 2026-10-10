@@ -134,7 +134,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 ### 4. Validation & Error Matrix
 
-目录里写坏的工具条目只跳过那一条，带着原因进 `Catalog.skipped`。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`install`、`install.default`、`install.macos` / `linux` / `windows`、`check`、`check.path` / `check.command` 的顺序查；工具自己的字段都查完之后，最后是三类条目共有的 `purpose`（必须写，且在用途清单里）、`recommended`，规则见 [入口与测试](./installer-entry.md) 的校验表。新增的 `FieldRule` 见 [目录校验与 CI](./catalog-validation.md)。
+目录里写坏的工具条目只跳过那一条，带着原因进 `Catalog.skipped`。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`install`、`install.default`、`install.macos` / `linux` / `windows`、`check`、`check.path` / `check.command` 的顺序查；工具自己的字段都查完之后，最后是四类条目共有的 `purpose`（必须写，且在用途清单里）、`recommended`，规则见 [入口与测试](./installer-entry.md) 的校验表。新增的 `FieldRule` 见 [目录校验与 CI](./catalog-validation.md)。
 
 执行的结论（`installTool` 从不抛错，结论由 `messages.ts` 的 `toolResult` 说成话）：
 

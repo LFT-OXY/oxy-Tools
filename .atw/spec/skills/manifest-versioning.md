@@ -88,6 +88,7 @@
     { "id": "web-search", "name": { "zh": "联网搜索与文档检索", "en": "Web search & docs retrieval" } }
   ],
   "skillPurposes": { "archify": "documents" },
+  "thirdPartySkills": [],
   "mcps": [],
   "tools": [],
   "apps": []
@@ -101,6 +102,7 @@
 | `purposes[].id` | 字符串 | 用途的标识，小写 kebab-case（字符集与条目的 `name` 相同），在清单里唯一。条目的 `purpose` 写的就是它 |
 | `purposes[].name.zh`、`purposes[].name.en` | 字符串 | 用途的中英文名称，显示给用户看的 |
 | `skillPurposes` | 对象 | 本仓库个别 skill 的用途：键是 skill 的 `name`（要在 `index.json` 里有），值是一个用途的标识。可缺省。**只写要另外出现在某个用途下的 skill**，不写的只在「推荐」里 |
+| `thirdPartySkills` | 数组 | 第三方 Skill 条目：内容不在本仓库、由安装器调用 skills CLI 装的那些（[ADR-0003](../../../docs/adr/0003-third-party-skills-installed-by-skills-cli.md)）。可缺省，缺省当作空。**它们登记在这里而不是 `index.json`**：skill 清单只登记内容在本仓库的 skill，这是对 A Team Workflow 的承诺 |
 | `mcps` | 数组 | MCP 条目。可缺省，缺省当作空 |
 | `tools` | 数组 | 工具条目。可缺省 |
 | `apps` | 数组 | 外部项目条目（键名没有跟着改叫法：改键名是不兼容的改动）。可缺省 |
@@ -109,7 +111,9 @@
 
 `purposes` 现在有 10 个用途，`skillPurposes` 里有 4 个 skill（`archify`、`onetake`、`unlazy`、`shuorenhua`）。增删改一个用途只要提交本仓库，不用发 npm 版本。**本仓库 skill 的用途记在这里而不是 `index.json`**：skill 清单在对 A Team Workflow 的承诺之内，给它的条目加字段会不会坏在本仓库内无从验证。本仓库的 skill 不靠任何标注就属于「推荐」，所以大多数 skill 在 `skillPurposes` 里没有、也不该有。
 
-**三类条目共有的字段**
+`thirdPartySkills` 还是空的：条目等工单 13 逐个试装之后录入。
+
+**四类条目（第三方 Skill、MCP、工具、外部项目）共有的字段**
 
 | 字段 | 必填 | 说明 |
 |------|------|------|
@@ -118,6 +122,32 @@
 | `url` | 是 | 官方链接。只收 `https://` 开头的网址，别的字符（汉字、空格）先做百分号编码。外部项目的会整条显示出来让用户自己打开（安装器不替他开浏览器）；MCP 和工具的目前不显示 |
 | `purpose` | 是 | 这一条的用途：`purposes` 里某一项的 `id`。有且只有一个。没写、或写的标识不在 `purposes` 里，这一条都会被安装器跳过 |
 | `recommended` | 否 | 布尔。`true` 表示这一条另外出现在「推荐」里；省略等于 `false` |
+
+**第三方 Skill 条目另有**
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `source` | 是 | 来源：GitHub 上的「所有者/仓库」，如 `zsyggg/paper-craft-skills`。只写这两段，不写网址；每段以字母或数字开头，只含字母、数字和 `. _ -` |
+| `skills` | 是 | 这个仓库里可以装的 skill，至少一个，名字不重复。只含一个时用户勾了条目就直接装它；含多个时安装器列出来让用户挑 |
+| `skills[].name` | 是 | skill 自己声明的名字（它 `SKILL.md` 的 frontmatter 里的 `name`），**写成小写**：只含小写字母、数字和 `. _ -`，以小写字母或数字开头，不以 `.` 或 `-` 结尾，连字符不连着写。skills CLI 按名字选的时候不分大小写，装出来的目录名是小写的，安装器就是去看那个目录 |
+| `skills[].description.zh`、`.en` | 是 | 这个 skill 的一句说明。有前提或要留意之处（要付费账号、会结束浏览器、默认加署名）写在这里，用户在清单里看得到 |
+| `hosts` | 否 | 同 MCP：支持的宿主的标识，省略表示全部支持 |
+
+```json
+{
+  "name": "paper-craft-skills",
+  "description": { "zh": "…", "en": "…" },
+  "url": "https://github.com/zsyggg/paper-craft-skills",
+  "purpose": "documents",
+  "source": "zsyggg/paper-craft-skills",
+  "skills": [
+    { "name": "paper-analyzer", "description": { "zh": "…", "en": "…" } },
+    { "name": "paper-comic", "description": { "zh": "…", "en": "…" } }
+  ]
+}
+```
+
+条目的 `name` 是它在目录里的名字（列表里的那一行），和 `source`、和里面 skill 的名字都可以不同。**同一个 skill 名字不要出现在两个条目里，也不要和本仓库的 skill 重名**：它们会装到同一个目录，后装的盖掉先装的——目录校验命令现在不查这个。
 
 **MCP 条目另有**
 
@@ -168,7 +198,7 @@
 
 **应用项目条目**只有共有字段。
 
-**这些字段的内容会被执行。** 目录是安装器运行时拉取的远程数据：MCP 的 `server` 会拼进宿主的命令并记进它的配置，工具的 `install` 会整行交给 shell。安装器执行前都完整展示并取得确认，但往 `catalog.json` 加条目仍然等于往用户的机器上放命令——只放官方给出的安装方式。
+**这些字段的内容会被执行。** 目录是安装器运行时拉取的远程数据：第三方 Skill 的 `source` 和 skill 的名字会成为 `npx skills add` 的参数（装进来的内容由那个仓库的作者决定，维护者没有逐版检查），MCP 的 `server` 会拼进宿主的命令并记进它的配置，工具的 `install` 会整行交给 shell。安装器执行前都完整展示并取得确认，但往 `catalog.json` 加条目仍然等于往用户的机器上放命令——只放官方给出的安装方式。
 
 ### 往目录里加一条 MCP
 
@@ -226,6 +256,7 @@
 | 条目 | 在哪 |
 |------|------|
 | 共有字段（含 `purpose`、`recommended`）、应用项目、`purposes`、`skillPurposes` | [CLI 层的入口与测试](../cli/installer-entry.md) 的“Validation & Error Matrix” |
+| 第三方 Skill | [CLI 层的安装 skill](../cli/skill-install.md) 的第二个 Scenario |
 | MCP | [CLI 层的安装 MCP](../cli/mcp-install.md) 的“Contracts” |
 | 工具 | [CLI 层的安装工具](../cli/tool-install.md) 的“Contracts” |
 

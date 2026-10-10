@@ -41,7 +41,7 @@ describe('主菜单上没有工具这个分组', () => {
 
     expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s*\n\s+退出$/m);
     expect(result.output).not.toMatch(/^[\s-]+工具\s/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 工具$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 2 工具$/m);
     expect(result.exitCode).toBe(0);
   });
 

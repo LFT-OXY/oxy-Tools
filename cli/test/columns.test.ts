@@ -1,7 +1,7 @@
 // 表的栏间隔：每一栏最长的一格后面恰好三格空白，再是下一栏；所有的表同一个间隔。
 // 只卡间隔本身：断言都从一栏里最长的那一格写起，不管行首缩进了几列、后面的字怎么折行。
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, no, pick, run, underWebSearch } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_THIRD_PARTY, SAMPLE_TOOLS, accept, catalogDir, choose, no, pick, run, underWebSearch } from './harness.ts';
 
 // 四种类型都有条目的样例目录
 const fullCatalog = (): string =>
@@ -160,5 +160,44 @@ describe('栏间隔：帮助', () => {
 
     expect(screen).toMatch(option);
     expect(screen).toMatch(variable);
+  });
+});
+
+describe('栏间隔：第三方 Skill', () => {
+  // 两条都在「联网搜索与文档检索」下；paper-kit 含三个 skill，其中 paper-reader 在 Claude Code 下已有同名目录
+  const catalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY } });
+  const home = { '.claude/skills/paper-reader/SKILL.md': '# 用户改过的\n' };
+  const install = [choose('联网搜索与文档检索'), accept(), pick('paper-kit'), pick('paper-reader', 'paper-comic'), choose('开始安装'), no(), choose('退出')];
+
+  it('混合列表里的一段、清单、汇总的小表、结果行同一个间隔', async () => {
+    const { screen } = await run({ catalog: catalog(), onPath: BOTH_HOSTS, home, answers: install });
+
+    // 混合列表：名称一栏最长的是 solo-notes，两栏状态最长的是表头
+    expect(screen).toMatch(/solo-notes {3}未装/);
+    expect(screen).toMatch(/Claude Code {3}Codex {3}说明\n.*第三方 Skill/);
+    // 清单：最长的名字、最长的状态（表头）之后各三格
+    expect(screen).toMatch(/paper-reader {3}已装/);
+    expect(screen).toMatch(/Claude Code {3}Codex {3}说明\n.*paper-reader/);
+    // 汇总：条目一栏最长的是表头，AI Agent 一栏最长的是 Claude Code，操作一栏两格一样长
+    expect(screen).toMatch(/第三方 Skill {3}AI Agent/);
+    expect(screen).toMatch(/Claude Code {3}覆盖 {3}~/);
+    // 结果行：名字、宿主两栏之后各三格
+    expect(screen).toMatch(/paper-reader {3}Claude Code {3}跳过/);
+  });
+
+  it('英文界面同一个间隔', async () => {
+    const { screen } = await run({
+      catalog: catalog(),
+      onPath: BOTH_HOSTS,
+      home,
+      argv: ['--lang', 'en'],
+      answers: [choose('Web search & docs retrieval'), accept(), pick('paper-kit'), pick('paper-reader', 'paper-comic'), choose('Install'), no(), choose('Exit')],
+    });
+
+    expect(screen).toMatch(/paper-reader {3}installed /);
+    expect(screen).toMatch(/Claude Code {3}Codex {3}About\n.*paper-reader/);
+    expect(screen).toMatch(/Third-party skills {3}AI Agent/);
+    expect(screen).toMatch(/Claude Code {3}overwrite {3}~/);
+    expect(screen).toMatch(/paper-reader {3}Claude Code {3}skipped/);
   });
 });

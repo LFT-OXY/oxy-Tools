@@ -1,4 +1,4 @@
-// 宿主适配：宿主在不在、skill 装到哪个目录、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置。
+// 宿主适配：宿主在不在、skill 装到哪个目录、通用的 skill 安装程序怎么称呼它、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置。
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
@@ -24,6 +24,11 @@ export interface Host {
   detected: boolean;
   /** 用户级的 skill 目录，装在这里对所有项目生效 */
   skillsDir: string;
+  /**
+   * 第三方 Skill 经通用的 skill 安装程序（skills CLI）装进这个宿主时：agent 是它那边指代这个宿主的名字，
+   * env 是要另外带上的环境变量——带上了它才把全局的 skill 装到 skillsDir
+   */
+  skillsCli: { agent: string; env: Readonly<Record<string, string>> };
   /** 用户级配置里已有的 MCP 的名字，只读地看一眼配置文件；读不了或格式不认识时是 undefined */
   configuredMcps(): ReadonlySet<string> | undefined;
   /** 把一个 MCP 写进用户级配置的命令：宿主自己的添加命令。variables 是要带上的环境变量的名字 */
@@ -50,6 +55,8 @@ const claudeCode: HostAdapter = (env, homeDir) => ({
   name: 'Claude Code',
   detected: isOnPath('claude', env),
   skillsDir: join(homeDir, '.claude', 'skills'),
+  // skills CLI 认 CLAUDE_CONFIG_DIR（装到它下面的 skills），本安装器的 skill 目录不认：清空它，两边才是同一个目录
+  skillsCli: { agent: 'claude-code', env: { CLAUDE_CONFIG_DIR: '' } },
   configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
   // 环境变量要跟在名字后面：-e 能连收几个值，放在名字前面会把名字也收进去
   addMcp: ({ name, server }, variables) => ({
@@ -77,6 +84,7 @@ const codex: HostAdapter = (env, homeDir) => ({
   name: 'Codex',
   detected: isOnPath('codex', env),
   skillsDir: join(homeDir, '.agents', 'skills'),
+  skillsCli: { agent: 'codex', env: {} },
   configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
   addMcp: ({ name, server }, variables) => ({
     command: 'codex',

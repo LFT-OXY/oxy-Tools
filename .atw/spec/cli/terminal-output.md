@@ -209,7 +209,7 @@ export interface ConfirmQuestion {
 
 ## 汇总：按类型分的小表与备注
 
-`ui.installSummary({ skills, mcps })` 打一个分区「将安装 N 项」，里面每种类型一张小表（这一轮没有的类型没有它的小表），小表之间空一行，分区以空行收尾。小表由 `ui.ts` 的 `summaryTables(tables)` 一起排，**几张表合起来算栏宽**：
+`ui.installSummary({ skills, thirdParty, mcps, tools })` 打一个分区「将安装 N 项」，里面每种类型一张小表（这一轮没有的类型没有它的小表），小表之间空一行，分区以空行收尾。小表由 `ui.ts` 的 `summaryTables(tables)` 一起排，**几张表合起来算栏宽**：
 
 | 栏 | 宽度 |
 |----|------|
@@ -243,7 +243,7 @@ const inline = tables.every((table) => notesOf(table).every((note) => startOf(ta
 
 执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。它接在汇总的小表后面；这一轮只装本仓库的 skill 时没有命令，也就没有这个分区。接着是 `ui.summaryNotices(notices)` 和 `ui.confirmInstall()`：开始安装、返回修改、取消（`decision`）。
 
-一条命令有两种：`Command`（命令加参数，MCP 的，不经 shell）和**一个字符串**（工具的安装命令，一整行 shell）。两种列在同一个分区里、接着编号，先后照执行的先后（MCP 在前，工具在后）。
+一条命令有两种：`Command`（命令加参数，第三方 Skill 和 MCP 的，不经 shell）和**一个字符串**（工具的安装命令，一整行 shell）。两种列在同一个分区里、接着编号，先后照执行的先后（第三方 Skill 在前，MCP 其次，工具在后）。第三方 Skill 的命令执行时另带的环境变量不写在里面。
 
 | 情况 | 画法 |
 |------|------|
@@ -281,9 +281,13 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ## 混合列表与外部项目
 
-进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, mcps, tools, apps, checked, marksRecommended })`：按类型分段、段首有标题、列表下方多一行「类型」。**现在里面有本仓库的 skill、MCP、工具、外部项目四段**，第三方 Skill 随工单 09 搬进来。提问的值是目录里的条目本身（`Skill | Mcp | Tool | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
+进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, thirdParty, mcps, tools, apps, checked, marksRecommended })`：按类型分段、段首有标题、列表下方多一行「类型」。里面有本仓库的 skill、第三方 Skill、MCP、工具、外部项目五段。提问的值是目录里的条目本身（`Skill | ThirdPartySkill | Mcp | Tool | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
 
-`hosts` 是所选的宿主，`skills`、`mcps` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的时状态只有一栏**（表头「状态」），skill 和 MCP 都不可选——一个宿主都没检测到，或这张列表里根本没有它们（只有工具和外部项目时不问宿主）。工具不看 `hosts`：它的状态和不可选的原因（`ToolUnavailable`，含一个宿主都没检测到的那一种）由流程算好交进来。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
+`hosts` 是所选的宿主，`skills`、`thirdParty`、`mcps` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的时状态只有一栏**（表头「状态」），skill、第三方 Skill 和 MCP 都不可选——一个宿主都没检测到，或这张列表里根本没有它们（只有工具和外部项目时不问宿主）。工具不看 `hosts`：它的状态和不可选的原因（`ToolUnavailable`，含一个宿主都没检测到的那一种）由流程算好交进来。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
+
+**第三方 Skill 的清单**是 `ui.thirdPartyPicker({ entry, hosts, statuses, checked })`：混合列表确认之后，含多个 skill 的条目各问一次要其中哪几个，提问的值是条目里的 `SourcedSkill`。栏和混合列表一样（名称、每个所选的宿主一栏状态、说明），没有分段，也没有「类型」一行。它和别的多选只差两处，都在这个提问自己的主题里盖掉：按键提示里「确认」后面的括号——交互库传进来的动作名 `submit` 换成 `submitOrSkip` 再交给共用的 `keysHelpTip`（`messages.ts` 的 `keys` 里两个都有：「不选则返回」和「不选则不装这一条」）；一个都不勾时收成的那一行写 `t.notInstalling` 而不是「返回」。**别的多选要改括号里的话照这个做，不要另写一份按键提示**：那一行的宽度是算着写的，英文加没有 Unicode 时一列余量都没有，新写的括号不能比 `none = back` 长。
+
+汇总里第三方 Skill 的小表和 skill 的同一种（带位置）；一行是一个 `ThirdPartyTarget`（要装的一个 skill 在一个宿主下），`entry` 是它所属条目的名字——「将安装 N 项」按它数，不按行数。结果行由 `installation(...).thirdParty` 出：成功只写「已安装」，没有版本号；复核通过而命令没有正常结束时把结果词当作 `verdict`、后面接命令的结局（和工具的结论同一个拼法）。
 
 组件的各段在 `mixedPicker` 里先归成同一种行（`{ value, name, about, recommended, cells, unavailable? }`），再由同一段代码拼：加一种组件就是在 `sections` 里加一段，说清它的各栏状态和什么时候不可选，栏宽、推荐的标记、不可选的拼法、`belowUnavailable` 都不用再写一遍。
 

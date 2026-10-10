@@ -115,3 +115,32 @@ export const SAMPLE_TOOLS = [
     check: { path: '.linter/bin/linter' },
   },
 ];
+
+export const LONG_THIRD_PARTY_ABOUT = {
+  zh: '含三个 skill 的样例第三方 Skill，它的说明同样故意写得很长，长到在列表的一行里放不下，只能截断，全文要到列表下方去看',
+  en: 'A sample third-party skill holding three skills, described at such length that one list row cannot hold it and the full text has to be read below the list',
+};
+
+/** 第三方 Skill 两条，都在「联网搜索与文档检索」下：一条含三个 skill，一条只含一个（名字和条目的不同） */
+export const SAMPLE_THIRD_PARTY = [
+  {
+    name: 'paper-kit',
+    description: LONG_THIRD_PARTY_ABOUT,
+    url: 'https://github.com/example-labs/paper-kit',
+    purpose: 'web-search',
+    source: 'example-labs/paper-kit',
+    skills: [
+      { name: 'paper-reader', description: { zh: '把一篇论文读成深度解读文章', en: 'Turn a paper into an in-depth write-up' } },
+      { name: 'paper-comic', description: { zh: '把论文的要点画成一组漫画', en: 'Draw the key points of a paper as a comic' } },
+      { name: 'paper-deck', description: { zh: '把论文做成一套幻灯片', en: 'Turn a paper into a slide deck' } },
+    ],
+  },
+  {
+    name: 'solo-notes',
+    description: { zh: '只含一个 skill 的样例第三方 Skill', en: 'A sample third-party skill holding a single skill' },
+    url: 'https://github.com/example-labs/solo-notes',
+    purpose: 'web-search',
+    source: 'example-labs/solo-notes',
+    skills: [{ name: 'note-taker', description: { zh: '把对话整理成笔记', en: 'Turn a conversation into notes' } }],
+  },
+];

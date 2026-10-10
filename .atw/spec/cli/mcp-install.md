@@ -67,7 +67,7 @@ interface Session {
 
 // cli/src/installer.ts
 export interface CommandResult { exitCode: number }
-export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>; // 命令没能起来时拒绝；options 只有安装工具用，见「安装工具」
+export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>; // 命令没能起来时拒绝；安装 MCP 不给 options——{ shell: true } 是安装工具用的，{ env } 是安装第三方 Skill 用的
 
 // cli/src/run-command.ts
 export function systemCommandRunner(): CommandRunner;
@@ -131,7 +131,7 @@ export function systemCommandRunner(): CommandRunner;
 - 远程地址只有一种：可流式的 HTTP。SSE、请求头鉴权都不在范围内。
 - 环境变量一个变量一个 `-e` / `--env`，照目录里的顺序，**跟在名字后面、`--` 前面**。Claude Code 的 `-e` 能连收几个值，放在名字前面会把名字也收进去。两个宿主都把值原样记进配置里这个 MCP 的 `env`（实测过带 `=`、`&`、`+`、`/` 的值），添加命令自己的输出里不回显值。Codex 对 `--url` 加 `--env` 直接报错（`command is required`），这是“环境变量只适用于本地进程”在宿主那边的依据。
 - **各系统上命令相同，原生 Windows 上也不给本地进程包 `cmd /c`**。Claude Code 的旧文档要求过（否则 `npx` 这类 `.cmd` 起不来，报 Connection closed）；它的更新日志 2.1.119 写明移除了那条“需要 cmd /c 包装”的警告（称其为误报），现行的 MCP 文档里也已经没有这条说明；Codex 的文档从未要求过。2.1.119 之前的 Claude Code 不在支持之列。这个结论来自文档和更新日志，**没有在 Windows 真机上实测**；`mcp.test.ts` 里有一条 `platform: 'win32'` 的测试守着“不包”这个决定。
-- 两个环境变量是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。
+- 两个环境变量是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。它在第三方 Skill 上有后果：skills CLI 认这个变量，所以安装器调用它时把这个变量清空，让它也装到 `<主目录>/.claude/skills`（见 [安装 skill](./skill-install.md)）；哪天 skill 目录改成认它，那一处清空要一起拿掉。
 
 **状态（`mcpStatuses`）**
 
@@ -194,9 +194,10 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 |----|------|
 | 怎么起 | `cross-spawn`，不经过 shell；Windows 上宿主的命令常是 npm 装出来的 `.cmd`，Node 不许直接起，`cross-spawn` 替我们经 `cmd.exe` 起并把参数转义好 |
 | 输入输出 | `stdio: 'ignore'`：命令的输出**不上屏**（进行中的那一行在转，混进别的字会乱），它也不从终端读输入 |
+| 环境 | 继承进程自己的环境。第三个参数给了 `{ env }` 时，那几个变量盖在继承来的环境之上（`{ ...process.env, ...env }`），别的不动；值是空字符串就是把那个变量清空。只有安装第三方 Skill 用它：关掉 skills CLI 的遥测、清空 `CLAUDE_CONFIG_DIR`，见 [安装 skill](./skill-install.md) |
 | 结果 | 结束了就兑现 `{ exitCode }`（被信号结束算 1）；起不来（命令不存在）就拒绝，错误带 `code` |
 
-> **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。
+> **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。带 `env` 的那一支 2026-10-10 用真实的 `npx skills` 在临时主目录里核对过一次（macOS）：遥测的两个变量和清空的 `CLAUDE_CONFIG_DIR` 都传到了，输出没有漏到终端上，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`。
 >
 > 它起子进程时继承的是**进程自己的环境**，不是传给 `runInstaller` 的 `env`（正式运行时两者是同一份）。用真实的 `claude`、`codex` 做端到端核对时，`CLAUDE_CONFIG_DIR` 和 `CODEX_HOME` 要在起脚本的 shell 里 `export` 到临时目录，脚本开头先断言它们确实指向临时目录再动手；只放进 `env` 的话，状态探测看的是临时目录，命令却写进了真实的配置（工单 09 时出过一次，当场用宿主的移除命令撤回了）。
 >
@@ -210,7 +211,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 ### 4. Validation & Error Matrix
 
-目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args`、`env`（逐项按 `name`、`required`、`description`、`url`，再查重名）、“远程地址不许带 `env`”的顺序查；MCP 自己的字段都查完之后，最后是三类条目共有的 `purpose`、`recommended`。
+目录里写坏的 MCP 条目只跳过那一条，带着原因进 `Catalog.skipped`（规则见上表，`FieldRule` 见 [目录校验与 CI](./catalog-validation.md)）。一条只报头一处问题，按 `name`、`description`、`url`、`hosts`、`server`、`server.command` / `server.url`、`server.args`、`env`（逐项按 `name`、`required`、`description`、`url`，再查重名）、“远程地址不许带 `env`”的顺序查；MCP 自己的字段都查完之后，最后是四类条目共有的 `purpose`、`recommended`。
 
 单项安装失败（`installMcp` 抛 `McpInstallError`）：只这一项失败，结果里这一行写「失败」加原因，退出状态不变。
 

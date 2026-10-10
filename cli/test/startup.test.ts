@@ -112,7 +112,7 @@ describe('启动', () => {
     const result = await run({ answers: [choose('退出')] });
 
     const loading = result.output.indexOf('正在读取目录');
-    const summary = result.output.search(/^\s+目录\s+2 skill$/m);
+    const summary = result.output.search(/^\s+目录\s+2 Skill$/m);
     const menu = result.output.indexOf('选择用途');
     expect(loading).toBeGreaterThan(-1);
     expect(summary).toBeGreaterThan(loading);

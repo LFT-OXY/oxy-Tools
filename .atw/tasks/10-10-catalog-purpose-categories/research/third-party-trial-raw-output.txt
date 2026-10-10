@@ -1,0 +1,90 @@
+
+                           [35m ██████  ██   ██ ██    ██[39m
+                           [35m██    ██  ██ ██   ██  ██[39m
+                           [35m██    ██   ███     ████[39m
+                           [35m██    ██  ██ ██     ██[39m
+                           [35m ██████  ██   ██    ██[39m
+
+                                [1moxy-tools[22m [2m0.2.0[22m
+
+[2K  [35m⠋[39m 正在读取目录[2m…[22m[2K  [2mAI Agent  [22mClaude Code [32m✓[39m   Codex [32m✓[39m
+  [2m目录      [22m1 Skill
+[2m────────────────────────────────────────────────────────────────────────────────[22m
+
+[35m[1m?[22m[39m [1m选择用途[22m
+
+ [2m 用途                  数量[22m
+[1m[35m▸[39m UI 设计、图像与视频      1[22m
+
+  退出
+
+   ↑↓ [2m移动[22m[2m · [22m⏎ [2m选择[22m[?25l[20G[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[32m✓[39m [1m选择用途[22m [2m·[22m UI 设计、图像与视频[33G
+[G[?25h
+[35m[1m?[22m[39m [1m装进哪些 AI Agent[22m
+
+[1m[35m▸[39m[35m■[39m Claude Code[22m
+ [35m■[39m Codex
+
+   ↑↓ [2m移动[22m[2m · [22m空格 [2m选择[22m[2m · [22ma [2m全选[22m[2m · [22mi [2m反选[22m[2m · [22m⏎ [2m确认（不选则返回）[22m[?25l[64G[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[32m✓[39m [1m装进哪些 AI Agent[22m [2m·[22m Claude Code、Codex[41G
+[G[?25h
+[35m[1m?[22m[39m [1m选择要安装的条目[22m
+
+ [2m  名称                  Claude Code   Codex   说明[22m
+   [2m──[22m 第三方 Skill · 内容直接来自作者
+[1m[35m▸[39m□ emilkowalski-skills   [2m未装[22m[1m[1m          [2m未装[22m[1m[1m    动效与界面细节的一组 skill（实…[22m
+
+   [2m类型  [22m第三方 Skill
+   [2m说明  [22m动效与界面细节的一组 skill（实测用的样例条目）
+
+   ↑↓ [2m移动[22m[2m · [22m空格 [2m选择[22m[2m · [22ma [2m全选[22m[2m · [22mi [2m反选[22m[2m · [22m⏎ [2m确认（不选则返回）[22m[?25l[64G[65G[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+[35m[1m?[22m[39m [1m选择要安装的条目[22m
+
+ [2m  名称                  Claude Code   Codex   说明[22m
+   [2m──[22m 第三方 Skill · 内容直接来自作者
+[1m[35m▸[39m[35m■[39m emilkowalski-skills   [2m未装[22m[1m[1m          [2m未装[22m[1m[1m    动效与界面细节的一组 skill（实…[22m
+
+   [2m类型  [22m第三方 Skill
+   [2m说明  [22m动效与界面细节的一组 skill（实测用的样例条目）
+
+   ↑↓ [2m移动[22m[2m · [22m空格 [2m选择[22m[2m · [22ma [2m全选[22m[2m · [22mi [2m反选[22m[2m · [22m⏎ [2m确认（不选则返回）[22m[?25l[63G[62G[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[32m✓[39m [1m选择要安装的条目[22m [2m·[22m emilkowalski-skills[41G
+[G[?25h
+[2m──[22m [1m将安装 1 项[22m [2m─────────────────────────────────────────────────────────────────[22m
+
+[2m  第三方 Skill   AI Agent      操作   位置[22m
+  animate        Claude Code   新装   ~/.claude/skills/animate
+                 Codex         新装   ~/.agents/skills/animate
+
+[2m──[22m [1m将执行 2 条命令[22m [2m─────────────────────────────────────────────────────────────[22m
+
+  [2m 1[22m  npx -y skills@1 add emilkowalski/skills --skill animate --agent
+      claude-code --yes --global
+  [2m 2[22m  npx -y skills@1 add emilkowalski/skills --skill animate --agent codex
+      --yes --global
+
+  [33m[1m注意      [22m[39m第三方 Skill 装的是作者当时的最新版，维护者没有逐版检查
+
+[35m[1m?[22m[39m [1m开始安装吗[22m
+
+[1m[35m▸[39m 开始安装[22m
+  返回修改
+  取消
+
+   ↑↓ [2m移动[22m[2m · [22m⏎ [2m选择[22m[?25l[20G[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[32m✓[39m [1m开始安装吗[22m [2m·[22m 开始安装[24G
+[G[?25h
+[2m──[22m [1m正在安装[22m [2m────────────────────────────────────────────────────────────────────[22m
+
+[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠴[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠦[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠧[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠇[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠏[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠴[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠦[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠧[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠇[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠏[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠴[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠦[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠧[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠇[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠏[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠴[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠦[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠧[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠇[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠏[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠴[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠦[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠧[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠇[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠏[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠋[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠙[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠹[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠸[39m  animate   Claude Code   正在安装[2m…[22m[2K  [35m⠼[39m  animate   Claude Code   正在安装[2m…[22m[2K  [32m✓[39m  animate   Claude Code   [32m已安装[39m
+[2K  [35m⠋[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠙[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠹[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠸[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠼[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠴[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠦[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠧[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠇[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠏[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠋[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠙[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠹[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠸[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠼[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠴[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠦[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠧[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠇[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠏[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠋[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠙[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠹[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠸[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠼[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠴[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠦[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠧[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠇[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠏[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠋[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠙[39m  animate   Codex         正在安装[2m…[22m[2K  [35m⠹[39m  animate   Codex         正在安装[2m…[22m[2K  [32m✓[39m  animate   Codex         [32m已安装[39m
+
+[2m────────────────────────────────────────────────────────────────────────────────[22m
+  [2m合计      [22m2 成功 · 0 失败 · 0 跳过
+
+[35m[1m?[22m[39m [1m选择用途[22m
+
+ [2m 用途                  数量[22m
+[1m[35m▸[39m UI 设计、图像与视频      1[22m
+
+  退出
+
+   ↑↓ [2m移动[22m[2m · [22m⏎ [2m选择[22m[?25l[20G
+[G[?25h

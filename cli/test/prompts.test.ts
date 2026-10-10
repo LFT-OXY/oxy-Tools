@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run, underWebSearch } from './harness.ts';
+import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_THIRD_PARTY, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run, underWebSearch } from './harness.ts';
 import { displayWidth } from '../src/text.ts';
 import { screenLines } from './terminal.ts';
 
@@ -854,6 +854,119 @@ describe('真实的画面：MCP', () => {
     const row = result.output.split('\n').find((line) => line.startsWith('▸– claude-only')) ?? '';
     expect(row).toMatch(/^▸– claude-only\s+needs another AI Agent\s+A sample MCP/);
     expect(displayWidth(row)).toBeLessThanOrEqual(79);
+  });
+});
+
+describe('真实的画面：第三方 Skill', () => {
+  const catalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY } });
+  // 两条都在第一个用途下：主菜单上「推荐」下面就是它。进去之后光标停在 paper-kit 上（含三个 skill）
+  const toList: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter]];
+  // 清单的按键提示末尾：等到它就说明清单已经在等按键了
+  const SKIP_HINT = '不选则不装这一条';
+  const toChecklist: [string, string][] = [...toList, [PICK_HINT, KEY.space], ['▸■ paper-kit', KEY.enter]];
+
+  it('混合列表里自成一段：段首写明内容直接来自作者，下方的类型是第三方 Skill', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toList, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明\n\s+── 第三方 Skill · 内容直接来自作者$/m);
+    expect(result.output).toMatch(/^▸□ paper-kit\s+未装\s+含三个 skill 的样例第三方 Skill.*…$/m);
+    expect(result.output).toMatch(/^ □ solo-notes\s+未装\s+只含一个 skill 的样例第三方 Skill$/m);
+    expect(result.output).toMatch(/^\s+类型\s+第三方 Skill$/m);
+  });
+
+  it('清单：提问写明名字和个数，每个 skill 一行有状态和说明，下方是说明全文；按键提示写明不选则不装这一条', async () => {
+    const result = await run({
+      catalog: catalog(),
+      home: { '.claude/skills/paper-comic/SKILL.md': '# paper-comic\n' },
+      keys: [...toChecklist, [SKIP_HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · paper-kit$/m);
+    expect(result.output).toMatch(/^\? paper-kit 里有 3 个 skill，选择要装的$/m);
+    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^▸□ paper-reader\s+未装\s+把一篇论文读成深度解读文章$/m);
+    expect(result.output).toMatch(/^ □ paper-comic\s+已装\s+把论文的要点画成一组漫画$/m);
+    expect(result.output).toMatch(/^\s+说明\s+把一篇论文读成深度解读文章$/m);
+    expect(result.output).toMatch(/^\s+↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则不装这一条）$/m);
+  });
+
+  it('勾两个再确认：提问收成一行，列出勾选的名字，汇总里一行是一个 skill', async () => {
+    const result = await run({
+      catalog: catalog(),
+      keys: [...toChecklist, [SKIP_HINT, KEY.space], ['▸■ paper-reader', KEY.down], ['▸□ paper-comic', KEY.space], ['▸■ paper-comic', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ paper-kit 里有 3 个 skill，选择要装的 · paper-reader、paper-comic$/m);
+    expect(result.output).toMatch(/^\s+第三方 Skill\s+AI Agent\s+操作\s+位置\n\s+paper-reader\s+Claude Code\s+新装\s.*\n\s+paper-comic\s+Claude Code\s+新装\s/m);
+    expect(result.commands).toEqual([]);
+  });
+
+  it('一个都不勾就回车：收成「不装」，没有要装的，回到主菜单', async () => {
+    const result = await run({ catalog: catalog(), keys: [...toChecklist, [SKIP_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/✓ paper-kit 里有 3 个 skill，选择要装的 · 不装$/m);
+    expect(result.output).not.toContain('将安装');
+  });
+
+  it('从勾选到装好走一遍：已有同名目录的另问，结果里一行是一个 skill', async () => {
+    const result = await run({
+      catalog: catalog(),
+      home: { '.claude/skills/paper-reader/SKILL.md': '# 用户改过的\n' },
+      keys: [...toChecklist, [SKIP_HINT, 'a'], [' ■ paper-deck', KEY.enter], [HINT, KEY.enter], ['(y/N)', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ paper-kit 里有 3 个 skill，选择要装的 · paper-reader、paper-comic、paper-deck$/m);
+    expect(result.output).toMatch(/^\? ~\S+paper-reader 已有同名目录，要覆盖它吗？ \(y\/N\)/m);
+    expect(result.output).toMatch(/已有同名目录，要覆盖它吗？ · 否$/m);
+    expect(result.output).toMatch(/^\s+–\s+paper-reader\s+Claude Code\s+跳过 未同意覆盖，保持原样$/m);
+    // 假的执行器什么都不装：另外两个复核不通过
+    expect(result.output).toMatch(/^\s+✗\s+paper-comic\s+Claude Code\s+失败 安装命令已结束，但目标位置没有 SKILL\.md$/m);
+    expect(result.commands).toHaveLength(2);
+  });
+
+  it('设置了 NO_COLOR 时，列表、清单、汇总、命令和结果都不带样式码', async () => {
+    const result = await run({
+      catalog: catalog(),
+      env: { NO_COLOR: '1' },
+      home: { '.claude/skills/paper-reader/SKILL.md': '# 用户改过的\n' },
+      keys: [...toChecklist, [SKIP_HINT, 'a'], [' ■ paper-deck', KEY.enter], [HINT, KEY.enter], ['(y/N)', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^▸■ paper-reader\s+已装\s/m);
+    expect(result.output).toMatch(/^\s+paper-reader\s+Claude Code\s+覆盖\s/m);
+    expect(result.output).toMatch(/^\s+✗\s+paper-comic\s+Claude Code\s+失败 /m);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+
+  it('没有 Unicode 的终端里，清单的勾选框和按键提示都退成 ASCII，一行放得下', async () => {
+    const result = await run({
+      catalog: catalog(),
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['回车 选择', KEY.down], ['> 联网搜索与文档检索', KEY.enter], ['回车 确认', KEY.space], ['>[x] paper-kit', KEY.enter], [SKIP_HINT, KEY.ctrlC]],
+    });
+
+    const hint = result.output.split('\n').find((line) => line.includes(SKIP_HINT)) ?? '';
+    expect(result.output).toMatch(/^\s+-- 第三方 Skill - 内容直接来自作者$/m);
+    expect(result.output).toMatch(/^>\[ \] paper-reader\s+未装\s+把一篇论文读成深度解读文章$/m);
+    expect(hint).toMatch(/^\s+上下键 移动 - 空格 选择 - a 全选 - i 反选 - 回车 确认（不选则不装这一条）$/);
+    expect(displayWidth(hint)).toBeLessThanOrEqual(79);
+    expect(result.output).not.toMatch(/[▸✓■□·…↑↓⏎–─]/);
+  });
+
+  it('英文界面加没有 Unicode：清单的按键提示仍在 79 列以内；一个都不勾收成 skip', async () => {
+    const result = await run({
+      catalog: catalog(),
+      argv: ['--lang', 'en'],
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['enter select', KEY.down], ['> Web search & docs retrieval', KEY.enter], ['enter confirm', KEY.space], ['>[x] paper-kit', KEY.enter], ['none = skip', KEY.enter], ['enter select', KEY.ctrlC]],
+    });
+
+    const hint = result.output.split('\n').find((line) => line.includes('none = skip')) ?? '';
+    expect(hint).toMatch(/^\s+up\/down move - space select - a all - i invert - enter confirm \(none = skip\)/);
+    expect(hint.indexOf('(none = skip)') + '(none = skip)'.length).toBeLessThanOrEqual(79);
+    expect(result.output).toMatch(/paper-kit has 3 skills; pick the ones to install - skip$/m);
   });
 });
 

@@ -29,6 +29,7 @@ export {
   SAMPLE_MCPS,
   SAMPLE_PURPOSES,
   SAMPLE_SKILLS,
+  SAMPLE_THIRD_PARTY,
   SAMPLE_TOOLS,
   underWebSearch,
 } from './fixtures.ts';
@@ -229,8 +230,11 @@ export interface RunResult {
   stderr: string;
   /** 最后留在画面上的文字：被擦掉重写的行（加载提示）只算最后一次。只适用于预设应答的提问器 */
   screen: string;
-  /** 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的 */
-  commands: { command: string; args: readonly string[]; shell?: true }[];
+  /**
+   * 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的；
+   * 不经 shell 而另带了环境变量的（第三方 Skill 的安装命令）多一个 env
+   */
+  commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>> }[];
   /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
   opened: string[];
   home: string;
@@ -344,7 +348,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       tempDir: tmp,
       interrupt: options.interrupt ?? new AbortController().signal,
       runCommand: (command, args, runOptions) => {
-        commands.push({ command, args, ...(runOptions?.shell ? { shell: true as const } : {}) });
+        commands.push({ command, args, ...(runOptions?.shell ? { shell: true as const } : runOptions ? { env: runOptions.env } : {}) });
         const preset = options.commandResult?.(command, args, { home });
         return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       },

@@ -84,6 +84,26 @@ export interface Mcp extends Placement {
   env: McpVariable[];
 }
 
+/** 第三方 Skill 条目里的一个 skill：名字是它自己声明的那个，写成小写 */
+export interface SourcedSkill {
+  name: string;
+  description: { zh: string; en: string };
+}
+
+/** 第三方 Skill：内容留在作者的仓库，目录只按仓库登记，由通用的 skill 安装程序（skills CLI）装进宿主 */
+export interface ThirdPartySkill extends Placement {
+  name: string;
+  description: { zh: string; en: string };
+  /** 官方链接 */
+  url: string;
+  /** 支持的宿主（Host.id）；省略表示全部支持 */
+  hosts?: string[];
+  /** 来源：GitHub 上的「所有者/仓库」 */
+  source: string;
+  /** 这个仓库里可以装的 skill，至少一个 */
+  skills: SourcedSkill[];
+}
+
 /** 安装命令可以按它覆盖的操作系统 */
 export type ToolOs = 'macos' | 'linux' | 'windows';
 
@@ -125,7 +145,10 @@ export type FieldRule =
   | 'os-command'
   | 'tool-check'
   | 'command-name'
-  | 'purpose';
+  | 'purpose'
+  | 'skill-source'
+  | 'skill-list'
+  | 'sourced-skill-name';
 
 export type EntryProblem =
   | { kind: 'not-object' }
@@ -164,6 +187,7 @@ export type CatalogFlaw = { file: string } & (
 
 export interface Catalog {
   skills: Skill[];
+  thirdPartySkills: ThirdPartySkill[];
   mcps: Mcp[];
   tools: Tool[];
   apps: App[];
@@ -247,15 +271,16 @@ export async function loadCatalog(source: CatalogSource): Promise<Catalog> {
   const purposes = readPurposes(otherEntries, flaws);
   const listed = new Set(purposes.map(({ id }) => id));
   const skills = withPurposes(collect(skillList, 'skills', parseSkill), otherEntries, listed, flaws);
-  // catalog.json 里的数组可以缺省，缺省当作空。这三类条目都要有一个清单里的用途
+  // catalog.json 里的数组可以缺省，缺省当作空。这几类条目都要有一个清单里的用途
   const optional = <Entry extends { name: string }>(
     list: string,
     parse: (entry: unknown, listed: ReadonlySet<string>) => Entry | EntryProblem,
   ): Entry[] => (otherEntries.data[list] === undefined ? [] : collect(otherEntries, list, (entry) => parse(entry, listed)));
+  const thirdPartySkills = optional('thirdPartySkills', parseThirdPartySkill);
   const mcps = optional('mcps', parseMcp);
   const tools = optional('tools', parseTool);
   const apps = optional('apps', parseApp);
-  return { skills, mcps, tools, apps, purposes, skipped, flaws };
+  return { skills, thirdPartySkills, mcps, tools, apps, purposes, skipped, flaws };
 }
 
 // 逐项读一个数组：写坏的和标识重复的连同原因交给 reject，其余收下。key 是每一项里当标识用的那个字段
@@ -473,6 +498,14 @@ const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SHELL_COMMAND = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
 const TOOL_OSES: readonly ToolOs[] = ['macos', 'linux', 'windows'];
 
+// 第三方 Skill 的来源和其中每个 skill 的名字会成为 skills CLI 的参数。来源的两段都以字母或数字开头：
+// 以 - 开头的会被它当成选项，以 . 开头的（./x、../x）会被它当成本地路径
+const SKILL_SOURCE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// skills CLI 装出来的目录名是把名字转成小写、把小写字母、数字、. 和 _ 之外的字符连成的一段换成一个连字符、
+// 再去掉首尾的 . 和 - 之后的样子：只收那样处理之后一字不变的名字，目录里登记的名字才就是目标位置下的目录名。
+// 所以以小写字母或数字开头，不以 . 或 - 结尾，连字符不连着写
+const SOURCED_SKILL_NAME = /^[a-z0-9](?:(?:[a-z0-9._]|-(?!-))*[a-z0-9_])?$/;
+
 const bad = (field: string, rule: FieldRule): EntryProblem => ({ kind: 'bad-field', field, rule });
 const isProblem = (parsed: object): parsed is EntryProblem => 'kind' in parsed;
 
@@ -567,6 +600,40 @@ function parseTool(entry: unknown, listed: ReadonlySet<string>): Tool | EntryPro
   const placement = parsePlacement(entry, listed);
   if (isProblem(placement)) return placement;
   return { name, description, url, ...(hosts === undefined ? {} : { hosts }), install, check, ...placement };
+}
+
+function parseThirdPartySkill(entry: unknown, listed: ReadonlySet<string>): ThirdPartySkill | EntryProblem {
+  if (!isRecord(entry)) return { kind: 'not-object' };
+  const { name, url, hosts, source } = entry;
+  if (!isName(name)) return bad('name', 'name');
+  const description = parseDescription(entry['description']);
+  if (isProblem(description)) return description;
+  if (!isHttpsUrl(url)) return bad('url', 'https-url');
+  // 不认识的宿主留着不管，同 MCP
+  if (hosts !== undefined && !(isList(hosts, isName) && hosts.length > 0)) return bad('hosts', 'host-list');
+  if (typeof source !== 'string' || !SKILL_SOURCE.test(source)) return bad('source', 'skill-source');
+  const skills = parseSourcedSkills(entry['skills']);
+  if (isProblem(skills)) return skills;
+  const placement = parsePlacement(entry, listed);
+  if (isProblem(placement)) return placement;
+  return { name, description, url, ...(hosts === undefined ? {} : { hosts }), source, skills, ...placement };
+}
+
+// 至少一个，名字不重复：同名的两个会装到同一个目录里
+function parseSourcedSkills(skills: unknown): SourcedSkill[] | EntryProblem {
+  if (!Array.isArray(skills) || skills.length === 0) return bad('skills', 'skill-list');
+  const parsed: SourcedSkill[] = [];
+  for (const [index, skill] of skills.entries()) {
+    const field = `skills[${index}]`;
+    if (!isRecord(skill)) return bad(field, 'object');
+    const { name } = skill;
+    if (typeof name !== 'string' || !SOURCED_SKILL_NAME.test(name)) return bad(`${field}.name`, 'sourced-skill-name');
+    const description = parseDescription(skill['description'], `${field}.`);
+    if (isProblem(description)) return description;
+    if (parsed.some((earlier) => earlier.name === name)) return bad('skills', 'skill-list');
+    parsed.push({ name, description });
+  }
+  return parsed;
 }
 
 // 本仓库 skill 以外的条目有且只有一个用途，没有的不归进什么「其他」，而是跳过

@@ -11,15 +11,21 @@ import { VERSION } from './version.ts';
 export interface CommandResult {
   exitCode: number;
 }
-export interface CommandOptions {
-  /**
-   * command 是一整行，交给系统的 shell 去解释（工具的官方安装命令，里面可以有管道），这时 args 是空的；
-   * 命令的输入输出直接接在用户的终端上
-   */
-  shell: true;
-}
+export type CommandOptions =
+  | {
+      /**
+       * command 是一整行，交给系统的 shell 去解释（工具的官方安装命令，里面可以有管道），这时 args 是空的；
+       * 命令的输入输出直接接在用户的终端上
+       */
+      shell: true;
+    }
+  | {
+      shell?: never;
+      /** 不经 shell 的方式下另外带上的环境变量，盖在命令继承来的环境之上 */
+      env: Readonly<Record<string, string>>;
+    };
 /**
- * 外部命令执行器：缺省不经过 shell，不把命令的输出打到终端上；options 给了 shell 时见 CommandOptions。
+ * 外部命令执行器：缺省不经过 shell，不把命令的输出打到终端上，它也读不到用户的输入；options 见 CommandOptions。
  * 命令没能起来时拒绝
  */
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
@@ -93,7 +99,8 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const hosts = detectHosts(env, options.homeDir);
     ui.catalogSummary({
       hosts,
-      skills: catalog.skills.length,
+      // 本仓库的和第三方的合在一起数
+      skills: catalog.skills.length + catalog.thirdPartySkills.length,
       mcps: catalog.mcps.length,
       tools: catalog.tools.length,
       apps: catalog.apps.length,

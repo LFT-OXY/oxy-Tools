@@ -35,7 +35,7 @@ describe('主菜单上的 MCP', () => {
 
     expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s*\n\s+退出$/m);
     expect(result.output).not.toMatch(/^[\s-]+MCP\s+\d/m);
-    expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 MCP$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill · 2 MCP$/m);
     expect(result.exitCode).toBe(0);
   });
 });
@@ -556,7 +556,7 @@ describe('写坏的 MCP 条目', () => {
     const result = await run({ catalog: withMcps([broken]), answers: [choose('退出')] });
 
     expect(result.output).not.toContain('联网搜索与文档检索');
-    expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
+    expect(result.output).toMatch(/^\s+目录\s+2 Skill$/m);
   });
 
   it('MCP 可以和某个 skill 同名', async () => {

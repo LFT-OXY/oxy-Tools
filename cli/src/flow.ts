@@ -1,16 +1,30 @@
 // 交互流程：主菜单、「推荐」与各个用途的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
-import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Purpose, type Skill, type Tool } from './catalog.ts';
+import {
+  CatalogError,
+  type App,
+  type Catalog,
+  type CatalogSource,
+  type Mcp,
+  type PinnedSource,
+  type Purpose,
+  type Skill,
+  type SourcedSkill,
+  type ThirdPartySkill,
+  type Tool,
+} from './catalog.ts';
 import type { Host } from './hosts.ts';
 import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
+import { installThirdPartySkill, skillsCliCommand, type SkillsCliCommand } from './install-third-party.ts';
 import { installCommand, installTool } from './install-tool.ts';
 import type { CommandRunner } from './installer.ts';
 import { mcpStatuses } from './mcp-status.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
+import { hasSkillFile, isPresent, thirdPartyStatus } from './third-party-status.ts';
 import { toolStatus } from './tool-status.ts';
-import type { Environment, InstallOutcome, InstallTarget, McpOutcome, McpTarget, ToolTarget, ToolUnavailable, Ui } from './ui.ts';
+import type { Environment, InstallOutcome, InstallTarget, McpOutcome, McpTarget, ThirdPartyTarget, ToolTarget, ToolUnavailable, Ui } from './ui.ts';
 
 /** 一次运行里各个画面共用的东西。 */
 export interface Session {
@@ -53,9 +67,10 @@ export async function mainMenu(session: Session): Promise<void> {
   }
 }
 
-/** 一张混合列表里的条目：组件在上（skill、MCP、工具），外部项目在下 */
+/** 一张混合列表里的条目：组件在上（skill、第三方 Skill、MCP、工具），外部项目在下 */
 interface Listing {
   skills: Skill[];
+  thirdParty: ThirdPartySkill[];
   mcps: Mcp[];
   tools: Tool[];
   apps: App[];
@@ -70,13 +85,15 @@ const recommendedFirst = <Entry extends { name: string; recommended: boolean }>(
   ...byName(entries.filter((entry) => entry.recommended)),
   ...byName(entries.filter((entry) => !entry.recommended)),
 ];
-const sizeOf = (listing: Listing): number => listing.skills.length + listing.mcps.length + listing.tools.length + listing.apps.length;
+const sizeOf = (listing: Listing): number =>
+  listing.skills.length + listing.thirdParty.length + listing.mcps.length + listing.tools.length + listing.apps.length;
 
 // 「推荐」：本仓库的全部 skill（不看任何标注），加上带推荐标记的其它条目
 function recommendedListing(catalog: Catalog): Listing {
   const marked = ({ recommended }: { recommended: boolean }): boolean => recommended;
   return {
     skills: byName(catalog.skills),
+    thirdParty: byName(catalog.thirdPartySkills.filter(marked)),
     mcps: byName(catalog.mcps.filter(marked)),
     tools: byName(catalog.tools.filter(marked)),
     apps: byName(catalog.apps.filter(marked)),
@@ -88,6 +105,7 @@ function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
   const here = ({ purpose: id }: { purpose?: string }): boolean => id === purpose.id;
   return {
     skills: byName(catalog.skills.filter(here)),
+    thirdParty: recommendedFirst(catalog.thirdPartySkills.filter(here)),
     mcps: recommendedFirst(catalog.mcps.filter(here)),
     tools: recommendedFirst(catalog.tools.filter(here)),
     apps: byName(catalog.apps.filter(here)),
@@ -97,8 +115,8 @@ function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
 
 // 进入「推荐」或一个用途：勾选、确认、装上勾选的组件，最后列出勾选的外部项目的说明与链接
 async function browse(session: Session, detected: readonly Host[], listing: Listing): Promise<void> {
-  // 列表里没有 skill 和 MCP 就没有要装进宿主的东西，不问装进哪些：工具不装进宿主
-  await withHosts(session, listing.skills.length + listing.mcps.length > 0 ? detected : [], async (hosts) => {
+  // 列表里没有 skill、第三方 Skill 和 MCP 就没有要装进宿主的东西，不问装进哪些：工具不装进宿主
+  await withHosts(session, listing.skills.length + listing.thirdParty.length + listing.mcps.length > 0 ? detected : [], async (hosts) => {
     const plan = await planEntries(session, detected, hosts, listing);
     if (plan === 'back') return 'back';
     if (plan === 'cancel') return 'done';
@@ -113,6 +131,17 @@ interface Job {
   host: Host;
   target: InstallTarget;
   /** 目标不是本工具装的，而用户没同意覆盖：这一项不装 */
+  declined?: boolean;
+}
+
+interface ThirdPartyJob {
+  /** 要装的那一个 skill 的名字：条目里勾选的每个 skill 在每个支持它的所选宿主下各是一项 */
+  skill: string;
+  host: Host;
+  target: ThirdPartyTarget;
+  /** 汇总里展示的就是它，之后执行的也是它 */
+  command: SkillsCliCommand;
+  /** 目标位置已有同名目录，而用户没同意覆盖：这一项不装 */
   declined?: boolean;
 }
 
@@ -132,6 +161,7 @@ interface ToolJob {
 
 interface Plan {
   jobs: Job[];
+  thirdPartyJobs: ThirdPartyJob[];
   mcpJobs: McpJob[];
   toolJobs: ToolJob[];
   apps: App[];
@@ -160,14 +190,17 @@ async function withHosts(
   }
 }
 
-// 勾选条目、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
-// hosts 是这一轮要装进的宿主，是空的时 skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些
+// 勾选条目、从含多个 skill 的第三方 Skill 里挑、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
+// hosts 是这一轮要装进的宿主，是空的时 skill、第三方 Skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些
 async function planEntries(session: Session, detected: readonly Host[], hosts: readonly Host[], listing: Listing): Promise<Plan | 'back' | 'cancel'> {
   const { ui, prompter } = session;
-  let picked: (Skill | Mcp | Tool | App)[] = [];
+  let picked: (Skill | ThirdPartySkill | Mcp | Tool | App)[] = [];
+  // 含多个 skill 的第三方 Skill 上次勾了其中哪几个：返回修改后再问时还在
+  const chosen = new Map<ThirdPartySkill, SourcedSkill[]>();
   for (;;) {
     // 状态每次进列表都现探测
     const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
+    const thirdParty = listing.thirdParty.map((entry) => ({ entry, statuses: hosts.map((host) => thirdPartyStatus(entry, host)) }));
     const statuses = mcpStatuses(listing.mcps, hosts);
     const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
     if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
@@ -186,7 +219,7 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
       return { tool, command, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
     });
     picked = await prompter.checkbox(
-      ui.mixedPicker({ hosts, skills, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
+      ui.mixedPicker({ hosts, skills, thirdParty, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
@@ -206,6 +239,33 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
           },
         })),
       );
+    // 第三方 Skill 里要装的每个 skill，在每个支持这个条目的所选宿主下各是一项，各有一条命令
+    const thirdPartyJobs: ThirdPartyJob[] = [];
+    for (const { entry, statuses } of thirdParty.filter(({ entry }) => picked.includes(entry))) {
+      // 含多个 skill 的问要其中哪几个，一个都不勾就是这一条不装；只含一个的不问
+      if (entry.skills.length > 1) {
+        chosen.set(entry, await prompter.checkbox(ui.thirdPartyPicker({ entry, hosts, statuses, checked: chosen.get(entry) ?? [] })));
+      }
+      const wanted = chosen.get(entry) ?? entry.skills;
+      // 照条目里的先后装，不照勾选的先后
+      for (const { name } of entry.skills.filter((skill) => wanted.includes(skill))) {
+        for (const [column, host] of hosts.entries()) {
+          if (statuses[column] === 'unsupported') continue;
+          thirdPartyJobs.push({
+            skill: name,
+            host,
+            target: {
+              entry: entry.name,
+              name,
+              host: host.name,
+              location: homeRelative(session, join(host.skillsDir, name)),
+              exists: isPresent(host.skillsDir, name),
+            },
+            command: skillsCliCommand(entry.source, name, host),
+          });
+        }
+      }
+    }
     // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
     const mcpJobs: McpJob[] = [];
     for (const { mcp, statuses } of mcps.filter((entry) => picked.includes(entry.mcp))) {
@@ -224,14 +284,21 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
     const toolJobs = tools.flatMap(({ tool, command }) =>
       picked.includes(tool) && 'command' in command ? [{ tool, target: { name: tool.name, command: command.command, evidence: evidenceOf(session, tool) } }] : [],
     );
-    // 没有要确认的东西：只勾了外部项目，或勾上的组件全是必填的 key 没填的 MCP（直接去结果里说明）
-    if (jobs.length + ready.length + toolJobs.length === 0) return { jobs, mcpJobs, toolJobs, apps };
-    const commands = ready.flatMap((job) => job.steps.map((step) => step.command));
-    ui.installSummary({ skills: jobs.map((job) => job.target), mcps: ready.map((job) => job.target), tools: toolJobs.map((job) => job.target) });
-    // 照执行的先后：MCP 的在前，工具的在后
+    // 没有要确认的东西：只勾了外部项目，勾上的第三方 Skill 在清单里一个都没勾，或勾上的组件全是必填的 key 没填的
+    // MCP（直接去结果里说明）
+    if (jobs.length + thirdPartyJobs.length + ready.length + toolJobs.length === 0) return { jobs, thirdPartyJobs, mcpJobs, toolJobs, apps };
+    // 照执行的先后：第三方 Skill 的在前，MCP 的其次，工具的在后
+    const commands = [...thirdPartyJobs.map((job) => job.command), ...ready.flatMap((job) => job.steps.map((step) => step.command))];
+    ui.installSummary({
+      skills: jobs.map((job) => job.target),
+      thirdParty: thirdPartyJobs.map((job) => job.target),
+      mcps: ready.map((job) => job.target),
+      tools: toolJobs.map((job) => job.target),
+    });
     if (commands.length + toolJobs.length > 0) ui.commandList([...commands, ...toolJobs.map((job) => job.target.command)]);
     ui.summaryNotices({
-      overwrites: jobs.some((job) => job.target.status.kind !== 'none'),
+      overwrites: jobs.some((job) => job.target.status.kind !== 'none') || thirdPartyJobs.some((job) => job.target.exists),
+      thirdParty: thirdPartyJobs.length > 0,
       placeholders: commands.some(({ args }) => args.some((arg) => typeof arg !== 'string')),
       // 勾了却不在汇总里的，按 MCP 各说一次
       missingKeys: [...new Set(mcpJobs.map((job) => job.mcp))].flatMap((mcp) => {
@@ -245,7 +312,11 @@ async function planEntries(session: Session, detected: readonly Host[], hosts: r
     });
     const decision = await prompter.select(ui.confirmInstall());
     if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), mcpJobs, toolJobs, apps };
+    if (decision === 'install') {
+      // 先问完本仓库的 skill 的，再问第三方 Skill 的：照执行的先后
+      const confirmed = await confirmOverwrites(session, jobs);
+      return { jobs: confirmed, thirdPartyJobs: await confirmReplacements(session, thirdPartyJobs), mcpJobs, toolJobs, apps };
+    }
     ui.nextRound();
   }
 }
@@ -261,17 +332,30 @@ async function confirmOverwrites(session: Session, jobs: readonly Job[]): Promis
   return confirmed;
 }
 
-// 本仓库的 skill 在前，MCP 在后，共用一个「正在安装」分区；工具排在最后，它的命令会直接接管终端的输入输出。
-// 一项失败不影响其余项
-async function runJobs(session: Session, { jobs, mcpJobs, toolJobs }: Plan): Promise<void> {
+// 第三方 Skill 的目标位置已有同名目录的逐项另问，缺省不覆盖——skills CLI 自己遇到同名目录是直接覆盖的。
+// 没同意的那些不装，其余照常
+async function confirmReplacements(session: Session, jobs: readonly ThirdPartyJob[]): Promise<ThirdPartyJob[]> {
+  const { ui, prompter } = session;
+  const confirmed: ThirdPartyJob[] = [];
+  for (const job of jobs) {
+    const declined = job.target.exists && !(await prompter.confirm(ui.confirmReplaceExisting(job.target)));
+    confirmed.push({ ...job, declined });
+  }
+  return confirmed;
+}
+
+// 本仓库的 skill 在前，第三方 Skill 其次，MCP 在后，共用一个「正在安装」分区；工具排在最后，它的命令会直接接管
+// 终端的输入输出。一项失败不影响其余项
+async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJobs }: Plan): Promise<void> {
   const { ui, interrupt } = session;
   // 全都没同意覆盖时没有要下载的，不必查询
   const source = jobs.every((job) => job.declined) ? undefined : await pinSource(session);
   // 查询失败时出错说明已经给了：skill 一个都不装，结果里也没有它们
   const skillJobs = !source && jobs.some((job) => !job.declined) ? [] : jobs;
-  if (skillJobs.length + mcpJobs.length + toolJobs.length === 0) return;
+  if (skillJobs.length + thirdPartyJobs.length + mcpJobs.length + toolJobs.length === 0) return;
   const progress = ui.installation(
     skillJobs.map((job) => job.target),
+    thirdPartyJobs.map((job) => job.target),
     mcpJobs.map((job) => job.target),
     toolJobs.map((job) => job.target),
   );
@@ -293,6 +377,15 @@ async function runJobs(session: Session, { jobs, mcpJobs, toolJobs }: Plan): Pro
       outcome = { ok: false, problem: error.problem };
     }
     settle(outcome);
+  }
+  for (const { skill, host, target, command, declined } of thirdPartyJobs) {
+    if (declined) {
+      progress.thirdParty.skip(target);
+      continue;
+    }
+    const settle = progress.thirdParty.begin(target);
+    // 成功与否看复核，不看命令的退出状态
+    settle(await installThirdPartySkill(command, host, session.runCommand, () => hasSkillFile(host.skillsDir, skill)));
   }
   for (const { mcp, target, steps, missingVariable } of mcpJobs) {
     if (missingVariable !== undefined) {

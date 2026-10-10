@@ -1,6 +1,7 @@
 // 界面文案，中英各一份。
 import type { CatalogFailure, ToolOs } from './catalog.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
+import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 
@@ -41,7 +42,7 @@ export interface Messages {
   hostsSkipped: (missing: string, present: string) => string;
   catalogKey: string;
   noticeKey: string;
-  /** 目录里各类条目的数量，每类一段；没有条目的那一类不写 */
+  /** 目录里各类条目的数量，每类一段；没有条目的那一类不写。skills 是本仓库的和第三方的合在一起 */
   counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
@@ -60,13 +61,13 @@ export interface Messages {
   /** 在不可选的行上按了确认 */
   unavailable: string;
   nameColumn: string;
-  /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号 */
+  /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号。第三方 Skill 的未装、已装也用这两个词 */
   skillStatus: { none: string; installed: string; unmanaged: string };
-  /** MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主 */
+  /** MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主，第三方 Skill 也用这个词 */
   mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
   /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
   mcpConfigUnreadable: (hosts: string) => string;
-  /** 条目不可选的原因：MCP 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
+  /** 条目不可选的原因：MCP 和第三方 Skill 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
   unsupportedByHosts: string;
   /** 混合列表只有一栏状态时（一个宿主都没检测到，或列表里只有工具和外部项目）那一栏的表头 */
   statusColumn: string;
@@ -79,8 +80,18 @@ export interface Messages {
   /** 列表下方写光标所在行类型的那一行的标签 */
   typeLabel: string;
   /** 条目的类型：sections 是列表里段首的标题和它后面的一句说明，kinds 是列表下方「类型」一行里的写法 */
-  sections: { skill: { title: string }; mcp: { title: string }; tool: { title: string }; app: { title: string; note: string } };
-  kinds: { skill: string; mcp: string; tool: string; app: string };
+  sections: {
+    skill: { title: string };
+    thirdParty: { title: string; note: string };
+    mcp: { title: string };
+    tool: { title: string };
+    app: { title: string; note: string };
+  };
+  kinds: { skill: string; thirdParty: string; mcp: string; tool: string; app: string };
+  /** 含多个 skill 的第三方 Skill 的清单：entry 是条目的名字，count 是它含几个 skill */
+  pickSourcedSkills: (entry: string, count: number) => string;
+  /** 清单里一个都没勾就确认，回答之后收成的那一行写的字 */
+  notInstalling: string;
   /** 列表回答之后收成的那一行，勾得多时只列前几个名字：shown 是列出来的那几个，total 是勾选的总数 */
   pickedMany: (shown: readonly string[], total: number) => string;
   /** 列出勾选的外部项目的那个分区的标题 */
@@ -99,6 +110,8 @@ export interface Messages {
   /** 汇总里覆盖项的备注 */
   reinstallNote: (version: string) => string;
   unmanagedNote: string;
+  /** 汇总里第三方 Skill 覆盖项的备注：目标位置已有同名目录 */
+  existingNote: string;
   /** 汇总那个分区的标题：count 是要装的组件条目数 */
   installSummary: (count: number) => string;
   /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
@@ -128,12 +141,16 @@ export interface Messages {
   /** 汇总里的提醒：这个 MCP 因为必填的变量没填，不在这次要装的里面 */
   keyMissingNotice: (mcp: string, variable: string) => string;
   replaceNotice: string;
+  /** 汇总里的提醒：这一轮有第三方 Skill 要装 */
+  thirdPartyNotice: string;
   confirmInstall: string;
   startInstall: string;
   revise: string;
   cancel: string;
   /** 选了开始安装之后，对不是本工具装的目录逐个另问；location 是给用户看的路径 */
   confirmOverwrite: (location: string) => string;
+  /** 同上，问的是第三方 Skill 的目标位置已有的同名目录 */
+  confirmReplaceExisting: (location: string) => string;
   yes: string;
   no: string;
   /** 是否题上输入了 y、n 之外的东西 */
@@ -142,11 +159,18 @@ export interface Messages {
   results: string;
   downloading: string;
   configuring: string;
+  /** 第三方 Skill 进行中的那一行 */
+  installingOne: string;
   installed: string;
   failed: string;
   skippedResult: string;
   overwriteDeclined: string;
   installProblem: (problem: SkillInstallProblem) => string;
+  /**
+   * 第三方 Skill 的结论里词后面的话。装上了：命令正常结束时什么都不写，否则以分隔的标点开头说它是怎么结束的；
+   * 没装上：接在「失败」和一个空格后面。只说哪一步、退出状态或错误码，不转述那个程序的话
+   */
+  thirdPartyResult: (result: ThirdPartyResult) => string;
   mcpInstallProblem: (problem: McpInstallProblem) => string;
   /** 工具复核通过时结论开头的词 */
   toolAvailable: string;
@@ -186,7 +210,7 @@ const zh: Messages = {
   catalogKey: '目录',
   noticeKey: '注意',
   counts: ({ skills, mcps, tools, apps }) => [
-    ...(skills > 0 ? [`${skills} skill`] : []),
+    ...(skills > 0 ? [`${skills} Skill`] : []),
     ...(mcps > 0 ? [`${mcps} MCP`] : []),
     ...(tools > 0 ? [`${tools} 工具`] : []),
     ...(apps > 0 ? [`${apps} 外部项目`] : []),
@@ -214,8 +238,16 @@ const zh: Messages = {
   pickHosts: '装进哪些 AI Agent',
   pickEntries: '选择要安装的条目',
   typeLabel: '类型',
-  sections: { skill: { title: 'Skill' }, mcp: { title: 'MCP' }, tool: { title: '工具' }, app: { title: '外部项目', note: '只给链接，不安装' } },
-  kinds: { skill: 'Skill', mcp: 'MCP', tool: '工具', app: '外部项目' },
+  sections: {
+    skill: { title: 'Skill' },
+    thirdParty: { title: '第三方 Skill', note: '内容直接来自作者' },
+    mcp: { title: 'MCP' },
+    tool: { title: '工具' },
+    app: { title: '外部项目', note: '只给链接，不安装' },
+  },
+  kinds: { skill: 'Skill', thirdParty: '第三方 Skill', mcp: 'MCP', tool: '工具', app: '外部项目' },
+  pickSourcedSkills: (entry, count) => `${entry} 里有 ${count} 个 skill，选择要装的`,
+  notInstalling: '不装',
   pickedMany: (shown, total) => `${shown.join('、')} 等 ${total} 项`,
   externalProjects: (count) => `外部项目：${count} 个，只给链接`,
   linkKey: '链接',
@@ -228,6 +260,7 @@ const zh: Messages = {
   toolAction: '执行安装命令',
   reinstallNote: (version) => `重装 ${version}`,
   unmanagedNote: '非本工具安装，另行确认',
+  existingNote: '已有同名目录，另行确认',
   installSummary: (count) => `将安装 ${count} 项`,
   mcpConfiguredNote: '已配置，先移除再添加',
   mcpUnknownNote: '状态未知，先尝试移除同名配置',
@@ -248,11 +281,13 @@ const zh: Messages = {
   keyMissing: (variable) => `未填写必填的 ${variable}`,
   keyMissingNotice: (mcp, variable) => `${mcp} 缺少必填的 ${variable}，这次不安装`,
   replaceNotice: '覆盖即整目录替换，目录内的本地改动会丢失',
+  thirdPartyNotice: '第三方 Skill 装的是作者当时的最新版，维护者没有逐版检查',
   confirmInstall: '开始安装吗',
   startInstall: '开始安装',
   revise: '返回修改',
   cancel: '取消',
   confirmOverwrite: (location) => `${location} 不是本工具装的，要覆盖它吗？`,
+  confirmReplaceExisting: (location) => `${location} 已有同名目录，要覆盖它吗？`,
   yes: '是',
   no: '否',
   answerYesOrNo: '请输入 y 或 n',
@@ -260,6 +295,7 @@ const zh: Messages = {
   results: '结果',
   downloading: '正在下载',
   configuring: '正在配置',
+  installingOne: '正在安装',
   installed: '已安装',
   failed: '失败',
   skippedResult: '跳过',
@@ -283,6 +319,12 @@ const zh: Messages = {
     if (action === 'remove') return `${what}；未执行添加`;
     return removed ? `${what}；此前已执行移除` : what;
   },
+  thirdPartyResult({ installed, run }) {
+    const clean = run.kind === 'exit' && run.code === 0;
+    const ended = run.kind === 'exit' ? `安装命令退出状态 ${run.code}` : `安装命令没能运行${run.detail === undefined ? '' : `（${run.detail}）`}`;
+    if (installed) return clean ? '' : `；${ended}`;
+    return clean ? '安装命令已结束，但目标位置没有 SKILL.md' : ended;
+  },
   toolAvailable: '已可用',
   toolResult({ available, run }, evidence) {
     const found =
@@ -300,7 +342,7 @@ const zh: Messages = {
   },
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
-  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
+  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
   errorPrefix: '出错：',
@@ -455,8 +497,16 @@ const en: Messages = {
   pickHosts: 'Install into which AI Agents',
   pickEntries: 'Pick entries to install',
   typeLabel: 'Type',
-  sections: { skill: { title: 'Skills' }, mcp: { title: 'MCP' }, tool: { title: 'Tools' }, app: { title: 'External projects', note: 'links only, nothing is installed' } },
-  kinds: { skill: 'Skill', mcp: 'MCP', tool: 'Tool', app: 'External project' },
+  sections: {
+    skill: { title: 'Skills' },
+    thirdParty: { title: 'Third-party skills', note: 'content comes straight from the author' },
+    mcp: { title: 'MCP' },
+    tool: { title: 'Tools' },
+    app: { title: 'External projects', note: 'links only, nothing is installed' },
+  },
+  kinds: { skill: 'Skill', thirdParty: 'Third-party skill', mcp: 'MCP', tool: 'Tool', app: 'External project' },
+  pickSourcedSkills: (entry, count) => `${entry} has ${count} skills; pick the ones to install`,
+  notInstalling: 'skip',
   pickedMany: (shown, total) => `${shown.join(', ')} and ${total - shown.length} more`,
   externalProjects: (count) => `External projects: ${count}, links only`,
   linkKey: 'Link',
@@ -469,6 +519,7 @@ const en: Messages = {
   toolAction: 'run install command',
   reinstallNote: (version) => `reinstall ${version}`,
   unmanagedNote: 'unmanaged; asked separately',
+  existingNote: 'already there; asked separately',
   installSummary: (count) => `Install ${count} ${count === 1 ? 'item' : 'items'}`,
   mcpConfiguredNote: 'configured; removed, then added',
   mcpUnknownNote: 'status unknown; removal tried first',
@@ -490,11 +541,13 @@ const en: Messages = {
   keyMissing: (variable) => `no value for ${variable}`,
   keyMissingNotice: (mcp, variable) => `${mcp} is missing the required ${variable} and will not be installed this time`,
   replaceNotice: 'Overwriting replaces the whole directory; local changes are lost',
+  thirdPartyNotice: "Third-party skills are installed at the author's latest version at that moment; the maintainer has not reviewed each version",
   confirmInstall: 'Start installing?',
   startInstall: 'Install',
   revise: 'Go back and change',
   cancel: 'Cancel',
   confirmOverwrite: (location) => `${location} is unmanaged. Overwrite it?`,
+  confirmReplaceExisting: (location) => `${location} is already there. Overwrite it?`,
   yes: 'yes',
   no: 'no',
   answerYesOrNo: 'Please answer y or n',
@@ -502,6 +555,7 @@ const en: Messages = {
   results: 'Results',
   downloading: 'downloading',
   configuring: 'configuring',
+  installingOne: 'installing',
   installed: 'installed',
   failed: 'failed',
   skippedResult: 'skipped',
@@ -525,6 +579,15 @@ const en: Messages = {
     if (action === 'remove') return `${what}; add was not run`;
     return removed ? `${what}; the remove command had already run` : what;
   },
+  thirdPartyResult({ installed, run }) {
+    const clean = run.kind === 'exit' && run.code === 0;
+    const ended =
+      run.kind === 'exit'
+        ? `the install command exited with status ${run.code}`
+        : `the install command could not be run${run.detail === undefined ? '' : ` (${run.detail})`}`;
+    if (installed) return clean ? '' : `; ${ended}`;
+    return clean ? 'the install command finished, but there is no SKILL.md at the target' : ended;
+  },
   toolAvailable: 'available',
   toolResult({ available, run }, evidence) {
     const found =
@@ -541,7 +604,7 @@ const en: Messages = {
   },
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
-  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },
+  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },
   errorPrefix: 'Error: ',

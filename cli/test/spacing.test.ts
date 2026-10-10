@@ -1,7 +1,7 @@
 // 块与块之间的空行：提问与选项、分区标题与内容、已回答的提问与下一块、说明与按键提示之间各隔一行，
 // 任何地方都没有连着两行空行。提问是交互库画的，所以这里的画面都由无头终端还原。
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, KEY, KEYED_MCP, LONG_ABOUT, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run, secret, underWebSearch } from './harness.ts';
+import { EMPTY_CATALOG, KEY, KEYED_MCP, LONG_ABOUT, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_THIRD_PARTY, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run, secret, underWebSearch } from './harness.ts';
 import { screenLines } from './terminal.ts';
 
 // 按键提示是每个提问最后画出来的一行，等到它就说明这个提问已经在等按键了
@@ -29,6 +29,12 @@ const mixedCatalog = (): string =>
 // 再加上 MCP：第一个用途下三种类型各有一条（alpha、docs-local、borealis）
 const allKindsCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, apps: SAMPLE_APPS, skillPurposes: { alpha: 'web-search' } } });
+
+// 第一个用途下两条第三方 Skill：进去之后光标停在 paper-kit 上（含三个 skill），勾上它确认就是它的清单
+const thirdPartyCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY } });
+// 清单的按键提示末尾
+const SKIP_HINT = '不选则不装这一条';
+const toChecklist: [string, string][] = [...toPurpose, [PICK_HINT, KEY.space], ['▸■ paper-kit', KEY.enter]];
 
 // 最后留在画面上的每一行
 const screenOf = async (options: Parameters<typeof run>[0]): Promise<string[]> => screenLines((await run(options)).raw);
@@ -107,6 +113,31 @@ describe('提问与它下面的表或选项之间空一行', () => {
       expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
       expect.stringMatching(/^ □ borealis\s/),
     ]);
+  });
+
+  it('第三方 Skill 的清单：与表头之间；它与上面已回答的那一行隔一行', async () => {
+    const lines = await screenOf({ catalog: thirdPartyCatalog(), keys: [...toChecklist, [SKIP_HINT, KEY.ctrlC]] });
+    const question = '? paper-kit 里有 3 个 skill，选择要装的';
+
+    expect(after(lines, /✓ 选择要安装的条目 · paper-kit$/, 2)).toEqual(['', question]);
+    expect(after(lines, question, 2)).toEqual(['', expect.stringMatching(/^\s+名称\s+Claude Code\s+说明$/)]);
+  });
+
+  it('清单下方：最后一个 skill、说明全文、按键提示之间各隔一行', async () => {
+    const lines = await screenOf({ catalog: thirdPartyCatalog(), keys: [...toChecklist, [SKIP_HINT, KEY.ctrlC]] });
+
+    expect(after(lines, /^ □ paper-deck\s/, 4)).toEqual([
+      '',
+      expect.stringMatching(/^\s+说明\s+把一篇论文读成深度解读文章$/),
+      '',
+      expect.stringMatching(/⏎ 确认（不选则不装这一条）$/),
+    ]);
+  });
+
+  it('清单回答之后收成一行，紧挨着上面已回答的那一行', async () => {
+    const lines = await screenOf({ catalog: thirdPartyCatalog(), keys: [...toChecklist, [SKIP_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    expect(after(lines, /✓ 选择要安装的条目 · paper-kit$/, 2)).toEqual([expect.stringMatching(/✓ paper-kit 里有 3 个 skill，选择要装的 · 不装$/), '']);
   });
 
   it('汇总之后的确认：「开始安装吗」与三个选项之间', async () => {
@@ -665,6 +696,11 @@ describe('任何地方都没有连着两行空行', () => {
         [PICK_HINT, KEY.enter],
         [HINT, KEY.down],
       ],
+    ],
+    [
+      '第三方 Skill：清单、汇总与命令、另问覆盖、结果，再回主菜单',
+      () => ({ catalog: thirdPartyCatalog(), home: { '.claude/skills/paper-reader/SKILL.md': '用户改过的' } }),
+      [...toChecklist, [SKIP_HINT, 'a'], [' ■ paper-deck', KEY.enter], [HINT, KEY.enter], ['(y/N)', KEY.enter], [HINT, KEY.down]],
     ],
     [
       '一个宿主都没检测到：在不可选的工具上按空格',

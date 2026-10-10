@@ -1,15 +1,17 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, McpVariable, Purpose, Skill, Tool, ToolOs } from './catalog.ts';
+import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool, ToolOs } from './catalog.ts';
 import type { Command, Host } from './hosts.ts';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
+import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
 import { MESSAGES, type Failure, type KeyOutcome, type Lang, type ToolEvidence } from './messages.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { SkillStatus } from './skill-status.ts';
+import type { ThirdPartyStatus } from './third-party-status.ts';
 import type { ToolStatus } from './tool-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
 
@@ -31,6 +33,8 @@ const KEY_WIDTH = 10;
 const GUTTER = 3;
 // 混合列表里组件的说明一栏至少这么宽，不然整栏不写：推荐标记的 7 列再加 5 列说明
 const MIN_ABOUT = 12;
+// 多选回答之后收成的那一行最多列出几个名字
+const NAMES_SHOWN = 3;
 
 const UNICODE = {
   done: '✓',
@@ -100,6 +104,18 @@ export interface InstallTarget {
   location: string;
   version: string;
   status: SkillStatus;
+}
+
+/**
+ * 一项第三方 Skill 安装：哪个 skill（entry 是它所属条目的名字）、装进哪个宿主、装到哪（给用户看的路径）、
+ * 那里现在是不是已经有东西
+ */
+export interface ThirdPartyTarget {
+  entry: string;
+  name: string;
+  host: string;
+  location: string;
+  exists: boolean;
 }
 
 /** 一项 MCP 安装：哪个条目、装进哪个宿主、它在那里现在的状态 */
@@ -354,6 +370,14 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     }
   };
 
+  // 条目的一栏：只含一个 skill 的写未装、已装，含多个的装了几个就写「已装 几个/共几个」
+  const thirdPartyCell = (status: ThirdPartyStatus): string => {
+    if (status === 'unsupported') return dim(t.mcpStatus.unsupported);
+    const installed = status.filter(Boolean).length;
+    if (installed === 0) return dim(t.skillStatus.none);
+    return `${paint('green', t.skillStatus.installed)}${status.length > 1 ? ` ${installed}/${status.length}` : ''}`;
+  };
+
   const mcpStatusCell = (status: McpStatus): string => {
     switch (status) {
       case 'none':
@@ -604,16 +628,17 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、MCP、工具），
-     * skill 和 MCP 每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；工具只有一个状态，与宿主无关，写在第一栏
-     * 的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏，skill 和 MCP 都不可选：一个宿主都没检测到，或
-     * 列表里根本没有它们。所选的宿主一个都不支持的 MCP、装不了的工具同样不可选；原因都写在状态的位置。
+     * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、第三方
+     * Skill、MCP、工具），前三样每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；工具只有一个状态，与宿主无关，
+     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏，前三样都不可选：一个宿主都没检测到，或
+     * 列表里根本没有它们。所选的宿主一个都不支持的第三方 Skill 和 MCP、装不了的工具同样不可选；原因都写在状态的位置。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
     mixedPicker({
       hosts,
       skills,
+      thirdParty,
       mcps,
       tools,
       apps,
@@ -622,12 +647,13 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     }: {
       hosts: readonly Host[];
       skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
+      thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[] }[];
       mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
       tools: readonly { tool: Tool; status: ToolStatus; unavailable?: ToolUnavailable }[];
       apps: readonly App[];
-      checked: readonly (Skill | Mcp | Tool | App)[];
+      checked: readonly (Skill | ThirdPartySkill | Mcp | Tool | App)[];
       marksRecommended: boolean;
-    }): CheckboxQuestion<Skill | Mcp | Tool | App> {
+    }): CheckboxQuestion<Skill | ThirdPartySkill | Mcp | Tool | App> {
       // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头和段标题要多缩进
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
@@ -638,8 +664,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       // 占满各个状态栏，这时不看 cells
       const sections: {
         title: string;
+        note?: string;
         kind: string;
-        rows: { value: Skill | Mcp | Tool; name: string; about: string; recommended: boolean; cells: string[]; unavailable?: string }[];
+        rows: { value: Skill | ThirdPartySkill | Mcp | Tool; name: string; about: string; recommended: boolean; cells: string[]; unavailable?: string }[];
       }[] = [
         {
           ...t.sections.skill,
@@ -652,6 +679,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             recommended: true,
             cells: statuses.map((status) => statusCell(status, skill.version)),
             ...(hostless ? { unavailable: t.needsHost } : {}),
+          })),
+        },
+        {
+          ...t.sections.thirdParty,
+          kind: t.kinds.thirdParty,
+          rows: thirdParty.map(({ entry, statuses }) => ({
+            value: entry,
+            name: entry.name,
+            about: entry.description[lang],
+            recommended: entry.recommended,
+            cells: statuses.map(thirdPartyCell),
+            ...(hostless ? { unavailable: t.needsHost } : statuses.every((status) => status === 'unsupported') ? { unavailable: t.unsupportedByHosts } : {}),
           })),
         },
         {
@@ -697,8 +736,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const aboutWidth = wideAbout - statusWidth;
       const showsAbout = components.length === 0 || aboutWidth >= MIN_ABOUT;
       const labelWidth = Math.max(displayWidth(t.typeLabel), displayWidth(t.aboutColumn)) + 2;
-      // 回答之后收成的那一行最多列出几个名字
-      const namesShown = 3;
       // 说明的那一格：带推荐的最前面是标记，标记从不截断，截断的只是它后面的说明
       const about = (text: string, width: number, recommended: boolean): string => {
         const mark = marksRecommended && recommended ? `${t.recommendedMark} ${symbols.separator} ` : '';
@@ -774,9 +811,65 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             },
             keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underCursor)}\n`}${question.theme.style.keysHelpTip(keys)}`,
             renderSelectedChoices: (selected) =>
-              selected.length > namesShown
-                ? t.pickedMany(selected.slice(0, namesShown).map((choice) => choice.short), selected.length)
+              selected.length > NAMES_SHOWN
+                ? t.pickedMany(selected.slice(0, NAMES_SHOWN).map((choice) => choice.short), selected.length)
                 : theme.style.renderSelectedChoices(selected),
+          },
+        },
+      };
+    },
+
+    /**
+     * 含多个 skill 的第三方 Skill 的清单：混合列表确认之后，问要其中哪几个。栏和混合列表一样（名称、每个所选的宿主
+     * 一栏状态、说明），没有分段；每个 skill 各写各的状态（statuses 是条目在各个宿主下的状态，与 hosts 一一对应）。
+     * checked 是提问出现时已经勾上的那些。一个都不勾就确认表示这一条不装。
+     */
+    thirdPartyPicker({
+      entry,
+      hosts,
+      statuses,
+      checked,
+    }: {
+      entry: ThirdPartySkill;
+      hosts: readonly Host[];
+      statuses: readonly ThirdPartyStatus[];
+      checked: readonly SourcedSkill[];
+    }): CheckboxQuestion<SourcedSkill> {
+      const lead = displayWidth(symbols.checked) + 2;
+      const rows = entry.skills.map((skill, index) => ({
+        skill,
+        cells: statuses.map((status) => thirdPartyCell(status === 'unsupported' ? status : [status[index] === true])),
+      }));
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...rows.map((row) => displayWidth(row.skill.name))) + GUTTER;
+      const statusWidths = hosts.map((host, at) => Math.max(displayWidth(host.name), ...rows.map((row) => displayWidth(row.cells[at] ?? ''))) + GUTTER);
+      const aboutWidth = USABLE - lead - nameWidth - statusWidths.reduce((sum, width) => sum + width, 0);
+      const showsAbout = aboutWidth >= MIN_ABOUT;
+      const line = (name: string, cells: readonly string[], about: string): string =>
+        `${pad(name, nameWidth)}${cells.map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join('')}${showsAbout ? about : ''}`.trimEnd();
+      const question = list([
+        // 表头比条目少一格，理由同混合列表
+        { separator: dim(`${' '.repeat(lead - 1)}${line(t.nameColumn, hosts.map((host) => host.name), t.aboutColumn)}`) },
+        ...rows.map(({ skill, cells }) => ({
+          value: skill,
+          short: skill.name,
+          name: line(skill.name, cells, truncate(skill.description[lang], aboutWidth, symbols.ellipsis)),
+          description: skill.description[lang],
+          checked: checked.includes(skill),
+        })),
+      ]);
+      return {
+        message: t.pickSourcedSkills(entry.name, entry.skills.length),
+        ...question,
+        theme: {
+          ...question.theme,
+          style: {
+            ...question.theme.style,
+            // 这里一个都不勾不是返回，是不装这一条：按键提示和收成的那一行都照这个意思写
+            keysHelpTip: (keys) => question.theme.style.keysHelpTip(keys.map(([key, action]) => [key, action === 'submit' ? 'submitOrSkip' : action])),
+            renderSelectedChoices: (selected) =>
+              selected.length > NAMES_SHOWN
+                ? t.pickedMany(selected.slice(0, NAMES_SHOWN).map((choice) => choice.short), selected.length)
+                : selected.map((choice) => choice.short).join(t.listSeparator) || t.notInstalling,
           },
         },
       };
@@ -810,11 +903,22 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 汇总：一个分区，里面按类型分成小表，顺序与执行的先后一致。每一项将装进哪个宿主、是新装还是覆盖，skill 另写
-     * 装到哪里。同一个条目装进几个宿主就有几行，名字只写在第一行。MCP 的状态未知时说不出是新装还是覆盖，只写添加，
-     * 备注里说明会先尝试移除。工具不装进宿主，它的小表只有条目和操作两栏。
+     * 汇总：一个分区，里面按类型分成小表，顺序与执行的先后一致。每一项将装进哪个宿主、是新装还是覆盖，skill 和
+     * 第三方 Skill 另写装到哪里。同一个条目装进几个宿主就有几行，名字只写在第一行。第三方 Skill 的一行是要装的一个
+     * skill，不是条目。MCP 的状态未知时说不出是新装还是覆盖，只写添加，备注里说明会先尝试移除。工具不装进宿主，
+     * 它的小表只有条目和操作两栏。
      */
-    installSummary({ skills, mcps, tools }: { skills: readonly InstallTarget[]; mcps: readonly McpTarget[]; tools: readonly ToolTarget[] }): void {
+    installSummary({
+      skills,
+      thirdParty,
+      mcps,
+      tools,
+    }: {
+      skills: readonly InstallTarget[];
+      thirdParty: readonly ThirdPartyTarget[];
+      mcps: readonly McpTarget[];
+      tools: readonly ToolTarget[];
+    }): void {
       const skillNote = ({ status, version }: InstallTarget): string => {
         switch (status.kind) {
           case 'none':
@@ -842,6 +946,15 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           })),
         },
         {
+          title: t.sections.thirdParty.title,
+          located: true,
+          rows: thirdParty.map((target, index) => ({
+            cells: [once(thirdParty, index), target.host, target.exists ? paint(attention, t.actions.overwrite) : t.actions.fresh] as const,
+            location: target.location,
+            note: target.exists ? t.existingNote : '',
+          })),
+        },
+        {
           title: t.sections.mcp.title,
           located: false,
           rows: mcps.map((target, index) => ({
@@ -857,8 +970,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           rows: tools.map((target) => ({ cells: [target.name, '', t.toolAction] as const, location: '', note: '' })),
         },
       ].filter((table) => table.rows.length > 0);
-      // 名字只在各自的类型里唯一：一个 skill 和一个 MCP 同名时是两项
-      const count = new Set(skills.map((target) => target.name)).size + new Set(mcps.map((target) => target.name)).size + tools.length;
+      // 名字只在各自的类型里唯一：一个 skill 和一个 MCP 同名时是两项。第三方 Skill 数的是条目，不是其中的 skill
+      const count =
+        new Set(skills.map((target) => target.name)).size +
+        new Set(thirdParty.map((target) => target.entry)).size +
+        new Set(mcps.map((target) => target.name)).size +
+        tools.length;
       print(...heading(t.installSummary(count)), ...summaryTables(tables), '');
     },
 
@@ -873,16 +990,22 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       return { message: t.confirmOverwrite(target.location), default: false, answers: { yes: t.yes, no: t.no }, theme: asking() };
     },
 
+    /** 第三方 Skill 的目标位置已有同名目录，覆盖前单独问一次，缺省不覆盖。 */
+    confirmReplaceExisting(target: ThirdPartyTarget): ConfirmQuestion {
+      return { message: t.confirmReplaceExisting(target.location), default: false, answers: { yes: t.yes, no: t.no }, theme: asking() };
+    },
+
     /**
-     * 一轮的执行。本仓库的 skill 和 MCP 共用「正在安装」分区，行照传进来的先后排：每一项先 begin，进行中的那一行
-     * 行首的符号转动；用它返回的函数交出结果，这一行就改写成结果（不给结果则只擦掉这一行）。不装的那些不 begin，
-     * 改用 skip：skill 是用户没同意覆盖，MCP 是必填的 key 没填（给出没填的变量名）。工具排在最后：每个 begin 一次，
+     * 一轮的执行。本仓库的 skill、第三方 Skill 和 MCP 共用「正在安装」分区，行照传进来的先后排：每一项先 begin，
+     * 进行中的那一行行首的符号转动；用它返回的函数交出结果，这一行就改写成结果（不给结果则只擦掉这一行）。不装的
+     * 那些不 begin，改用 skip：skill 和第三方 Skill 是用户没同意覆盖，MCP 是必填的 key 没填（给出没填的变量名）。
+     * 第三方 Skill 的安装程序自己的输出不上屏，画面上只有这一行。工具排在最后：每个 begin 一次，
      * 打出以它名字为标题的分区和要执行的那一行，命令自己的输出随后原样接在下面，不经过这里；用返回的函数交出结论。
      * 全部结束后 finish 打出合计：没有工具时把「正在安装」的标题换成「结果」；有工具时标题不动，结果不止一行就先用
      * 一个「结果」分区把每一行再列一遍——前面的早被命令的输出顶出屏幕了。
      */
-    installation(skills: readonly InstallTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[]) {
-      const rows = progress([...skills, ...mcps], tools.map((target) => target.name));
+    installation(skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[]) {
+      const rows = progress([...skills, ...thirdParty, ...mcps], tools.map((target) => target.name));
       return {
         skill: {
           begin(target: InstallTarget): (outcome?: InstallOutcome) => void {
@@ -901,6 +1024,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
               );
           },
           skip: (target: InstallTarget): void => rows.skip(target, t.overwriteDeclined),
+        },
+        thirdParty: {
+          begin(target: ThirdPartyTarget): (result: ThirdPartyResult) => void {
+            const settle = rows.begin(target, t.installingOne);
+            return (result) => {
+              const text = t.thirdPartyResult(result);
+              const installed = paint('green', t.installed);
+              // 装上了而命令没有正常结束（覆盖已有的目录时）：结果词后面接着说命令的结局
+              settle(result.installed ? (text === '' ? { ok: true, text: installed } : { ok: true, verdict: installed, text }) : { ok: false, reason: text });
+            };
+          },
+          skip: (target: ThirdPartyTarget): void => rows.skip(target, t.overwriteDeclined),
         },
         mcp: {
           begin(target: McpTarget): (outcome?: McpOutcome) => void {
@@ -948,23 +1083,27 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 汇总最后要提醒的事，各占一行，几行挨着：有覆盖项时本地改动会丢失；命令里 key 的位置是占位符；必填的 key 没填、
+     * 汇总最后要提醒的事，各占一行，几行挨着：有覆盖项时本地改动会丢失；这一轮有第三方 Skill 时装的是作者当时的
+     * 最新版；命令里 key 的位置是占位符；必填的 key 没填、
      * 不在这次要装的里面的 MCP；添加远程地址的 MCP 时可能当场打开浏览器登录的宿主（它的输出不会显示在这里，login 是
      * 事后补登录的命令）。一件都没有时什么都不打。
      */
     summaryNotices({
       overwrites,
+      thirdParty,
       placeholders,
       missingKeys,
       logins,
     }: {
       overwrites: boolean;
+      thirdParty: boolean;
       placeholders: boolean;
       missingKeys: readonly { mcp: string; variable: string }[];
       logins: readonly { host: string; login: Command }[];
     }): void {
       const notices = [
         ...(overwrites ? [t.replaceNotice] : []),
+        ...(thirdParty ? [t.thirdPartyNotice] : []),
         ...(placeholders ? [t.keyPlaceholderNotice] : []),
         ...missingKeys.map(({ mcp, variable }) => t.keyMissingNotice(mcp, variable)),
         ...logins.map(({ host, login }) => t.mcpLoginNotice(host, commandLine(login))),
