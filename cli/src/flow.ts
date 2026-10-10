@@ -13,13 +13,13 @@ import {
   type ThirdPartySkill,
   type Tool,
 } from './catalog.ts';
-import type { Host, Scope } from './hosts.ts';
+import { mcpConfigOf, type Host, type McpConfig, type Scope } from './hosts.ts';
 import { McpInstallError, installMcp, mcpSteps, type McpStep } from './install-mcp.ts';
 import { SkillInstallError, installSkill } from './install-skill.ts';
 import { installThirdPartySkill, skillsCliCommand, type SkillsCliCommand } from './install-third-party.ts';
 import { installCommand, installTool } from './install-tool.ts';
 import type { CommandRunner } from './installer.ts';
-import { mcpStatuses } from './mcp-status.ts';
+import { mcpStatuses, type McpStatus } from './mcp-status.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
 import { skillStatus } from './skill-status.ts';
 import { hasSkillFile, isPresent, thirdPartyStatus } from './third-party-status.ts';
@@ -159,6 +159,8 @@ interface McpJob {
   mcp: Mcp;
   host: Host;
   target: McpTarget;
+  /** 写进这个宿主的哪份配置：按所选的安装范围定，和状态探测看的是同一份 */
+  config: McpConfig;
   steps: McpStep[];
   /** 没填的那个必填变量的名字：有它这一项就不装 */
   missingVariable?: string;
@@ -202,7 +204,7 @@ async function withHosts(
 
 // 勾选条目、从含多个 skill 的第三方 Skill 里挑、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
 // hosts 是这一轮要装进的宿主，是空的时 skill、第三方 Skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些。
-// scope 是这一轮的安装范围：skill 和第三方 Skill 的目录、状态、位置都按它来；工具不受它影响
+// scope 是这一轮的安装范围：skill 和第三方 Skill 的目录、状态、位置，MCP 看哪份配置、用哪条命令，都按它来；工具不受它影响
 async function planEntries(
   session: Session,
   detected: readonly Host[],
@@ -221,10 +223,9 @@ async function planEntries(
     // 状态每次进列表都现探测
     const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, skillsDirOf(host))) }));
     const thirdParty = listing.thirdParty.map((entry) => ({ entry, statuses: hosts.map((host) => thirdPartyStatus(entry, host, skillsDirOf(host))) }));
-    // 项目范围下 MCP 还装不了，它们的行不可选：不去读用户级配置
-    const statuses = scope === 'project' ? [] : mcpStatuses(listing.mcps, hosts);
-    const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
-    if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
+    const statuses = mcpStatuses(listing.mcps, hosts, scope);
+    const withStatus = (status: McpStatus): Host[] => hosts.filter((_, column) => statuses.some((row) => row[column] === status));
+    ui.mcpColumnNotices({ globalOnly: withStatus('global-only'), unreadable: withStatus('unknown') });
     const mcps = listing.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
     const tools = listing.tools.map((tool) => {
       const command = installCommand(tool, session.platform);
@@ -240,7 +241,7 @@ async function planEntries(
       return { tool, command, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
     });
     picked = await prompter.checkbox(
-      ui.mixedPicker({ hosts, scope, skills, thirdParty, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
+      ui.mixedPicker({ hosts, skills, thirdParty, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
@@ -290,20 +291,27 @@ async function planEntries(
         }
       }
     }
-    // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
+    // 每个 MCP 在每个装得了它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
     const mcpJobs: McpJob[] = [];
     for (const { mcp, statuses } of mcps.filter((entry) => picked.includes(entry.mcp))) {
       // key 按 MCP 问，一次用于它要装进的每个宿主
       const keys = await askKeys(session, mcp);
       for (const [column, host] of hosts.entries()) {
         const status = statuses[column];
-        if (status === undefined || status === 'unsupported') continue;
+        const config = mcpConfigOf(host, scope);
+        if (!config || status === undefined || status === 'unsupported' || status === 'global-only') continue;
         const target = { name: mcp.name, host: host.name, status };
-        if ('missing' in keys) mcpJobs.push({ mcp, host, target, steps: [], missingVariable: keys.missing });
-        else mcpJobs.push({ mcp, host, target, steps: mcpSteps(mcp, host, status, keys.variables) });
+        if ('missing' in keys) mcpJobs.push({ mcp, host, config, target, steps: [], missingVariable: keys.missing });
+        else mcpJobs.push({ mcp, host, config, target, steps: mcpSteps(mcp, config, status, keys.variables) });
       }
     }
     const ready = mcpJobs.filter((job) => job.missingVariable === undefined);
+    // 写进宿主项目范围那份配置的那些，连同各自命令里带着的 key 的变量名
+    const intoProject = ready.flatMap(({ host, config, steps }) => {
+      const project = host.projectMcp;
+      const variables = steps.flatMap((step) => step.command.args.flatMap((arg) => (typeof arg === 'string' ? [] : [arg.variable])));
+      return project && config === project ? [{ host, project, variables }] : [];
+    });
     // 汇总里展示的命令就是之后执行的那一行
     const toolJobs = tools.flatMap(({ tool, command }) =>
       picked.includes(tool) && 'command' in command ? [{ tool, target: { name: tool.name, command: command.command, evidence: evidenceOf(session, tool) } }] : [],
@@ -324,6 +332,15 @@ async function planEntries(
       overwrites: jobs.some((job) => job.target.status.kind !== 'none') || thirdPartyJobs.some((job) => job.target.exists),
       thirdParty: thirdPartyJobs.length > 0,
       placeholders: commands.some(({ args }) => args.some((arg) => typeof arg !== 'string')),
+      // 宿主把 key 原样记进项目里的配置文件：说出是哪些变量、哪些文件，不说值
+      plaintextKeys: {
+        variables: [...new Set(intoProject.flatMap((job) => job.variables))],
+        files: [...new Set(intoProject.filter((job) => job.variables.length > 0).map((job) => job.project.file))],
+      },
+      approvals: hosts.flatMap((host) => {
+        const project = intoProject.find((job) => job.host === host)?.project;
+        return project?.approval === undefined ? [] : [{ host: host.name, file: project.file, command: project.approval }];
+      }),
       // 勾了却不在汇总里的，按 MCP 各说一次
       missingKeys: [...new Set(mcpJobs.map((job) => job.mcp))].flatMap((mcp) => {
         const variable = mcpJobs.find((job) => job.mcp === mcp)?.missingVariable;
@@ -411,7 +428,7 @@ async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJo
     // 成功与否看复核，不看命令的退出状态
     settle(await installThirdPartySkill(command, host, session.runCommand, () => hasSkillFile(skillsDir, skill), cwd));
   }
-  for (const { mcp, target, steps, missingVariable } of mcpJobs) {
+  for (const { mcp, config, target, steps, missingVariable } of mcpJobs) {
     if (missingVariable !== undefined) {
       progress.mcp.skip(target, missingVariable);
       continue;
@@ -419,7 +436,7 @@ async function runJobs(session: Session, { jobs, thirdPartyJobs, mcpJobs, toolJo
     const settle = progress.mcp.begin(target);
     let outcome: McpOutcome;
     try {
-      await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand);
+      await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand, config.cwd);
       outcome = { ok: true };
     } catch (error) {
       if (!(error instanceof McpInstallError)) {

@@ -387,6 +387,24 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
     ]);
   });
 
+  it('装到项目：Codex 的 MCP 只能装到全局和读不到配置的两行「注意」挨着，上下各空一行', async () => {
+    const lines = await screenOf({
+      catalog: componentCatalog(),
+      onPath: BOTH_HOSTS,
+      project: { '.mcp.json': '{ 写坏了' },
+      answersScope: true,
+      keys: [...toMcps, [PICK_HINT, KEY.enter], [HINT, KEY.down], ['▸ 项目', KEY.enter], [PICK_HINT, KEY.ctrlC]],
+    });
+
+    expect(after(lines, '✓ 装到哪里 · 项目', 5)).toEqual([
+      '',
+      expect.stringMatching(/^\s+注意\s+Codex 的 MCP 只能装到全局/),
+      expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/),
+      '',
+      '? 选择要安装的条目',
+    ]);
+  });
+
   it('沿用的 key 留下的一行和已回答的提问同一个画法：紧挨着上一行', async () => {
     const pickKeyed: [string, string][] = [...toMcps, [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter]];
     const lines = await screenOf({

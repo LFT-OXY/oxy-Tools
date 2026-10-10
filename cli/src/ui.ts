@@ -7,7 +7,7 @@ import type { McpInstallProblem } from './install-mcp.ts';
 import type { SkillInstallProblem } from './install-skill.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
-import type { McpStatus } from './mcp-status.ts';
+import type { InstallableMcpStatus, McpStatus } from './mcp-status.ts';
 import { MESSAGES, type Failure, type KeyOutcome, type Lang, type ToolEvidence } from './messages.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { SkillStatus } from './skill-status.ts';
@@ -122,7 +122,7 @@ export interface ThirdPartyTarget {
 export interface McpTarget {
   name: string;
   host: string;
-  status: Exclude<McpStatus, 'unsupported'>;
+  status: InstallableMcpStatus;
 }
 
 export type McpOutcome = { ok: true } | { ok: false; problem: McpInstallProblem };
@@ -386,9 +386,17 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         return paint('green', t.mcpStatus.configured);
       case 'unknown':
         return t.mcpStatus.unknown;
+      // 条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围：栏里是同一个词
       case 'unsupported':
+      case 'global-only':
         return dim(t.mcpStatus.unsupported);
     }
+  };
+
+  // 所选的宿主一个都装不了这个 MCP 时它不可选：有哪个只是装不到所选的范围，原因就写只能装到全局——换成全局就装得了
+  const mcpUnavailable = (statuses: readonly McpStatus[]): { unavailable?: string } => {
+    if (!statuses.every((status) => status === 'unsupported' || status === 'global-only')) return {};
+    return { unavailable: statuses.includes('global-only') ? t.mcpGlobalOnly : t.unsupportedByHosts };
   };
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
@@ -634,11 +642,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 列表里根本没有它们。所选的宿主一个都不支持的第三方 Skill 和 MCP、装不了的工具同样不可选；原因都写在状态的位置。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
-     * scope 是所选的安装范围：选了项目时 MCP 还装不了，它们的行不可选。
      */
     mixedPicker({
       hosts,
-      scope,
       skills,
       thirdParty,
       mcps,
@@ -648,7 +654,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       marksRecommended,
     }: {
       hosts: readonly Host[];
-      scope: Scope;
       skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
       thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[] }[];
       mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
@@ -705,13 +710,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             about: mcp.description[lang],
             recommended: mcp.recommended,
             cells: statuses.map(mcpStatusCell),
-            ...(hostless
-              ? { unavailable: t.needsHost }
-              : scope === 'project'
-                ? { unavailable: t.mcpGlobalOnly }
-                : statuses.every((status) => status === 'unsupported')
-                  ? { unavailable: t.unsupportedByHosts }
-                  : {}),
+            ...(hostless ? { unavailable: t.needsHost } : mcpUnavailable(statuses)),
           })),
         },
         {
@@ -924,9 +923,17 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       };
     },
 
-    /** 读不到某些宿主的配置时，在混合列表上方说明：MCP 在它们那一栏的状态都是未知。 */
-    mcpConfigUnreadable(hosts: readonly Host[]): void {
-      print(...gapAbove(), ...keyValue(t.noticeKey, t.mcpConfigUnreadable(hosts.map((host) => host.name).join(t.listSeparator)), attention), '');
+    /**
+     * 混合列表上方关于 MCP 那几栏的说明，各占一行，两行挨着：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，
+     * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
+     */
+    mcpColumnNotices({ globalOnly, unreadable }: { globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
+      const names = (hosts: readonly Host[]): string => hosts.map((host) => host.name).join(t.listSeparator);
+      const notices = [
+        ...(globalOnly.length > 0 ? [t.mcpGlobalOnlyNotice(names(globalOnly))] : []),
+        ...(unreadable.length > 0 ? [t.mcpConfigUnreadable(names(unreadable))] : []),
+      ];
+      if (notices.length > 0) print(...gapAbove(), ...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 
     /**
@@ -1111,7 +1118,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /**
      * 汇总最后要提醒的事，各占一行，几行挨着：有覆盖项时本地改动会丢失；这一轮有第三方 Skill 时装的是作者当时的
-     * 最新版；命令里 key 的位置是占位符；必填的 key 没填、
+     * 最新版；命令里 key 的位置是占位符；装到项目的 MCP 带着的 key 会以明文写进项目里的哪些文件（plaintextKeys 只有
+     * 变量名和文件名，variables 是空的就不写）；装到项目的 MCP 写进了哪个文件、要用户在宿主里批准之后才启用
+     * （command 是启动宿主的命令）；必填的 key 没填、
      * 不在这次要装的里面的 MCP；添加远程地址的 MCP 时可能当场打开浏览器登录的宿主（它的输出不会显示在这里，login 是
      * 事后补登录的命令）。一件都没有时什么都不打。
      */
@@ -1119,12 +1128,16 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       overwrites,
       thirdParty,
       placeholders,
+      plaintextKeys,
+      approvals,
       missingKeys,
       logins,
     }: {
       overwrites: boolean;
       thirdParty: boolean;
       placeholders: boolean;
+      plaintextKeys: { variables: readonly string[]; files: readonly string[] };
+      approvals: readonly { host: string; file: string; command: string }[];
       missingKeys: readonly { mcp: string; variable: string }[];
       logins: readonly { host: string; login: Command }[];
     }): void {
@@ -1132,6 +1145,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         ...(overwrites ? [t.replaceNotice] : []),
         ...(thirdParty ? [t.thirdPartyNotice] : []),
         ...(placeholders ? [t.keyPlaceholderNotice] : []),
+        ...(plaintextKeys.variables.length > 0
+          ? [t.keyPlaintextNotice(plaintextKeys.variables.join(t.listSeparator), plaintextKeys.files.join(t.listSeparator))]
+          : []),
+        ...approvals.map(({ host, file, command }) => t.mcpApprovalNotice(host, file, command)),
         ...missingKeys.map(({ mcp, variable }) => t.keyMissingNotice(mcp, variable)),
         ...logins.map(({ host, login }) => t.mcpLoginNotice(host, commandLine(login))),
       ];

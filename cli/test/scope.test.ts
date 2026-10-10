@@ -5,21 +5,25 @@ import { displayWidth } from '../src/text.ts';
 import {
   EMPTY_CATALOG,
   KEY,
+  KEYED_MCP,
   SAMPLE_APPS,
   SAMPLE_MCPS,
   SAMPLE_THIRD_PARTY,
   SAMPLE_TOOLS,
   STYLE_CODE,
   accept,
+  blank,
   catalogDir,
   choose,
   no,
   pick,
   run,
+  secret,
   underWebSearch,
   writeTree,
   yes,
 } from './harness.ts';
+import { screenLines } from './terminal.ts';
 
 const WEB_SEARCH = '联网搜索与文档检索';
 const BOTH_HOSTS = ['claude', 'codex'];
@@ -398,58 +402,511 @@ describe('工具不受安装范围影响', () => {
   });
 });
 
-describe('项目范围下的 MCP（这一步还装不了）', () => {
-  const withMcps = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS) } });
+// 两个宿主把 MCP 装到项目的写法，2026-10-11 对照官方文档，并在本机用 claude 2.1.295、codex 0.162.0 在临时目录里实测过
+// （任务 10-10-catalog-purpose-categories 的 research/project-mcp-trial-record.md）：Claude Code 带 --scope project、
+// 在项目目录下运行，配置写进那里的 .mcp.json；Codex 的命令只管用户级配置，装不到项目
+const withMcps = (...mcps: unknown[]): string =>
+  catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...(mcps.length > 0 ? mcps : SAMPLE_MCPS)) } });
+const mcpsIntoProject = (...names: string[]) => [choose(WEB_SEARCH), choose('项目'), pick(...names), choose('开始安装'), choose('退出')];
 
-  it('MCP 的行不可选，状态的位置写明原因', async () => {
-    const result = await run({ catalog: withMcps(), answersScope: true, answers: [choose(WEB_SEARCH), choose('项目'), pick(), choose('退出')] });
+// 两种范围的配置文件里各有哪些名字：用户级的在主目录的 .claude.json，项目的在项目目录的 .mcp.json，都是顶层的 mcpServers
+const mcpServers = (...names: string[]): string =>
+  JSON.stringify({ mcpServers: Object.fromEntries(names.map((name) => [name, { type: 'stdio', command: 'old', args: [] }])) });
+const browseProject = [choose(WEB_SEARCH), choose('项目'), pick(), choose('退出')];
+const browseGlobal = [choose(WEB_SEARCH), choose('全局'), pick(), choose('退出')];
+// 「开始安装吗」之前的那一段：汇总、将执行的命令、提醒都在里面
+const beforeConfirm = (output: string): string => output.slice(output.indexOf('── 将安装'), output.indexOf('? 开始安装吗'));
+// 命令过长时会折行：比对整条命令之前先把折行和缩进收成一个空格；中文的句子可以在任意两字之间折，比对前把空白全去掉
+const unwrapped = (text: string): string => text.replace(/\s+/g, ' ');
+const squeezed = (text: string): string => text.replace(/\s+/g, '');
+// 画面上的文字行：分区的横线照例画满 80 列，不算在「不超过 79 列」里
+const textLines = (output: string): string[] => output.split('\n').filter((line) => !line.includes('──'));
+// 假的 claude 照真的来：带 --scope project 的添加命令把名字写进运行目录的 .mcp.json
+const writesProjectConfig = (command: string, args: readonly string[], { cwd }: { cwd?: string }): undefined => {
+  if (command === 'claude' && args[1] === 'add' && args[3] === 'project' && cwd !== undefined) {
+    const name = args.find((arg, at) => at > 3 && !arg.startsWith('-') && args[at - 1] !== '--transport' && args[at - 1] !== '-e');
+    writeTree(cwd, { '.mcp.json': mcpServers(name ?? '') });
+  }
+};
 
-    expect(listOf(result.output)).toMatch(/^ – docs-local\s+暂时只能装到全局\s/m);
-    expect(listOf(result.output)).toMatch(/^ – tracker-remote\s+暂时只能装到全局\s/m);
+describe('把 MCP 装到项目：Claude Code', () => {
+  it('添加命令带它自带的项目范围，并且在项目目录下运行', async () => {
+    const result = await run({ catalog: withMcps(), answersScope: true, answers: mcpsIntoProject('docs-local') });
+
+    expect(result.commands).toEqual([
+      { command: 'claude', args: ['mcp', 'add', '--scope', 'project', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'], cwd: result.project },
+    ]);
+    expect(result.output).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/m);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('远程地址的也一样', async () => {
+    const result = await run({ catalog: withMcps(), answersScope: true, answers: mcpsIntoProject('tracker-remote') });
+
+    expect(result.commands).toEqual([
+      {
+        command: 'claude',
+        args: ['mcp', 'add', '--scope', 'project', '--transport', 'http', 'tracker-remote', 'https://mcp.example.org/mcp'],
+        cwd: result.project,
+      },
+    ]);
+  });
+
+  it('汇总里展示的就是那一条；选「取消」时一条都没执行', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), choose('项目'), pick('docs-local'), choose('取消'), choose('退出')],
+    });
+
+    expect(summaryOf(result.output)).toMatch(/^\s+docs-local\s+Claude Code\s+新装$/m);
+    expect(unwrapped(commandsOf(result.output))).toContain('1 claude mcp add --scope project docs-local -- npx -y @example/docs-mcp@latest ');
     expect(result.commands).toEqual([]);
   });
 
-  it('选全局时照常可选', async () => {
-    const result = await run({ catalog: withMcps(), answersScope: true, answers: [choose(WEB_SEARCH), choose('全局'), pick(), choose('退出')] });
+  it('安装器自己不在主目录里留下任何东西（命令是假的：宿主写不写用户级配置由真机核对盖着）', async () => {
+    const result = await run({ catalog: withMcps(), answersScope: true, answers: mcpsIntoProject('docs-local', 'tracker-remote') });
 
+    expect(filesUnder(result.home)).toEqual([]);
+  });
+
+  it('选全局时一个字不变：用户级范围，不指定在哪个目录下运行', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), choose('全局'), pick('docs-local'), choose('开始安装'), choose('退出')],
+    });
+
+    expect(result.commands).toEqual([{ command: 'claude', args: ['mcp', 'add', '--scope', 'user', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'] }]);
+  });
+
+  it('和 skill 一起勾：skill 落在项目目录，MCP 的命令在项目目录下运行', async () => {
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search' } } }),
+      answersScope: true,
+      answers: mcpsIntoProject('alpha', 'docs-local'),
+    });
+
+    expect(existsSync(join(result.project, '.claude', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toMatchObject({ command: 'claude', cwd: result.project });
+    inOrder(result.output, ['✓  alpha', '✓  docs-local']);
+  });
+});
+
+describe('MCP 的状态按安装范围读', () => {
+  it('选项目时看的是项目目录的 .mcp.json：那里有的显示已配置，只在用户级配置里有的显示未配置', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      home: { '.claude.json': mcpServers('tracker-remote') },
+      project: { '.mcp.json': mcpServers('docs-local', 'something-else') },
+      answersScope: true,
+      answers: browseProject,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+已配置\s/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s/m);
+  });
+
+  it('选全局时看的是用户级配置，项目里的不算', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      home: { '.claude.json': mcpServers('tracker-remote') },
+      project: { '.mcp.json': mcpServers('docs-local') },
+      answersScope: true,
+      answers: browseGlobal,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+已配置\s/m);
+  });
+
+  it('项目里还没有 .mcp.json 时都是未配置', async () => {
+    const result = await run({ catalog: withMcps(), answersScope: true, answers: browseProject });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s/m);
+    expect(result.output).not.toContain('读不到');
+  });
+
+  it('项目里的配置不认 CLAUDE_CONFIG_DIR：仍看项目目录', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      env: { CLAUDE_CONFIG_DIR: '/nowhere' },
+      project: { '.mcp.json': mcpServers('docs-local') },
+      answersScope: true,
+      answers: browseProject,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+已配置\s/m);
+  });
+
+  it('选项目时不读用户级配置：它写坏了也不提', async () => {
+    const result = await run({ catalog: withMcps(), home: { '.claude.json': '{ 写坏了' }, answersScope: true, answers: browseProject });
+
+    expect(result.output).not.toContain('读不到');
     expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s/m);
   });
 
-  it('不去读用户级配置：它写坏了也不提', async () => {
+  it('项目里的 .mcp.json 写坏了：列表上方说明读不到，状态是未知', async () => {
+    const result = await run({ catalog: withMcps(), project: { '.mcp.json': '{ 写坏了' }, answersScope: true, answers: browseProject });
+
+    expect(result.output).toMatch(/^\s+注意\s+读不到 Claude Code 的配置，无法判断哪些 MCP 已配置$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未知\s/m);
+    expect(result.stderr).toBe('');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('项目里已配置的：先移除再添加，两条都带项目范围、都在项目目录下运行', async () => {
     const result = await run({
       catalog: withMcps(),
-      home: { '.claude.json': '{ 写坏了' },
+      project: { '.mcp.json': mcpServers('docs-local') },
       answersScope: true,
-      answers: [choose(WEB_SEARCH), choose('项目'), pick(), choose('退出')],
+      answers: mcpsIntoProject('docs-local'),
+    });
+
+    expect(summaryOf(result.output)).toMatch(/^\s+docs-local\s+Claude Code\s+覆盖\s+已配置，先移除再添加$/m);
+    expect(result.commands).toEqual([
+      { command: 'claude', args: ['mcp', 'remove', '--scope', 'project', 'docs-local'], cwd: result.project },
+      { command: 'claude', args: ['mcp', 'add', '--scope', 'project', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'], cwd: result.project },
+    ]);
+  });
+
+  it('状态未知的：先尝试移除，失败了也接着添加', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      project: { '.mcp.json': '[]' },
+      commandResult: (_, args) => (args[1] === 'remove' ? { exitCode: 1 } : undefined),
+      answersScope: true,
+      answers: mcpsIntoProject('docs-local'),
+    });
+
+    expect(result.commands.map(({ args }) => args.slice(1, 4))).toEqual([['remove', '--scope', 'project'], ['add', '--scope', 'project']]);
+    expect(result.output).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/m);
+  });
+
+  it('添加命令非零退出：只这一项失败，写明哪一步和退出状态', async () => {
+    const result = await run({ catalog: withMcps(), commandResult: () => ({ exitCode: 1 }), answersScope: true, answers: mcpsIntoProject('docs-local') });
+
+    expect(result.output).toMatch(/^\s+✗\s+docs-local\s+Claude Code\s+失败\s+添加命令退出状态 1$/m);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('装完再进同一个用途：项目范围下已配置，全局范围下仍是未配置', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      commandResult: writesProjectConfig,
+      answersScope: true,
+      answers: [
+        choose(WEB_SEARCH), choose('项目'), pick('docs-local'), choose('开始安装'),
+        choose(WEB_SEARCH), choose('项目'), pick(),
+        choose(WEB_SEARCH), choose('全局'), pick(),
+        choose('退出'),
+      ],
+    });
+    const lists = result.output.split(LIST);
+
+    expect(lists[2]).toMatch(/^ □ docs-local\s+已配置\s/m);
+    expect(lists[3]).toMatch(/^ □ docs-local\s+未配置\s/m);
+  });
+});
+
+describe('把带 key 的 MCP 装到项目', () => {
+  const KEY_VALUE = 'sk-test-4f9a2c71d0';
+  const TEAM = {
+    name: 'SEARCH_TEAM_ID',
+    required: false,
+    description: { zh: '团队编号，按团队计费时填', en: 'Team id, for per-team billing' },
+    url: 'https://example.com/search/teams',
+  };
+  const OPTIONAL_ONLY = { ...KEYED_MCP, env: [TEAM] };
+  const keyedInto = (scope: string, ...keys: ReturnType<typeof secret>[]) => [choose(WEB_SEARCH), choose(scope), pick('search-keyed'), ...keys, choose('开始安装'), choose('退出')];
+
+  it('照样能装：命令带着输入的值，在项目目录下运行', async () => {
+    const result = await run({ catalog: withMcps(KEYED_MCP), answersScope: true, answers: keyedInto('项目', secret(KEY_VALUE)) });
+
+    expect(result.commands).toEqual([
+      {
+        command: 'claude',
+        args: ['mcp', 'add', '--scope', 'project', 'search-keyed', '-e', `SEARCH_API_KEY=${KEY_VALUE}`, '--', 'npx', '-y', '@example/search-mcp'],
+        cwd: result.project,
+      },
+    ]);
+    expect(result.output).toMatch(/^\s+✓\s+search-keyed\s+Claude Code\s+已配置$/m);
+  });
+
+  it('确认之前警告：key 会以明文写进 .mcp.json，不要提交或发给别人；写的是变量名，没有值', async () => {
+    const result = await run({ catalog: withMcps(KEYED_MCP), answersScope: true, answers: keyedInto('项目', secret(KEY_VALUE)) });
+
+    expect(squeezed(beforeConfirm(result.output))).toContain('注意SEARCH_API_KEY会以明文写进.mcp.json，不要提交，也不要发给别人');
+    expect(result.raw + result.stdout + result.stderr).not.toContain(KEY_VALUE);
+  });
+
+  it('警告排在「key 以占位符显示」之后', async () => {
+    const result = await run({ catalog: withMcps(KEYED_MCP), answersScope: true, answers: keyedInto('项目', secret(KEY_VALUE)) });
+
+    inOrder(result.output, ['── 将执行', 'key 以占位符显示', '会以明文写进', '? 开始安装吗']);
+  });
+
+  it('两个变量都填了：警告里两个名字都有', async () => {
+    const result = await run({
+      catalog: withMcps({ ...KEYED_MCP, env: [...KEYED_MCP.env, TEAM] }),
+      answersScope: true,
+      answers: keyedInto('项目', secret(KEY_VALUE), secret('team-42')),
+    });
+
+    expect(squeezed(beforeConfirm(result.output))).toContain('SEARCH_API_KEY、SEARCH_TEAM_ID会以明文写进.mcp.json');
+    expect(result.raw).not.toContain('team-42');
+  });
+
+  it('可选的 key 留空：没有东西写进去，不警告', async () => {
+    const result = await run({ catalog: withMcps(OPTIONAL_ONLY), answersScope: true, answers: keyedInto('项目', blank()) });
+
+    expect(result.output).not.toContain('明文');
+    expect(result.commands).toHaveLength(1);
+  });
+
+  it('选全局时没有这一行', async () => {
+    const result = await run({ catalog: withMcps(KEYED_MCP), answersScope: true, answers: keyedInto('全局', secret(KEY_VALUE)) });
+
+    expect(result.output).not.toContain('明文');
+    expect(result.output).toContain('key 以占位符显示');
+  });
+
+  it('添加命令失败时 key 的值也不出现', async () => {
+    const result = await run({
+      catalog: withMcps(KEYED_MCP),
+      commandResult: (command, args) => new Error(`spawn ${command} ${args.join(' ')} ENOENT`),
+      answersScope: true,
+      answers: keyedInto('项目', secret(KEY_VALUE)),
+    });
+
+    expect(result.output).toMatch(/^\s+✗\s+search-keyed\s+Claude Code\s+失败\s+添加命令没能运行$/m);
+    expect(result.raw + result.stdout + result.stderr).not.toContain(KEY_VALUE);
+  });
+
+  it('英文界面的警告', async () => {
+    const result = await run({
+      catalog: withMcps(KEYED_MCP),
+      argv: ['--lang', 'en'],
+      answersScope: true,
+      answers: [choose('Web search & docs retrieval'), choose('Project'), pick('search-keyed'), secret(KEY_VALUE), choose('Cancel'), choose('Exit')],
+    });
+
+    expect(unwrapped(result.output)).toContain('Notice SEARCH_API_KEY will be stored in plain text in .mcp.json; do not commit or share it');
+    for (const line of textLines(result.output.slice(result.output.indexOf('Install 1 item')))) expect(displayWidth(line)).toBeLessThanOrEqual(79);
+  });
+});
+
+describe('装到项目的 MCP 要在 Claude Code 里批准', () => {
+  it('确认之前说明：写进了当前目录的哪个文件，要在这个目录下启动 claude 批准之后才启用', async () => {
+    const result = await run({ catalog: withMcps(), answersScope: true, answers: mcpsIntoProject('docs-local') });
+
+    expect(squeezed(beforeConfirm(result.output))).toContain('注意ClaudeCode的MCP写进当前目录的.mcp.json，要你批准之后才启用：在这个目录下启动claude时它会问');
+  });
+
+  it('选全局时没有这一行', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), choose('全局'), pick('docs-local'), choose('开始安装'), choose('退出')],
+    });
+
+    expect(result.output).not.toContain('批准');
+  });
+
+  it('这一轮没有 MCP 时没有这一行', async () => {
+    const result = await run({ answersScope: true, answers: alphaIntoProject });
+
+    expect(result.output).not.toContain('批准');
+  });
+
+  it('排在明文的警告之后、「必填的 key 没填」之前；几行提醒挨着', async () => {
+    const result = await run({
+      catalog: withMcps(KEYED_MCP, { ...KEYED_MCP, name: 'another-keyed' }),
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), choose('项目'), pick('another-keyed', 'search-keyed'), blank(), secret('sk-test-0000'), choose('开始安装'), choose('退出')],
+    });
+    const notices = beforeConfirm(result.output).slice(beforeConfirm(result.output).indexOf('  注意'));
+
+    inOrder(notices, ['key 以占位符显示', '会以明文写进', '批准之后才启用', 'another-keyed 缺少必填的']);
+    expect(notices.trimEnd()).not.toMatch(/\n\s*\n/);
+  });
+
+  it('英文界面的说明', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      argv: ['--lang', 'en'],
+      answersScope: true,
+      answers: [choose('Web search & docs retrieval'), choose('Project'), pick('docs-local'), choose('Cancel'), choose('Exit')],
+    });
+
+    expect(unwrapped(result.output)).toContain(
+      'Notice Claude Code saves MCP servers to .mcp.json here and enables them only once you approve: it asks when you start claude here',
+    );
+    for (const line of textLines(result.output.slice(result.output.indexOf('Install 1 item')))) expect(displayWidth(line)).toBeLessThanOrEqual(79);
+  });
+});
+
+describe('Codex 的 MCP 装不到项目', () => {
+  const twoHostsBrowse = [choose(WEB_SEARCH), accept(), choose('项目'), pick(), pick(), choose('退出')];
+  const NOTICE = /^\s+注意\s+Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令$/m;
+
+  it('两个宿主都选了：Codex 那一栏每个 MCP 都写不支持，Claude Code 那一栏照常；行仍可选', async () => {
+    const result = await run({ catalog: withMcps(), onPath: BOTH_HOSTS, answersScope: true, answers: twoHostsBrowse });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持\s/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s+不支持\s/m);
+  });
+
+  it('列表上方写明原因', async () => {
+    const result = await run({ catalog: withMcps(), onPath: BOTH_HOSTS, answersScope: true, answers: twoHostsBrowse });
+
+    expect(result.output).toMatch(NOTICE);
+    expect(result.output.search(NOTICE)).toBeLessThan(result.output.indexOf(LIST));
+  });
+
+  it('同时读不到 Claude Code 项目里的配置：两行说明挨着，它在前', async () => {
+    const result = await run({ catalog: withMcps(), onPath: BOTH_HOSTS, project: { '.mcp.json': '{ 写坏了' }, answersScope: true, answers: twoHostsBrowse });
+
+    expect(result.output).toMatch(/^\s+注意\s+Codex 的 MCP 只能装到全局：.*\n\s+注意\s+读不到 Claude Code 的配置，无法判断哪些 MCP 已配置$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未知\s+不支持\s/m);
+  });
+
+  it('列表里的 MCP 本来就都不支持 Codex：那一栏照样写不支持，但不说「只能装到全局」——换成全局也装不进它', async () => {
+    const result = await run({
+      catalog: withMcps({ ...SAMPLE_MCPS[0], hosts: ['claude-code'] }),
+      onPath: BOTH_HOSTS,
+      answersScope: true,
+      answers: twoHostsBrowse,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持\s/m);
+    expect(result.output).not.toMatch(NOTICE);
+  });
+
+  it('选全局时没有这一行，Codex 那一栏照常是状态', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      onPath: BOTH_HOSTS,
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), accept(), choose('全局'), pick(), pick(), choose('退出')],
+    });
+
+    expect(result.output).not.toMatch(NOTICE);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+未配置\s/m);
+  });
+
+  it('列表里没有 MCP 时没有这一行', async () => {
+    const result = await run({ onPath: BOTH_HOSTS, answersScope: true, answers: [choose('推荐'), accept(), choose('项目'), pick(), pick(), choose('退出')] });
+
+    expect(result.output).not.toMatch(NOTICE);
+  });
+
+  it('不读 Codex 的用户级配置：它写坏了也不提', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      onPath: BOTH_HOSTS,
+      home: { '.codex/config.toml': '[mcp_servers' },
+      answersScope: true,
+      answers: twoHostsBrowse,
     });
 
     expect(result.output).not.toContain('读不到');
   });
 
-  it('同一张列表里的 skill 照常可选、照常装到项目', async () => {
+  it('勾上的 MCP 只装进 Claude Code：汇总、命令、结果里都没有 Codex，也不提醒它的浏览器登录', async () => {
     const result = await run({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search' } } }),
+      catalog: withMcps(),
+      onPath: BOTH_HOSTS,
       answersScope: true,
-      answers: [choose(WEB_SEARCH), choose('项目'), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), choose('项目'), pick('tracker-remote'), choose('开始安装'), choose('退出')],
     });
 
-    expect(existsSync(join(result.project, '.claude', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    expect(beforeConfirm(result.output)).not.toContain('Codex');
+    expect(result.commands).toEqual([
+      {
+        command: 'claude',
+        args: ['mcp', 'add', '--scope', 'project', '--transport', 'http', 'tracker-remote', 'https://mcp.example.org/mcp'],
+        cwd: result.project,
+      },
+    ]);
+    expect(result.output).toMatch(/^\s+✓\s+tracker-remote\s+Claude Code\s+已配置$/m);
+    expect(result.output).not.toMatch(/tracker-remote\s+Codex/);
+    expect(result.output).toContain('1 成功 · 0 失败');
+  });
+
+  it('只检测到 Codex：MCP 的行不可选，原因是只能装到全局；一条命令都不执行', async () => {
+    const result = await run({ catalog: withMcps(), onPath: ['codex'], answersScope: true, answers: browseProject });
+
+    expect(listOf(result.output)).toMatch(/^ – docs-local\s+只能装到全局\s/m);
+    expect(listOf(result.output)).toMatch(/^ – tracker-remote\s+只能装到全局\s/m);
+    expect(result.output).toMatch(NOTICE);
     expect(result.commands).toEqual([]);
   });
 
-  it('英文界面的原因；任何一行不超过 79 列', async () => {
+  it('只检测到 Codex，选全局时照常可选', async () => {
+    const result = await run({ catalog: withMcps(), onPath: ['codex'], answersScope: true, answers: browseGlobal });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s/m);
+  });
+
+  it('只检测到 Codex：同一张列表里的 skill 照常装到项目', async () => {
     const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search' } } }),
+      onPath: ['codex'],
+      answersScope: true,
+      answers: mcpsIntoProject('alpha'),
+    });
+
+    expect(existsSync(join(result.project, '.agents', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
+    expect(result.commands).toEqual([]);
+  });
+
+  it('只给 Codex 用的条目，两个宿主都选了：换成全局就装得了，原因是只能装到全局', async () => {
+    const result = await run({
+      catalog: withMcps({ ...SAMPLE_MCPS[0], hosts: ['codex'] }),
+      onPath: BOTH_HOSTS,
+      answersScope: true,
+      answers: twoHostsBrowse,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ – docs-local\s+只能装到全局\s/m);
+  });
+
+  it('只给 Claude Code 用的条目，只检测到 Codex：原因仍是需要别的 AI Agent', async () => {
+    const result = await run({
+      catalog: withMcps({ ...SAMPLE_MCPS[0], hosts: ['claude-code'] }),
+      onPath: ['codex'],
+      answersScope: true,
+      answers: browseProject,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ – docs-local\s+需要别的 AI Agent\s/m);
+  });
+
+  it('英文界面：栏里的词、原因和列表上方的说明；任何一行不超过 79 列', async () => {
+    const two = await run({
       catalog: withMcps(),
       onPath: BOTH_HOSTS,
       argv: ['--lang', 'en'],
       answersScope: true,
       answers: [choose('Web search & docs retrieval'), accept(), choose('Project'), pick(), pick(), choose('Exit')],
     });
+    const one = await run({
+      catalog: withMcps(),
+      onPath: ['codex'],
+      argv: ['--lang', 'en'],
+      answersScope: true,
+      answers: [choose('Web search & docs retrieval'), choose('Project'), pick(), choose('Exit')],
+    });
 
-    const rows = result.output.split('\n').filter((line) => line.startsWith(' – '));
-
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatch(/^ – docs-local\s+global only for now\s/);
+    expect(unwrapped(two.output)).toContain('Notice Codex MCP servers can only be installed globally: there is no command that writes them into a project ');
+    expect(two.output).toMatch(/^ □ docs-local\s+none\s+unsupported\s/m);
+    expect(one.output).toMatch(/^ – docs-local\s+global only\s/m);
+    // 列表下方的说明全文在架子里不折行，只量列表上方的说明和表里的行：从安装范围的提问量到列表的最后一行
+    const measured = [two.output, one.output].flatMap((output) => output.slice(output.indexOf('? Install where')).split('\n'));
+    const rows = measured.filter((line) => /^ [□–] |^\s+Notice\s|^\s{12}\S/.test(line));
+    expect(rows.filter((line) => /^ [□–] /.test(line))).toHaveLength(4);
     for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(79);
   });
 });
@@ -491,9 +948,10 @@ describe('真实的画面：选择安装范围', () => {
     expect(result.output).toMatch(/✓ 装到哪里 · 全局$/m);
   });
 
-  it('选了项目：在 MCP 的行上按空格勾不上，列表下方说明这一项选不了；回车就是什么都没选', async () => {
+  it('只检测到 Codex，选了项目：在 MCP 的行上按空格勾不上，列表下方说明这一项选不了；回车就是什么都没选', async () => {
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS) } }),
+      onPath: ['codex'],
       answersScope: true,
       keys: [
         [HINT, KEY.down],
@@ -506,11 +964,37 @@ describe('真实的画面：选择安装范围', () => {
       ],
     });
 
-    expect(result.output).toMatch(/^▸– docs-local\s+暂时只能装到全局\s/m);
+    expect(result.output).toMatch(/^▸– docs-local\s+只能装到全局\s/m);
     expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
     expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
     expect(result.output).not.toContain('将安装');
     expect(result.commands).toEqual([]);
+  });
+
+  it('选了项目：在 Claude Code 下勾得上 MCP，汇总下方的两行提醒在提问的上方', async () => {
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(KEYED_MCP) } }),
+      answersScope: true,
+      keys: [
+        [HINT, KEY.down],
+        ['▸ 联网搜索与文档检索', KEY.enter],
+        [HINT, KEY.down],
+        ['▸ 项目', KEY.enter],
+        [PICK_HINT, KEY.space],
+        ['■ search-keyed', KEY.enter],
+        ['SEARCH_API_KEY', 'sk-test-4f9a2c71d0'],
+        ['SEARCH_API_KEY', KEY.enter],
+        [HINT, KEY.ctrlC],
+      ],
+    });
+    const lines = await screenLines(result.raw);
+    const at = (text: string): number => lines.findIndex((line) => line.includes(text));
+
+    expect(at('会以明文写进 .mcp.json')).toBeGreaterThan(at('将执行 1 条命令'));
+    expect(at('Claude Code 的 MCP 写进当前目录的 .mcp.json')).toBeGreaterThan(at('会以明文写进 .mcp.json'));
+    expect(at('? 开始安装吗')).toBeGreaterThan(at('Claude Code 的 MCP 写进当前目录的 .mcp.json'));
+    expect(lines.join('\n')).not.toContain('sk-test-4f9a2c71d0');
+    for (const line of lines.filter((text) => !text.includes('──'))) expect(displayWidth(line)).toBeLessThanOrEqual(79);
   });
 
   it('设置了 NO_COLOR 时不带样式码', async () => {

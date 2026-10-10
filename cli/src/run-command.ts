@@ -18,7 +18,7 @@ export function systemCommandRunner(): CommandRunner {
         : spawn(command, [...args], {
             stdio: 'ignore',
             windowsHide: true,
-            ...(options ? { env: { ...process.env, ...options.env } } : {}),
+            ...(options?.env ? { env: { ...process.env, ...options.env } } : {}),
             ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
           });
       child.once('error', reject);

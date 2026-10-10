@@ -241,7 +241,8 @@ export interface RunResult {
   screen: string;
   /**
    * 记录到的外部命令；整行交给 shell 的（工具的安装命令）多一个 shell: true，args 是空的；
-   * 不经 shell 而另带了环境变量的（第三方 Skill 的安装命令）多一个 env，指定了在哪个目录下运行的再多一个 cwd
+   * 不经 shell 而另带了环境变量的（第三方 Skill 的安装命令）多一个 env，指定了在哪个目录下运行的
+   * （装到项目的第三方 Skill 和 MCP）再多一个 cwd
    */
   commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>>; cwd?: string }[];
   /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
@@ -367,7 +368,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
         commands.push({
           command,
           args,
-          ...(runOptions?.shell ? { shell: true as const } : runOptions ? { env: runOptions.env } : {}),
+          ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
           ...(cwd === undefined ? {} : { cwd }),
         });
         const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });

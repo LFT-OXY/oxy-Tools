@@ -21,8 +21,8 @@ export type CommandOptions =
     }
   | {
       shell?: never;
-      /** 不经 shell 的方式下另外带上的环境变量，盖在命令继承来的环境之上 */
-      env: Readonly<Record<string, string>>;
+      /** 不经 shell 的方式下另外带上的环境变量，盖在命令继承来的环境之上；不给就原样继承 */
+      env?: Readonly<Record<string, string>>;
       /** 在哪个目录下运行；不给就是进程自己的当前目录 */
       cwd?: string;
     };

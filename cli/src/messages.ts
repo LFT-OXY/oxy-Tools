@@ -63,15 +63,20 @@ export interface Messages {
   /** 安装范围的提问；两项各有名字和一句说明，「项目」的说明后面接当前目录 */
   pickScope: string;
   scopes: { global: { name: string; about: string }; project: { name: string; about: string } };
-  /** 选了项目范围时 MCP 不可选的原因 */
+  /** MCP 不可选的原因：选了项目范围，而所选的宿主里支持它的那些都只能把 MCP 装到全局 */
   mcpGlobalOnly: string;
   nameColumn: string;
   /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号。第三方 Skill 的未装、已装也用这两个词 */
   skillStatus: { none: string; installed: string; unmanaged: string };
-  /** MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主，第三方 Skill 也用这个词 */
+  /**
+   * MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围，
+   * 第三方 Skill 也用这个词
+   */
   mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
   /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
   mcpConfigUnreadable: (hosts: string) => string;
+  /** 选了项目范围，而这些宿主的 MCP 只能装到全局，连同原因；hosts 已按并列的写法连好 */
+  mcpGlobalOnlyNotice: (hosts: string) => string;
   /** 条目不可选的原因：MCP 和第三方 Skill 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
   unsupportedByHosts: string;
   /** 混合列表只有一栏状态时（一个宿主都没检测到，或列表里只有工具和外部项目）那一栏的表头 */
@@ -127,6 +132,10 @@ export interface Messages {
   commandsToRun: (count: number) => string;
   /** 将执行的命令里有 key 的占位符 */
   keyPlaceholderNotice: string;
+  /** 装到项目的 MCP 带着的 key 会以明文写进项目里的配置文件；variables、files 已按并列的写法连好。这里从不写值 */
+  keyPlaintextNotice: (variables: string, files: string) => string;
+  /** 装到项目的 MCP 写进了项目里的哪个文件，要用户在宿主里批准之后才启用；command 是启动宿主的命令 */
+  mcpApprovalNotice: (host: string, file: string, command: string) => string;
   /** 问 key 之前那个分区的标题；mcp 是要它的那个 MCP 的名字 */
   keyRequest: (mcp: string, required: boolean) => string;
   variableKey: string;
@@ -234,11 +243,12 @@ const zh: Messages = {
   unavailable: '这一项现在选不了',
   pickScope: '装到哪里',
   scopes: { global: { name: '全局', about: '对这台机器上的所有项目生效' }, project: { name: '项目', about: '只对当前目录生效：' } },
-  mcpGlobalOnly: '暂时只能装到全局',
+  mcpGlobalOnly: '只能装到全局',
   nameColumn: '名称',
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
   mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
+  mcpGlobalOnlyNotice: (hosts) => `${hosts} 的 MCP 只能装到全局：没有把 MCP 写进项目的命令`,
   unsupportedByHosts: '需要别的 AI Agent',
   statusColumn: '状态',
   toolStatus: { none: '未安装', installed: '已安装' },
@@ -276,6 +286,9 @@ const zh: Messages = {
     `${host} 添加远程地址的 MCP 时可能当场打开浏览器登录，登录完这一项才结束。浏览器打不开就按 Ctrl+C，之后执行 ${login} <名称>`,
   commandsToRun: (count) => `将执行 ${count} 条命令`,
   keyPlaceholderNotice: 'key 以占位符显示，执行时才代入真实的值',
+  keyPlaintextNotice: (variables, files) => `${variables} 会以明文写进 ${files}，不要提交，也不要发给别人`,
+  mcpApprovalNotice: (host, file, command) =>
+    `${host} 的 MCP 写进当前目录的 ${file}，要你批准之后才启用：在这个目录下启动 ${command} 时它会问`,
   keyRequest: (mcp, required) => (required ? `${mcp} 需要 key` : `${mcp} 可选的 key`),
   variableKey: '变量',
   purposeKey: '用途',
@@ -499,11 +512,12 @@ const en: Messages = {
     global: { name: 'Global', about: 'applies to every project on this machine' },
     project: { name: 'Project', about: 'applies to the current directory only: ' },
   },
-  mcpGlobalOnly: 'global only for now',
+  mcpGlobalOnly: 'global only',
   nameColumn: 'Name',
   skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
   mcpStatus: { none: 'none', configured: 'configured', unknown: 'unknown', unsupported: 'unsupported' },
   mcpConfigUnreadable: (hosts) => `Could not read the ${hosts} config; cannot tell which MCP servers are configured`,
+  mcpGlobalOnlyNotice: (hosts) => `${hosts} MCP servers can only be installed globally: there is no command that writes them into a project`,
   unsupportedByHosts: 'needs another AI Agent',
   statusColumn: 'Status',
   toolStatus: { none: 'none', installed: 'installed' },
@@ -541,6 +555,9 @@ const en: Messages = {
     `${host} may open a browser to sign in while adding a remote MCP server; that item only finishes once you have signed in. If no browser opens, press Ctrl+C and run ${login} <name> later`,
   commandsToRun: (count) => `${count} ${count === 1 ? 'command' : 'commands'} to run`,
   keyPlaceholderNotice: 'Keys are shown as placeholders; the real values are only filled in when the commands run',
+  keyPlaintextNotice: (variables, files) => `${variables} will be stored in plain text in ${files}; do not commit or share it`,
+  mcpApprovalNotice: (host, file, command) =>
+    `${host} saves MCP servers to ${file} here and enables them only once you approve: it asks when you start ${command} here`,
   keyRequest: (mcp, required) => (required ? `${mcp} needs a key` : `${mcp}: optional key`),
   variableKey: 'Variable',
   purposeKey: 'Purpose',

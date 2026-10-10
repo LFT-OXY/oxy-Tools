@@ -4,11 +4,13 @@
 
 ---
 
-## Scenario: 把一个 MCP 写进宿主的用户级配置
+## Scenario: 把一个 MCP 写进宿主的配置（全局或项目）
 
 ### 1. Scope / Trigger
 
-安装 MCP 会**执行外部命令**，而命令的内容（启动命令、参数、网址）来自运行时拉取的远程目录。凡是改 MCP 条目的字段或校验、改命令怎么拼、改看哪个配置文件、改状态怎么判、改已配置或状态未知时怎么装、动外部命令执行器、动 key 怎么问怎么传，或加一个宿主，都落在这份契约上。
+安装 MCP 会**执行外部命令**，而命令的内容（启动命令、参数、网址）来自运行时拉取的远程目录。凡是改 MCP 条目的字段或校验、改命令怎么拼、改看哪个配置文件、改状态怎么判、改已配置或状态未知时怎么装、动外部命令执行器、动 key 怎么问怎么传、动装到项目时的写法和提醒，或加一个宿主，都落在这份契约上。
+
+安装范围（全局或项目）在进列表之前选定，见 [入口与测试](./installer-entry.md)。下面先写两种范围共有的，装到项目时不同的地方集中在「装到项目」一节。
 
 ### 2. Signatures
 
@@ -34,24 +36,40 @@ export interface Mcp extends Placement {
 // cli/src/hosts.ts
 export interface KeyArgument { variable: string } // 命令里带着 key 的一个参数：执行时是「变量名=值」，给用户看时值的位置是占位符
 export interface Command { command: string; args: (string | KeyArgument)[] } // 不经过 shell，args 的每一项原样是一个参数
-export interface Host {
-  id: string;                                              // 目录里指代它的名字：claude-code、codex
-  // …name、detected、skillsDir 见「安装 skill」
-  configuredMcps(): ReadonlySet<string> | undefined;       // 用户级配置里已有的 MCP 的名字；读不了或格式不认识时 undefined
+// 一个宿主在某个安装范围下的 MCP 配置：去哪看已经配了哪些、用哪条命令添加和移除
+export interface McpConfig {
+  configuredMcps(): ReadonlySet<string> | undefined;       // 这份配置里已有的 MCP 的名字；读不了或格式不认识时 undefined
   addMcp(mcp: Mcp, variables: readonly string[]): Command; // variables 是要带上的环境变量的名字，不是值
   removeMcp(name: string): Command;
+  cwd?: string;                                            // 添加和移除命令要在哪个目录下运行；没有就是在哪都一样
+}
+// 项目范围的那一份：写在项目目录里，只对这个项目生效
+export interface ProjectMcpConfig extends McpConfig {
+  file: string;      // 配置文件，相对项目目录的写法（.mcp.json）：带 key 的 MCP 的值会以明文写进它
+  cwd: string;       // 宿主把配置写进它的运行目录，所以命令要在项目目录下运行
+  approval?: string; // 有它表示写进去的 MCP 要用户在宿主里批准之后才启用；值是启动宿主的命令（claude），启动时它会问
+}
+export interface Host extends McpConfig {                  // 宿主自己的那三问答的是用户级（全局）的配置
+  id: string;                                              // 目录里指代它的名字：claude-code、codex
+  // …name、detected、skillsDir 见「安装 skill」
+  projectMcp?: ProjectMcpConfig;                           // 没有它表示这个宿主的 MCP 只能装到全局（Codex）
   remoteMcpLogin?: Command;                                // 见「宿主添加远程地址时会当场登录」
 }
+// host 在 scope 下的那一份：全局是宿主自己，项目是它的 projectMcp（没有就是 undefined）。状态探测和流程都经它取，两边看的是同一份
+export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined;
 
 // cli/src/mcp-status.ts
-export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported';
-export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[]): McpStatus[][]; // [第几个 MCP][第几个宿主]
+// global-only：这个宿主的 MCP 只能装到全局，而这一轮选的是项目
+export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported' | 'global-only';
+export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'global-only'>;
+export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[], scope: Scope): McpStatus[][]; // [第几个 MCP][第几个宿主]
 
 // cli/src/install-mcp.ts
 export interface McpStep { action: 'remove' | 'add'; command: Command; tolerated: boolean }
-export function mcpSteps(mcp: Mcp, host: Host, status: Exclude<McpStatus, 'unsupported'>, variables: readonly string[]): McpStep[];
-// keys 是「变量名 → 值」：到执行的这一刻才代入命令
-export async function installMcp(steps: readonly McpStep[], keys: ReadonlyMap<string, string>, runCommand: CommandRunner): Promise<void>;
+// config 是 mcpConfigOf(host, scope)
+export function mcpSteps(mcp: Mcp, config: McpConfig, status: InstallableMcpStatus, variables: readonly string[]): McpStep[];
+// keys 是「变量名 → 值」：到执行的这一刻才代入命令；cwd 是 config.cwd，给了就在那个目录下运行
+export async function installMcp(steps: readonly McpStep[], keys: ReadonlyMap<string, string>, runCommand: CommandRunner, cwd?: string): Promise<void>;
 export interface McpInstallProblem {
   action: 'remove' | 'add';                                                   // 失败的是哪一步
   cause: { kind: 'exit'; code: number } | { kind: 'not-started'; detail: string | undefined }; // detail 是错误码，错误没带就没有
@@ -67,7 +85,7 @@ interface Session {
 
 // cli/src/installer.ts
 export interface CommandResult { exitCode: number }
-export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>; // 命令没能起来时拒绝；安装 MCP 不给 options——{ shell: true } 是安装工具用的，{ env } 是安装第三方 Skill 用的
+export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>; // 命令没能起来时拒绝；把 MCP 装到全局不给 options，装到项目给 { cwd }——{ shell: true } 是安装工具用的，{ env } 是安装第三方 Skill 用的
 
 // cli/src/run-command.ts
 export function systemCommandRunner(): CommandRunner;
@@ -131,15 +149,17 @@ export function systemCommandRunner(): CommandRunner;
 - 远程地址只有一种：可流式的 HTTP。SSE、请求头鉴权都不在范围内。
 - 环境变量一个变量一个 `-e` / `--env`，照目录里的顺序，**跟在名字后面、`--` 前面**。Claude Code 的 `-e` 能连收几个值，放在名字前面会把名字也收进去。两个宿主都把值原样记进配置里这个 MCP 的 `env`（实测过带 `=`、`&`、`+`、`/` 的值），添加命令自己的输出里不回显值。Codex 对 `--url` 加 `--env` 直接报错（`command is required`），这是“环境变量只适用于本地进程”在宿主那边的依据。
 - **各系统上命令相同，原生 Windows 上也不给本地进程包 `cmd /c`**。Claude Code 的旧文档要求过（否则 `npx` 这类 `.cmd` 起不来，报 Connection closed）；它的更新日志 2.1.119 写明移除了那条“需要 cmd /c 包装”的警告（称其为误报），现行的 MCP 文档里也已经没有这条说明；Codex 的文档从未要求过。2.1.119 之前的 Claude Code 不在支持之列。这个结论来自文档和更新日志，**没有在 Windows 真机上实测**；`mcp.test.ts` 里有一条 `platform: 'win32'` 的测试守着“不包”这个决定。
+- 上表是全局（用户级）的写法；装到项目的见下面「装到项目」。
 - 两个环境变量是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。它在第三方 Skill 上有后果：skills CLI 认这个变量，所以安装器调用它时把这个变量清空，让它也装到 `<主目录>/.claude/skills`（见 [安装 skill](./skill-install.md)）；哪天 skill 目录改成认它，那一处清空要一起拿掉。
 
 **状态（`mcpStatuses`）**
 
-每个宿主的配置**只读一次**、只读、不抛错、不执行任何命令：
+看的是**所选安装范围下的那一份配置**：全局是宿主的用户级配置，项目是 `host.projectMcp` 指的那一份；另一份不读。每个宿主的配置**只读一次**、只读、不抛错、不执行任何命令：
 
 | 情况 | 状态 | 列表里的写法 |
 |------|------|--------------|
 | 条目写了 `hosts` 且不含这个宿主的 `id` | `unsupported` | `不支持`（暗淡） |
+| 选了项目，而这个宿主没有 `projectMcp`（条目本身支持它） | `global-only` | `不支持`（暗淡），列表上方另有一行说明，见「装到项目」 |
 | 配置文件不存在（宿主还没写过配置） | `none` | `未配置`（暗淡） |
 | 读得出来，那张表里没有这个名字（包括整张表都没有） | `none` | `未配置` |
 | 读得出来，有这个名字 | `configured` | `已配置`（绿） |
@@ -160,8 +180,29 @@ export function systemCommandRunner(): CommandRunner;
 - 汇总（「将安装 N 项」里 MCP 的那张小表）之后是「将执行 N 条命令」：每条完整命令编号列出，确认了才执行。**任何外部命令都不许在这之前跑**，状态探测因此只读文件。
 - 不另问“要不要覆盖”：MCP 没有“是不是本工具装的”这个概念，再装一次就是覆盖。
 - 每个 MCP 在每个**支持它的**所选宿主下各是一项，各有一行结果，互不影响；一项失败不影响其余项，退出状态不变。
-- 所选宿主一个都不支持的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因「需要别的 AI Agent」写在状态的位置、占满各个状态栏；只有一部分不支持的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
-- **安装范围选了项目时每个 MCP 都不可选**，原因是「暂时只能装到全局」（任务 `10-10-catalog-purpose-categories` 工单 10 的临时做法，工单 11 让 MCP 能装到项目时去掉）。这时**不做状态探测**：不读用户级配置，也不出「读不到配置」那一行——那份配置和这一轮无关。本文件写的状态、命令、配置文件都是全局（用户级）的。
+- 所选宿主一个都装不了的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写在状态的位置、占满各个状态栏：各栏里有 `global-only` 的写「只能装到全局」（换成全局就装得了），全是 `unsupported` 的写「需要别的 AI Agent」。只有一部分装不了的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
+
+**装到项目**（任务 `10-10-catalog-purpose-categories` 工单 11；2026-10-11 用 claude 2.1.295、codex 0.162.0 在临时目录里实测并对照官方文档，记录在该任务的 `research/project-mcp-trial-record.md`）
+
+| | Claude Code | Codex |
+|---|---|---|
+| 能不能 | 能 | **不能**：没有 `projectMcp`，见下面的 Design Decision |
+| 添加本地进程 | `claude mcp add --scope project <名字> -- <命令> <参数…>` | — |
+| 添加远程地址 | `claude mcp add --scope project --transport http <名字> <网址>` | — |
+| 添加带环境变量的本地进程 | `claude mcp add --scope project <名字> -e <变量>=<值> -- <命令> <参数…>` | — |
+| 移除 | `claude mcp remove --scope project <名字>` | — |
+| 在哪运行 | **项目目录**（`{ cwd }`）：它把配置写进运行目录的 `.mcp.json`，在 git 仓库的子目录里也是写子目录，不找仓库根 | — |
+| 同名已存在时再添加 / 移除一个不存在的 | 都失败，退出状态 1——和用户级一样 | — |
+| 已配置的从哪看 | `<项目目录>/.mcp.json` 顶层的 `mcpServers`；不认 `CLAUDE_CONFIG_DIR` | — |
+| 写进去之后 | **要用户批准才启用**：在这个目录下启动 `claude` 时它会问（`claude mcp get` 显示 `Pending approval`） | — |
+
+- 与全局只差上表这几处：先移除再添加、状态未知时先尝试移除、每个宿主各一项、一项失败不影响其余项、key 怎么问怎么传、失败原因的写法，都一样。全局的行为一个字不变（全局的命令仍然不给 `options`）。
+- 用户级配置这时**不读也不写**：它写坏了不出「读不到配置」那一行；装完之后用户级配置里没有这一条。反过来选全局时不读项目里的 `.mcp.json`。
+- **Codex 那一栏每个 MCP 都是「不支持」**，不产生安装项，汇总、命令、结果里都没有它；远程地址的 MCP 也就没有登录的提醒。**那一栏里有 `global-only` 时**（列表里至少有一个条目本身支持这个宿主），列表上方有一行写明原因的「注意  Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令」（`ui.mcpColumnNotices` 的 `globalOnly`；和「读不到配置」那一行同一个画法、挨着排，它在前）。列表里的 MCP 本来就都不支持它时（全是 `unsupported`）没有这一行：换成全局也装不进它。所选的宿主里只有它时 MCP 的行不可选，原因「只能装到全局」。
+- 汇总下方多两行提醒，都在「开始安装吗」之前，排在「key 以占位符显示」之后、「必填的 key 没填」之前：
+  - **这一轮有带着 key 的 MCP 要装到项目**（命令里有占位符的那些）：「注意  `<变量名…>` 会以明文写进 `.mcp.json`，不要提交，也不要发给别人」。写的是变量名和文件名（`projectMcp.file`），**没有值**。可选的 key 留空的不带变量，不算。
+  - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。
+- 规格里「Codex 只对受信任的项目读这份配置」那一行随 Codex 不支持而没有做；哪天给 Codex 补上 `projectMcp`，这一行要一起补（那条事实已经实测过，在试通记录里）。
 
 **在混合列表里（`flow.ts` 的 `planEntries`、`runJobs`）**
 
@@ -196,7 +237,7 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 | 怎么起 | `cross-spawn`，不经过 shell；Windows 上宿主的命令常是 npm 装出来的 `.cmd`，Node 不许直接起，`cross-spawn` 替我们经 `cmd.exe` 起并把参数转义好 |
 | 输入输出 | `stdio: 'ignore'`：命令的输出**不上屏**（进行中的那一行在转，混进别的字会乱），它也不从终端读输入 |
 | 环境 | 继承进程自己的环境。第三个参数给了 `{ env }` 时，那几个变量盖在继承来的环境之上（`{ ...process.env, ...env }`），别的不动；值是空字符串就是把那个变量清空。只有安装第三方 Skill 用它：关掉 skills CLI 的遥测、清空 `CLAUDE_CONFIG_DIR`，见 [安装 skill](./skill-install.md) |
-| 运行目录 | 不指定时是进程自己的当前目录。第三个参数给了 `cwd` 时在那个目录下运行（`spawn` 的 `cwd`）。只有把第三方 Skill 装到项目时用它：skills CLI 不带全局选项时装进它的当前目录，见 [安装 skill](./skill-install.md)。装 MCP 的命令现在都不指定 |
+| 运行目录 | 不指定时是进程自己的当前目录。第三个参数给了 `cwd` 时在那个目录下运行（`spawn` 的 `cwd`），`env` 可以不给。装到项目时用它：skills CLI 不带全局选项时装进它的当前目录，见 [安装 skill](./skill-install.md)；Claude Code 带 `--scope project` 时把配置写进它的当前目录。装到全局的 MCP 命令不指定 |
 | 结果 | 结束了就兑现 `{ exitCode }`（被信号结束算 1）；起不来（命令不存在）就拒绝，错误带 `code` |
 
 > **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。带 `env` 的那一支 2026-10-10 用真实的 `npx skills` 在临时主目录里核对过一次（macOS）：遥测的两个变量和清空的 `CLAUDE_CONFIG_DIR` 都传到了，输出没有漏到终端上，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`。 带 `cwd` 的那一支 2026-10-11 同样用真实的 `npx skills` 核对过一次（macOS）：从另一个目录起脚本，skill 落在 `cwd` 指的目录里，起脚本的目录没有多出东西，记录在同一个任务的 `research/project-scope-trial-record.md`。
@@ -239,6 +280,9 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - Good（带 key）：两个宿主都选了，勾了一个有必填 key 的 → 问一次，汇总里两条命令各有一个 `<变量名>` 占位符和一行「注意  key 以占位符显示…」，记录到的两条命令带着输入的值。
 - Base（带 key）：勾了两个，其中一个的必填 key 留空 → 那一个不在汇总和命令里，命令下面一行「注意」，结果里它「跳过 未填写必填的 …」，另一个照常。
 - Bad（带 key）：远程地址的条目写了 `env` → 这一条被跳过，目录校验命令指出 `env`「只能用于本地进程方式」。
+- Good（装到项目）：只检测到 Claude Code，选了项目，勾了一个带必填 key 的 → 一条 `claude mcp add --scope project …`，在项目目录下运行；汇总下方有明文写入和要批准的两行提醒；主目录下的用户级配置没有变化。
+- Base（装到项目）：两个宿主都选了 → Codex 那一栏都是「不支持」，列表上方一行「注意」；勾上的 MCP 只装进 Claude Code，汇总、命令、结果里没有 Codex。
+- Base（装到项目）：只检测到 Codex → MCP 的行都不可选，原因「只能装到全局」；同一张列表里的 skill 照常装到项目。
 
 ### 6. Tests Required
 
@@ -259,6 +303,8 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - **key 的值不出现**：`result.raw + result.stdout + result.stderr` 里找不到输入的值——成功、命令非零退出、命令起不来而错误消息里带着整条命令（值还被转义过）、执行器当场抛出，各一条；外加主目录和 `result.tmp` 里什么都没多。`prompts.test.ts` 里用真实的交互库再证一遍输入不回显。
 
 - `mixed.test.ts`：三种类型同表（段的先后、两种类型的状态落在各自宿主那一栏、原因比状态栏宽时各行的说明仍从同一列起、读不到配置的提示只在列表里有 MCP 时出现）；一次勾 skill、MCP、外部项目（汇总的小表、命令只有 MCP 的、skill 的各行排在 MCP 之前、取消什么都不做、返回修改勾选都在、三种失败互不影响、向 GitHub 查询失败时 MCP 照常装）；汇总里的提醒（先后、几行挨着、没填 key 的不算进 N、只剩 skill 时没有命令分区、全被跳过时直接是结果再是外部项目）。
+
+- 装到项目的在 `cli/test/scope.test.ts` 的「把 MCP 装到项目」几组（列表上方两行「注意」上下的空行在 `spacing.test.ts`）：Claude Code 的添加（两种连接方式、带 key）与移除命令是**字面值**且 `cwd` 是 `result.project`；汇总里展示的就是那几条；状态按范围读（项目里配过而全局没有、反过来、`.mcp.json` 写坏、用户级配置写坏不提）；装完再进列表看到新状态（`commandResult` 照真的来：往 `cwd` 的 `.mcp.json` 里写）；明文写入的提醒在「开始安装吗」之前、有变量名和文件名而没有值，可选的 key 留空时没有，选全局时没有；要批准的提醒；Codex 那一栏的「不支持」、列表上方的说明（列表里的 MCP 本来就都不支持它时没有）、只装进 Claude Code、没有登录的提醒；只有 Codex 时不可选与原因；`hosts` 只含一个宿主的条目在两种原因之间怎么选；英文界面与 79 列；真实的画面里在不可选的行上按空格勾不上。
 
 测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，**它自己抛出**表示执行器当场抛出、连承诺都没返回，什么都不返回就是成功；命令照样进 `result.commands`（里面是代入了值的字符串参数）。`secret(值)`、`blank()` 回答隐藏输入。
 
@@ -315,9 +361,10 @@ configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'),
 
 ```ts
 // 先算出要执行的每一步，展示的和执行的是同一份
-const steps = mcpSteps(mcp, host, status);
+const config = mcpConfigOf(host, scope); // 状态探测看的也是这一份
+const steps = mcpSteps(mcp, config, status, variables);
 ui.commandList(jobs.flatMap((job) => job.steps.map((step) => step.command)));
-await installMcp(steps, session.runCommand);
+await installMcp(steps, keys, session.runCommand, config.cwd);
 ```
 
 ```ts
@@ -387,6 +434,22 @@ detail: errorCode(error), // string | undefined
 3. **MCP 一段按「带推荐的在前、其余按名字」排**，不照目录文件——规格对组件各段的要求。连带着问 key 的先后、命令的编号、结果的行序都变了（原先照目录文件）。
 
 **没有经维护者确认**，同时记在界面设计的「实现时定下、维护者还没有看过的画法」里。
+
+---
+
+## Design Decision: Codex 的 MCP 不能装到项目
+
+**Context**：规格要两个宿主的 MCP 都能装到项目，并把 Codex 的写法留给工单 11 的第一步去验证：它的添加命令没有范围选项，官方只说项目目录里可以放一份 `.codex/config.toml`、只对受信任的项目生效。规格同时定了退路：验证不通过就显示不支持，不拿没验证过的写法去改用户的文件。
+
+**Decision**：验证不通过，走退路——Codex 没有 `projectMcp`，项目范围下它那一栏是「不支持」。实测（2026-10-11，codex 0.162.0）：`codex mcp add` / `remove` 只管用户级配置，移除不了项目里的条目。唯一能让它自己的命令写进项目的绕法是执行时把 `CODEX_HOME` 指到 `<项目>/.codex`，试下来有四处不可靠：目录不存在时命令失败，要安装器先替用户建目录；每跑一次在那里留下一个 `tmp/arg0/` 空目录；重写文件时丢掉已有表头行尾的注释；汇总里展示的命令用户照着跑写进的是全局配置。还有一处没有试但躲不开：换了主目录之后添加远程地址时的 OAuth 凭据可能记到项目目录里。
+
+**安装器自己往 `<项目>/.codex/config.toml` 里写一张表这条路没有试**：它不是技术上走不通（手写的那份 Codex 在受信任的项目里读得到，实测过），而是两条既有的决定排除了它——本文件 Wrong 例「直接改宿主的配置文件：格式是它的私事，还会和它自己的写入撞车」，和规格 Further Notes 第 11 条「验证不通过时显示为不支持，而不是硬写它的配置文件」。所以「验证不通过」的确切意思是：**用宿主自己的命令**没有可靠的写法。要不要为 Codex 破这个例，是维护者的决定。
+
+**代价**：用户故事「Codex 的用户把 MCP 装到项目」没有做到；Codex 用户要项目级的 MCP 得自己写 `.codex/config.toml`。画面上如实写了不支持和原因。
+
+**要改回去**：`codex mcp add` 有了范围选项，或维护者接受上面那个绕法时，给 `hosts.ts` 的 Codex 适配补一个 `projectMcp`，并补上「Codex 只对受信任的项目读这份配置」的提醒。其余的（状态、命令、提醒的位置）已经按「每个宿主一份项目配置」写好，不用动。
+
+**没有经维护者确认**：走退路是规格事先定的，但「那个绕法算不算可靠」是实现者判断的。记在任务的 `prd.md` Further Notes 和 `research/project-mcp-trial-record.md`。
 
 ---
 

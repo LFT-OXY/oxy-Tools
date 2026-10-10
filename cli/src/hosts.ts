@@ -1,4 +1,5 @@
-// 宿主适配：宿主在不在、skill 装到哪个目录、通用的 skill 安装程序怎么称呼它、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置。
+// 宿主适配：宿主在不在、skill 装到哪个目录、通用的 skill 安装程序怎么称呼它、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置；
+// 后两问全局和项目范围各答一遍。
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
@@ -19,7 +20,30 @@ export interface Command {
   args: (string | KeyArgument)[];
 }
 
-export interface Host {
+/** 一个宿主在某个安装范围下的 MCP 配置：去哪看已经配了哪些、用哪条命令添加和移除 */
+export interface McpConfig {
+  /** 这份配置里已有的 MCP 的名字，只读地看一眼配置文件；读不了或格式不认识时是 undefined */
+  configuredMcps(): ReadonlySet<string> | undefined;
+  /** 把一个 MCP 写进这份配置的命令：宿主自己的添加命令。variables 是要带上的环境变量的名字 */
+  addMcp(mcp: Mcp, variables: readonly string[]): Command;
+  /** 从这份配置里移除一个 MCP 的命令 */
+  removeMcp(name: string): Command;
+  /** 添加和移除命令要在哪个目录下运行；没有就是在哪都一样 */
+  cwd?: string;
+}
+
+/** 项目范围的 MCP 配置：写在项目目录里，只对这个项目生效 */
+export interface ProjectMcpConfig extends McpConfig {
+  /** 配置文件，相对项目目录的写法：带 key 的 MCP 的值会以明文写进它 */
+  file: string;
+  /** 宿主把配置写进它的运行目录，所以命令要在项目目录下运行 */
+  cwd: string;
+  /** 有它表示：写进去的 MCP 要用户在宿主里批准之后才启用。值是启动宿主的命令，启动时它会问 */
+  approval?: string;
+}
+
+/** 宿主自己的那三问（configuredMcps、addMcp、removeMcp）答的是用户级配置，装在那里对所有项目生效 */
+export interface Host extends McpConfig {
   /** 目录里指代这个宿主的名字（MCP 条目的 hosts） */
   id: string;
   /** 界面上显示的名字 */
@@ -34,12 +58,8 @@ export interface Host {
    * env 是要另外带上的环境变量——带上了它才把全局的 skill 装到 skillsDir
    */
   skillsCli: { agent: string; env: Readonly<Record<string, string>> };
-  /** 用户级配置里已有的 MCP 的名字，只读地看一眼配置文件；读不了或格式不认识时是 undefined */
-  configuredMcps(): ReadonlySet<string> | undefined;
-  /** 把一个 MCP 写进用户级配置的命令：宿主自己的添加命令。variables 是要带上的环境变量的名字 */
-  addMcp(mcp: Mcp, variables: readonly string[]): Command;
-  /** 从用户级配置里移除一个 MCP 的命令 */
-  removeMcp(name: string): Command;
+  /** 项目范围的 MCP 配置；没有它表示这个宿主的 MCP 只能装到全局 */
+  projectMcp?: ProjectMcpConfig;
   /**
    * 有它表示：这个宿主的添加命令遇到远程地址的 MCP，可能当场打开浏览器登录并等登录完成才结束。
    * 值是事后补登录的命令，后面跟 MCP 的名字
@@ -53,6 +73,8 @@ type HostAdapter = (env: Environment, homeDir: string, projectDir: string) => Ho
 /**
  * Claude Code：以 claude 命令是否可用判断在不在。用户级的 MCP 记在配置目录的 .claude.json 顶层的 mcpServers 里，
  * 配置目录缺省是主目录，可由 CLAUDE_CONFIG_DIR 改到别处；添加和移除都指定用户级范围。
+ * 项目范围的记在项目目录的 .mcp.json 里：添加和移除指定项目范围，它就把配置写进运行目录的这个文件；
+ * 写进去的要用户在这个目录下启动它并批准之后才启用。
  * 本地进程的启动命令在各系统上原样交给它：原生 Windows 上也不包 cmd /c（2.1.119 起它自己起得来 npx 这类 .cmd）。
  */
 const claudeCode: HostAdapter = (env, homeDir, projectDir) => ({
@@ -64,26 +86,44 @@ const claudeCode: HostAdapter = (env, homeDir, projectDir) => ({
   // skills CLI 认 CLAUDE_CONFIG_DIR（装到它下面的 skills），本安装器的 skill 目录不认：清空它，两边才是同一个目录
   skillsCli: { agent: 'claude-code', env: { CLAUDE_CONFIG_DIR: '' } },
   configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
-  // 环境变量要跟在名字后面：-e 能连收几个值，放在名字前面会把名字也收进去
-  addMcp: ({ name, server }, variables) => ({
-    command: 'claude',
-    args: [
-      'mcp',
-      'add',
-      '--scope',
-      'user',
-      ...('url' in server
-        ? ['--transport', 'http', name, server.url]
-        : [name, ...variables.flatMap((variable) => ['-e', { variable }]), '--', server.command, ...server.args]),
-    ],
-  }),
-  removeMcp: (name) => ({ command: 'claude', args: ['mcp', 'remove', '--scope', 'user', name] }),
+  ...claudeMcpCommands('user'),
+  projectMcp: {
+    file: CLAUDE_PROJECT_MCP_FILE,
+    cwd: projectDir,
+    approval: 'claude',
+    configuredMcps: () => namesIn(join(projectDir, CLAUDE_PROJECT_MCP_FILE), JSON.parse, 'mcpServers'),
+    ...claudeMcpCommands('project'),
+  },
 });
+
+// Claude Code 项目范围的 MCP 配置文件：在项目目录的最上层
+const CLAUDE_PROJECT_MCP_FILE = '.mcp.json';
+
+// Claude Code 在它自己的 claudeScope 这个范围下添加和移除 MCP 的命令：两个范围只差这一个词
+function claudeMcpCommands(claudeScope: 'user' | 'project'): Pick<McpConfig, 'addMcp' | 'removeMcp'> {
+  return {
+    // 环境变量要跟在名字后面：-e 能连收几个值，放在名字前面会把名字也收进去
+    addMcp: ({ name, server }, variables) => ({
+      command: 'claude',
+      args: [
+        'mcp',
+        'add',
+        '--scope',
+        claudeScope,
+        ...('url' in server
+          ? ['--transport', 'http', name, server.url]
+          : [name, ...variables.flatMap((variable) => ['-e', { variable }]), '--', server.command, ...server.args]),
+      ],
+    }),
+    removeMcp: (name) => ({ command: 'claude', args: ['mcp', 'remove', '--scope', claudeScope, name] }),
+  };
+}
 
 /**
  * Codex：以 codex 命令是否可用判断在不在。它自己的 .codex/skills 已被标为废弃，skill 装到 .agents/skills。
  * 用户级的 MCP 记在 config.toml 的 mcp_servers 表里，这个文件缺省在主目录的 .codex 下，可由 CODEX_HOME 改到别处；
- * 它的添加和移除命令只管用户级配置，没有范围可选。远程地址的服务器支持 OAuth 时，添加命令写完配置会接着走浏览器登录。
+ * 它的添加和移除命令只管用户级配置，没有范围可选：项目目录里那份 .codex/config.toml 它读（只对受信任的项目），
+ * 却没有往里写的命令，所以它的 MCP 只能装到全局。远程地址的服务器支持 OAuth 时，添加命令写完配置会接着走浏览器登录。
  */
 const codex: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'codex',
@@ -107,6 +147,11 @@ const codex: HostAdapter = (env, homeDir, projectDir) => ({
   removeMcp: (name) => ({ command: 'codex', args: ['mcp', 'remove', name] }),
   remoteMcpLogin: { command: 'codex', args: ['mcp', 'login'] },
 });
+
+/** host 在 scope 这个安装范围下的 MCP 配置：全局是它的用户级配置，项目是它项目范围的那一份——没有就是装不到项目 */
+export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined {
+  return scope === 'project' ? host.projectMcp : host;
+}
 
 // 顺序就是界面上的顺序；加一个宿主就在这里追加一份适配
 const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex];

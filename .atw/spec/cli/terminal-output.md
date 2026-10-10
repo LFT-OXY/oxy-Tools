@@ -217,7 +217,7 @@ export interface ConfirmQuestion {
 | 放不下时 | 这一行（光标的两格、名字一栏、说明、目录）超过 79 列就**从前面截**目录，以省略号开头、留住末尾的几级——认得出是哪个目录靠的是最后几级，`truncate` 截的是末尾，这里不用它。目录以外的部分不截 |
 | 不显示颜色、没有 Unicode | 只按现有的规则退：目录不再暗淡；省略号是 `symbols.ellipsis`（`...`） |
 
-汇总和覆盖前另问里的位置不归这里管：流程按安装范围把它写好再交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。呈现层不知道安装范围，只有 `mixedPicker` 收一个 `scope`：选了项目时 MCP 的行不可选，原因是 `mcpGlobalOnly`（「暂时只能装到全局」），写在状态的位置；一个宿主都没检测到的原因排在它前面（工单 11 让 MCP 能装到项目时去掉）。
+汇总和覆盖前另问里的位置不归这里管：流程按安装范围把它写好再交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。**呈现层不知道安装范围**：MCP 在项目范围下的不同都由流程折进交给它的东西里——状态里的 `global-only`（这个宿主的 MCP 只能装到全局；栏里和 `unsupported` 写同一个词「不支持」）、`mcpColumnNotices` 的 `globalOnly`（列表上方的那一行）、`summaryNotices` 的 `plaintextKeys` 和 `approvals`（汇总下方的两行）。一行 MCP 各栏全是 `unsupported` / `global-only` 时不可选：有 `global-only` 的原因是 `mcpGlobalOnly`（「只能装到全局」），否则是「需要别的 AI Agent」；一个宿主都没检测到的原因排在它们前面。
 
 ---
 
@@ -265,7 +265,7 @@ const inline = tables.every((table) => notesOf(table).every((note) => startOf(ta
 | 参数里有 shell 会另作解释的字符（网址里的 `&`、`?`） | 展示时给这个参数加单引号（`commandLine`），照着敲也是同一条命令；执行时不经过 shell，参数原样传 |
 | 工具的安装命令（字符串） | **原样写出，不加引号、不改一个字**，不经 `commandLine`：它本来就是给 shell 的一整行，展示的和交给 shell 的是同一个字符串。前面不写工具的名字 |
 | 命令里有 key（`KeyArgument`） | 写成 `变量名=<变量名>`，尖括号这一段是黄色粗体，不加引号；真实的值不到呈现层来。`commandLine(command, placeholder)` 的第二个参数给占位符上样式 |
-| 要提醒的事 | `ui.summaryNotices(notices)`：命令之后（没有命令时是小表之后）空一行，每件事一行「注意」键值，**几行挨着**，最后空一行；一件都没有时什么都不打。先后是：覆盖即整目录替换（有 skill 的覆盖项才有）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、必填的 key 没填而不安装的 MCP（一个 MCP 一行）、宿主会当场打开浏览器登录（一个宿主一行）。流程只说有哪几件事，句子和先后由呈现层定 |
+| 要提醒的事 | `ui.summaryNotices(notices)`：命令之后（没有命令时是小表之后）空一行，每件事一行「注意」键值，**几行挨着**，最后空一行；一件都没有时什么都不打。先后是：覆盖即整目录替换（有覆盖项才有）、第三方 Skill 装的是作者当时的最新版（这一轮有第三方 Skill 才有）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、装到项目的 MCP 带着的 key 会以明文写进哪个文件（`plaintextKeys`：只有变量名和文件名）、装到项目的 MCP 写进了哪个文件且要在宿主里批准才启用（`approvals`，一个宿主一行）、必填的 key 没填而不安装的 MCP（一个 MCP 一行）、宿主会当场打开浏览器登录（一个宿主一行）。流程只说有哪几件事，句子和先后由呈现层定 |
 
 ```ts
 // 错：命令交给会截断的栏，用户确认的就不是完整的命令
@@ -400,7 +400,7 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 
 | 帮手 | 给什么 | 用在 |
 |------|--------|------|
-| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、混合列表上方读不到宿主配置的那一行「注意」 |
+| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、混合列表上方关于 MCP 那几栏的「注意」（`mcpColumnNotices`：只能装到全局、读不到配置，两行在同一次 `print` 里所以挨着） |
 | `heading(title, format?)` | 一个分区的开头：`gapAbove()`、标题、一行空行 | 每一个分区。出错说明用 `errors.heading`；帮助的三个分区在同一次 `print` 里，空行是直接写的 |
 | `gap()` | 上面不是空行时当场打一行空行 | 回到上一轮（`nextRound`）；转动的加载提示之前（`loading`）——那一行擦掉之后，接着打的本机信息或分区就落在它的位置上，空行得先给，不然读完的一刻画面会往下跳一行 |
 
@@ -514,5 +514,5 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（这四条样例都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面，`toMcps` 下移一行进去；`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
-- **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
+- **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。`...PROJECT` 的项目目录里还有一份配过 `markitdown` 的 `.mcp.json`（全局配过的是 `excel`），MCP 的状态按范围读才看得出来；`toProjectMcpSummary` 勾上 `markitdown` 和带 key 的 `mistral-ocr` 停在汇总上（明文和批准的两行提醒），`intoProjectCodexOnly` 在宿主选择上去掉 Claude Code 再进项目范围的列表（MCP 不可选）。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问和安装范围提问的做法：假键盘等那一问最后一个选项的名字画出来才按回车。

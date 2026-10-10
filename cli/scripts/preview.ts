@@ -470,19 +470,25 @@ const installThirdParty = [...toThirdPartySummary, KEY.enter, KEY.enter];
 // 装到项目：两个宿主都选之后停在安装范围的提问上（场景要给 answersScope）；下移到「项目」再回车就进了列表
 const toScope = toMixedDocuments(true);
 const intoProject = [...toScope, KEY.down, KEY.enter];
-// 项目里 explanation 是本工具装的旧版，pr 是手动放的，paper-analyzer 在 Claude Code 下已有同名目录；全局照 FIVE_KINDS
+// 项目里 explanation 是本工具装的旧版，pr 是手动放的，paper-analyzer 在 Claude Code 下已有同名目录，.mcp.json 里配过
+// markitdown；全局照 FIVE_KINDS（那里配过的是 excel）
 const PROJECT: Pick<Scene, 'project' | 'answersScope'> = {
   answersScope: true,
   project: {
     ...installedSkill(CLAUDE_SKILLS, 'explanation', '0.9.0'),
     [`${CODEX_SKILLS}/pr/SKILL.md`]: '# 自己写的 pr\n',
     [`${CLAUDE_SKILLS}/paper-analyzer/SKILL.md`]: '# paper-analyzer\n',
+    '.mcp.json': JSON.stringify({ mcpServers: { markitdown: { type: 'stdio', command: 'uvx', args: ['markitdown-mcp'] } } }),
   },
 };
-// 项目范围下 MCP 的三行不可选：勾上 explanation、guizang-ppt-skill、paper-craft-skills 和 docling，光标停在 docling 上
+// 勾上 explanation、guizang-ppt-skill、paper-craft-skills 和 docling，光标停在 docling 上；这一轮不勾 MCP
 const pickIntoProject = [...intoProject, KEY.down, KEY.space, ...down(3), KEY.space, KEY.down, KEY.space, ...down(4), KEY.space];
 // 确认列表，在清单里勾上 paper-analyzer 和 paper-comic，再确认就到汇总
 const toProjectSummary = [...pickIntoProject, KEY.enter, KEY.space, KEY.down, KEY.space, KEY.enter];
+// 装到项目的 MCP：勾上 markitdown（项目里已配置）和 mistral-ocr（key 必填），填好 key，停在汇总确认上
+const toProjectMcpSummary = [...intoProject, ...down(6), KEY.space, ...down(2), KEY.space, KEY.enter, PASTED_KEY, KEY.enter];
+// 进「文档处理」后在宿主选择上去掉 Claude Code 的勾，只留 Codex，再选「项目」进列表，光标移到第一个 MCP 上
+const intoProjectCodexOnly = [...down(5), KEY.enter, KEY.space, KEY.enter, KEY.down, KEY.enter, ...down(6)];
 // guizang-ppt-skill 装进 Claude Code 的那条命令以 1 退出
 const GUIZANG_FAILS = { thirdPartyFails: ['guizang-ppt-skill@claude-code'] };
 
@@ -580,9 +586,13 @@ const scenes: Scene[] = [
   { title: '选择安装范围 · 提问中，光标在全局', note: '选完宿主之后问；两项各带一句说明，「项目」后面暗淡地写出当前目录，只是告知。光标起始在全局，按一下回车就过', ...FIVE_KINDS, ...PROJECT, keys: toScope },
   { title: '选择安装范围 · 只检测到一个宿主', note: '不问宿主，直接问装到哪里', ...FIVE_KINDS, onPath: ['claude', 'pandoc'], ...PROJECT, keys: toMixedDocuments() },
   { title: '选择安装范围 · 已回答，收成一行', note: '下移到「项目」再回车：收成一行，接着是列表', ...FIVE_KINDS, ...PROJECT, keys: intoProject },
-  { title: '混合列表 · 装到项目 · 两个宿主', note: 'Skill 和第三方 Skill 的状态看的是项目目录下各宿主的 skill 目录，全局装过的不算；MCP 这时还装不了，行不可选，状态的位置写原因；工具不受安装范围影响', ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
+  { title: '混合列表 · 装到项目 · 两个宿主', note: 'Skill 和第三方 Skill 的状态看的是项目目录下各宿主的 skill 目录，全局装过的不算；MCP 在 Claude Code 那一栏看的是项目里的 .mcp.json（全局配过的 excel 在这里是未配置），Codex 的 MCP 装不到项目：它那一栏都写不支持，列表上方说明原因；工具不受安装范围影响', ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
+  { title: '混合列表 · 装到项目 · 只选了 Codex', note: '去掉 Claude Code 的勾：所选的宿主里没有能把 MCP 装到项目的，MCP 的行不可选。原因写「只能装到全局」——换成全局就装得了；excel 本来就只支持 Claude Code，原因仍是「需要别的 AI Agent」', ...FIVE_KINDS, ...PROJECT, keys: intoProjectCodexOnly },
+  { title: '混合列表 · 装到项目 · 只选了 Codex · 在不可选的 MCP 上按空格', note: '勾不上：列表下方多一行说明', ...FIVE_KINDS, ...PROJECT, keys: [...intoProjectCodexOnly, KEY.space] },
   { title: '汇总确认 · 装到项目', note: '位置一栏是相对当前目录的路径，不是主目录下的路径；第三方 Skill 的命令不带 --global。工具照原样', ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
   { title: '确认覆盖与结果 · 装到项目', note: '另问的是项目里的那个路径，直接回车就是不覆盖；装完的结果照常', ...FIVE_KINDS, ...PROJECT, keys: [...toProjectSummary, KEY.enter, KEY.enter] },
+  { title: '汇总确认 · 装到项目 · 带 key 的 MCP', note: '只装进 Claude Code：命令带它自带的项目范围，汇总和命令里没有 Codex。项目里已配置的先移除再添加。提醒在提问的上方：key 会以明文写进 .mcp.json（写的是变量名和文件名，没有值）；装进去的要在这个目录下启动 claude 批准之后才启用', ...FIVE_KINDS, ...PROJECT, keys: toProjectMcpSummary },
+  { title: '结果 · 装到项目的 MCP', note: '每个 MCP 只有 Claude Code 一行；结果里同样没有 key 的值', ...FIVE_KINDS, ...PROJECT, keys: [...toProjectMcpSummary, KEY.enter] },
   { title: '选择宿主 · 只有 MCP 的用途', note: '列表里有组件就问；名字后面不写目录', catalog: withMcps, onPath: BOTH_HOSTS, keys: toMcps },
   { title: '混合列表 · MCP · 配置文件读不了', note: 'Codex 的配置读不出来：列表上方说明，它那一栏都是「未知」，没有报错；只有一个宿主支持的条目仍可选', ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '汇总确认 · 一个 MCP 装进两个宿主', note: '两条完整的命令都列出来，确认后才执行', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts(pickOneMcp) },
@@ -661,6 +671,8 @@ const scenes: Scene[] = [
   { title: '英文界面 · 选择安装范围', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toScope },
   { title: '英文界面 · 装到项目的列表', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
   { title: '英文界面 · 装到项目的汇总', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
+  { title: '英文界面 · 装到项目 · 只选了 Codex', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: intoProjectCodexOnly },
+  { title: '英文界面 · 装到项目 · 带 key 的 MCP 的汇总', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectMcpSummary },
   { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
   { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
@@ -692,6 +704,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 出错', argv: ['--lang', 'en'], catalog: offline },
   { title: '英文界面 · 帮助', note: 'npx oxy-tools --help --lang en', argv: ['--help', '--lang', 'en'] },
   { title: '不显示颜色 · 选择安装范围', note: '设置了 NO_COLOR：光标靠 ▸ 认，当前目录不再暗淡', env: { NO_COLOR: '1' }, ...FIVE_KINDS, ...PROJECT, keys: toScope },
+  { title: '不显示颜色 · 装到项目 · 带 key 的 MCP 的汇总', note: '设置了 NO_COLOR：提醒靠行首的「注意」认，占位符靠尖括号认', env: { NO_COLOR: '1' }, ...FIVE_KINDS, ...PROJECT, keys: toProjectMcpSummary },
   { title: '不显示颜色 · 语言提问', note: '设置了 NO_COLOR：光标靠 ▸ 认，不靠颜色', env: { NO_COLOR: '1' }, answersLanguage: true },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },

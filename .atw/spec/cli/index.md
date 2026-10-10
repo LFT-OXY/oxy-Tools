@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层写的都是已经落地的做法（只有一处例外：[界面设计](./ui-design.md) 里按用途进入的几节是已定下、还在逐张实现的画法，那份文件的开头有说明）：启动、读目录、主菜单、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill 和第三方 Skill 可以装到项目，MCP 还只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
+本层写的都是已经落地的做法（只有一处例外：[界面设计](./ui-design.md) 里按用途进入的几节是已定下、还在逐张实现的画法，那份文件的开头有说明）：启动、读目录、主菜单、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
 
 ```
 cli/
@@ -19,13 +19,13 @@ cli/
 │   ├── bin.ts            # 把真实依赖接到入口上，别的什么都不做
 │   ├── installer.ts      # 入口 runInstaller，也是测试的主接缝
 │   ├── catalog.ts        # 目录：来源（含把 skill 的文件取下来）、读取、校验
-│   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录（全局的和项目范围的各一个）、怎么拼添加和移除 MCP 的命令、去哪看 MCP 配没配过
+│   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录（全局的和项目范围的各一个）、怎么拼添加和移除 MCP 的命令、去哪看 MCP 配没配过（用户级的一份，项目范围的可选的一份）
 │   ├── install-skill.ts  # 安装 skill：只认“条目 + 目标目录”
 │   ├── skill-status.ts   # 状态探测：一个 skill 在某个 skill 目录下的现状，只看目标目录
 │   ├── install-third-party.ts  # 安装第三方 Skill：拼出 skills CLI 的那条命令，执行后看目标位置有没有 SKILL.md
 │   ├── third-party-status.ts   # 状态探测：第三方 Skill 的各个 skill 在某个宿主下装没装，只看目标位置有没有东西
 │   ├── install-mcp.ts    # 安装 MCP：要执行哪几条宿主的命令，依次执行
-│   ├── mcp-status.ts     # 状态探测：一个 MCP 在某个宿主下的现状，只读它的用户级配置
+│   ├── mcp-status.ts     # 状态探测：一个 MCP 在某个宿主下的现状，只读所选安装范围下的那份配置
 │   ├── install-tool.ts   # 安装工具：按系统选命令，执行后用条目声明的检查方式复核
 │   ├── tool-status.ts    # 状态探测：一个工具装没装，只照检查方式看一眼
 │   ├── run-command.ts    # 外部命令执行器的正式实现：不经 shell 的，和整行交给 shell 的
@@ -150,6 +150,7 @@ cli/
 | 断网 | 伪终端里 `sandbox-exec -p '(version 1)(allow default)(deny network*)' node dist/bin.js`（macOS），走的是缺省的 GitHub 目录来源 |
 | 第三方 Skill | 同下一行的做法，另把 `XDG_CONFIG_HOME`、`XDG_STATE_HOME`、`XDG_DATA_HOME`、`XDG_CACHE_HOME`、`npm_config_cache` 也指到临时目录并断言（skills CLI 往状态目录里写一个 `.skill-lock.json`）；`CLAUDE_CONFIG_DIR` 故意指到不是 `<HOME>/.claude` 的目录。样例目录里登记一条真实的小仓库。完了查两个宿主的 skill 目录下各有 `SKILL.md` 且是真实目录、`CLAUDE_CONFIG_DIR` 指的目录是空的、录下的原始输出里搜不到 skills CLI 的框线和字符画、真实主目录的 skill 目录前后没变。Windows 和 Linux 上至今没有跑过。上一次的记录和驱动脚本的写法在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md` |
 | 第三方 Skill 装到项目 | 环境变量同上一行。在一个临时的项目目录里装（安装范围选「项目」，或照 `research/project-scope-trial-record.md` 的做法直接用安装器拼出来的命令和真实的执行器）。完了查项目目录下 `.claude/skills/<名字>/SKILL.md`、`.agents/skills/<名字>/SKILL.md` 都在且是真实目录，临时主目录是空的，真实主目录的 skill 目录前后没变。skills CLI 另在项目目录里写一个 `skills-lock.json`，安装器不管它。从另一个目录起一遍，确认落点跟的是执行器的 `cwd`。Windows 和 Linux 上至今没有跑过 |
+| MCP 装到项目 | 环境变量同下一行。照任务 `10-10-catalog-purpose-categories` 的 `research/project-mcp-trial-record.md` 末尾的做法：从 `dist/` 里取 `detectHosts`、`mcpStatuses`、`mcpSteps`、`installMcp` 和真实的执行器，**从项目目录以外的目录起脚本**，装一个本地进程的、一个带 key 的、一个远程地址的探针。完了查 `<项目目录>/.mcp.json` 里三条都在、带 key 的值逐字相同、装之后状态是已配置，临时的用户级配置和真实配置里都搜不到探针的名字，起脚本的目录和仓库里没有多出 `.mcp.json`；在项目目录里 `claude mcp get <名字>` 应当是 `Pending approval`。顺带确认 `codex mcp add --help` 里仍然没有范围选项——有了的话 Codex 不支持装到项目的结论要重做。Windows 和 Linux 上至今没有跑过 |
 | skill、MCP、工具的整条流程 | 伪终端里跑 `node dist/bin.js`，事先 `export HOME=<临时目录> CLAUDE_CONFIG_DIR=<临时目录> CODEX_HOME=<临时目录> OXY_TOOLS_CATALOG=<样例目录>`，脚本开头断言这几个都指向临时目录。执行的是真实的 `claude`、`codex`，写的是临时配置；完了查临时配置里有那几条、终端的原始输出里搜不到填的 key、真实配置里没有样例的名字 |
 | 不显示颜色 | 同上再加 `NO_COLOR=1`：原始输出里一个样式码（`ESC[…m`）都没有 |
 | 深色与浅色的真实终端 | 在终端程序里各用一套深色、一套浅色的配色跑同一条流程，看每个画面；观感的结论记进 [界面设计](./ui-design.md) |

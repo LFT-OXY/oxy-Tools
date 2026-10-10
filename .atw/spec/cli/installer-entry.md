@@ -46,7 +46,7 @@ export interface InstallerOptions {
 ```ts
 export type CommandOptions =
   | { shell: true }                                             // command 是一整行，args 是空的
-  | { shell?: never; env: Readonly<Record<string, string>>; cwd?: string };
+  | { shell?: never; env?: Readonly<Record<string, string>>; cwd?: string };
   // 不经 shell：env 是另带的环境变量，盖在继承来的环境之上；cwd 是在哪个目录下运行，不给就是进程自己的当前目录
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 ```
@@ -91,7 +91,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 - 进去之后的顺序：选宿主 → 选安装范围 → 混合列表 → 含多个 skill 的第三方 Skill 各自的清单 → 逐个 MCP 问 key → 汇总与将执行的命令 → 确认 → 覆盖前的单独询问（先本仓库的 skill，再第三方 Skill） → 安装 → 结果 → 外部项目的说明与链接 → 回主菜单。
 - **选宿主只在检测到不止一个、且这张列表里有 skill、第三方 Skill 或 MCP 时问**，一轮只问一次；只检测到一个就直接用它。列表里只有工具和外部项目时不问：没有要装进宿主的东西（工具不装进宿主，它的状态和可不可选都与选了哪些宿主无关）。这一问同时管 skill 和 MCP。
 - **选安装范围紧跟在选宿主之后**（任务 `10-10-catalog-purpose-categories` 工单 10 起）：单选，全局在前、项目在后，光标起始在全局，按回车就过。**这一轮有要装进的宿主才问**——一个宿主都没检测到、或列表里只有工具和外部项目时不问（工具没有安装范围）。**每次进入列表都问，不记上一次的选择**：一次运行里再进一个用途、或从列表退回宿主选择再进来，光标都回到全局。界面上不为项目的路径另设确认。
-- 「项目」就是 `options.projectDir`。选了它：本仓库的 skill 和第三方 Skill 落在项目目录下各宿主项目范围的 skill 目录里（`Host.projectSkillsDir`），状态、覆盖前的另问、复核都按那个目录来，主目录下的全局 skill 目录不读也不写；汇总和另问里的位置写成相对项目目录的路径（`.claude/skills/alpha`），全局的仍以 `~` 开头。工具不受影响。**MCP 这时还装不了**：它的行不可选，状态的位置写「暂时只能装到全局」，也不去读用户级配置（工单 11 补上）。
+- 「项目」就是 `options.projectDir`。选了它：本仓库的 skill 和第三方 Skill 落在项目目录下各宿主项目范围的 skill 目录里（`Host.projectSkillsDir`），状态、覆盖前的另问、复核都按那个目录来，主目录下的全局 skill 目录不读也不写；汇总和另问里的位置写成相对项目目录的路径（`.claude/skills/alpha`），全局的仍以 `~` 开头。工具不受影响。**MCP 按宿主分**（工单 11 起）：有项目范围配置的宿主（Claude Code）装进项目目录里的那一份，状态也从那一份读，用户级配置不读也不写；没有的（Codex）在它那一栏写「不支持」，不产生安装项。写法、提醒和理由见 [安装 MCP](./mcp-install.md) 的「装到项目」。
 - 混合列表上一个都不勾就确认是回到上一步：问过宿主就回去重问（之前勾的还在），接着重问安装范围；没问过宿主就是主菜单。汇总里的「返回修改」回混合列表，勾选还在（四种类型的都在），不重问宿主和安装范围；填过的 key 不再问。
 - 列表里组件在上、外部项目在下；组件按类型分段，先 skill，再第三方 Skill，再 MCP，再工具。skill 一段和外部项目一段按名字排；第三方 Skill、MCP、工具三段带推荐的在前、其余按名字（「推荐」那张列表里每一条都是推荐的，就只按名字）。都不照目录文件里的先后。
 - **汇总是一个分区「将安装 N 项」**，N 是会装的组件条目数（外部项目不算，必填的 key 没填的 MCP 不算，清单里一个都没勾的第三方 Skill 也不算）；里面按类型分成小表。这一轮有第三方 Skill、MCP 或工具要装时接着是「将执行 N 条命令」，第三方 Skill 的在前、MCP 的其次、工具的在后。确认的提问统一是「开始安装吗」：开始安装、返回修改、取消。
@@ -248,7 +248,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 | 断言什么 | 在哪 | 怎么断言 |
 |----------|------|----------|
-| 安装范围：问不问、两项与顺序、光标起始、每次都问、返回时回到哪；装到项目时 skill 和第三方 Skill 落在哪、状态和另问按哪个目录、汇总里的位置、工具不受影响、MCP 不可选 | `scope.test.ts`；栏间隔在 `columns.test.ts` 的「栏间隔：选择安装范围」 | 给 `answersScope: true` 自己应答（`choose('项目')`、`accept()`）。落在哪看 `result.project` 和 `result.home` 两个目录里有什么——「主目录没有变化」把每个文件的内容都比一遍，不只比文件清单；命令看 `result.commands` 里有没有 `--global` 和 `cwd`。假的 skills CLI 要照真的来：带全局选项的往 `home` 写，不带的往 `cwd` 写，这样「装到了全局而项目里没有」才判得出失败。提问的行只卡文字和先后，不写死缩进；真实的画面（光标在哪、收成一行、在不可选的 MCP 上按空格勾不上）在同一个文件末尾用 `keys` |
+| 安装范围：问不问、两项与顺序、光标起始、每次都问、返回时回到哪；装到项目时 skill 和第三方 Skill 落在哪、状态和另问按哪个目录、汇总里的位置、工具不受影响；MCP 装到项目（Claude Code 的命令与运行目录、状态按范围读、明文与批准的提醒、Codex 不支持） | `scope.test.ts`；栏间隔在 `columns.test.ts` 的「栏间隔：选择安装范围」 | 给 `answersScope: true` 自己应答（`choose('项目')`、`accept()`）。落在哪看 `result.project` 和 `result.home` 两个目录里有什么——「主目录没有变化」把每个文件的内容都比一遍，不只比文件清单；命令看 `result.commands` 里有没有 `--global` 和 `cwd`。假的 skills CLI 要照真的来：带全局选项的往 `home` 写，不带的往 `cwd` 写，这样「装到了全局而项目里没有」才判得出失败。提问的行只卡文字和先后，不写死缩进；真实的画面（光标在哪、收成一行、在不可选的 MCP 上按空格勾不上）在同一个文件末尾用 `keys` |
 | 上不上色 | `startup.test.ts` 的「颜色」一组、`prompts.test.ts` | 原始输出（`result.raw`）里有没有样式码；`NO_COLOR` 下画面文字不变 |
 | 大标志的三档颜色 | `startup.test.ts` 的「大标志的颜色」一组 | 从原始输出里读出每个方块前面生效的前景色码，按它在字形里的列号归拢（`logoColors`）：渐变那一档卡两端、正中和两个四分点的色值，且同一列同色；洋红那一档每个方块都是 `35`、没有 `38;2;`；`NO_COLOR` 与 `COLORTERM` 同时设置时一个样式码都没有。期望的色值是照色标手算的，不从实现里取 |
 | 焦点符号是洋红、输出里没有青色 | `prompts.test.ts` 的「焦点色」一组 | 用真实的交互库（`keys`）：`?`、`▸`、`■`、转动符号前面紧挨着洋红的码；四种提示连同各自出错时多出来的那一行都走一遍，原始输出里没有 `36`、`96`。那个文件强行打开了 Node 的上色，主题漏盖了哪个样式函数，交互库自带的青色就会在这里漏出来 |
@@ -383,6 +383,14 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 **Cause**：那一行写着当前目录。架子给每次运行各建一个临时的项目目录（`oxy-tools-project-XXXXXX`），名字末尾是随机的；它不在临时主目录里，所以写的是全路径（放不下时从前面截，留下的正是末尾随机的那一段）。
 
 **Fix**：比之前把那一段抹平（`screen.replace(/oxy-tools-project-\w+/, 'oxy-tools-project')`），或让流程不经过这一问。**不要**为此把项目目录挪进临时主目录：断言「主目录里只多出装好的 skill」的用例会多看到一个目录。
+
+### 「任何一行不超过 79 列」量了整份输出
+
+**Symptom**：`for (const line of result.output.split('\n')) expect(displayWidth(line)).toBeLessThanOrEqual(79)` 不通过，量出来的是 80 或一百多。
+
+**Cause**：两种行本来就超：分区标题的横线照例画满 80 列；预设应答的提问器把光标所在行的说明全文记进 `output` 时**不折行**（真实的交互库会折），说明长的样例一行就是一百多列。
+
+**Fix**：只量要卡的那几行——表里的行（`/^ [□–] /`）、某一行「注意」和它的续行、汇总到提问之间去掉横线的行（工单 11 的写法在 `scope.test.ts` 的 `textLines` 和「Codex 的 MCP 装不到项目」的英文用例）；要量整屏就用 `keys` 加 `screenLines`，再把含 `──` 的行去掉。
 
 ### 替用户按的键按早了，或按到了别的提问上
 
