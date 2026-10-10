@@ -302,6 +302,83 @@ describe('颜色', () => {
   });
 });
 
+// 原始输出里大标志的每个方块带着什么前景色：键是方块在字形里的列号（不含居中补的空格），
+// 值是这一列各个方块的前景色码（24 位色是 38;2;红;绿;蓝，命名色是 30–37），没有上色的记作 none
+function logoColors(raw: string): Map<number, string[]> {
+  const blocks: { column: number; color: string }[] = [];
+  for (const line of raw.split('\n').filter((row) => row.includes('█'))) {
+    let column = 0;
+    let color = 'none';
+    for (const [, code, char] of line.matchAll(/\x1b\[([0-9;]*)m|(.)/gu)) {
+      if (char !== undefined) {
+        if (char === '█') blocks.push({ column, color });
+        column++;
+      } else if (code !== undefined && /^(3[0-7]|38;.*)$/.test(code)) color = code;
+      else if (code === '39' || code === '0' || code === '') color = 'none';
+    }
+  }
+  const indent = Math.min(...blocks.map((block) => block.column));
+  const columns = new Map<number, string[]>();
+  for (const { column, color } of blocks) columns.set(column - indent, [...(columns.get(column - indent) ?? []), color]);
+  return columns;
+}
+const TRUECOLOR = /\x1b\[38;2;/;
+// 三个色标：#E255C0、#8B5CF6、#3D8FE6
+const PINK = '38;2;226;85;192';
+const PURPLE = '38;2;139;92;246';
+const BLUE = '38;2;61;143;230';
+const MAGENTA = '35';
+
+describe('大标志的颜色', () => {
+  it.each(['truecolor', '24bit'])('COLORTERM=%s：从左到右由粉到紫到蓝，同一列的方块同色', async (colorterm) => {
+    const result = await run({ env: { COLORTERM: colorterm }, answers: [choose('退出')] });
+
+    const columns = logoColors(result.raw);
+    expect(new Set(columns.get(0))).toEqual(new Set([PINK]));
+    expect(new Set(columns.get(12))).toEqual(new Set([PURPLE]));
+    expect(new Set(columns.get(24))).toEqual(new Set([BLUE]));
+    // 两个四分点正好落在相邻两个色标的正中：红、绿、蓝各取平均，逢半进一
+    expect(new Set(columns.get(6))).toEqual(new Set(['38;2;183;89;219']));
+    expect(new Set(columns.get(18))).toEqual(new Set(['38;2;100;118;238']));
+    for (const colors of columns.values()) {
+      expect(new Set(colors).size).toBe(1);
+      expect(colors[0]).toMatch(/^38;2;\d+;\d+;\d+$/);
+    }
+  });
+
+  it.each([
+    ['没有 COLORTERM', {}],
+    ['COLORTERM 是别的值', { COLORTERM: '256color' }],
+  ])('%s：整个标志是洋红，没有 24 位色的样式码', async (_label, env) => {
+    const result = await run({ env, answers: [choose('退出')] });
+
+    expect(result.raw).not.toMatch(TRUECOLOR);
+    expect(new Set([...logoColors(result.raw).values()].flat())).toEqual(new Set([MAGENTA]));
+  });
+
+  it.each([['NO_COLOR 有值', '1'], ['NO_COLOR 是空的', '']])(
+    '%s，同时 COLORTERM=truecolor：一个样式码都没有，画面文字与带样式时一字不差',
+    async (_label, noColor) => {
+      const styled = await run({ env: { COLORTERM: 'truecolor' }, answers: [choose('退出')] });
+      const mono = await run({ env: { COLORTERM: 'truecolor', NO_COLOR: noColor }, answers: [choose('退出')] });
+
+      expect(mono.raw).not.toMatch(STYLE_CODE);
+      expect(mono.screen).toBe(styled.screen);
+    },
+  );
+
+  it.each([
+    ['支持 24 位色', { COLORTERM: 'truecolor' }],
+    ['不支持 24 位色', {}],
+  ])('没有 Unicode、%s：ASCII 字符画只加粗，不画渐变也不用洋红', async (_label, env) => {
+    const result = await run({ platform: 'win32', env: { TERM: '', ...env }, answers: [choose('退出')] });
+
+    const art = result.raw.split('\n').filter((line) => ASCII_LOGO.some((row) => line.includes(row)));
+    expect(art.map((line) => line.trimStart())).toEqual(ASCII_LOGO.map((row) => `\x1b[1m${row}\x1b[22m`));
+    expect(result.raw).not.toMatch(TRUECOLOR);
+  });
+});
+
 describe('没有 Unicode 的终端', () => {
   it('符号和大标志都退成 ASCII', async () => {
     // Windows 的旧式控制台：没有 Windows Terminal、VS Code 等的标记

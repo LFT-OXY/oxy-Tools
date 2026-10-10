@@ -71,6 +71,8 @@ const ASCII: typeof UNICODE = {
     ' \\___/ /_/\\_\\  |_|',
   ],
 };
+// 大标志的渐变从左到右依次经过这三个色标：粉、紫、蓝
+const LOGO_STOPS = ['#E255C0', '#8B5CF6', '#3D8FE6'].map((hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)));
 // 转动符号的节奏照搬交互库的默认值
 const SPINNER_INTERVAL = 80;
 const ERASE_LINE = '\r\x1b[2K';
@@ -137,6 +139,16 @@ function commandLine({ command, args }: Command, placeholder: (text: string) => 
     .join(' ');
 }
 
+// 大标志某一列的 24 位前景色码。t 是这一列在标志里的位置，最左是 0，最右是 1；相邻两个色标之间红、绿、蓝各自线性过渡
+function logoColor(t: number): string {
+  const scaled = t * (LOGO_STOPS.length - 1);
+  const index = Math.min(LOGO_STOPS.length - 2, Math.floor(scaled));
+  const from = LOGO_STOPS[index] ?? [];
+  const to = LOGO_STOPS[index + 1] ?? [];
+  const channels = from.map((channel, at) => Math.round(channel + ((to[at] ?? channel) - channel) * (scaled - index)));
+  return `\x1b[38;2;${channels.join(';')}m`;
+}
+
 // 悬挂缩进：首行以 lead 开头，正文过长时折行，续行与正文的左缘对齐
 function hanging(indent: string, lead: string, text: string): string[] {
   const leadWidth = displayWidth(lead);
@@ -150,6 +162,8 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
   const unicode = supportsUnicode(env, platform);
   const symbols = unicode ? UNICODE : ASCII;
   const attention: Format = ['yellow', 'bold'];
+  // 当前焦点：提问标记、光标、已勾选的框、转动符号。和大标志退成的洋红是同一个颜色
+  const focus = 'magenta';
 
   // 接下来的分区标题上方是否已经有留白：画面还是空的，或刚打出的标题区自己以空行收尾。两个输出流合起来算
   let spaced = true;
@@ -164,6 +178,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       color ? styleText(format, text, { validateStream: false }) : text;
     const dim = (text: string): string => paint('dim', text);
     return {
+      styled: color,
       paint,
       dim,
       print(...lines: string[]): void {
@@ -179,7 +194,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
         hanging('  ', paint(keyFormat, pad(key, KEY_WIDTH)), value),
     };
   };
-  const { paint, dim, print, rule, section, keyValue } = penFor(out);
+  const { styled, paint, dim, print, rule, section, keyValue } = penFor(out);
   const errors = penFor(err);
 
   // 两栏的表：第一栏按最长的一格定宽，第二栏折行
@@ -220,7 +235,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     let frame = 0;
     const draw = (): void => {
       const mark = symbols.spinner[frame++ % symbols.spinner.length] ?? '';
-      out.write(`${ERASE_LINE}${line(paint('cyan', mark))}`);
+      out.write(`${ERASE_LINE}${line(paint(focus, mark))}`);
     };
     draw();
     const timer = setInterval(draw, SPINNER_INTERVAL);
@@ -230,12 +245,12 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
     };
   };
 
-  const cursor = paint('cyan', symbols.cursor);
+  const cursor = paint(focus, symbols.cursor);
   const theme: PromptTheme = {
-    prefix: { idle: paint(['cyan', 'bold'], '?'), done: paint('green', symbols.done) },
+    prefix: { idle: paint([focus, 'bold'], '?'), done: paint('green', symbols.done) },
     icon: {
       cursor,
-      checked: paint('cyan', symbols.checked),
+      checked: paint(focus, symbols.checked),
       unchecked: symbols.unchecked,
       // 不可选的行整行由 style.disabled 压暗，勾选框自己不带样式；这种行勾不上，两个图标是同一个
       disabledChecked: symbols.unavailable,
@@ -437,7 +452,13 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       // 整块按最宽的一行居中，各行补同样多的空格，字形才不走样
       const centered = (text: string, width = displayWidth(text)): string => `${' '.repeat(Math.floor((WIDTH - width) / 2))}${text}`;
       const artWidth = Math.max(...symbols.logo.map(displayWidth));
-      const art = symbols.logo.map((row) => centered(unicode ? row : paint('bold', row), artWidth));
+      // 渐变是 styleText 给不了的 24 位色，样式码在这里自己拼：每个方块一个前景色，同一列同色
+      const gradient = (row: string): string =>
+        `${[...row].map((block, column) => (block === ' ' ? block : `${logoColor(column / (artWidth - 1))}${block}`)).join('')}\x1b[39m`;
+      const truecolor = env['COLORTERM'] === 'truecolor' || env['COLORTERM'] === '24bit';
+      // 终端没有声明支持 24 位色时退成焦点符号的那个洋红
+      const colored = (row: string): string => (styled && truecolor ? gradient(row) : paint(focus, row));
+      const art = symbols.logo.map((row) => centered(unicode ? colored(row) : paint('bold', row), artWidth));
       const name = centered(`${paint('bold', 'oxy-tools')} ${dim(version)}`);
       print('', ...art, '', name, '');
       spaced = true;

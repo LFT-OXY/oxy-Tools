@@ -233,6 +233,8 @@ const LONG_NAME_UNMANAGED = { home: { [`${CLAUDE_SKILLS}/oxy-learning-hub/SKILL.
 // ── 场景 ──────────────────────────────────────────────────────────────────────
 
 const LEGACY_CONSOLE = { platform: 'win32' as const, env: { TERM: '' } };
+// 场景缺省没有 COLORTERM，大标志走的是洋红那一档；要看渐变得声明终端支持 24 位色
+const TRUECOLOR = { COLORTERM: 'truecolor' };
 const toSkills = [KEY.enter];
 // 勾上 pr 和 wizard，光标停在 wizard 上
 const pickTwo = [...toSkills, ...down(5), KEY.space, KEY.down, KEY.space];
@@ -292,6 +294,9 @@ const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
+  { title: '标题区 · 渐变', note: 'COLORTERM=truecolor：标志从左到右由粉到紫到蓝，同一列的方块同色', env: TRUECOLOR },
+  { title: '标题区 · 洋红（没有 COLORTERM）', note: '终端没有声明支持 24 位色：整个标志是终端自己的洋红，和焦点符号同色' },
+  { title: '标题区 · 不显示颜色', note: '设置了 NO_COLOR：哪怕同时有 COLORTERM=truecolor，标志也不上色', env: { ...TRUECOLOR, NO_COLOR: '1' } },
   { title: '主菜单', note: '只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
@@ -458,8 +463,8 @@ const scenes: Scene[] = [
 interface Cell {
   char: string;
   wide: boolean;
-  /** 终端的标准命名色编号，null 是默认色 */
-  color: number | null;
+  /** 终端的标准命名色编号；24 位色是 #rrggbb；null 是默认色 */
+  color: number | string | null;
   bold: boolean;
   dim: boolean;
   underline: boolean;
@@ -557,7 +562,7 @@ function readCells(terminal: InstanceType<typeof xterm.Terminal>): Cell[][] {
       cells.push({
         char: cell.getChars() || ' ',
         wide: cell.getWidth() === 2,
-        color: cell.isFgPalette() ? cell.getFgColor() : null,
+        color: cell.isFgRGB() ? `#${cell.getFgColor().toString(16).padStart(6, '0')}` : cell.isFgPalette() ? cell.getFgColor() : null,
         bold: cell.isBold() !== 0,
         dim: cell.isDim() !== 0,
         underline: cell.isUnderline() !== 0,
@@ -574,24 +579,26 @@ function readCells(terminal: InstanceType<typeof xterm.Terminal>): Cell[][] {
 
 const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function cellClass(cell: Cell): string {
-  return [cell.color === null ? '' : `c${cell.color}`, cell.bold ? 'b' : '', cell.dim ? 'd' : '', cell.underline ? 'u' : '']
+// 命名色跟着深色、浅色两套配色走，用类名；24 位色两边是同一个值，直接写进 style
+function cellAttributes(cell: Cell): string {
+  const classes = [typeof cell.color === 'number' ? `c${cell.color}` : '', cell.bold ? 'b' : '', cell.dim ? 'd' : '', cell.underline ? 'u' : '']
     .filter(Boolean)
     .join(' ');
+  return `${classes && ` class="${classes}"`}${typeof cell.color === 'string' ? ` style="color:${cell.color}"` : ''}`;
 }
 
 // 非 ASCII 字符各包一层定宽的盒子，浏览器里才和终端一样按格对齐；实心方块填满整格
 function lineHtml(cells: Cell[]): string {
   let html = '';
-  let run = { className: '', text: '' };
+  let run = { attributes: '', text: '' };
   const flush = (): void => {
-    if (run.text) html += run.className ? `<span class="${run.className}">${run.text}</span>` : run.text;
+    if (run.text) html += run.attributes ? `<span${run.attributes}>${run.text}</span>` : run.text;
   };
   for (const cell of cells) {
-    const className = cellClass(cell);
-    if (className !== run.className) {
+    const attributes = cellAttributes(cell);
+    if (attributes !== run.attributes) {
       flush();
-      run = { className, text: '' };
+      run = { attributes, text: '' };
     }
     const code = cell.char.codePointAt(0) ?? 0;
     if (cell.char.length === 1 && code < 128) {

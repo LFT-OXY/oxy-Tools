@@ -86,6 +86,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | `CLAUDE_CONFIG_DIR`、`CODEX_HOME` | 非空时，看 MCP 配没配过改去这里找宿主的配置文件，见 [安装 MCP](./mcp-install.md)；skill 目录不认它们 |
 | `LC_ALL`、`LC_MESSAGES`、`LANG` | 按这个顺序取第一个非空的判断语言：以 `zh` 开头用中文，否则英文；都为空时看 `systemLocale` |
 | `NO_COLOR` | 只要存在就不带任何样式，见 [终端输出](./terminal-output.md) |
+| `COLORTERM` | 等于 `truecolor` 或 `24bit` 时大标志画 24 位色的渐变，否则是洋红；只管标志，别的输出不看它。见 [终端输出](./terminal-output.md) 的「上不上色」 |
 | `TERM`、`WT_SESSION` 等 | 判断终端是否支持 Unicode，见 [终端输出](./terminal-output.md) |
 
 **退出状态**
@@ -178,6 +179,8 @@ export function localCatalogSource(dir: string): CatalogSource;
 | 断言什么 | 在哪 | 怎么断言 |
 |----------|------|----------|
 | 上不上色 | `startup.test.ts` 的「颜色」一组、`prompts.test.ts` | 原始输出（`result.raw`）里有没有样式码；`NO_COLOR` 下画面文字不变 |
+| 大标志的三档颜色 | `startup.test.ts` 的「大标志的颜色」一组 | 从原始输出里读出每个方块前面生效的前景色码，按它在字形里的列号归拢（`logoColors`）：渐变那一档卡两端、正中和两个四分点的色值，且同一列同色；洋红那一档每个方块都是 `35`、没有 `38;2;`；`NO_COLOR` 与 `COLORTERM` 同时设置时一个样式码都没有。期望的色值是照色标手算的，不从实现里取 |
+| 焦点符号是洋红、输出里没有青色 | `prompts.test.ts` 的「焦点色」一组 | 用真实的交互库（`keys`）：`?`、`▸`、`■`、转动符号前面紧挨着洋红的码；四种提示连同各自出错时多出来的那一行都走一遍，原始输出里没有 `36`、`96`。那个文件强行打开了 Node 的上色，主题漏盖了哪个样式函数，交互库自带的青色就会在这里漏出来 |
 | 按键提示整行在 79 列以内 | `prompts.test.ts` | 用真实的交互库断言整行 |
 | 标题区的摆法：居中、字形、上下各空一行、标志下面没有横线、产品名粗体与版本号暗淡 | `startup.test.ts` 的「启动」一组 | 它是一块固定的字符画，摆法就是它的全部内容。居中量的是左右空白差不超过一列，**不写死补了几格**；字形是各行去掉同样多的缩进后与字形逐行相等——只量整块的边距的话，各行各自居中、字形走样了也照样通过 |
 

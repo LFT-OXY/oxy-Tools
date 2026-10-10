@@ -845,3 +845,71 @@ describe('真实的画面：填写 key', () => {
     expect(result.output).toMatch(/^\? SEARCH_API_KEY \(input hidden; paste, then press enter\)$/m);
   });
 });
+
+describe('真实的画面：焦点色', () => {
+  // 洋红的前景色码紧挨在这个符号前面；提问标记同时是粗体，中间隔着一个粗体的码
+  const inMagenta = (symbol: string): RegExp => new RegExp(`\\x1b\\[35m(?:\\x1b\\[1m)?[${symbol}]`);
+  const CYAN = /\x1b\[(?:36|96)m/;
+  const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+
+  it('提问标记、光标和读取目录时的转动符号是洋红', async () => {
+    const result = await run({ keys: [[HINT, KEY.ctrlC]] });
+
+    expect(result.raw).toMatch(inMagenta('?'));
+    expect(result.raw).toMatch(inMagenta('▸'));
+    expect(result.raw).toMatch(inMagenta(SPINNER));
+  });
+
+  it('已勾选的框是洋红，没勾的不上色', async () => {
+    const result = await run({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['▸■ alpha', KEY.ctrlC]] });
+
+    expect(result.raw).toMatch(inMagenta('■'));
+    expect(result.raw).not.toMatch(/\x1b\[3[0-7]m□/);
+  });
+
+  it('光标停在不可选的行上时也是洋红', async () => {
+    const result = await run({ onPath: [], keys: [[HINT, KEY.up], ['▸ Skill', KEY.ctrlC]] });
+
+    // 只认 Skill 那一行上的光标：起始时光标在「退出」上，那里的洋红不算数
+    expect(result.raw).toMatch(/\x1b\[35m▸(?:\x1b\[[0-9;]*m)* Skill/);
+  });
+
+  const skillHome = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
+  const keyedMcp = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP] } });
+  const everything = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+  // 四种提示、它们各自出错时多出来的那一行、两处转动符号都走到：交互库自带的样式有哪个没被主题盖住，就会在这里漏出来
+  it.each<[string, () => Parameters<typeof run>[0]]>([
+    [
+      '单选、多选、是否题输错再改、安装',
+      () => ({
+        home: skillHome,
+        keys: [
+          [HINT, KEY.enter],
+          [PICK_HINT, KEY.space],
+          ['▸■ alpha', KEY.enter],
+          [HINT, KEY.enter],
+          ['(y/N)', 'x'],
+          ['(y/N) x', KEY.enter],
+          ['请输入 y 或 n', '\x7f'],
+          ['(y/N)', 'y'],
+          ['(y/N) y', KEY.enter],
+          [HINT, KEY.ctrlC],
+        ],
+      }),
+    ],
+    ['在不可选的行上按回车', () => ({ onPath: [], keys: [[HINT, KEY.up], ['▸ Skill', KEY.enter], ['这一项现在选不了', KEY.ctrlC]] })],
+    [
+      '隐藏输入、执行命令',
+      () => ({
+        catalog: keyedMcp(),
+        keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter], ['粘贴后回车', 'k'], ['粘贴后回车', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
+      }),
+    ],
+    ['应用项目列表', () => ({ catalog: everything(), keys: [[HINT, KEY.down], ['▸ 工具', KEY.down], ['▸ 应用项目', KEY.enter], [HINT, KEY.ctrlC]] })],
+  ])('%s：输出里没有青色的样式码', async (_label, options) => {
+    const result = await run(options());
+
+    expect(result.raw).toMatch(inMagenta('?'));
+    expect(result.raw).not.toMatch(CYAN);
+  });
+});
