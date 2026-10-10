@@ -178,9 +178,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   // 当前焦点：提问标记、光标、已勾选的框、转动符号。和大标志退成的洋红是同一个颜色
   const focus = 'magenta';
 
-  // 接下来的分区标题上方是否已经有留白：画面还是空的，或刚打出的标题区自己以空行收尾。两个输出流合起来算
+  // 画面的最后一行是不是空行（画面还是空的也算）：是的话，下一块上方不再另空，免得连着两行空行。
+  // 两个输出流合起来算
   let spaced = !continued;
-  // 分区标题上方空一行，上面已经有留白时除外
+  // 一块的上方空一行，上面已经是空行时除外
   const gapAbove = (): string[] => (spaced ? [] : ['']);
 
   // 每个输出流各自决定上不上色：是终端、且没有设置 NO_COLOR 才上色。
@@ -190,25 +191,32 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     const paint = (format: Format, text: string): string =>
       color ? styleText(format, text, { validateStream: false }) : text;
     const dim = (text: string): string => paint('dim', text);
+    // 分区标题：标题嵌在线里，线一直画到第 80 列
+    const section = (title: string, format: Format = 'bold'): string =>
+      `${dim(symbols.rule.repeat(2))} ${paint(format, title)} ${dim(symbols.rule.repeat(Math.max(0, WIDTH - 4 - displayWidth(title))))}`;
     return {
       styled: color,
       paint,
       dim,
       print(...lines: string[]): void {
         stream.write(`${lines.join('\n')}\n`);
-        spaced = false;
+        spaced = lines.at(-1) === '';
       },
       rule: (): string => dim(symbols.rule.repeat(WIDTH)),
-      // 分区标题：标题嵌在线里，线一直画到第 80 列
-      section: (title: string, format: Format = 'bold'): string =>
-        `${dim(symbols.rule.repeat(2))} ${paint(format, title)} ${dim(symbols.rule.repeat(Math.max(0, WIDTH - 4 - displayWidth(title))))}`,
+      section,
+      // 一个分区的开头：标题上下各空一行，上面已经是空行时上方不再另空
+      heading: (title: string, format?: Format): string[] => [...gapAbove(), section(title, format), ''],
       // 键值行：缩进两格，键占 10 列；值过长时折行
       keyValue: (key: string, value: string, keyFormat: Format = 'dim'): string[] =>
         hanging('  ', paint(keyFormat, pad(key, KEY_WIDTH)), value),
     };
   };
-  const { styled, paint, dim, print, rule, section, keyValue } = penFor(out);
+  const { styled, paint, dim, print, rule, section, heading, keyValue } = penFor(out);
   const errors = penFor(err);
+  // 上面还不是空行时空一行
+  const gap = (): void => {
+    if (!spaced) print('');
+  };
 
   // 两栏的表：第一栏按最长的一格定宽，第二栏折行
   const twoColumns = (rows: readonly (readonly [string, string])[]): string[] => {
@@ -258,6 +266,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     };
   };
 
+  // 列表下方的一行：缩进三格，标签后空两格，过长则折行。它与下面的按键提示之间空一行
+  const belowList = (label: string, format: Format, text: string): string =>
+    `${hanging('   ', paint(format, pad(label, displayWidth(label) + 2)), text).join('\n')}\n`;
+
   const cursor = paint(focus, symbols.cursor);
   const theme: PromptTheme = {
     prefix: { idle: paint([focus, 'bold'], '?'), done: paint('green', symbols.done) },
@@ -274,7 +286,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       answer: (text) => `${dim(symbols.separator)} ${text}`,
       // 光标所在行整行加粗。行内片段的收尾码会把粗体一并关掉，所以每次收尾后重申一次
       highlight: (text) => paint('bold', text.replaceAll('\x1b[22m', '\x1b[22m\x1b[1m')),
-      description: (text) => hanging('   ', dim(pad(t.aboutColumn, displayWidth(t.aboutColumn) + 2)), text).join('\n'),
+      description: (text) => belowList(t.aboutColumn, 'dim', text),
       // 整行压暗，两处除外：原因是用户最需要读的字；光标停在这一行上时，光标要和别的行上一样显眼
       disabled: (text) => {
         const lead = text.startsWith(cursor) ? cursor : '';
@@ -285,7 +297,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           .map((part, index) => (index % 2 === 1 || part === '' ? part : dim(part)))
           .join('')}`;
       },
-      error: (text) => hanging('   ', paint(attention, pad(t.noticeKey, displayWidth(t.noticeKey) + 2)), text).join('\n'),
+      error: (text) => belowList(t.noticeKey, attention, text),
       // 一个都没勾就确认，等于返回
       renderSelectedChoices: (selected) => selected.map((choice) => choice.short).join(t.listSeparator) || t.back,
       keysHelpTip: (keys) =>
@@ -331,13 +343,32 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     }
   };
 
-  // 条目一次全部列出；一屏放不下时才由交互库滚动
-  const pageSize = (): number => Math.max(7, (out.rows ?? 24) - 6);
+  // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
+  // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里
+  const pageSize = (): number => Math.max(7, (out.rows ?? 24) - 8);
+
+  // 留在屏幕上的提问（单选、多选、是否题）的主题。提问是交互库直接写到终端上的，不经过 print：做成提问就当它
+  // 已经问出去、收成了一行。上面不是空行时，提问上方的那一行空行放在提问标记里——它只在还在问的时候占着，
+  // 回答之后连同提问一起收掉，连着的几行已回答的提问之间才不空
+  const asking = (): PromptTheme => {
+    const blankAbove = spaced ? '' : '\n';
+    spaced = false;
+    return { ...theme, prefix: { ...theme.prefix, idle: `${blankAbove}${theme.prefix.idle}` } };
+  };
+
+  // 单选和多选共用的部分。提问与列表之间空一行：接在提问的末尾，不放进列表——列表滚动时它不跟着滚走，也不占
+  // 列表的行。回答之后提问收成一行，它随之收掉
+  const list = <Row>(rows: readonly Row[]) => {
+    const asked = asking();
+    const message: PromptTheme['style']['message'] = (text, status) =>
+      `${asked.style.message(text, status)}${status === 'done' ? '' : '\n'}`;
+    return { pageSize: pageSize(), theme: { ...asked, style: { ...asked.style, message } }, rows };
+  };
 
   // 汇总之后的那一问：动手、返回修改、取消
   const decision = (message: string, go: string): SelectQuestion<InstallDecision> => {
     const choice = (value: InstallDecision, label: string) => ({ value, short: label, name: label });
-    return { message, pageSize: pageSize(), theme, rows: [choice('install', go), choice('revise', t.revise), choice('cancel', t.cancel)] };
+    return { message, ...list([choice('install', go), choice('revise', t.revise), choice('cancel', t.cancel)]) };
   };
 
   // 逐项的结果行与最后的合计，各类组件共用：每一行由 lead 起头（它给结果符号排好位置），原因过长时自己折行。
@@ -353,7 +384,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       failed: (lead: (mark: string) => string, reason: string): string[] =>
         row('failed', `${lead(paint('red', symbols.failed))}${paint(['red', 'bold'], t.failed)} `, reason),
       skipped: (lead: (mark: string) => string, reason: string): string[] => row('skipped', `${lead(dim(symbols.dash))}${t.skippedResult} `, reason),
-      total: (): string[] => [rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `))],
+      // 最后一行结果与收尾的通栏横线之间空一行
+      total: (): string[] => ['', rule(), ...keyValue(t.totalKey, t.totals(totals).join(` ${symbols.separator} `))],
     };
   };
 
@@ -363,13 +395,14 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
     const lead = (target: Target) => (mark: string): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
     const results = tally();
-    // 标题下面已经打出的行数，照终端上实际占的行数算：一个比一行还长的词（目录给的名字）折不开，会被终端折成几行
-    let lines = 0;
+    // 标题下面已经打出的行数，照终端上实际占的行数算：一个比一行还长的词（目录给的名字）折不开，会被终端折成几行。
+    // 标题下方的那一行空行也在里面
+    let lines = 1;
     const settle = (rows: string[]): void => {
       for (const row of rows) lines += Math.max(1, Math.ceil(displayWidth(row) / (out.columns ?? WIDTH)));
       print(...rows);
     };
-    print(...gapAbove(), section(t.installing));
+    print(...heading(t.installing));
     return {
       begin(target: Target): (result?: { ok: true; text: string } | { ok: false; reason: string }) => void {
         const erase = spin((mark) => `${lead(target)(mark)}${doing}${dim(symbols.ellipsis)}`);
@@ -421,9 +454,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
     return {
       message,
-      pageSize: pageSize(),
-      theme,
-      rows: [
+      ...list([
         { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
         ...entries.map((entry, index) => {
           // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：原因要落在状态栏时，名称少补一格，说明跟在原因后面
@@ -451,7 +482,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             ...(reason === undefined ? {} : { disabled: reason }),
           };
         }),
-      ],
+      ]),
     };
   };
 
@@ -474,22 +505,21 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const art = symbols.logo.map((row) => centered(unicode ? colored(row) : paint('bold', row), artWidth));
       const name = centered(`${paint('bold', 'oxy-tools')} ${dim(version)}`);
       print('', ...art, '', name, '');
-      spaced = true;
     },
 
     /** 启动时的语言提问：光标起始停在这个呈现层自己的语言上——没给 --lang 时它是按系统语言建的。 */
     languageQuestion(): SelectQuestion<Lang> {
       return {
         message: LANGUAGE_QUESTION,
-        pageSize: pageSize(),
-        theme,
         default: lang,
-        rows: LANGUAGES.map(({ lang: value, label }) => ({ value, short: label, name: label })),
+        ...list(LANGUAGES.map(({ lang: value, label }) => ({ value, short: label, name: label }))),
       };
     },
 
     /** 读取目录、查询文件列表时的进行中提示，行首的符号转动；done() 把这一行擦掉。 */
     loading(what: keyof typeof t.loading): { done(): void } {
+      // 这一行擦掉之后，接着打的那一块就落在它的位置上：上方的空行在这里先给
+      gap();
       return { done: spin((mark) => `  ${mark} ${t.loading[what]}${dim(symbols.ellipsis)}`) };
     },
 
@@ -516,6 +546,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const missing = names(false);
       const present = names(true);
       print(
+        ...gapAbove(),
         ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
         ...keyValue(t.catalogKey, t.counts({ skills, mcps, tools, apps }).join(` ${symbols.separator} `) || t.noEntries),
         ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing, apps > 0), attention) : []),
@@ -531,8 +562,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     failure(failure: Failure): void {
       const { title, cause, location, next } = t.failure(failure, platform);
       errors.print(
-        ...gapAbove(),
-        errors.section(`${t.errorPrefix}${title}`, ['red', 'bold']),
+        ...errors.heading(`${t.errorPrefix}${title}`, ['red', 'bold']),
         ...errors.keyValue(t.causeKey, cause),
         // 网址和路径不截断也不折行，独占一行
         ...(location === undefined ? [] : [`  ${' '.repeat(KEY_WIDTH)}${location}`]),
@@ -545,19 +575,22 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         `${paint('bold', 'oxy-tools')} ${dim(version)}`,
         '',
         section(t.help.usage),
+        '',
         `  ${t.help.usageLine}`,
         '',
         section(t.help.options),
+        '',
         ...twoColumns(t.help.optionRows),
         '',
         section(t.help.environment),
+        '',
         ...twoColumns(t.help.environmentRows),
       );
     },
 
     /** 退回去再问一轮（回主菜单、返回修改）：新一轮提问与上一轮已回答的几行之间空一行。 */
     nextRound(): void {
-      print('');
+      gap();
     },
 
     /** lacksHost 的分组因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。 */
@@ -573,11 +606,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const enterable = rows.find((row) => !row.lacksHost);
       return {
         message: t.pickGroup,
-        pageSize: pageSize(),
-        theme,
         // 交互库的光标缺省停在第一项上，哪怕它不可选
         ...(rows.some((row) => row.lacksHost) ? { default: enterable?.id ?? ('exit' as const) } : {}),
-        rows: [
+        ...list([
           ...(rows.length > 0
             ? [
                 // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
@@ -596,7 +627,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
               ]
             : []),
           { value: 'exit' as const, short: t.exit, name: t.exit },
-        ],
+        ]),
       };
     },
 
@@ -606,10 +637,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const aboutWidth = USABLE - 2 - nameWidth;
       return {
         message: t.pickApp,
-        pageSize: pageSize(),
-        theme,
         ...(cursor ? { default: cursor } : {}),
-        rows: [
+        ...list([
           // 表头比条目多缩进一格：交互库在分隔行前只放一个空格，条目前是两格
           { separator: dim(` ${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
           ...apps.map((app) => ({
@@ -620,15 +649,14 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           })),
           { separator: ' ' },
           { value: null, short: t.back, name: t.back },
-        ],
+        ]),
       };
     },
 
     /** 应用项目详情：说明全文和官方链接。链接整条写出，浏览器打不开时用户照着复制。 */
     appDetail(app: App): void {
       print(
-        ...gapAbove(),
-        section(app.name),
+        ...heading(app.name),
         ...keyValue(t.aboutColumn, app.description[lang]),
         // 链接再长也整条写在一行上，不交给折行：折开了就没法照着复制
         `  ${dim(pad(t.linkKey, KEY_WIDTH))}${paint('underline', app.url)}`,
@@ -648,14 +676,14 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + GUTTER;
       return {
         message: t.pickHosts,
-        pageSize: pageSize(),
-        theme,
-        rows: choices.map(({ host, location }) => ({
-          value: host,
-          short: host.name,
-          name: location === undefined ? host.name : `${pad(host.name, nameWidth)}${dim(location)}`,
-          checked: checked.includes(host),
-        })),
+        ...list(
+          choices.map(({ host, location }) => ({
+            value: host,
+            short: host.name,
+            name: location === undefined ? host.name : `${pad(host.name, nameWidth)}${dim(location)}`,
+            checked: checked.includes(host),
+          })),
+        ),
       };
     },
 
@@ -683,7 +711,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /** 读不到某些宿主的配置时，在 MCP 列表上方说明：它们那一栏的状态都是未知。 */
     mcpConfigUnreadable(hosts: readonly Host[]): void {
-      print(...keyValue(t.noticeKey, t.mcpConfigUnreadable(hosts.map((host) => host.name).join(t.listSeparator)), attention));
+      print(...gapAbove(), ...keyValue(t.noticeKey, t.mcpConfigUnreadable(hosts.map((host) => host.name).join(t.listSeparator)), attention), '');
     },
 
     /**
@@ -732,8 +760,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         }
       };
       print(
-        ...gapAbove(),
-        section(t.installSummary(new Set(targets.map((target) => target.name)).size)),
+        ...heading(t.installSummary(new Set(targets.map((target) => target.name)).size)),
         ...table(
           [t.entryColumn, t.agentColumn, t.actionColumn, t.locationColumn, t.noteColumn],
           targets.map((target, index) => [
@@ -755,7 +782,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /** 不是本工具装的目录，覆盖前单独问一次，缺省不覆盖。 */
     confirmOverwrite(target: InstallTarget): ConfirmQuestion {
-      return { message: t.confirmOverwrite(target.location), default: false, answers: { yes: t.yes, no: t.no }, theme };
+      return { message: t.confirmOverwrite(target.location), default: false, answers: { yes: t.yes, no: t.no }, theme: asking() };
     },
 
     /**
@@ -793,8 +820,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const action = { none: t.actions.fresh, configured: paint(attention, t.actions.overwrite), unknown: t.actions.unknown };
       const note = { none: '', configured: t.mcpConfiguredNote, unknown: t.mcpUnknownNote };
       print(
-        ...gapAbove(),
-        section(t.mcpSummary(new Set(targets.map((target) => target.name)).size)),
+        ...heading(t.mcpSummary(new Set(targets.map((target) => target.name)).size)),
         ...table(
           [t.entryColumn, t.agentColumn, t.actionColumn, t.noteColumn],
           targets.map((target, index) => [
@@ -811,8 +837,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     commandList(commands: readonly Command[]): void {
       const indexWidth = Math.max(2, String(commands.length).length);
       print(
-        ...gapAbove(),
-        section(t.commandsToRun(commands.length)),
+        ...heading(t.commandsToRun(commands.length)),
         ...commands.flatMap((command, index) =>
           hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLine(command, (text) => paint(attention, text))),
         ),
@@ -828,8 +853,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /** 问一个 key 之前：哪个 MCP 要它、它是什么、去哪申请、留空会怎样。 */
     keyRequest(mcp: Mcp, variable: McpVariable): void {
       print(
-        ...gapAbove(),
-        section(t.keyRequest(mcp.name, variable.required)),
+        ...heading(t.keyRequest(mcp.name, variable.required)),
         ...keyValue(t.variableKey, `${variable.name}${t.keyNeed(variable.required)}`),
         ...keyValue(t.purposeKey, variable.description[lang]),
         // 申请地址和应用项目的链接一样整条写在一行上：折开了就没法照着复制
@@ -893,8 +917,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const indexWidth = Math.max(2, String(targets.length).length);
       const [nameWidth = 0] = columnWidths(targets.map((target) => [target.name]));
       print(
-        ...gapAbove(),
-        section(t.commandsToRun(targets.length)),
+        ...heading(t.commandsToRun(targets.length)),
         ...targets.flatMap((target, index) =>
           hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  ${pad(target.name, nameWidth)}`, target.command),
         ),
@@ -913,7 +936,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const conclusions: string[] = [];
       return {
         begin(target: ToolTarget): (result: ToolResult) => void {
-          print(...gapAbove(), section(target.name), ...hanging('  ', `${dim('$')} `, target.command));
+          print(...heading(target.name), ...hanging('  ', `${dim('$')} `, target.command));
           return (result) => {
             const lead = (mark: string): string => `  ${mark}  ${pad(target.name, nameWidth)}`;
             const text = t.toolResult(result, target.evidence);
@@ -925,7 +948,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           };
         },
         finish(): void {
-          if (targets.length > 1) print('', section(t.results), ...conclusions);
+          if (targets.length > 1) print(...heading(t.results), ...conclusions);
           print(...results.total());
         },
       };

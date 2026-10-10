@@ -213,6 +213,8 @@ export interface RunOptions {
   systemLocale?: string;
   /** 终端的列数；缺省不给，安装器按 80 列算 */
   columns?: number;
+  /** 终端的行数，缺省 40 */
+  rows?: number;
 }
 
 export interface RunResult {
@@ -257,16 +259,17 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const catalog = options.catalog ?? catalogDir();
   let unanswered: string | undefined;
 
-  // 把提问照画面的样子记进输出：提问、每一行（多选的带上勾选框）、光标所在行的说明全文；是否题只有提问和缺省回答；
-  // 隐藏输入只有提问和后面那句固定的提示，输入的东西不记
+  // 把提问照画面的样子记进输出：提问（它上下的空行在主题的提问标记和提问样式里，有就照打）、每一行（多选的带上
+  // 勾选框）、光标所在行的说明全文；是否题只有提问和缺省回答；隐藏输入只有提问和后面那句固定的提示，输入的东西不记
   const ask = (prompt: Prompt, question: Question, cursor?: unknown): unknown => {
-    const lines = [`? ${question.message}`];
+    const { prefix, style } = question.theme;
+    const lines = [plain(`${prefix.idle} ${style.message(question.message, 'idle')}`)];
     if ('rows' in question) {
       const { icon } = question.theme;
       const choices = question.rows.flatMap((row) => ('separator' in row ? [] : [row]));
       const active = choices.find((row) => row.value === cursor) ?? choices[0];
       for (const row of question.rows) {
-        if ('separator' in row) lines.push(` ${row.separator}`);
+        if ('separator' in row) lines.push(` ${row.separator}`.trimEnd());
         // 不可选的行照交互库的拼法：单选的行首一个短横，多选的是不可选的勾选框；原因接在后面
         else if (row.disabled) {
           lines.push(question.theme.style.disabled(`${'checked' in row ? ` ${icon.disabledUnchecked}` : '-'} ${row.name} ${row.disabled}`));
@@ -295,7 +298,8 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     password: async (question) => ask('password', question) as string,
   };
 
-  const { keyboard, prompter: real } = keyboardPrompter(record('stdout'), ROWS, options.answersLanguage);
+  const rows = options.rows ?? ROWS;
+  const { keyboard, prompter: real } = keyboardPrompter(record('stdout'), rows, options.answersLanguage);
   // 画面上到这里为止的字，脚本已经认过了
   let seen = 0;
   // 假键盘正替用户应答语言提问。它的按键提示和主菜单的是同一句：等它收成一行，脚本才开始认画面上的字
@@ -331,7 +335,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...options.env },
       platform: options.platform ?? 'linux',
       systemLocale: options.systemLocale ?? 'en-US',
-      stdout: { isTTY: tty.stdout ?? true, rows: ROWS, columns: options.columns, write: record('stdout') },
+      stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },
       stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
       stdinIsTTY: tty.stdin ?? true,
       catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,

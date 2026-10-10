@@ -40,6 +40,8 @@ interface Scene {
   keys?: string[];
   /** 语言提问也由 keys 来按，不给 keys 就停在它上面；缺省由假键盘替用户按回车，keys 里不用写它 */
   answersLanguage?: boolean;
+  /** 终端只有这么多行，画面只取还在屏幕上的部分；缺省是够高的终端，连同滚上去的都取 */
+  rows?: number;
 }
 
 /** 一条假装执行的工具安装命令 */
@@ -137,6 +139,25 @@ const LONG_COMMAND_TOOL = {
 };
 
 const sample = catalogOf({ version: 1, skills: SHOWCASE_SKILLS });
+// 条目多到 24 行的终端里一屏放不下：在那八条之外再编十二条
+const MANY_SKILLS = [
+  ...SHOWCASE_SKILLS,
+  ...[
+    ['changelog', '从提交记录整理出面向用户的更新日志', 'Turn commit history into a user-facing changelog'],
+    ['code-tour', '给陌生的代码库画一条按顺序读的路线', 'Lay out a reading route through an unfamiliar codebase'],
+    ['commit-message', '按约定式提交的格式写提交说明', 'Write commit messages in the Conventional Commits format'],
+    ['data-story', '把一张数据表讲成有结论的短文，配合适的图表', 'Turn a data table into a short piece with a conclusion and fitting charts'],
+    ['meeting-notes', '把会议录音的转写稿整理成决定、待办与未决问题', 'Organize a meeting transcript into decisions, action items and open questions'],
+    ['postmortem', '按时间线、原因、改进项写事故复盘', 'Write an incident postmortem: timeline, causes, follow-ups'],
+    ['readme', '给项目写一份先讲用途、再讲上手的 README', 'Write a README that states the purpose first, then how to get started'],
+    ['regex', '把一句话的匹配需求写成正则，并逐段解释', 'Turn a one-line matching need into a regex, explained piece by piece'],
+    ['release-notes', '汇总一个版本的变化，按受影响的人分组', 'Summarize what changed in a release, grouped by who is affected'],
+    ['sql-review', '审查 SQL 的正确性、索引使用与锁的范围', 'Review SQL for correctness, index use and lock scope'],
+    ['test-plan', '给一项改动列出该测什么、不测什么和原因', 'List what to test for a change, what to leave out, and why'],
+    ['translate', '在中英之间翻译技术文档，术语前后一致', 'Translate technical documents between Chinese and English with consistent terms'],
+  ].map(([name, zh, en]) => ({ name, version: '1.0.0', path: `skills/${name}`, description: { zh, en } })),
+];
+const manySkills = catalogOf({ version: 1, skills: MANY_SKILLS });
 const withTools = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: SHOWCASE_TOOLS });
 const withLongCommandTool = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: [LONG_COMMAND_TOOL, ...SHOWCASE_TOOLS] });
 const withMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_MCPS });
@@ -305,6 +326,13 @@ const scenes: Scene[] = [
   { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
+  {
+    title: 'skill 多选列表 · 24 行的终端',
+    note: '二十个条目一屏放不下，由交互库滚动；画面是屏幕上的那 24 行：提问那一行还在，说明全文和按键提示都在。光标过了半屏，表头随列表滚上去了，提问下方的空行还在',
+    catalog: manySkills,
+    rows: 24,
+    keys: [...toSkills, ...down(10)],
+  },
   { title: '汇总确认 · 选了两个 skill', note: '列出每个 skill 将装到的目录；可开始安装、返回修改或取消', keys: toSummary },
   { title: '汇总确认 · 返回修改', note: '回到列表，之前勾选的还在', keys: [...toSummary, KEY.down, KEY.enter] },
   { title: '正在查询', note: '确认之后先向 GitHub 查询当前提交和文件列表', catalog: withPin(() => new Promise<never>(() => {})), keys: install },
@@ -486,7 +514,8 @@ function scratchDir(label: string): string {
 }
 
 async function play(scene: Scene): Promise<Cell[][]> {
-  const terminal = new xterm.Terminal({ cols: COLUMNS, rows: ROWS, allowProposedApi: true, convertEol: true });
+  const rows = scene.rows ?? ROWS;
+  const terminal = new xterm.Terminal({ cols: COLUMNS, rows, allowProposedApi: true, convertEol: true });
   let lastWrite = Date.now();
   const write = (text: string): void => {
     lastWrite = Date.now();
@@ -499,7 +528,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     while (Date.now() - lastWrite < 60 && Date.now() < deadline) await sleep(10);
   };
 
-  const { keyboard, prompter } = keyboardPrompter(write, ROWS, scene.answersLanguage);
+  const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage);
   const tty = scene.tty ?? true;
   const bin = scratchDir('bin');
   for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
@@ -517,7 +546,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
     platform: scene.platform ?? 'darwin',
     systemLocale: 'zh-CN',
-    stdout: { isTTY: tty, rows: ROWS, columns: COLUMNS, write },
+    stdout: { isTTY: tty, rows, columns: COLUMNS, write },
     stderr: { isTTY: true, write },
     stdinIsTTY: tty,
     catalogSource: scene.catalog ?? sample,
@@ -549,18 +578,19 @@ async function play(scene: Scene): Promise<Cell[][]> {
     await settle();
   }
   await new Promise<void>((resolve) => terminal.write('', resolve));
-  const cells = readCells(terminal);
+  const cells = readCells(terminal, scene.rows !== undefined);
   // 收掉还开着的提问；一直在加载的场景不会结束，由进程退出时一并了结
   keyboard.write(KEY.ctrlC);
   await Promise.race([finished, sleep(200)]);
   return cells;
 }
 
-function readCells(terminal: InstanceType<typeof xterm.Terminal>): Cell[][] {
+function readCells(terminal: InstanceType<typeof xterm.Terminal>, onScreenOnly = false): Cell[][] {
   const buffer = terminal.buffer.active;
   const lines: Cell[][] = [];
-  // 整个缓冲区，连同滚出屏幕的部分：画面比 ROWS 行长时，只读前 ROWS 行会把底下的截掉
-  for (let y = 0; y < buffer.length; y++) {
+  // 整个缓冲区，连同滚出屏幕的部分：画面比 ROWS 行长时，只读前 ROWS 行会把底下的截掉。
+  // 场景指定了终端的行数时相反，只要还在屏幕上的那几行
+  for (let y = onScreenOnly ? buffer.baseY : 0; y < buffer.length; y++) {
     const line = buffer.getLine(y);
     const cells: Cell[] = [];
     for (let x = 0; line && x < COLUMNS; x++) {

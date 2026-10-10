@@ -170,7 +170,7 @@ describe('语言提问', () => {
 
     const lines = result.screen.split('\n');
     const name = lines.findIndex((line) => line.trim() === `oxy-tools ${version}`);
-    expect(lines.slice(name + 1, name + 5)).toEqual(['', '? Language / 语言', '  中文', '  English']);
+    expect(lines.slice(name + 1, name + 6)).toEqual(['', '? Language / 语言', '', '  中文', '  English']);
     expect(lines.filter((line) => line.startsWith('? '))[0]).toBe('? Language / 语言');
   });
 

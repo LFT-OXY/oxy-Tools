@@ -52,9 +52,12 @@ export function keyboardPrompter(
   return { keyboard, prompter };
 }
 
-/** 把终端收到的原始输出放进无头终端，读出最后留在屏幕上的每一行（连同滚上去的）。 */
-export async function screenLines(raw: string): Promise<string[]> {
-  const terminal = new xterm.Terminal({ cols: COLUMNS, rows: 60, scrollback: 1000, allowProposedApi: true, convertEol: true });
+/**
+ * 把终端收到的原始输出放进无头终端，读出最后留在屏幕上的每一行（连同滚上去的）。
+ * rows 是终端的行数：最后的 rows 行是还在屏幕上的，前面的都滚上去了
+ */
+export async function screenLines(raw: string, rows = 60): Promise<string[]> {
+  const terminal = new xterm.Terminal({ cols: COLUMNS, rows, scrollback: 1000, allowProposedApi: true, convertEol: true });
   await new Promise<void>((resolve) => terminal.write(raw, resolve));
   const buffer = terminal.buffer.active;
   return Array.from({ length: buffer.length }, (_, row) => buffer.getLine(row)?.translateToString(true) ?? '');

@@ -28,11 +28,13 @@ export type CheckboxRow<Value> = CheckboxChoice<Value> | SelectSeparator;
 
 /** 提问各部分的样式，由呈现层给出。 */
 export interface PromptTheme {
+  /** idle 可以以换行开头：提问上方的那一行空行，只在还在问的时候占着，回答之后随提问一起收掉 */
   prefix: { idle: string; done: string };
   /** disabledChecked、disabledUnchecked 是多选里不可选的行的勾选框 */
   icon: { cursor: string; checked: string; unchecked: string; disabledChecked: string; disabledUnchecked: string };
   style: {
-    message: (text: string) => string;
+    /** status 是提问的状态：回答之后是 done */
+    message: (text: string, status: string) => string;
     answer: (text: string) => string;
     highlight: (text: string) => string;
     description: (text: string) => string;

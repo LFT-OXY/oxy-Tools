@@ -165,10 +165,11 @@ describe('带 key 的 MCP：必填项留空', () => {
     const title = lines.findIndex((line) => /^── 结果 ─+$/.test(line));
     expect(title).toBeGreaterThan(-1);
     expect(lines.some((line) => line.includes('正在安装'))).toBe(false);
+    expect(lines[title + 1]).toBe('');
     // 原因自己折了行；变量名是一个折不开的词，再被终端折成两行
-    expect(lines[title + 1]).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的$/);
-    expect(`${lines[title + 2]?.trim()}${lines[title + 3]?.trim()}`).toBe(LONG);
-    expect(lines[title + 4]).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/);
+    expect(lines[title + 2]).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的$/);
+    expect(`${lines[title + 3]?.trim()}${lines[title + 4]?.trim()}`).toBe(LONG);
+    expect(lines[title + 5]).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/);
   });
 
   it('这个 MCP 后面的变量不再问', async () => {

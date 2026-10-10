@@ -99,7 +99,7 @@ describe('真实的画面：语言提问', () => {
     const lines = await screenLines(result.raw);
     const question = lines.indexOf('? Language / 语言');
     expect(lines.slice(question - 2, question)).toEqual([expect.stringMatching(/^\s+oxy-tools \S+$/), '']);
-    expect(lines.slice(question + 1, question + 3)).toEqual(['▸ 中文', '  English']);
+    expect(lines.slice(question + 1, question + 4)).toEqual(['', '▸ 中文', '  English']);
     expect(result.output).toMatch(/^\s+↑↓ 移动 · ⏎ 选择$/m);
     expect(result.exitCode).toBe(130);
   });
@@ -112,7 +112,7 @@ describe('真实的画面：语言提问', () => {
 
     const lines = await screenLines(result.raw);
     const question = lines.indexOf('? Language / 语言');
-    expect(lines.slice(question + 1, question + 3)).toEqual(['  中文', '▸ English']);
+    expect(lines.slice(question + 1, question + 4)).toEqual(['', '  中文', '▸ English']);
     expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
   });
 
