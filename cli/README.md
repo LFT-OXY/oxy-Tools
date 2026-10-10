@@ -64,6 +64,7 @@ npm test                                # 全部测试
 npm run typecheck                       # 类型检查
 OXY_TOOLS_CATALOG=.. npm start          # 构建后启动，读仓库里本地的目录数据
 npm run validate-catalog -- ..          # 校验仓库根的 index.json 和 catalog.json
+npm run check-upstream -- ..            # 核对目录里的第三方 Skill 和作者仓库还对不对得上（要联网）
 npm run preview                         # 生成界面预览页 .preview/index.html
 ```
 
@@ -129,6 +130,7 @@ npm test                                # all tests
 npm run typecheck                       # type check
 OXY_TOOLS_CATALOG=.. npm start          # build, then start against the local catalog
 npm run validate-catalog -- ..          # validate index.json and catalog.json at the repo root
+npm run check-upstream -- ..            # check the catalog's third-party skills against their upstream repositories (needs network)
 npm run preview                         # generate the interface preview page .preview/index.html
 ```
 

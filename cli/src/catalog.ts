@@ -425,7 +425,7 @@ export function localCatalogSource(dir: string): CatalogSource {
 }
 
 // 被限流时的答复是 403 或 429：限额用完的带 x-ratelimit-remaining: 0 和恢复的时刻，请求太密的带 retry-after（秒）
-function rateLimit(response: Response): { minutes: number | undefined } | undefined {
+export function rateLimit(response: Response): { minutes: number | undefined } | undefined {
   if (response.status !== 403 && response.status !== 429) return undefined;
   const retryAfter = response.headers.get('retry-after');
   if (retryAfter === null && response.headers.get('x-ratelimit-remaining') !== '0') return undefined;
@@ -500,7 +500,7 @@ const TOOL_OSES: readonly ToolOs[] = ['macos', 'linux', 'windows'];
 
 // 第三方 Skill 的来源和其中每个 skill 的名字会成为 skills CLI 的参数。来源的两段都以字母或数字开头：
 // 以 - 开头的会被它当成选项，以 . 开头的（./x、../x）会被它当成本地路径
-const SKILL_SOURCE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const SKILL_SOURCE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 // skills CLI 装出来的目录名是把名字转成小写、把小写字母、数字、. 和 _ 之外的字符连成的一段换成一个连字符、
 // 再去掉首尾的 . 和 - 之后的样子：只收那样处理之后一字不变的名字，目录里登记的名字才就是目标位置下的目录名。
 // 所以以小写字母或数字开头，不以 . 或 - 结尾，连字符不连着写

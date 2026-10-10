@@ -40,7 +40,8 @@ cli/
 ├── test/                 # 只经入口断言的测试，和测试架子
 └── scripts/              # 仅供开发的脚本，不进 dist/，不随 npm 包发布
     ├── preview.ts            # 界面预览页
-    └── validate-catalog.ts   # 目录校验命令
+    ├── validate-catalog.ts   # 目录校验命令
+    └── check-upstream.ts     # 上游核对命令：目录里的第三方 Skill 和作者仓库还对不对得上（要联网，不进 CI）
 ```
 
 ---
@@ -52,7 +53,7 @@ cli/
 | 规矩 | 现在靠什么守住 |
 |------|----------------|
 | **自带包描述文件，仓库根不放** | `package.json`、`package-lock.json`、`tsconfig*.json`、`vitest.config.ts`、`.gitignore`、`README.md`、`LICENSE` 都在 `cli/` 里；仓库里除了上游整包自带的，只有 `cli/package.json` 这一个包描述文件 |
-| **只通过目录来源读数据，不引用 `cli/` 以外的文件** | 目录来源缺省是 GitHub 上本仓库 `main` 分支的原始文件地址（`catalog.ts` 的 `githubCatalogSource`）。本地目录只来自运行的人给的路径：环境变量 `OXY_TOOLS_CATALOG`、目录校验命令的参数——所以脚本和 `package.json` 里都不写死 `..`；测试用自己写到临时目录的样例，不读仓库真实的目录数据 |
+| **只通过目录来源读数据，不引用 `cli/` 以外的文件** | 目录来源缺省是 GitHub 上本仓库 `main` 分支的原始文件地址（`catalog.ts` 的 `githubCatalogSource`）。本地目录只来自运行的人给的路径：环境变量 `OXY_TOOLS_CATALOG`、目录校验命令和上游核对命令的参数（后者另有 `--repos` 给的本地仓库目录）——所以脚本和 `package.json` 里都不写死 `..`；测试用自己写到临时目录的样例，不读仓库真实的目录数据 |
 | **构建和测试只扫 `cli/` 内部** | `vitest.config.ts` 的 `include` 只有 `test/**/*.test.ts`；`tsconfig.json` 的 `include` 只有 `src`、`test`、`scripts` 和 `vitest.config.ts`；CI 只检出 `cli/` 和仓库根的文件。`skills/` 下的上游整包自带测试和 `package.json`，不能被扫进来 |
 
 随之而来的两条：
@@ -81,7 +82,7 @@ cli/
 | 接缝 | 是什么 | 怎么用 |
 |------|--------|--------|
 | 主接缝 | 安装器入口 | `cli/test/harness.ts` 的 `run({ answers, catalog, home, project, onPath, … })`：给定一份目录、主目录和项目目录的初始状态和一串应答，断言终端上输出了什么、退出状态、记录到的命令和链接、主目录和项目目录里有什么。见 [入口与测试](./installer-entry.md) |
-| 辅助接缝 | 目录校验命令 | `npm run validate-catalog -- <目录>`：测试把它当子进程跑，只断言标准输出、标准错误和退出状态；维护者和 CI 用同一条命令检查仓库里真实的目录数据。见 [目录校验与 CI](./catalog-validation.md) |
+| 辅助接缝 | 目录校验命令、上游核对命令 | `npm run validate-catalog -- <目录>`：测试把它当子进程跑，只断言标准输出、标准错误和退出状态；维护者和 CI 用同一条命令检查仓库里真实的目录数据。`npm run check-upstream -- <目录>` 是同一种跑法，测试里让它对着本地的假仓库目录，联网的那一段手动核对。见 [目录校验与 CI](./catalog-validation.md) |
 
 界面预览页也经主接缝驱动安装器，但它不是测试：观感由它加视觉评审把关，见 [界面设计](./ui-design.md)。
 
@@ -97,7 +98,7 @@ cli/
 | [安装工具](./tool-install.md) | `catalog.json` 的工具条目与校验、安装命令是一整行 shell、按系统选命令、两种检查方式与两种状态、哪些条目不可选、它在混合流程里排在哪、成功与否只看复核的结论矩阵、外部命令执行器的 shell 模式与手动核对的办法、已知的限制 |
 | [界面设计](./ui-design.md) | 画面该长什么样：视觉方向「账本」、版式的总规则、颜色与符号的含义、状态的写法、标题区、各类画面的版式要点、深浅色与不显示颜色和没有 Unicode 时的要求、界面预览页的生成命令和用法、还没经维护者确认的画法 |
 | [终端输出](./terminal-output.md) | 呈现层的职责、上色与 Unicode 的判断、不可选的行（原因在状态的位置）、是否题、隐藏输入、选择安装范围（当前目录的写法与截断）、带备注的表、将执行的命令与占位符、工具的执行分区与结论、混合列表与外部项目的说明与链接、标准输出与标准错误的分工、块与块之间的空行、改写已打出的行、结果行与合计共用一份、界面预览页 |
-| [目录校验与 CI](./catalog-validation.md) | 目录校验命令的输出与退出状态、被跳过条目的原因怎么记、没有让条目被跳过的写坏之处（`Catalog.flaws`）怎么记怎么说、命令的测试怎么写、工作流的触发与检出范围 |
+| [目录校验与 CI](./catalog-validation.md) | 目录校验命令的输出与退出状态、被跳过条目的原因怎么记、没有让条目被跳过的写坏之处（`Catalog.flaws`）怎么记怎么说、命令的测试怎么写；上游核对命令的输出与退出状态、怎么认出上游有哪些 skill、为什么不进 CI；工作流的触发与检出范围 |
 
 ---
 
@@ -116,6 +117,7 @@ cli/
 - [ ] 要读 `cli/` 以外的文件、或在仓库根加包描述文件 → 不行，见上面「自成一体的三条规矩」和 ADR-0001
 - [ ] 要改 `index.json` 或 `catalog.json` 的格式 → 先读 ADR-0002 和 [清单与版本](../skills/manifest-versioning.md)：字段契约、格式版本号的兼容规则、对 A Team Workflow 的三条承诺都在那里
 - [ ] 要给目录加一类条目、一个字段或一条校验规则，或动 CI → [目录校验与 CI](./catalog-validation.md)：写坏的条目带着原因进 `skipped`
+- [ ] 要动上游核对命令，或 skills CLI 换了主版本 → [目录校验与 CI](./catalog-validation.md) 的「上游核对命令」：认 skill 的规则照抄 skills CLI，读不到是「没能核对」而不是「对不上」
 - [ ] 要把目录里的网址打到终端上或交给系统打开 → [入口与测试](./installer-entry.md) 的 `url` 规则和链接打开器的契约；[终端输出](./terminal-output.md) 的「混合列表与外部项目」
 
 ---
@@ -132,6 +134,7 @@ cli/
 | `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
 | `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
+| `npm run check-upstream -- ..` | 把目录里登记的第三方 Skill 和作者在 GitHub 上的仓库对一遍：仓库还在不在、归档或改名没有、里面的 skill 多了少了。要联网，不进 CI；录入或改动第三方 Skill 之后跑，设上 `GITHUB_TOKEN` 免得被限流 |
 | `npm pack --dry-run` | 列出 npm 包里会有哪些文件，不生成文件；动了 `package.json` 的 `files`、`README.md`、`LICENSE` 时看一眼 |
 
 推送后 CI（`.github/workflows/cli.yml`）在 macOS、Linux、Windows 上各用 Node 22.13 和 24 跑全部测试，另跑类型检查和目录校验。

@@ -24,7 +24,8 @@
     "test": "vitest run",
     "start": "npm run build && node dist/bin.js",
     "preview": "node --experimental-strip-types scripts/preview.ts",
-    "validate-catalog": "node --experimental-strip-types scripts/validate-catalog.ts"
+    "validate-catalog": "node --experimental-strip-types scripts/validate-catalog.ts",
+    "check-upstream": "node --experimental-strip-types scripts/check-upstream.ts"
   },
   "dependencies": {
     "@inquirer/checkbox": "^5.2.6",
@@ -39,6 +40,7 @@
     "@types/node": "^22.13.0",
     "@xterm/headless": "^6.0.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "yaml": "^2.9.1"
   }
 }
