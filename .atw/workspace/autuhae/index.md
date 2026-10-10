@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-10-09
+- **Total Sessions**: 2
+- **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~48 | Active |
+| `journal-1.md` | ~100 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-10-10 | oxy-tools 发布前验收、发布 0.1.0 与任务归档 | `62fd98c`, `bde855a`, `c06b979`, `abf4403`, `48ac524` | `main` |
 | 1 | 2026-10-09 | 按仓库真实形态填写项目 spec（bootstrap） | `dda9dc5` | `main` |
 <!-- @@@/auto:session-history -->
 
