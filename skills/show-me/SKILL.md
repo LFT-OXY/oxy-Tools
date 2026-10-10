@@ -1,6 +1,7 @@
 ---
 name: show-me
 description: 使用简洁的图表、代码形状草图和聚焦的HTML构件，帮助用户直观地理解当前主题。
+disable-model-invocation: true
 ---
 
 Help the user understand the current topic of conversation visually. Skip the preamble and keep prose brief. Pick the smallest view that makes the key point clear.

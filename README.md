@@ -31,6 +31,7 @@ npx oxy-tools
 | `cli/` | MIT，见 [`cli/LICENSE`](./cli/LICENSE) |
 | `skills/archify/` | MIT，见该目录的 `LICENSE` |
 | `skills/onetake/` | PolyForm Noncommercial 1.0.0（仅限非商业使用），见该目录的 `LICENSE` |
+| `skills/shuorenhua/` | MIT，见该目录的 `LICENSE` |
 | `skills/unlazy/` | MIT，见该目录的 `LICENSE` |
 | 其余 skill 目录 | 没有附带许可证文件 |
 

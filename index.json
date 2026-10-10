@@ -3,7 +3,7 @@
   "skills": [
     {
       "name": "archify",
-      "version": "2.16",
+      "version": "3.0",
       "path": "skills/archify",
       "description": {
         "zh": "生成架构图、流程图、时序图、数据流图，输出可交互的独立 HTML",
@@ -30,7 +30,7 @@
     },
     {
       "name": "onetake",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "path": "skills/onetake",
       "description": {
         "zh": "制作 10–60 秒的产品动效短片（体积约 70MB，仅限非商业使用）",
@@ -66,7 +66,7 @@
     },
     {
       "name": "show-me",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "path": "skills/show-me",
       "description": {
         "zh": "用图表、代码草图和 HTML 构件把当前话题讲直观",
@@ -74,8 +74,17 @@
       }
     },
     {
+      "name": "shuorenhua",
+      "version": "2.5.1",
+      "path": "skills/shuorenhua",
+      "description": {
+        "zh": "审稿或去掉文字里的 AI 味，支持中英文，保留事实、术语和作者立场",
+        "en": "Review or de-AI a piece of writing in Chinese or English, keeping its facts, terms and the author's stance"
+      }
+    },
+    {
       "name": "unlazy",
-      "version": "2.1.0",
+      "version": "2.1.1",
       "path": "skills/unlazy",
       "description": {
         "zh": "长任务的完成纪律：先定验收标准，汇报前逐项核对证据",

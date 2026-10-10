@@ -51,7 +51,8 @@ test('all typed renderers expose named, stable relationships without changing ge
 
     assert.equal(keys.size, relationships.length, `${mode} keeps one stable key per source relationship`);
     relationships.forEach((relationship, index) => {
-      assert.match(diagram, new RegExp(`data-edge-from="${escapeAttr(relationship.from)}"[^>]+data-edge-to="${escapeAttr(relationship.to)}"[^>]+data-edge-key="${index}"`), `${mode} relationship ${index}`);
+      const expectedKey = source.schema_version === 2 ? '\\d+' : String(index);
+      assert.match(diagram, new RegExp(`data-edge-from="${escapeAttr(relationship.from)}"[^>]+data-edge-to="${escapeAttr(relationship.to)}"[^>]+data-edge-key="${expectedKey}"`), `${mode} relationship ${index}`);
       if (relationship.label) {
         assert.match(diagram, new RegExp(`data-edge-label="${escapeAttr(relationship.label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), `${mode} named relationship ${index}`);
       }
@@ -115,7 +116,7 @@ test('relationship lens is keyboard navigable, mobile-pinned, and excluded from 
   assert.match(html, /previewingOnMobile = mobile && chip\.getAttribute\('data-relationship-previewing'\) === 'true'/);
   assert.match(html, /nodeCenter < \(visibleTop \+ visibleBottom\) \/ 2 \? pinnedBottom : pinnedTop/);
   assert.match(html, /html\[data-embed="true"\] \.focus-chip/);
-  assert.match(html, /\.toolbar, \.diagram-nav, \.focus-chip, \.guided-views/);
+  assert.match(html, /\.toolbar, \.diagram-nav, \.focus-chip, \.archify-toast/);
   assert.match(html, /chip\.hidden = options\.hideChip === true \|\| normalized\.length !== 1 \|\| selectionMode/);
   assert.match(html, /event\.target\.closest\('\.diagram-nav, \.focus-chip, \.node-finder, \.diagram-guide, \.overview-map, \.route-probe, \.semantic-lens'\)/);
   assert.match(html, /function placeRelationshipLens\(\)/);

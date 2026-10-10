@@ -17,6 +17,10 @@
 [![Cases](https://img.shields.io/badge/Cases-10%20films-orange.svg)](cases/)
 [![Continuity](https://img.shields.io/badge/Continuity-measured%20per%20boundary-brightgreen.svg)](scripts/verify_promo.py)
 
+**▶ See the films and get onetake Pro → [onetakemotion.com](https://onetakemotion.com)**
+**▶ 看成片、获取 onetake Pro → [onetakemotion.com](https://onetakemotion.com)**
+**▶ New films every week → [@paojiaofty](https://x.com/paojiaofty) on X**
+
 ![onetake launch](assets/hero.gif)
 
 <sub>From onetake's own launch film. A prompt bar opens into the ad it asked for; the next prompt collapses into a line that shoots across the desk and opens into a festival screen. No cut. [Full film with sound →](cases/onetake-launch-30s/onetake-launch.mp4)</sub>
@@ -157,7 +161,7 @@ reference analysis), `ffmpeg`, `node`. Narration adds `faster-whisper` and Kokor
 ### License
 
 [PolyForm Noncommercial 1.0.0](LICENSE): free for personal, educational, research and other noncommercial use.
-**Commercial use is not permitted.**
+**Commercial use is not permitted.** Need commercial use? [onetake Pro](https://onetakemotion.com) adds a commercial licence plus every film's source.
 
 ---
 
@@ -233,4 +237,4 @@ git clone https://github.com/feitangyuan/onetake.git ~/.agents/skills/onetake
 
 ### 许可证
 
-[PolyForm Noncommercial 1.0.0](LICENSE)：个人、学习、研究等**非商业用途免费使用，不允许商用**。
+[PolyForm Noncommercial 1.0.0](LICENSE)：个人、学习、研究等**非商业用途免费使用，不允许商用**。需要商用请看 [onetake Pro](https://onetakemotion.com)：商业授权，加每部片子的完整源码。

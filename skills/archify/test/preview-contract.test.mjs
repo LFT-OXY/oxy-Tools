@@ -12,7 +12,7 @@ const delivery = fs.readFileSync(path.join(skillRoot, 'references', 'delivery-co
 const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
 const english = fs.readFileSync(path.join(repoRoot, 'README_EN.md'), 'utf8');
 const chinese = fs.readFileSync(path.join(repoRoot, 'README_ZH.md'), 'utf8');
-const roadmap = fs.readFileSync(path.join(repoRoot, 'ROADMAP.md'), 'utf8');
+const japanese = fs.readFileSync(path.join(repoRoot, 'README_JA.md'), 'utf8');
 
 test('preview contract: the skill keeps live preview explicit, desktop-only, and last-good', () => {
   assert.match(delivery, /archify\.mjs preview <type> <input>\.json <output>\.html/);
@@ -25,7 +25,7 @@ test('preview contract: the skill keeps live preview explicit, desktop-only, and
 
 test('preview contract: all README languages document the same optional command without changing the hero', () => {
   assert.equal(readme, english);
-  for (const text of [readme, chinese]) {
+  for (const text of [readme, chinese, japanese]) {
     assert.match(text, /bin\/archify\.mjs preview workflow/);
     assert.match(text, /--no-open/);
     assert.match(text, /127\.0\.0\.1/);
@@ -34,8 +34,8 @@ test('preview contract: all README languages document the same optional command 
   }
 });
 
-test('preview contract: roadmap records the no-leak and zero-dependency boundary', () => {
-  assert.match(roadmap, /Last-Good Live Preview/);
-  assert.match(roadmap, /installed ZIP skills keep the zero-dependency contract/i);
-  assert.match(roadmap, /no server state, port, path, error, or reload token enters HTML/i);
+test('preview contract: the canonical delivery reference owns no-leak and zero-dependency boundaries', () => {
+  assert.match(delivery, /Last-Good Live Preview/);
+  assert.match(delivery, /zero-dependency Skill ZIP/i);
+  assert.match(delivery, /Server state, port, source path, diagnostics, error text, and reload tokens must never enter/i);
 });

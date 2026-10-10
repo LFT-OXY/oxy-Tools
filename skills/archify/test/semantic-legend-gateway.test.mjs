@@ -56,7 +56,7 @@ test('only legends with an exact node-kind meaning publish bridge entries', () =
     // semantic bridge contract focused by rendering the same typed nodes with
     // an explicit full legend and no relationship geometry in the band.
     document.meta.legend = { mode: 'all' };
-    document.meta.viewBox = [1200, 900];
+    delete document.meta.viewBox;
     document.edges = [];
     delete document.mainPath;
   }));
@@ -117,7 +117,7 @@ test('preview is soft, input-aware, and yields to stronger exploration owners', 
   assert.doesNotMatch(preview, /renderFlowOverlay|data-semantic-lens-overlay/);
   assert.match(html, /selectedKinds\.length > 0 \|\| !panel\.hidden \|\| html\.getAttribute\('data-present'\) === 'true'/);
   assert.match(html, /data-focus-active.*data-intent-trace-active/s);
-  assert.match(html, /data-route-picking.*data-story-active.*data-relationship-preview-active/s);
+  assert.match(html, /data-route-picking.*data-relationship-preview-active/s);
   assert.match(html, /svg\[data-legend-preview-active\] \[data-node-id\]/);
 });
 
