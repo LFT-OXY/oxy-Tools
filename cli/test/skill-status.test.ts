@@ -14,8 +14,8 @@ const installed = (skillsDir: string, name: string, version: string): Record<str
   [`${skillsDir}/${name}/SKILL.md`]: `# ${name}，装的是 ${version}\n`,
   [`${skillsDir}/${name}/.oxy-tools.json`]: marker(name, version),
 });
-const browse = [choose('Skill'), pick(), choose('退出')];
-const installBoth = [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')];
+const browse = [choose('推荐'), pick(), choose('退出')];
+const installBoth = [choose('推荐'), pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')];
 const read = (...path: string[]): string => readFileSync(join(...path), 'utf8');
 const NOTICE = /^\s+注意\s+覆盖即整目录替换，目录内的本地改动会丢失$/m;
 
@@ -28,7 +28,7 @@ describe('skill 列表里的状态', () => {
         ...installed('.claude/skills', 'beta-pack', '2.0'),
         '.agents/skills/beta-pack/SKILL.md': '用户自己手动放的',
       },
-      answers: [choose('Skill'), accept(), pick(), pick(), choose('退出')],
+      answers: [choose('推荐'), accept(), pick(), pick(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+说明$/m);
@@ -78,10 +78,10 @@ describe('skill 列表里的状态', () => {
 
   it('状态是实时探测的：装完再进列表，刚装的那个已经显示为已装', async () => {
     const result = await run({
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), choose('Skill'), pick(), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), choose('推荐'), pick(), choose('退出')],
     });
 
-    const [, first = '', second = ''] = result.output.split('选择要安装的 skill');
+    const [, first = '', second = ''] = result.output.split('选择要安装的条目');
     expect(first).toMatch(/^\s*□ alpha\s+未装\s/m);
     expect(second).toMatch(/^\s*□ alpha\s+已装 1\.0\.0\s/m);
     expect(second).toMatch(/^\s*□ beta-pack\s+未装\s/m);
@@ -96,7 +96,7 @@ describe('skill 列表里的状态', () => {
         ...installed('.claude/skills', 'beta-pack', '2.0'),
         '.agents/skills/beta-pack/SKILL.md': 'placed by hand',
       },
-      answers: [choose('Skills'), accept(), pick(), pick(), choose('Exit')],
+      answers: [choose('Recommended'), accept(), pick(), pick(), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+About$/m);
@@ -146,7 +146,7 @@ describe('覆盖已装的 skill', () => {
     const result = await run({
       onPath: BOTH_HOSTS,
       home: installed('.agents/skills', 'alpha', '0.9'),
-      answers: [choose('Skill'), accept(), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), accept(), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
@@ -169,7 +169,7 @@ describe('覆盖已装的 skill', () => {
     it('全是新装：表头仍然只有一行，不为没有内容的备注另起一行', async () => {
       const result = await run({
         catalog: catalog(),
-        answers: [choose('Skill'), pick(longName), choose('开始安装'), choose('退出')],
+        answers: [choose('推荐'), pick(longName), choose('开始安装'), choose('退出')],
       });
 
       expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
@@ -180,7 +180,7 @@ describe('覆盖已装的 skill', () => {
       const result = await run({
         catalog: catalog(),
         home: { ...installed('.claude/skills', 'beta-pack', '2.0'), [`.claude/skills/${longName}/SKILL.md`]: '用户自己放的' },
-        answers: [choose('Skill'), pick('beta-pack', longName), choose('开始安装'), no(), choose('退出')],
+        answers: [choose('推荐'), pick('beta-pack', longName), choose('开始安装'), no(), choose('退出')],
       });
 
       expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
@@ -195,7 +195,7 @@ describe('覆盖已装的 skill', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       home: { ...installed('.claude/skills', 'alpha', '1.0.0'), ...installed('.claude/skills', 'beta-pack', '2.0') },
-      answers: [choose('Skills'), pick('alpha', 'beta-pack'), choose('Install'), choose('Exit')],
+      answers: [choose('Recommended'), pick('alpha', 'beta-pack'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Entry\s+AI Agent\s+Action\s+Location(\s+Note)?$/m);
@@ -229,7 +229,7 @@ describe('不是本工具装的同名目录', () => {
   it('汇总里标为覆盖并注明另行确认；选了「开始安装」之后单独再问，默认不覆盖', async () => {
     const result = await run({
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), accept(), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), accept(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+覆盖\s+~\S+alpha\s+非本工具安装，另行确认$/m);
@@ -242,7 +242,7 @@ describe('不是本工具装的同名目录', () => {
   it('拒绝后该目录保持原样，其余选中项照常安装，结果里这一项是跳过', async () => {
     const result = await run({
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), no(), choose('退出')],
+      answers: [choose('推荐'), pick('alpha', 'beta-pack'), choose('开始安装'), no(), choose('退出')],
     });
 
     untouched(result.home);
@@ -257,7 +257,7 @@ describe('不是本工具装的同名目录', () => {
   it('同意后整目录替换，并写入安装标记', async () => {
     const result = await run({
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), yes(), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), yes(), choose('退出')],
     });
 
     replaced(result.home);
@@ -269,7 +269,7 @@ describe('不是本工具装的同名目录', () => {
     const result = await run({
       onPath: BOTH_HOSTS,
       home: { ...byHand('.claude/skills'), ...byHand('.agents/skills') },
-      answers: [choose('Skill'), accept(), pick('alpha'), choose('开始安装'), yes(), no(), choose('退出')],
+      answers: [choose('推荐'), accept(), pick('alpha'), choose('开始安装'), yes(), no(), choose('退出')],
     });
 
     expect(result.output).toContain(`${join('~', '.agents', 'skills', 'alpha')} 不是本工具装的，要覆盖它吗？`);
@@ -285,7 +285,7 @@ describe('不是本工具装的同名目录', () => {
     const result = await run({
       catalog: githubCatalogSource(),
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), no(), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), no(), choose('退出')],
     });
 
     expect(github.queries()).toEqual([]);
@@ -296,7 +296,7 @@ describe('不是本工具装的同名目录', () => {
   it('在这个确认上按 Ctrl+C：什么都不动，以 130 退出', async () => {
     const result = await run({
       home: byHand('.claude/skills'),
-      answers: [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), interrupt()],
+      answers: [choose('推荐'), pick('alpha', 'beta-pack'), choose('开始安装'), interrupt()],
     });
 
     untouched(result.home);
@@ -308,7 +308,7 @@ describe('不是本工具装的同名目录', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       home: byHand('.claude/skills'),
-      answers: [choose('Skills'), pick('alpha'), choose('Install'), no(), choose('Exit')],
+      answers: [choose('Recommended'), pick('alpha'), choose('Install'), no(), choose('Exit')],
     });
 
     expect(result.output).toMatch(/\s+overwrite\s+~\S+alpha\s+unmanaged; asked separately$/m);
@@ -328,7 +328,7 @@ describe('目标是符号链接', () => {
   };
 
   it('同意覆盖只替换链接本身：那里换成装好的目录，链接指向的原目录不被改动', async () => {
-    const result = await run({ ...linked, answers: [choose('Skill'), pick('alpha'), choose('开始安装'), yes(), choose('退出')] });
+    const result = await run({ ...linked, answers: [choose('推荐'), pick('alpha'), choose('开始安装'), yes(), choose('退出')] });
 
     const target = join(result.home, '.claude', 'skills', 'alpha');
     expect(lstatSync(target).isSymbolicLink()).toBe(false);
@@ -339,7 +339,7 @@ describe('目标是符号链接', () => {
   });
 
   it('不同意时链接还在，原目录不被改动', async () => {
-    const result = await run({ ...linked, answers: [choose('Skill'), pick('alpha'), choose('开始安装'), no(), choose('退出')] });
+    const result = await run({ ...linked, answers: [choose('推荐'), pick('alpha'), choose('开始安装'), no(), choose('退出')] });
 
     expect(lstatSync(join(result.home, '.claude', 'skills', 'alpha')).isSymbolicLink()).toBe(true);
     original(result.home);

@@ -46,12 +46,16 @@ export interface Messages {
   noEntries: string;
   skipped: (count: number) => string;
   pickPurpose: string;
+  /** 「推荐」：主菜单的第一行，也是列表下方「类型」一行里跟在类型后面的那个词 */
+  recommended: string;
+  /** 列表里带推荐的行写在说明最前面的标记，比上面那个词短 */
+  recommendedMark: string;
   purposeColumn: string;
   countColumn: string;
   aboutColumn: string;
   exit: string;
   back: string;
-  /** 旧入口不可进入的原因，接在那一行的末尾 */
+  /** 一个宿主都没检测到：旧入口不可进入、混合列表里组件不可选的原因 */
   needsHost: string;
   /** 在不可选的行上按了确认 */
   unavailable: string;
@@ -64,22 +68,21 @@ export interface Messages {
   mcpConfigUnreadable: (hosts: string) => string;
   /** 条目不可选的原因：MCP 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
   unsupportedByHosts: string;
-  /** 只有一栏状态的列表（工具）里那一栏的表头 */
+  /** 只有一栏状态的列表（工具，和一个宿主都没检测到时的混合列表）里那一栏的表头 */
   statusColumn: string;
   toolStatus: { none: string; installed: string };
   /** 工具不可选的原因：条目把当前系统标为不支持 */
   unsupportedOs: (os: ToolOs) => string;
   pickHosts: string;
-  pickSkills: string;
   pickMcps: string;
   pickTools: string;
-  /** 进入一个用途之后的那张列表 */
+  /** 进入「推荐」或一个用途之后的那张列表 */
   pickEntries: string;
   /** 列表下方写光标所在行类型的那一行的标签 */
   typeLabel: string;
   /** 条目的类型：sections 是列表里段首的标题和它后面的一句说明，kinds 是列表下方「类型」一行里的写法 */
-  sections: { app: { title: string; note: string } };
-  kinds: { app: string };
+  sections: { skill: { title: string }; app: { title: string; note: string } };
+  kinds: { skill: string; app: string };
   /** 列表回答之后收成的那一行，勾得多时只列前几个名字：shown 是列出来的那几个，total 是勾选的总数 */
   pickedMany: (shown: readonly string[], total: number) => string;
   /** 列出勾选的外部项目的那个分区的标题 */
@@ -158,7 +161,7 @@ export interface Messages {
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
   /** 还没搬进混合列表的类型在主菜单上的旧入口 */
-  groups: Record<'skill' | 'mcp' | 'tool', { label: string; about: string }>;
+  groups: Record<'mcp' | 'tool', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -196,6 +199,8 @@ const zh: Messages = {
   noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
   pickPurpose: '选择用途',
+  recommended: '推荐',
+  recommendedMark: '推荐',
   purposeColumn: '用途',
   countColumn: '数量',
   aboutColumn: '说明',
@@ -212,13 +217,12 @@ const zh: Messages = {
   toolStatus: { none: '未安装', installed: '已安装' },
   unsupportedOs: (os) => `不支持 ${OS_NAMES[os]}`,
   pickHosts: '装进哪些 AI Agent',
-  pickSkills: '选择要安装的 skill',
   pickMcps: '选择要安装的 MCP',
   pickTools: '选择要安装的工具',
   pickEntries: '选择要安装的条目',
   typeLabel: '类型',
-  sections: { app: { title: '外部项目', note: '只给链接，不安装' } },
-  kinds: { app: '外部项目' },
+  sections: { skill: { title: 'Skill' }, app: { title: '外部项目', note: '只给链接，不安装' } },
+  kinds: { skill: 'Skill', app: '外部项目' },
   pickedMany: (shown, total) => `${shown.join('、')} 等 ${total} 项`,
   externalProjects: (count) => `外部项目：${count} 个，只给链接`,
   linkKey: '链接',
@@ -307,7 +311,6 @@ const zh: Messages = {
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
   groups: {
-    skill: { label: 'Skill', about: '装进 AI Agent 的能力包' },
     mcp: { label: 'MCP', about: '写进 AI Agent 配置的 MCP 服务器' },
     tool: { label: '工具', about: '执行其官方安装命令装上的工具' },
   },
@@ -446,6 +449,8 @@ const en: Messages = {
   noEntries: 'no usable entries',
   skipped: (count) => `${count} malformed catalog ${count === 1 ? 'entry was' : 'entries were'} skipped`,
   pickPurpose: 'Pick a purpose',
+  recommended: 'Recommended',
+  recommendedMark: 'pick',
   purposeColumn: 'Purpose',
   countColumn: 'Count',
   aboutColumn: 'About',
@@ -462,13 +467,12 @@ const en: Messages = {
   toolStatus: { none: 'none', installed: 'installed' },
   unsupportedOs: (os) => `not for ${OS_NAMES[os]}`,
   pickHosts: 'Install into which AI Agents',
-  pickSkills: 'Pick skills to install',
   pickMcps: 'Pick MCP servers to install',
   pickTools: 'Pick tools to install',
   pickEntries: 'Pick entries to install',
   typeLabel: 'Type',
-  sections: { app: { title: 'External projects', note: 'links only, nothing is installed' } },
-  kinds: { app: 'External project' },
+  sections: { skill: { title: 'Skills' }, app: { title: 'External projects', note: 'links only, nothing is installed' } },
+  kinds: { skill: 'Skill', app: 'External project' },
   pickedMany: (shown, total) => `${shown.join(', ')} and ${total - shown.length} more`,
   externalProjects: (count) => `External projects: ${count}, links only`,
   linkKey: 'Link',
@@ -557,7 +561,6 @@ const en: Messages = {
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
   groups: {
-    skill: { label: 'Skills', about: 'Capability packs for your AI Agent' },
     mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
     tool: { label: 'Tools', about: 'Installed by running their official install commands' },
   },

@@ -24,7 +24,7 @@ describe('主菜单按用途进入', () => {
     const result = await run({ catalog: withApps([...SAMPLE_APPS, { ...CIRRUS, purpose: 'dev-workflow' }]), answers: [choose('退出')] });
 
     expect(result.output).toContain('选择用途');
-    expect(result.output).toMatch(/^\s+用途\s+数量\s+说明\n\s+联网搜索与文档检索\s+1\n\s+开发工作流与规范\s+2$/m);
+    expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+1\n\s+开发工作流与规范\s+2$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -48,15 +48,16 @@ describe('主菜单按用途进入', () => {
     expect(result.output).not.toContain(DEV_WORKFLOW);
   });
 
-  it('Skill、MCP、工具三个旧分组留在各用途之后，照旧带着数量和说明', async () => {
+  it('MCP、工具两个旧分组留在各用途之后，照旧带着数量和说明；没有「Skill」这个分组', async () => {
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } }),
       answers: [choose('退出')],
     });
 
     expect(result.output).toMatch(
-      /^\s+开发工作流与规范\s+1\n\s+Skill\s+2\s+装进 AI Agent 的能力包\n\s+MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
+      /^\s+用途\s+数量\s+说明\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+1\n\s+开发工作流与规范\s+1\n\s+MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
     );
+    expect(result.output).not.toMatch(/^\s+Skill\s+\d/m);
   });
 });
 
@@ -169,12 +170,18 @@ describe('一个宿主都没检测到时的外部项目', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('上方的说明补一句外部项目仍可浏览；旧分组不可进入，光标直接落在第一个用途上', async () => {
-    // 直接回车进的就是第一个用途
-    const result = await run({ catalog: withApps(), onPath: [], answers: [accept(), pick(), choose('退出')] });
+  it('上方的说明补一句外部项目仍可浏览；旧分组不可进入，光标直接落在第一行上', async () => {
+    // 直接回车进的就是第一行「推荐」
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, apps: SAMPLE_APPS } }),
+      onPath: [],
+      answers: [accept(), pick(), choose(WEB_SEARCH), pick(), choose('退出')],
+    });
 
     expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览$/m);
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 · 需要 AI Agent$/m);
+    // 第一个应答进的是「推荐」：它下面是本仓库的 skill
+    expect(result.output.split('? 选择要安装的条目')[1]).toMatch(/^ – alpha\s+需要 AI Agent\s/m);
     expect(result.output).toMatch(/ borealis\s+第二个样例外部项目$/m);
   });
 
@@ -317,7 +324,7 @@ describe('英文界面下的外部项目', () => {
 
     expect(result.output).toMatch(/^\s+Catalog\s+2 skills · 2 external$/m);
     expect(result.output).toContain('Pick a purpose');
-    expect(result.output).toMatch(/^\s+Purpose\s+Count\s+About$/m);
+    expect(result.output).toMatch(/^\s+Purpose\s+Count\n\s+Recommended\s+2$/m);
     expect(result.output).toMatch(/^\s+Web search & docs retrieval\s+1\n\s+Development workflow & conventions\s+1$/m);
     expect(result.output).toContain('Pick entries to install');
     expect(result.output).toMatch(/^\s+Name\s+About\n\s+── External projects · links only, nothing is installed$/m);

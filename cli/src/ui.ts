@@ -29,6 +29,8 @@ const USABLE = WIDTH - 1;
 const KEY_WIDTH = 10;
 // 表的栏间隔：每一栏最长的一格后面空这么多格，所有的表同一个数
 const GUTTER = 3;
+// 混合列表里组件的说明一栏至少这么宽，不然整栏不写：推荐标记的 7 列再加 5 列说明
+const MIN_ABOUT = 12;
 
 const UNICODE = {
   done: '✓',
@@ -88,8 +90,8 @@ const ERASE_LINE = '\r\x1b[2K';
 const REASON_MARK = '\u200b';
 
 /** 还没搬进混合列表的类型：它们在主菜单上暂时留着旧入口 */
-export type GroupId = 'skill' | 'mcp' | 'tool';
-export type MenuChoice = Purpose | GroupId | 'exit';
+export type GroupId = 'mcp' | 'tool';
+export type MenuChoice = 'recommended' | Purpose | GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
 
@@ -596,21 +598,24 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 各个用途在前，顺序照传进来的；旧入口排在它们后面，另带一句说明。count 是进去之后列表里的行数。
-     * lacksHost 的旧入口因为一个宿主都没检测到而不可进入：行尾注明原因，光标起始落在第一个能选的项上。
+     * 第一行是「推荐」，里面一个条目都没有时不出现；各个用途跟在后面，顺序照传进来的；旧入口排在最后，另带一句说明。
+     * 数量是进去之后列表里的行数。lacksHost 的旧入口因为一个宿主都没检测到而不可进入：行尾注明原因，
+     * 光标起始落在第一个能选的项上。
      */
     mainMenu(
+      recommended: number,
       purposes: readonly { purpose: Purpose; count: number }[],
       groups: readonly { id: GroupId; count: number; lacksHost: boolean }[],
     ): SelectQuestion<MenuChoice> {
-      const rows: { value: Purpose | GroupId; label: string; about: string; count: string; lacksHost: boolean }[] = [
+      const rows: { value: Exclude<MenuChoice, 'exit'>; label: string; about: string; count: string; lacksHost: boolean }[] = [
+        ...(recommended > 0 ? [{ value: 'recommended' as const, label: t.recommended, about: '', count: String(recommended), lacksHost: false }] : []),
         ...purposes.map(({ purpose, count }) => ({ value: purpose, label: purpose.name[lang], about: '', count: String(count), lacksHost: false })),
         ...groups.map((group) => ({ value: group.id, ...t.groups[group.id], count: String(group.count), lacksHost: group.lacksHost })),
       ];
       const labelWidth = Math.max(displayWidth(t.purposeColumn), ...rows.map((row) => displayWidth(row.label))) + GUTTER;
       const countWidth = Math.max(displayWidth(t.countColumn), ...rows.map((row) => row.count.length));
       const aboutWidth = USABLE - 2 - labelWidth - countWidth - GUTTER;
-      // 用途的行只有名称和数量两栏，后面不留空白
+      // 「推荐」和用途的行只有名称和数量两栏，后面不留空白
       const line = (label: string, count: string, about: string, width = aboutWidth): string =>
         `${pad(label, labelWidth)}${pad(count, countWidth, 'right')}${' '.repeat(GUTTER)}${truncate(about, width, symbols.ellipsis)}`.trimEnd();
       // 原因接在说明后面，说明相应少占几列
@@ -645,32 +650,98 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 进入一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题；现在只有外部项目一段，它的行没有状态。
-     * 列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
+     * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上，每个所选的宿主
+     * 一栏状态（statuses 与 hosts 一一对应）；外部项目在下，没有状态。hosts 是空的表示一个宿主都没检测到：
+     * 状态只有一栏，组件都不可选。checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来
+     * ——「推荐」那张列表里每一行都是，不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
-    mixedPicker(apps: readonly App[]): CheckboxQuestion<App> {
+    mixedPicker({
+      hosts,
+      skills,
+      apps,
+      checked,
+      marksRecommended,
+    }: {
+      hosts: readonly Host[];
+      skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
+      apps: readonly App[];
+      checked: readonly (Skill | App)[];
+      marksRecommended: boolean;
+    }): CheckboxQuestion<Skill | App> {
       // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头和段标题要多缩进
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
-      const nameWidth = Math.max(displayWidth(t.nameColumn), ...apps.map((app) => displayWidth(app.name))) + GUTTER;
-      const aboutWidth = USABLE - lead - nameWidth;
+      const hostless = hosts.length === 0;
+      // 一个组件都没有时没有状态栏
+      const columns = skills.length === 0 ? [] : hostless ? [t.statusColumn] : hosts.map((host) => host.name);
+      // 不可选的行整行压暗，原因自己不带样式
+      const statusCells = skills.map(({ skill, statuses }) =>
+        hostless ? [t.needsHost] : statuses.map((status) => statusCell(status, skill.version)),
+      );
+      const names = [...skills.map(({ skill }) => skill.name), ...apps.map((app) => app.name)];
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...names.map(displayWidth)) + GUTTER;
+      const statusWidths = columns.map(
+        (column, at) => Math.max(displayWidth(column), ...statusCells.map((cells) => displayWidth(cells[at] ?? ''))) + GUTTER,
+      );
+      const statusWidth = statusWidths.reduce((sum, width) => sum + width, 0);
+      // 外部项目没有状态，说明从第一栏状态的位置写起
+      const wideAbout = USABLE - lead - nameWidth;
+      const aboutWidth = wideAbout - statusWidth;
+      const showsAbout = skills.length === 0 || aboutWidth >= MIN_ABOUT;
       const labelWidth = Math.max(displayWidth(t.typeLabel), displayWidth(t.aboutColumn)) + 2;
       // 回答之后收成的那一行最多列出几个名字
       const namesShown = 3;
+      // 说明的那一格：带推荐的最前面是标记，标记从不截断，截断的只是它后面的说明
+      const about = (text: string, width: number, recommended: boolean): string => {
+        const mark = marksRecommended && recommended ? `${t.recommendedMark} ${symbols.separator} ` : '';
+        const room = width - displayWidth(mark);
+        return room > 0 ? `${mark}${truncate(text, room, symbols.ellipsis)}` : '';
+      };
+      // 交互库只把这一段文字交给主题：第一行是类型（带推荐的后面跟着标记），其余是说明全文，由下面的 description 拆开
+      const below = (kind: string, recommended: boolean, text: string): string =>
+        `${kind}${marksRecommended && recommended ? `${dim(` ${symbols.separator} `)}${t.recommended}` : ''}\n${text}`;
+      // 不可选的行下方的那段文字，按交互库拼出来的「名称 + 一个空格 + 原因」来找
+      const belowUnavailable = new Map<string, string>();
+      const title = (section: { title: string; note?: string }) => ({
+        separator: `${indent}${dim(symbols.rule.repeat(2))} ${section.title}${section.note === undefined ? '' : ` ${symbols.separator} ${section.note}`}`,
+      });
       const rows = [
-        { separator: dim(`${indent}${pad(t.nameColumn, nameWidth)}${t.aboutColumn}`) },
-        { separator: `${indent}${dim(symbols.rule.repeat(2))} ${t.sections.app.title} ${symbols.separator} ${t.sections.app.note}` },
+        { separator: dim(`${indent}${pad(t.nameColumn, nameWidth)}${columns.map((column, at) => pad(column, statusWidths[at] ?? 0)).join('')}${showsAbout ? t.aboutColumn : ''}`.trimEnd()) },
+        ...(skills.length > 0 ? [title(t.sections.skill)] : []),
+        // 本仓库的 skill 都是推荐的
+        ...skills.map(({ skill }, row) => {
+          const text = showsAbout ? about(skill.description[lang], aboutWidth, true) : '';
+          const choice = { value: skill, short: skill.name, description: below(t.kinds.skill, true, skill.description[lang]), checked: checked.includes(skill) };
+          // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：原因写在状态的位置、占满各个状态栏，名称少补一格
+          if (hostless) {
+            const name = pad(skill.name, nameWidth - 1);
+            const disabled = `${pad(`${REASON_MARK}${t.needsHost}${REASON_MARK}`, statusWidth)}${text}`.trimEnd();
+            belowUnavailable.set(`${name} ${disabled}`, choice.description);
+            return { ...choice, name, disabled };
+          }
+          const cells = (statusCells[row] ?? []).map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join('');
+          return { ...choice, name: `${pad(skill.name, nameWidth)}${cells}${text}`.trimEnd() };
+        }),
+        // 外部项目一段与上面的组件之间空一行
+        ...(skills.length > 0 && apps.length > 0 ? [{ separator: ' ' }] : []),
+        ...(apps.length > 0 ? [title(t.sections.app)] : []),
         ...apps.map((app) => ({
           value: app,
           short: app.name,
-          name: `${pad(app.name, nameWidth)}${aboutWidth > 0 ? truncate(app.description[lang], aboutWidth, symbols.ellipsis) : ''}`.trimEnd(),
-          // 交互库只把这一段文字交给主题：第一行是类型，其余是说明全文，由下面的 description 拆开
-          description: `${t.kinds.app}\n${app.description[lang]}`,
-          checked: false,
+          name: `${pad(app.name, nameWidth)}${about(app.description[lang], wideAbout, app.recommended)}`.trimEnd(),
+          description: below(t.kinds.app, app.recommended, app.description[lang]),
+          checked: checked.includes(app),
         })),
       ];
       // 列表下方比别的列表多一行「类型」
       const question = list(rows, 1);
+      const description = (text: string): string => {
+        const [kind = '', ...about] = text.split('\n');
+        return `${belowList(t.typeLabel, 'dim', kind, labelWidth)}${belowList(t.aboutColumn, 'dim', about.join('\n'), labelWidth)}`;
+      };
+      // 交互库不把不可选的行的说明交给主题。它每画一遍依次调提问、各行、按键提示的样式：光标停在不可选的行上时
+      // 在画那一行的时候记下它，把类型和说明接在按键提示的前面，落在别的行的说明所在的位置
+      let underCursor: string | undefined;
       return {
         message: t.pickEntries,
         ...question,
@@ -678,10 +749,21 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           ...question.theme,
           style: {
             ...question.theme.style,
-            description: (text) => {
-              const [kind = '', ...about] = text.split('\n');
-              return `${belowList(t.typeLabel, 'dim', kind, labelWidth)}${belowList(t.aboutColumn, 'dim', about.join('\n'), labelWidth)}`;
+            description,
+            message: (text, status) => {
+              underCursor = undefined;
+              return question.theme.style.message(text, status);
             },
+            disabled: (text) => {
+              if (text.startsWith(cursor)) underCursor = belowUnavailable.get(text.slice(cursor.length + symbols.unavailable.length + 1));
+              return question.theme.style.disabled(text);
+            },
+            // 「这一项现在选不了」排在类型和说明的前面：后面跟着它们时不再另空一行
+            error: (text) => {
+              const notice = question.theme.style.error(text);
+              return underCursor === undefined ? notice : notice.replace(/\n$/, '');
+            },
+            keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underCursor)}\n`}${question.theme.style.keysHelpTip(keys)}`,
             renderSelectedChoices: (selected) =>
               selected.length > namesShown
                 ? t.pickedMany(selected.slice(0, namesShown).map((choice) => choice.short), selected.length)
@@ -705,42 +787,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       );
     },
 
-    /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。location 是只作提示的目录，暗淡地写在名字后面，没有就不写。 */
-    hostPicker(choices: readonly { host: Host; location?: string }[], checked: readonly Host[]): CheckboxQuestion<Host> {
-      const nameWidth = Math.max(...choices.map(({ host }) => displayWidth(host.name))) + GUTTER;
+    /** 勾选装进哪些宿主；checked 是提问出现时已经勾上的那些。 */
+    hostPicker(hosts: readonly Host[], checked: readonly Host[]): CheckboxQuestion<Host> {
       return {
         message: t.pickHosts,
-        ...list(
-          choices.map(({ host, location }) => ({
-            value: host,
-            short: host.name,
-            name: location === undefined ? host.name : `${pad(host.name, nameWidth)}${dim(location)}`,
-            checked: checked.includes(host),
-          })),
-        ),
+        ...list(hosts.map((host) => ({ value: host, short: host.name, name: host.name, checked: checked.includes(host) }))),
       };
-    },
-
-    /**
-     * 勾选要安装的 skill：名称、每个宿主一栏状态、说明。statuses 与 hosts 一一对应；
-     * checked 是提问出现时已经勾上的那些。一个都不勾就确认表示返回。
-     */
-    skillPicker(
-      hosts: readonly Host[],
-      entries: readonly { skill: Skill; statuses: readonly SkillStatus[] }[],
-      checked: readonly Skill[],
-    ): CheckboxQuestion<Skill> {
-      return entryPicker(
-        t.pickSkills,
-        hosts.map((host) => host.name),
-        entries.map(({ skill, statuses }) => ({
-          value: skill,
-          name: skill.name,
-          cells: statuses.map((status) => statusCell(status, skill.version)),
-          about: skill.description[lang],
-          checked: checked.includes(skill),
-        })),
-      );
     },
 
     /** 读不到某些宿主的配置时，在 MCP 列表上方说明：它们那一栏的状态都是未知。 */

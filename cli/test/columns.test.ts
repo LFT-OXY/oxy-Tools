@@ -22,7 +22,7 @@ describe('栏间隔：主菜单', () => {
     // 数量右对齐，所以拿表头量这一栏从哪开始
     expect(startOf(screen, '用途', '数量') - startOf(screen, '联网搜索与文档检索 ') - columnsOf('联网搜索与文档检索')).toBe(3);
     expect(screen).toMatch(/数量 {3}说明$/m);
-    expect(screen).toMatch(/2 {3}装进 AI Agent 的能力包/);
+    expect(screen).toMatch(/2 {3}写进 AI Agent 配置的 MCP 服务器/);
   });
 
   it('英文界面同一个间隔', async () => {
@@ -31,14 +31,14 @@ describe('栏间隔：主菜单', () => {
     const longest = 'Development workflow & conventions';
     expect(startOf(screen, 'Purpose', 'Count') - startOf(screen, `${longest} `) - columnsOf(longest)).toBe(3);
     expect(screen).toMatch(/Count {3}About$/m);
-    expect(screen).toMatch(/2 {3}Capability packs/);
+    expect(screen).toMatch(/2 {3}MCP servers written/);
   });
 });
 
 describe('栏间隔：skill', () => {
   // alpha 是用户自己放的：它在 Claude Code 那一栏的状态最长
   const home = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
-  const install = [choose('Skill'), accept(), pick('alpha', 'beta-pack'), accept(), no(), choose('退出')];
+  const install = [choose('推荐'), accept(), pick('alpha', 'beta-pack'), accept(), no(), choose('退出')];
 
   it('多选列表：名称、两栏状态、说明之间各三格', async () => {
     const { screen } = await run({ onPath: BOTH_HOSTS, home, answers: install });
@@ -68,7 +68,7 @@ describe('栏间隔：skill', () => {
         '.claude/skills/beta-pack/SKILL.md': '# beta-pack\n',
         '.claude/skills/beta-pack/.oxy-tools.json': JSON.stringify({ name: 'beta-pack', version: '2.3' }),
       },
-      answers: [choose('Skill'), pick('beta-pack'), accept(), choose('退出')],
+      answers: [choose('推荐'), pick('beta-pack'), accept(), choose('退出')],
     });
 
     expect(screen).toMatch(/~\S+beta-pack {3}重装 2\.3$/m);
@@ -85,7 +85,7 @@ describe('栏间隔：skill', () => {
       onPath: BOTH_HOSTS,
       home,
       argv: ['--lang', 'en'],
-      answers: [choose('Skills'), accept(), pick('alpha', 'beta-pack'), accept(), no(), choose('Exit')],
+      answers: [choose('Recommended'), accept(), pick('alpha', 'beta-pack'), accept(), no(), choose('Exit')],
     });
 
     expect(screen).toMatch(/beta-pack {3}none/);
@@ -146,14 +146,6 @@ describe('栏间隔：用途下的列表', () => {
     });
 
     expect(screen).toMatch(/borealis {3}The second sample external project$/m);
-  });
-});
-
-describe('栏间隔：选择宿主', () => {
-  it('名字与 skill 目录之间三格', async () => {
-    const { screen } = await run({ onPath: BOTH_HOSTS, answers: [choose('Skill'), accept(), pick(), pick(), choose('退出')] });
-
-    expect(screen).toMatch(/Claude Code {3}~\S+skills$/m);
   });
 });
 

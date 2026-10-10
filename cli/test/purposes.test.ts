@@ -106,7 +106,7 @@ describe('写坏的用途清单', () => {
   ])('清单不是数组（%s）：整份目录仍读得了，skill 照常，其余条目全部跳过', async (_label, purposes) => {
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, purposes, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } }),
-      answers: [choose('Skill'), pick(), choose('退出')],
+      answers: [choose('推荐'), pick(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 6 个条目格式有误，已跳过$/m);
@@ -129,7 +129,7 @@ describe('本仓库 skill 的用途', () => {
     ['给目录里没有的 skill 写了用途', { 'no-such-skill': 'web-search' }],
     ['整个不是对象', ['alpha']],
   ])('%s：skill 都不跳过，也不提示', async (_label, skillPurposes) => {
-    const result = await run({ catalog: withSkillPurposes(skillPurposes), answers: [choose('Skill'), pick(), choose('退出')] });
+    const result = await run({ catalog: withSkillPurposes(skillPurposes), answers: [choose('推荐'), pick(), choose('退出')] });
 
     expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
     expect(result.output).toMatch(/ alpha\s+未装\s/m);
@@ -144,7 +144,7 @@ describe('没有用途清单的旧格式目录', () => {
   it('只有三个数组、都是空的：照常读出来', async () => {
     const result = await run({
       catalog: catalogDir({ catalog: { version: 1, mcps: [], tools: [], apps: [] } }),
-      answers: [choose('Skill'), pick(), choose('退出')],
+      answers: [choose('推荐'), pick(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
@@ -156,7 +156,7 @@ describe('没有用途清单的旧格式目录', () => {
   it('里面有不带用途的条目：不崩，skill 照常，这些条目被跳过', async () => {
     const result = await run({
       catalog: catalogDir({ catalog: { version: 1, mcps: [without(DOCS_LOCAL)], tools: [without(SAMPLE_TOOLS[0]!)], apps: [without(SAMPLE_APPS[0]!)] } }),
-      answers: [choose('Skill'), pick(), choose('退出')],
+      answers: [choose('推荐'), pick(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 3 个条目格式有误，已跳过$/m);

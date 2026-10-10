@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { LONG_ABOUT, catalogDir, choose, pick, run } from './harness.ts';
 
 describe('主菜单', () => {
-  it('catalog.json 三个数组为空时，只有 skill 一个分组和退出', async () => {
+  it('catalog.json 三个数组为空时，只有「推荐」和退出', async () => {
     const result = await run({ answers: [choose('退出')] });
 
     expect(result.output).toContain('选择用途');
-    expect(result.output).toMatch(/^\s+Skill\s+2\s+/m);
+    expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\n\s+退出$/m);
     expect(result.output).toMatch(/^\s+退出$/m);
     expect(result.output).not.toContain('MCP');
     expect(result.output).not.toContain('工具 ');
@@ -16,7 +16,7 @@ describe('主菜单', () => {
 });
 
 describe('skill 列表', () => {
-  const browse = [choose('Skill'), pick(), choose('退出')];
+  const browse = [choose('推荐'), pick(), choose('退出')];
 
   it('列出每个 skill 的名字和一句话说明，并能返回主菜单', async () => {
     const result = await run({ answers: browse });

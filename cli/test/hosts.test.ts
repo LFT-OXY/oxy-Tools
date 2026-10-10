@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SAMPLE_FILES, accept, choose, pick, run } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_MCPS, accept, catalogDir, choose, pick, run } from './harness.ts';
 
 const claudeSkills = (home: string): string => join(home, '.claude', 'skills');
 const codexSkills = (home: string): string => join(home, '.agents', 'skills');
@@ -10,7 +10,7 @@ const marker = (skillsDir: string, name: string): Record<string, unknown> =>
   JSON.parse(read(skillsDir, name, '.oxy-tools.json')) as Record<string, unknown>;
 
 describe('只检测到 Codex', () => {
-  const installAlpha = [choose('Skill'), pick('alpha'), choose('开始安装'), choose('退出')];
+  const installAlpha = [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')];
 
   it('可执行路径上有 codex 命令时算检测到，skill 装进用户主目录的 .agents/skills', async () => {
     const result = await run({ onPath: ['codex'], answers: installAlpha });
@@ -37,7 +37,7 @@ describe('只检测到一个宿主', () => {
   it('只有 Claude Code：说明 Codex 没有检测到并被跳过，不问装进哪个，直接装进 Claude Code', async () => {
     const result = await run({
       onPath: ['claude'],
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex – 未检测到$/m);
@@ -70,22 +70,21 @@ describe('检测到两个宿主', () => {
   const onPath = ['claude', 'codex'];
   const bothHosts = pick('Claude Code', 'Codex');
 
-  it('安装 skill 前先问装进哪些宿主：两项都默认勾选，各带自己的 skill 目录', async () => {
-    const result = await run({ onPath, answers: [choose('Skill'), pick(), choose('退出')] });
+  it('进入「推荐」后先问装进哪些宿主：两项都默认勾选，名字后面不写目录', async () => {
+    const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
 
     expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓$/m);
     expect(result.output).not.toContain('未检测到');
     expect(result.output).toContain('装进哪些 AI Agent');
-    expect(result.output).toMatch(/^\s*■ Claude Code\s+~\S+skills$/m);
-    expect(result.output).toMatch(/^\s*■ Codex\s+~\S+skills$/m);
-    expect(result.output).toContain(join('~', '.claude', 'skills'));
-    expect(result.output).toContain(join('~', '.agents', 'skills'));
+    expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex$/m);
+    expect(result.output).not.toContain(join('~', '.claude', 'skills'));
+    expect(result.output).not.toContain(join('~', '.agents', 'skills'));
   });
 
   it('宿主选择上什么都不动直接确认：默认就是两个都装', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), accept(), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), accept(), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(readdirSync(claudeSkills(result.home))).toEqual(['alpha']);
@@ -95,7 +94,7 @@ describe('检测到两个宿主', () => {
   it('两个都选：同一个 skill 装进两处，各有自己的安装标记', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), bothHosts, pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), bothHosts, pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     for (const skillsDir of [claudeSkills(result.home), codexSkills(result.home)]) {
@@ -110,7 +109,7 @@ describe('检测到两个宿主', () => {
   it('汇总和结果按宿主分别列出，同一个 skill 只数一次', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), bothHosts, pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), bothHosts, pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
@@ -128,7 +127,7 @@ describe('检测到两个宿主', () => {
   it('只选其中一个：只装进它', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), pick('Codex'), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), pick('Codex'), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -141,7 +140,7 @@ describe('检测到两个宿主', () => {
     const result = await run({
       onPath,
       home: { '.agents': '这里本该是个目录' },
-      answers: [choose('Skill'), bothHosts, pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), bothHosts, pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
@@ -152,9 +151,9 @@ describe('检测到两个宿主', () => {
   });
 
   it('一个宿主都不勾就确认：回到主菜单，什么都不装', async () => {
-    const result = await run({ onPath, answers: [choose('Skill'), pick(), choose('退出')] });
+    const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
 
-    expect(result.output).not.toContain('选择要安装的 skill');
+    expect(result.output).not.toContain('选择要安装的条目');
     expect(result.output.split('选择用途')).toHaveLength(3);
     expect(readdirSync(result.home)).toEqual([]);
   });
@@ -162,7 +161,7 @@ describe('检测到两个宿主', () => {
   it('skill 一个都不勾就确认：回到宿主选择，之前勾的还在', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), pick('Codex'), pick(), pick(), choose('退出')],
+      answers: [choose('推荐'), pick('Codex'), pick(), pick(), choose('退出')],
     });
 
     const [, , again = ''] = result.output.split('装进哪些 AI Agent');
@@ -174,7 +173,7 @@ describe('检测到两个宿主', () => {
   it('在汇总里选「返回修改」回到 skill 列表，不重问宿主', async () => {
     const result = await run({
       onPath,
-      answers: [choose('Skill'), bothHosts, pick('alpha'), choose('返回修改'), pick('beta-pack'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), bothHosts, pick('alpha'), choose('返回修改'), pick('beta-pack'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output.split('装进哪些 AI Agent')).toHaveLength(2);
@@ -183,10 +182,9 @@ describe('检测到两个宿主', () => {
   });
 
   it('英文界面下的宿主选择', async () => {
-    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Skills'), pick(), choose('Exit')] });
+    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Recommended'), pick(), choose('Exit')] });
 
-    expect(result.output).toContain('Install into which AI Agents');
-    expect(result.output).toMatch(/^\s*■ Codex\s+~\S+skills$/m);
+    expect(result.output).toMatch(/^\? Install into which AI Agents\n\n ■ Claude Code\n ■ Codex$/m);
   });
 });
 
@@ -199,21 +197,41 @@ describe('一个宿主都没检测到', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('skill 分组不可进入并注明原因，光标落在能选的那一项上', async () => {
-    // 直接回车：光标起始所在的那一项是「退出」，所以这一个应答就结束了
-    const result = await run({ onPath: [], answers: [accept()] });
+  it('「推荐」照常进得去，不问宿主；skill 的行不可选并注明原因', async () => {
+    // 直接回车：光标起始所在的那一项是「推荐」
+    const result = await run({ onPath: [], answers: [accept(), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
-    expect(result.output).not.toContain('选择要安装的 skill');
-    expect(result.output).not.toContain('浏览 skill');
+    expect(result.output).not.toContain('装进哪些 AI Agent');
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明\n\s+── Skill\n – alpha\s+需要 AI Agent\s+第一个样例 skill.*…\n – beta-pack\s+需要 AI Agent\s+第二个样例 skill$/m);
+    expect(result.output).not.toMatch(/^ [□■] /m);
     expect(result.exitCode).toBe(0);
     expect(readdirSync(result.home)).toEqual([]);
   });
 
+  // 目录里没有 skill 也没有外部项目：主菜单上只有 MCP 这个旧分组和退出
+  const onlyMcps = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } });
+
+  it('旧分组不可进入并注明原因，光标落在能选的那一项上', async () => {
+    // 直接回车：第一行不可进入，光标起始所在的那一项是「退出」，所以这一个应答就结束了
+    const result = await run({ catalog: onlyMcps(), onPath: [], answers: [accept()] });
+
+    expect(result.output).toMatch(/^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 · 需要 AI Agent$/m);
+    expect(result.output).not.toContain('选择要安装的');
+    expect(result.exitCode).toBe(0);
+    expect(readdirSync(result.home)).toEqual([]);
+  });
+
+  it('英文界面下旧分组的原因也是英文', async () => {
+    const result = await run({ argv: ['--lang', 'en'], catalog: onlyMcps(), onPath: [], answers: [accept()] });
+
+    expect(result.output).toMatch(/^- MCP\s+2\s+MCP servers written into your AI Agent.* · needs an AI Agent$/m);
+    expect(result.exitCode).toBe(0);
+  });
+
   it('英文界面下同样说明', async () => {
-    const result = await run({ argv: ['--lang', 'en'], onPath: [], answers: [choose('Exit')] });
+    const result = await run({ argv: ['--lang', 'en'], onPath: [], answers: [choose('Recommended'), pick(), choose('Exit')] });
 
     expect(result.output).toMatch(/^\s+Notice\s+Claude Code and Codex not detected; components cannot be installed$/m);
-    expect(result.output).toMatch(/^- Skills\s+2\s+Capability packs for your AI Agent · needs an AI Agent$/m);
+    expect(result.output).toMatch(/^ – beta-pack\s+needs an AI Agent\s+The second sample skill$/m);
   });
 });

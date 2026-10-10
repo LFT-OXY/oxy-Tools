@@ -103,7 +103,7 @@ describe('启动', () => {
   });
 
   it('大标志一次运行只出现一次，回到主菜单时不重复', async () => {
-    const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
+    const result = await run({ answers: [choose('推荐'), pick(), choose('退出')] });
 
     expect(result.output.split(LOGO[0] ?? '')).toHaveLength(2);
   });
@@ -124,7 +124,7 @@ describe('语言', () => {
   it('系统语言环境不是中文时用英文界面和英文说明', async () => {
     const result = await run({
       env: { LANG: 'en_US.UTF-8' },
-      answers: [choose('Skills'), pick(), choose('Exit')],
+      answers: [choose('Recommended'), pick(), choose('Exit')],
     });
 
     expect(result.output).toContain('Pick a purpose');
@@ -188,7 +188,7 @@ describe('语言提问', () => {
     const result = await run({
       env: { LANG: 'zh_CN.UTF-8' },
       answersLanguage: true,
-      answers: [choose('English'), choose('Skills'), pick(), choose('Exit')],
+      answers: [choose('English'), choose('Recommended'), pick(), choose('Exit')],
     });
 
     const afterQuestion = result.output.slice(result.output.indexOf('English') + 'English'.length);
@@ -203,7 +203,7 @@ describe('语言提问', () => {
     const result = await run({
       env: { LANG: 'en_US.UTF-8' },
       answersLanguage: true,
-      answers: [choose('中文'), choose('Skill'), pick(), choose('退出')],
+      answers: [choose('中文'), choose('推荐'), pick(), choose('退出')],
     });
 
     expect(result.output).toContain('正在读取目录');
@@ -386,7 +386,7 @@ describe('Ctrl+C', () => {
   });
 
   it('在 skill 列表按下时干净退出', async () => {
-    const result = await run({ answers: [choose('Skill'), interrupt()] });
+    const result = await run({ answers: [choose('推荐'), interrupt()] });
 
     expect(result.exitCode).toBe(130);
     expect(result.output).not.toContain('出错');
@@ -401,7 +401,7 @@ describe('颜色', () => {
   });
 
   it('设置了 NO_COLOR 时不输出任何样式码，文字不变', async () => {
-    const answers = (): ReturnType<typeof choose>[] => [choose('Skill'), pick('beta-pack'), choose('开始安装'), choose('退出')];
+    const answers = (): ReturnType<typeof choose>[] => [choose('推荐'), pick('beta-pack'), choose('开始安装'), choose('退出')];
     const styled = await run({ answers: answers() });
     const mono = await run({ env: { NO_COLOR: '1' }, answers: answers() });
 
@@ -512,7 +512,7 @@ describe('没有 Unicode 的终端', () => {
     const result = await run({
       platform: 'win32',
       env: { TERM: '' },
-      answers: [choose('Skill'), pick('beta-pack'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), pick('beta-pack'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toContain(' / _ \\ \\ \\/ /\\ \\ / /');

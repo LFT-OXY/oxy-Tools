@@ -11,7 +11,7 @@ const skill = (overrides: Record<string, unknown>): Record<string, unknown> => (
   description: { zh: '写坏的条目', en: 'A broken entry' },
   ...overrides,
 });
-const browse = [choose('Skill'), pick(), choose('退出')];
+const browse = [choose('推荐'), pick(), choose('退出')];
 
 describe('写坏的条目', () => {
   it.each([

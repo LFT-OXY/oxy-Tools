@@ -8,17 +8,20 @@ import { screenLines } from './terminal.ts';
 const HINT = '⏎ 选择';
 const PICK_HINT = '⏎ 确认';
 const BOTH_HOSTS = ['claude', 'codex'];
-// 两个用途下各有一个外部项目，三个旧分组也都有条目：主菜单上各个用途排在旧分组前面
+// 两个用途下各有一个外部项目，两个旧分组也都有条目：主菜单上「推荐」在最前，各个用途排在旧分组前面
 const fullCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
-// 没有外部项目，主菜单上只有三个旧分组：光标起始就在 Skill 上
+// 没有外部项目，主菜单上只有「推荐」和两个旧分组：光标起始就在「推荐」上
 const componentCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS } });
 
-// 主菜单上把光标从 Skill 移到别的分组再回车；目录里没有外部项目时才这样走
+// 主菜单上把光标从「推荐」移到别的分组再回车；目录里没有外部项目时才这样走
 const toMcps: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.enter]];
 const toTools: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.down], ['▸ 工具', KEY.enter]];
-// fullCatalog 的主菜单上光标起始在第一个用途上，它下面是 borealis：直接回车
-const toPurpose: [string, string][] = [[HINT, KEY.enter]];
+// fullCatalog 的主菜单上「推荐」下面是第一个用途，它下面是 borealis
+const toPurpose: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter]];
+// alpha 另外归在第一个用途下：那张列表里 skill 和外部项目都有
+const mixedCatalog = (): string =>
+  catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS, skillPurposes: { alpha: 'web-search' } } });
 
 // 最后留在画面上的每一行
 const screenOf = async (options: Parameters<typeof run>[0]): Promise<string[]> => screenLines((await run(options)).raw);
@@ -33,7 +36,7 @@ describe('提问与它下面的表或选项之间空一行', () => {
   it('主菜单：「选择用途」与表头之间', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '? 选择用途', 2)).toEqual(['', expect.stringMatching(/^\s+用途\s+数量\s+说明$/)]);
+    expect(after(lines, '? 选择用途', 2)).toEqual(['', expect.stringMatching(/^\s+用途\s+数量$/)]);
   });
 
   it('语言提问：与第一个选项之间', async () => {
@@ -45,11 +48,11 @@ describe('提问与它下面的表或选项之间空一行', () => {
   it('选择宿主：与第一个宿主之间', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '? 装进哪些 AI Agent', 2)).toEqual(['', expect.stringMatching(/^▸■ Claude Code\s/)]);
+    expect(after(lines, '? 装进哪些 AI Agent', 2)).toEqual(['', '▸■ Claude Code']);
   });
 
   it.each([
-    ['skill', [[HINT, KEY.enter]], '? 选择要安装的 skill', /^\s+名称\s+Claude Code\s+说明$/],
+    ['「推荐」', [[HINT, KEY.enter]], '? 选择要安装的条目', /^\s+名称\s+Claude Code\s+说明$/],
     ['MCP', toMcps, '? 选择要安装的 MCP', /^\s+名称\s+Claude Code\s+说明$/],
     ['工具', toTools, '? 选择要安装的工具', /^\s+名称\s+状态\s+说明$/],
   ] as [string, [string, string][], string, RegExp][])('%s 的多选列表：与表头之间', async (_label, toList, question, header) => {
@@ -66,6 +69,20 @@ describe('提问与它下面的表或选项之间空一行', () => {
       expect.stringMatching(/^\s+名称\s+说明$/),
       expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
       expect.stringMatching(/^▸□ borealis\s/),
+    ]);
+  });
+
+  it('混合列表：段标题与条目之间不空，组件与外部项目两段之间空一行', async () => {
+    const lines = await screenOf({ catalog: mixedCatalog(), keys: [...toPurpose, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(after(lines, '? 选择要安装的条目', 7)).toEqual([
+      '',
+      expect.stringMatching(/^\s+名称\s+Claude Code\s+说明$/),
+      expect.stringMatching(/^\s+── Skill$/),
+      expect.stringMatching(/^▸□ alpha\s+未装\s+推荐 · /),
+      '',
+      expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
+      expect.stringMatching(/^ □ borealis\s/),
     ]);
   });
 
@@ -89,8 +106,9 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
   it('多选列表，光标在有说明的条目上：列表、说明、按键提示之间各隔一行', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.down], ['▸□ beta-pack', KEY.ctrlC]] });
 
-    expect(after(lines, /^▸□ beta-pack\s/, 4)).toEqual([
+    expect(after(lines, /^▸□ beta-pack\s/, 5)).toEqual([
       '',
+      expect.stringMatching(/^\s+类型\s+Skill$/),
       expect.stringMatching(/^\s+说明\s+第二个样例 skill$/),
       '',
       expect.stringMatching(PICK_KEYS),
@@ -100,13 +118,22 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
   it('说明折成两行时，空行在最后一行说明之后', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, /^ □ beta-pack\s/, 5)).toEqual([
+    expect(after(lines, /^ □ beta-pack\s/, 6)).toEqual([
       '',
+      expect.stringMatching(/^\s+类型\s+Skill$/),
       expect.stringMatching(/^\s+说明\s+第一个样例 skill/),
       expect.stringMatching(/^\s+\S/),
       '',
       expect.stringMatching(PICK_KEYS),
     ]);
+  });
+
+  it('带推荐的行：「类型」一行里类型后面跟着「推荐」，两个标签的值左缘对齐', async () => {
+    const lines = await screenOf({ catalog: mixedCatalog(), keys: [...toPurpose, [PICK_HINT, KEY.ctrlC]] });
+    const [, type = '', about = ''] = after(lines, /^ □ borealis\s/, 3);
+
+    expect(type).toMatch(/^\s+类型\s+Skill · 推荐$/);
+    expect(about.indexOf('第一个样例 skill')).toBe(type.indexOf('Skill'));
   });
 
   it('用途下的列表：「类型」和说明两行挨着，上下各隔一行', async () => {
@@ -127,6 +154,54 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
     expect(after(lines, '  退出', 2)).toEqual(['', expect.stringMatching(SELECT_KEYS)]);
   });
 
+  it('光标在不可选的行上：列表下方照样是类型和说明全文', async () => {
+    const lines = await screenOf({ onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.down], ['▸– beta-pack', KEY.ctrlC]] });
+
+    expect(after(lines, /^▸– beta-pack\s+需要 AI Agent\s/, 5)).toEqual([
+      '',
+      expect.stringMatching(/^\s+类型\s+Skill$/),
+      expect.stringMatching(/^\s+说明\s+第二个样例 skill$/),
+      '',
+      expect.stringMatching(PICK_KEYS),
+    ]);
+  });
+
+  it('光标从不可选的行移到可选的行上：下方只有那一行自己的类型和说明', async () => {
+    const lines = await screenOf({ catalog: mixedCatalog(), onPath: [], keys: [...toPurpose, [PICK_HINT, KEY.down], ['▸□ borealis', KEY.ctrlC]] });
+
+    expect(after(lines, /^▸□ borealis\s/, 5)).toEqual([
+      '',
+      expect.stringMatching(/^\s+类型\s+外部项目$/),
+      expect.stringMatching(/^\s+说明\s+第二个样例外部项目$/),
+      '',
+      expect.stringMatching(PICK_KEYS),
+    ]);
+  });
+
+  it('在不可选的行上按空格：「这一项现在选不了」紧接在列表下方，类型和说明跟在它后面', async () => {
+    const lines = await screenOf({ onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]] });
+
+    expect(after(lines, /^ – beta-pack\s+需要 AI Agent\s/, 7)).toEqual([
+      '',
+      expect.stringMatching(/^\s+注意\s+这一项现在选不了$/),
+      expect.stringMatching(/^\s+类型\s+Skill$/),
+      expect.stringMatching(/^\s+说明\s+第一个样例 skill/),
+      expect.stringMatching(/^\s+\S/),
+      '',
+      expect.stringMatching(PICK_KEYS),
+    ]);
+  });
+
+  it('再按别的键，「这一项现在选不了」那一行就消失', async () => {
+    const lines = await screenOf({
+      onPath: [],
+      keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.down], ['▸– beta-pack', KEY.ctrlC]],
+    });
+
+    expect(lines.join('\n')).not.toContain('这一项现在选不了');
+    expect(after(lines, /^▸– beta-pack\s/, 2)).toEqual(['', expect.stringMatching(/^\s+类型\s+Skill$/)]);
+  });
+
   it('多选：在不可选的条目上按空格，「这一项现在选不了」与按键提示之间空一行', async () => {
     // 第一条只支持 Claude Code：只检测到 Codex 时它不可选
     const mcps = [{ ...SAMPLE_MCPS[0], name: 'claude-only', hosts: ['claude-code'] }, SAMPLE_MCPS[1]];
@@ -145,7 +220,11 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
   });
 
   it('单选：在不可进入的分组上按回车，同一个画法', async () => {
-    const lines = await screenOf({ onPath: [], keys: [[HINT, KEY.up], ['▸ Skill', KEY.enter], ['这一项现在选不了', KEY.ctrlC]] });
+    const lines = await screenOf({
+      catalog: componentCatalog(),
+      onPath: [],
+      keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], ['这一项现在选不了', KEY.ctrlC]],
+    });
 
     expect(after(lines, '  退出', 4)).toEqual([
       '',
@@ -180,13 +259,13 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('下一个提问还在问的时候与上面已回答的一行隔一行', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · Skill', 2)).toEqual(['', '? 装进哪些 AI Agent']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 2)).toEqual(['', '? 装进哪些 AI Agent']);
   });
 
   it('它回答之后，两行已回答的提问紧挨着，再隔一行才是下一个提问', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · Skill', 3)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '', '? 选择要安装的 skill']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 3)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '', '? 选择要安装的条目']);
   });
 
   it('是否题：问的时候与已回答的一行隔一行', async () => {
@@ -216,7 +295,7 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
   it('回到主菜单时，新一轮的提问与上一轮之间只隔一行', async () => {
     const lines = await screenOf({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · Skill', 3)).toEqual(['✓ 选择要安装的 skill · 返回', '', '? 选择用途']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 3)).toEqual(['✓ 选择要安装的条目 · 返回', '', '? 选择用途']);
   });
 
   it('外部项目的说明与链接：与上面已回答的一行、与回到主菜单的提问之间各隔一行', async () => {
@@ -274,7 +353,7 @@ describe('分区标题下方空一行', () => {
   const RULE = /^─{80}$/;
 
   it('skill 的汇总：标题与表头之间', async () => {
-    const lines = await printed({ answers: [choose('Skill'), pick('alpha'), choose('取消'), choose('退出')] });
+    const lines = await printed({ answers: [choose('推荐'), pick('alpha'), choose('取消'), choose('退出')] });
 
     expect(after(lines, /^── 将安装 1 个 skill ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+条目\s+AI Agent\s+操作\s+位置$/)]);
   });
@@ -384,7 +463,7 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     const all = await screenLines(result.raw, ROWS);
     return { visible: all.slice(-ROWS), all };
   };
-  const QUESTION = '? 选择要安装的 skill';
+  const QUESTION = '? 选择要安装的条目';
 
   it('条目多到要滚动时，提问那一行仍在屏幕上；说明全文和按键提示都在', async () => {
     const { visible } = await terminal(30, [[PICK_HINT, KEY.ctrlC]]);
@@ -412,7 +491,9 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
 
   it('用途下的列表多一行「类型」：条目多到要滚动时，提问、类型、两行说明和按键提示仍都在屏幕上', async () => {
     const apps = Array.from({ length: 30 }, (_, index) => ({ ...SAMPLE_APPS[0], name: `app-${String(index + 1).padStart(2, '0')}` }));
-    const result = await run({ catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, apps } }), rows: ROWS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+    // 目录里没有 skill：主菜单上没有「推荐」，光标起始就在这个用途上
+    const catalog = catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, apps } });
+    const result = await run({ catalog, rows: ROWS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
     const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
 
     expect(visible).toContain('? 选择要安装的条目');
@@ -422,7 +503,7 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(visible.filter((line) => /^.□ app-\d\d\s/.test(line))).toHaveLength(13);
   });
 
-  it('24 行的终端里主菜单不滚动：十个用途、三个旧分组、「退出」和表头都在', async () => {
+  it('24 行的终端里主菜单不滚动：「推荐」、十个用途、两个旧分组、「退出」和表头都在', async () => {
     const purposes = Array.from({ length: 10 }, (_, index) => ({ id: `purpose-${index}`, name: { zh: `第 ${index} 个用途`, en: `Purpose ${index}` } }));
     const apps = purposes.map(({ id }, index) => ({ ...SAMPLE_APPS[1], name: `app-${index}`, purpose: id }));
     const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes: [...purposes, ...EMPTY_CATALOG.purposes], mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps } });
@@ -430,12 +511,13 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
 
     expect(visible).toContain('? 选择用途');
+    expect(visible.filter((line) => /^▸ 推荐\s+2$/.test(line))).toHaveLength(1);
     expect(visible.filter((line) => /第 \d 个用途\s+1$/.test(line))).toHaveLength(10);
     expect(after(visible, /^\s+工具\s/, 2)).toEqual(['', expect.stringMatching(/^\s+退出$/)]);
     expect(visible.some((line) => /^\s+用途\s+数量\s+说明$/.test(line))).toBe(true);
   });
 
-  it('很矮的终端里列表最少也有 7 行：一个用途、三个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
+  it('很矮的终端里列表最少也有 7 行：「推荐」、一个用途、两个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
     const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: [SAMPLE_APPS[1]] } });
     const result = await run({ catalog, rows: 12, keys: [[HINT, KEY.ctrlC]] });
     const lines = await screenLines(result.raw, 60);
@@ -443,8 +525,8 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(after(lines, '? 选择用途', 8)).toEqual([
       '',
       expect.stringMatching(/^\s+用途\s+数量\s+说明$/),
-      expect.stringMatching(/^▸ 联网搜索与文档检索\s/),
-      expect.stringMatching(/^\s+Skill\s/),
+      expect.stringMatching(/^▸ 推荐\s/),
+      expect.stringMatching(/^\s+联网搜索与文档检索\s/),
       expect.stringMatching(/^\s+MCP\s/),
       expect.stringMatching(/^\s+工具\s/),
       '',
@@ -452,12 +534,13 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     ]);
   });
 
-  it('15 个条目放得下：表头和每一条都在屏幕上，列表不滚动', async () => {
-    const { visible } = await terminal(15, [[PICK_HINT, KEY.ctrlC]]);
+  it('13 个条目放得下：表头、段标题和每一条都在屏幕上，列表不滚动', async () => {
+    const { visible } = await terminal(13, [[PICK_HINT, KEY.ctrlC]]);
 
     expect(visible).toContain(QUESTION);
     expect(visible.filter((line) => /^\s+名称\s+Claude Code\s+说明$/.test(line))).toHaveLength(1);
-    expect(visible.filter((line) => /^.□ skill-\d\d\s/.test(line))).toHaveLength(15);
+    expect(visible.filter((line) => /^\s+── Skill$/.test(line))).toHaveLength(1);
+    expect(visible.filter((line) => /^.□ skill-\d\d\s/.test(line))).toHaveLength(13);
   });
 });
 
@@ -534,6 +617,7 @@ describe('任何地方都没有连着两行空行', () => {
         [PICK_HINT, KEY.space],
         ['▸■ borealis', KEY.enter],
         [HINT, KEY.down],
+        ['▸ 联网搜索与文档检索', KEY.down],
         ['▸ 开发工作流与规范', KEY.enter],
         [PICK_HINT, KEY.enter],
         [HINT, KEY.down],
@@ -542,7 +626,17 @@ describe('任何地方都没有连着两行空行', () => {
     [
       '一个宿主都没检测到：在不可进入的分组上按回车',
       () => ({ catalog: fullCatalog(), onPath: [] }),
-      [[HINT, KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ Skill', KEY.enter], ['这一项现在选不了', KEY.down]],
+      [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ MCP', KEY.enter], ['这一项现在选不了', KEY.down]],
+    ],
+    [
+      '混合列表：一次勾 skill 和外部项目，装完列出链接再回主菜单',
+      () => ({ catalog: mixedCatalog() }),
+      [...toPurpose, [PICK_HINT, 'a'], [' ■ borealis', KEY.enter], [HINT, KEY.enter], [HINT, KEY.down]],
+    ],
+    [
+      '一个宿主都没检测到：进「推荐」，在不可选的 skill 上按空格，再什么都不勾返回',
+      () => ({ catalog: mixedCatalog(), onPath: [] }),
+      [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.enter], [HINT, KEY.down]],
     ],
     [
       '自己答语言提问，选 English',

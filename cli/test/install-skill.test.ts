@@ -7,8 +7,8 @@ import { SAMPLE_FILES, STACK_FRAME, catalogDir, choose, pick, run, tempDir, yes 
 
 const skillsDir = (home: string): string => join(home, '.claude', 'skills');
 const read = (...path: string[]): string => readFileSync(join(...path), 'utf8');
-const installAlpha = [choose('Skill'), pick('alpha'), choose('开始安装'), choose('退出')];
-const installBoth = [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')];
+const installAlpha = [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')];
+const installBoth = [choose('推荐'), pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')];
 
 describe('把 skill 装进 Claude Code', () => {
   it('勾选一个 skill 并确认后，它的全部文件出现在用户主目录的 .claude/skills 下', async () => {
@@ -77,7 +77,7 @@ describe('汇总确认', () => {
   });
 
   it('汇总出现在动手之前：选「取消」什么都不装，回到主菜单', async () => {
-    const result = await run({ answers: [choose('Skill'), pick('alpha'), choose('取消'), choose('退出')] });
+    const result = await run({ answers: [choose('推荐'), pick('alpha'), choose('取消'), choose('退出')] });
 
     expect(result.output).toContain('将安装 1 个 skill');
     expect(existsSync(skillsDir(result.home))).toBe(false);
@@ -88,7 +88,7 @@ describe('汇总确认', () => {
 
   it('选「返回修改」回到列表，之前勾选的还在，改选后按新的选择安装', async () => {
     const result = await run({
-      answers: [choose('Skill'), pick('alpha'), choose('返回修改'), pick('beta-pack'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('返回修改'), pick('beta-pack'), choose('开始安装'), choose('退出')],
     });
 
     const [, secondList = ''] = result.output.split('开始安装吗');
@@ -98,7 +98,7 @@ describe('汇总确认', () => {
   });
 
   it('一个都不勾就确认：直接回到主菜单', async () => {
-    const result = await run({ answers: [choose('Skill'), pick(), choose('退出')] });
+    const result = await run({ answers: [choose('推荐'), pick(), choose('退出')] });
 
     expect(result.output).not.toContain('将安装');
     expect(result.output.split('选择用途')).toHaveLength(3);
@@ -155,7 +155,7 @@ describe('结果', () => {
   it('英文界面下结果也是英文', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
-      answers: [choose('Skills'), pick('alpha'), choose('Install'), choose('Exit')],
+      answers: [choose('Recommended'), pick('alpha'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^── Install 1 skill ─+$/m);
@@ -188,10 +188,10 @@ describe('从 GitHub 下载 skill', () => {
     const result = await run({
       catalog: githubCatalogSource(),
       answers: [
-        choose('Skill'),
+        choose('推荐'),
         pick('alpha', 'beta-pack'),
         choose('开始安装'),
-        choose('Skill'),
+        choose('推荐'),
         pick('alpha'),
         choose('开始安装'),
         choose('退出'),
@@ -241,7 +241,7 @@ describe('下载失败', () => {
   afterEach(() => vi.unstubAllGlobals());
   // 用户自己放的目录，没有安装标记：覆盖前要单独同意
   const existing = { '.claude/skills/alpha/SKILL.md': '装之前就有的内容', '.claude/skills/alpha/notes.md': '用户自己的笔记' };
-  const agreed = [choose('Skill'), pick('alpha', 'beta-pack'), choose('开始安装'), yes()];
+  const agreed = [choose('推荐'), pick('alpha', 'beta-pack'), choose('开始安装'), yes()];
   const untouched = (home: string): void => {
     const installed = join(skillsDir(home), 'alpha');
     expect(readdirSync(installed).sort()).toEqual(['SKILL.md', 'notes.md']);
@@ -355,7 +355,7 @@ describe('查询 GitHub 失败', () => {
 
     const result = await run({
       catalog: githubCatalogSource(),
-      answers: [choose('Skill'), pick('alpha'), choose('开始安装'), choose('Skill'), pick('alpha'), choose('开始安装'), choose('退出')],
+      answers: [choose('推荐'), pick('alpha'), choose('开始安装'), choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.stderr).toContain('出错：GitHub 限流');

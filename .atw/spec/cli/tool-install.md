@@ -108,7 +108,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 两种都写在**状态栏的位置**（画法见 [终端输出](./terminal-output.md) 的「不可选的行」）。先判系统，再判宿主。
 
-工具不装进宿主：不问装进哪个，`hosts` 只决定可不可选。但它仍是组件——**一个宿主都没检测到时「工具」这个旧入口进不去**（这时能进的只有各个用途，里面是外部项目）。
+工具不装进宿主：不问装进哪个，`hosts` 只决定可不可选。但它仍是组件——**一个宿主都没检测到时「工具」这个旧入口进不去**（这时能进的只有「推荐」和各个用途，里面的 skill 不可选，外部项目照常可选）。
 
 **流程（`flow.ts` 的 `installTools`）**
 

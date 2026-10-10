@@ -1,4 +1,4 @@
-// 交互流程：主菜单、各个用途与旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
+// 交互流程：主菜单、「推荐」、各个用途与旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
 import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Purpose, type Skill, type Tool } from './catalog.ts';
 import type { Host } from './hosts.ts';
@@ -40,38 +40,59 @@ export interface Session {
 export async function mainMenu(session: Session): Promise<void> {
   const { catalog, ui, prompter } = session;
   const detected = session.hosts.filter((host) => host.detected);
+  const recommended = recommendedListing(catalog);
   // 进去之后一行都没有的用途不出现
   const purposes = catalog.purposes
-    .map((purpose) => ({ purpose, count: appsIn(catalog, purpose).length }))
+    .map((purpose) => ({ purpose, count: sizeOf(purposeListing(catalog, purpose)) }))
     .filter(({ count }) => count > 0);
   // 还没搬进混合列表的类型暂时留着旧入口，只列出有条目的；组件要装进宿主，一个宿主都没检测到时进不去
   const groups = [
-    { id: 'skill' as const, count: catalog.skills.length, lacksHost: detected.length === 0 },
     { id: 'mcp' as const, count: catalog.mcps.length, lacksHost: detected.length === 0 },
     { id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 },
   ].filter((group) => group.count > 0);
   for (;;) {
-    const choice = await prompter.select(ui.mainMenu(purposes, groups));
+    const choice = await prompter.select(ui.mainMenu(sizeOf(recommended), purposes, groups));
     if (choice === 'exit') return;
     if (choice === 'mcp') await installMcps(session, detected);
     else if (choice === 'tool') await installTools(session, detected);
-    else if (choice === 'skill') await installSkills(session, detected);
-    else await browsePurpose(session, choice);
+    else await browse(session, detected, choice === 'recommended' ? recommended : purposeListing(catalog, choice));
     ui.nextRound();
   }
 }
 
-// 这个用途下的外部项目，按名字排
-function appsIn(catalog: Catalog, purpose: Purpose): App[] {
-  return catalog.apps.filter((app) => app.purpose === purpose.id).sort((a, b) => (a.name < b.name ? -1 : 1));
+/** 一张混合列表里的条目：组件在上，外部项目在下，各按名字排 */
+interface Listing {
+  skills: Skill[];
+  apps: App[];
+  /** 把带推荐的行标出来；「推荐」那张列表里每一行都是，不标 */
+  marksRecommended: boolean;
 }
 
-// 进入一个用途：现在列表里只有外部项目。它们装不了，没有要执行的东西，所以不问开始不开始，
-// 直接列出勾选的那些的说明与链接；一个都不勾就确认是回主菜单
-async function browsePurpose(session: Session, purpose: Purpose): Promise<void> {
-  const { catalog, ui, prompter } = session;
-  const picked = await prompter.checkbox(ui.mixedPicker(appsIn(catalog, purpose)));
-  if (picked.length > 0) ui.externalProjects(picked);
+const byName = <Entry extends { name: string }>(entries: readonly Entry[]): Entry[] =>
+  [...entries].sort((a, b) => (a.name < b.name ? -1 : 1));
+const sizeOf = (listing: Listing): number => listing.skills.length + listing.apps.length;
+
+// 「推荐」：本仓库的全部 skill（不看任何标注），加上带推荐标记的其它条目
+function recommendedListing(catalog: Catalog): Listing {
+  return { skills: byName(catalog.skills), apps: byName(catalog.apps.filter((app) => app.recommended)), marksRecommended: false };
+}
+
+function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
+  const here = ({ purpose: id }: { purpose?: string }): boolean => id === purpose.id;
+  return { skills: byName(catalog.skills.filter(here)), apps: byName(catalog.apps.filter(here)), marksRecommended: true };
+}
+
+// 进入「推荐」或一个用途：勾选、确认、装上勾选的组件，最后列出勾选的外部项目的说明与链接
+async function browse(session: Session, detected: readonly Host[], listing: Listing): Promise<void> {
+  // 列表里没有组件就没有要装进宿主的东西，不问装进哪些
+  await withHosts(session, listing.skills.length > 0 ? detected : [], async (hosts) => {
+    const plan = await planEntries(session, hosts, listing);
+    if (plan === 'back') return 'back';
+    if (plan === 'cancel') return 'done';
+    if (plan.jobs.length > 0) await runJobs(session, plan.jobs);
+    if (plan.apps.length > 0) session.ui.externalProjects(plan.apps);
+    return 'done';
+  });
 }
 
 interface Job {
@@ -82,12 +103,10 @@ interface Job {
   declined?: boolean;
 }
 
-// 先定装进哪些宿主，再由 proceed 走后面的画面；它返回 back 表示要回到上一步。
-// location 是宿主选择里写在名字后面的提示（skill 的目录），没有就不写
+// 先定装进哪些宿主，再由 proceed 走后面的画面；它返回 back 表示要回到上一步
 async function withHosts(
   session: Session,
   detected: readonly Host[],
-  location: ((host: Host) => string) | undefined,
   proceed: (hosts: readonly Host[]) => Promise<'back' | 'done'>,
 ): Promise<void> {
   const { ui, prompter } = session;
@@ -96,8 +115,7 @@ async function withHosts(
   let hosts = detected;
   for (;;) {
     if (asksHosts) {
-      const choices = detected.map((host) => ({ host, ...(location ? { location: location(host) } : {}) }));
-      hosts = await prompter.checkbox(ui.hostPicker(choices, hosts));
+      hosts = await prompter.checkbox(ui.hostPicker(detected, hosts));
       // 一个都不勾就确认：返回主菜单
       if (hosts.length === 0) return;
     }
@@ -108,50 +126,44 @@ async function withHosts(
   }
 }
 
-async function installSkills(session: Session, detected: readonly Host[]): Promise<void> {
-  await withHosts(
-    session,
-    detected,
-    (host) => homeRelative(session, host.skillsDir),
-    async (hosts) => {
-      const jobs = await planSkills(session, hosts);
-      if (jobs === 'back') return 'back';
-      if (jobs !== 'cancel') await runJobs(session, jobs);
-      return 'done';
-    },
-  );
-}
-
-// 勾选 skill、看汇总、确认；返回要装的每一项
-async function planSkills(session: Session, hosts: readonly Host[]): Promise<Job[] | 'back' | 'cancel'> {
-  const { catalog, ui, prompter } = session;
-  let picked: Skill[] = [];
+// 勾选条目、看汇总、确认；返回要装的每一项和勾选的外部项目。hosts 是空的表示一个宿主都没检测到：组件都勾不上
+async function planEntries(
+  session: Session,
+  hosts: readonly Host[],
+  listing: Listing,
+): Promise<{ jobs: Job[]; apps: App[] } | 'back' | 'cancel'> {
+  const { ui, prompter } = session;
+  let picked: (Skill | App)[] = [];
   for (;;) {
     // 状态每次进列表都现探测
-    const entries = catalog.skills.map((skill) => ({
-      skill,
-      statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)),
-    }));
-    picked = await prompter.checkbox(ui.skillPicker(hosts, entries, picked));
-    if (picked.length === 0) return 'back';
-    // 每个 skill 在每个宿主下各是一项，各有自己的结果
-    const jobs = picked.flatMap((skill) =>
-      hosts.map((host) => ({
-        skill,
-        host,
-        target: {
-          name: skill.name,
-          host: host.name,
-          location: homeRelative(session, join(host.skillsDir, skill.name)),
-          version: skill.version,
-          status: skillStatus(skill, host.skillsDir),
-        },
-      })),
+    const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
+    picked = await prompter.checkbox(
+      ui.mixedPicker({ hosts, skills, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
+    if (picked.length === 0) return 'back';
+    const apps = listing.apps.filter((app) => picked.includes(app));
+    // 每个 skill 在每个宿主下各是一项，各有自己的结果
+    const jobs = listing.skills
+      .filter((skill) => picked.includes(skill))
+      .flatMap((skill) =>
+        hosts.map((host) => ({
+          skill,
+          host,
+          target: {
+            name: skill.name,
+            host: host.name,
+            location: homeRelative(session, join(host.skillsDir, skill.name)),
+            version: skill.version,
+            status: skillStatus(skill, host.skillsDir),
+          },
+        })),
+      );
+    // 只勾了外部项目：没有要执行的东西，不问开始不开始
+    if (jobs.length === 0) return { jobs, apps };
     ui.installSummary(jobs.map((job) => job.target));
     const decision = await prompter.select(ui.confirmInstall());
     if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return confirmOverwrites(session, jobs);
+    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), apps };
     ui.nextRound();
   }
 }
@@ -206,7 +218,7 @@ interface McpJob {
 }
 
 async function installMcps(session: Session, detected: readonly Host[]): Promise<void> {
-  await withHosts(session, detected, undefined, async (hosts) => {
+  await withHosts(session, detected, async (hosts) => {
     const jobs = await planMcps(session, hosts);
     if (jobs === 'back') return 'back';
     if (jobs !== 'cancel') await runMcpJobs(session, jobs);

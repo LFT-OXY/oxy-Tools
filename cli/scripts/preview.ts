@@ -206,6 +206,16 @@ const SHOWCASE_KEYED_MCPS = [
 ];
 const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_KEYED_MCPS });
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
+// 混合列表的样例：三个 skill 另外归在「文档处理」下、一个归在「UI 设计、图像与视频」下，mineru 带推荐标记
+const withMixed = catalogOf(
+  { version: 1, skills: SHOWCASE_SKILLS },
+  {
+    ...EMPTY_CATALOG,
+    purposes: SHOWCASE_PURPOSES,
+    apps: SHOWCASE_APPS.map((app) => (app.name === 'mineru' ? { ...app, recommended: true } : app)),
+    skillPurposes: { archify: 'documents', explanation: 'documents', pr: 'documents', onetake: 'design-media' },
+  },
+);
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -279,35 +289,43 @@ const LONG_NAME_UNMANAGED = { home: { [`${CLAUDE_SKILLS}/oxy-learning-hub/SKILL.
 const LEGACY_CONSOLE = { platform: 'win32' as const, env: { TERM: '' } };
 // 场景缺省没有 COLORTERM，大标志走的是洋红那一档；要看渐变得声明终端支持 24 位色
 const TRUECOLOR = { COLORTERM: 'truecolor' };
-const toSkills = [KEY.enter];
+// 主菜单的第一行是「推荐」：里面是本仓库的全部 skill
+const toRecommended = [KEY.enter];
 // 勾上 pr 和 wizard，光标停在 wizard 上
-const pickTwo = [...toSkills, ...down(5), KEY.space, KEY.down, KEY.space];
+const pickTwo = [...toRecommended, ...down(5), KEY.space, KEY.down, KEY.space];
 const toSummary = [...pickTwo, KEY.enter];
 const install = [...toSummary, KEY.enter];
-// 检测到两个宿主时，进了 skill 分组先问装进哪些宿主：两项默认勾选，直接确认
+// 检测到两个宿主时，进了「推荐」先问装进哪些宿主：两项默认勾选，直接确认
 const twoHosts = (keys: string[]): string[] => [KEY.enter, ...keys];
 // 勾上 explanation、pr 和 wizard：在 MIXED 里分别是版本不同、不是本工具装的、未装
-const pickThree = [...toSkills, KEY.down, KEY.space, ...down(4), KEY.space, KEY.down, KEY.space];
+const pickThree = [...toRecommended, KEY.down, KEY.space, ...down(4), KEY.space, KEY.down, KEY.space];
 const toMixedSummary = [...pickThree, KEY.enter];
 // 选了「开始安装」，停在确认覆盖的提问上
 const toOverwriteQuestion = [...toMixedSummary, KEY.enter];
 const declineOverwrite = [...toOverwriteQuestion, KEY.enter];
 const agreeOverwrite = [...toOverwriteQuestion, 'y', KEY.enter];
-const pickLongName = [...toSkills, ...down(4), KEY.space, KEY.enter];
+const pickLongName = [...toRecommended, ...down(4), KEY.space, KEY.enter];
 // 勾上 if5 和 pr：名字都短，备注放得下
-const pickShortNames = [...toSkills, ...down(2), KEY.space, ...down(3), KEY.space, KEY.enter];
-// withApps 的主菜单上依次是四个有条目的用途，然后才是 Skill；光标起始在第一个用途上。「文档处理」是第四个
-const toDocuments = [...down(3), KEY.enter];
+const pickShortNames = [...toRecommended, ...down(2), KEY.space, ...down(3), KEY.space, KEY.enter];
+// withApps 的主菜单上依次是「推荐」和四个有条目的用途；光标起始在「推荐」上。「文档处理」是第四个用途
+const toDocuments = [...down(4), KEY.enter];
 // 「文档处理」里按名字排是 mineru、pdf-inspector、stirling-pdf、word-formatter-pro：勾上第一个和第三个，光标停在第三个上
 const pickTwoApps = [...toDocuments, KEY.space, ...down(2), KEY.space];
 // 只勾 stirling-pdf：它的说明比一行长
 const pickOneApp = [...toDocuments, ...down(2), KEY.space];
 // 「上下文、记忆与 Token 优化」是第二个用途：里面有名字最长的那一条
-const toContextMemory = [KEY.down, KEY.enter];
+const toContextMemory = [...down(2), KEY.enter];
 // 「联网搜索与文档检索」是第三个用途，只有 ragflow 一条：它的链接比一行长
-const pickLongLink = [...down(2), KEY.enter, KEY.space, KEY.enter];
+const pickLongLink = [...down(3), KEY.enter, KEY.space, KEY.enter];
+// withMixed 的主菜单上多一个「UI 设计、图像与视频」，「文档处理」是第五个用途；检测到两个宿主时进去先问装进哪些，直接确认
+const toMixedDocuments = (asksHosts = false): string[] => [...down(5), KEY.enter, ...(asksHosts ? [KEY.enter] : [])];
+// 「文档处理」里上面是 archify、explanation、pr 三个 skill，下面是四个外部项目：
+// 勾上 explanation、pr、mineru 和 stirling-pdf，光标停在 stirling-pdf 上
+const pickMixed = [KEY.down, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space, ...down(2), KEY.space];
+// 确认列表、开始安装；pr 在 Claude Code 下不是本工具装的，另问时直接回车（不覆盖）
+const installMixed = [...pickMixed, KEY.enter, KEY.enter, KEY.enter];
 
-// 主菜单上从 Skill 下移到 MCP 再进去
+// 主菜单上从「推荐」下移到 MCP 再进去
 const toMcps = [KEY.down, KEY.enter];
 // 勾上 chrome-devtools、context7 和 linear，光标停在 linear 上
 const pickMcps = [...toMcps, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space];
@@ -326,7 +344,7 @@ const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 const toKeyedSummary = [...toExaKey, PASTED_KEY, KEY.enter];
 // 勾上 chrome-devtools 和 exa，exa 的 key 留空
 const skipExa = [...toMcps, KEY.space, ...down(2), KEY.space, KEY.enter, KEY.enter];
-// 主菜单上从 Skill 下移到工具再进去（样例目录里只有 skill 和工具两个分组）
+// 主菜单上从「推荐」下移到工具再进去（样例目录里旧分组只有工具一个）
 const toTools = [KEY.down, KEY.enter];
 // 勾上 uv 和 openspec，光标停在 openspec 上
 const pickTools = [...toTools, KEY.space, ...down(2), KEY.space];
@@ -348,7 +366,7 @@ const scenes: Scene[] = [
   { title: '语言提问 · 系统语言是中文', note: '大标志之后的第一问：光标停在「中文」上，按键提示是中文；提问和两个选项不随界面语言变', answersLanguage: true },
   { title: '语言提问 · 系统语言不是中文', note: 'LANG=en_US.UTF-8：光标停在 English 上，按键提示是英文', env: { LANG: 'en_US.UTF-8' }, answersLanguage: true },
   { title: '语言提问 · 选了与系统语言不同的一项', note: '下移到 English 再回车：收成一行，之后的画面都是选定的语言', answersLanguage: true, keys: [KEY.down, KEY.enter] },
-  { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
+  { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有「推荐」和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
   {
@@ -356,7 +374,7 @@ const scenes: Scene[] = [
     note: '二十个条目一屏放不下，由交互库滚动；画面是屏幕上的那 24 行：提问那一行还在，说明全文和按键提示都在。光标过了半屏，表头随列表滚上去了，提问下方的空行还在',
     catalog: manySkills,
     rows: 24,
-    keys: [...toSkills, ...down(10)],
+    keys: [...toRecommended, ...down(10)],
   },
   { title: '汇总确认 · 选了两个 skill', note: '列出每个 skill 将装到的目录；可开始安装、返回修改或取消', keys: toSummary },
   { title: '汇总确认 · 返回修改', note: '回到列表，之前勾选的还在', keys: [...toSummary, KEY.down, KEY.enter] },
@@ -378,8 +396,8 @@ const scenes: Scene[] = [
   },
   { title: '主菜单 · 检测到两个宿主', note: '可执行路径上有 claude 和 codex 两个命令', onPath: BOTH_HOSTS },
   { title: '主菜单 · 只检测到 Codex', note: '另一个宿主没有检测到：说明它被跳过，组件只装进检测到的那个', onPath: ['codex'] },
-  { title: '选择宿主 · 检测到两个', note: '进 skill 分组后先问装进哪些宿主：两项都默认勾选，名字后面是各自的 skill 目录', onPath: BOTH_HOSTS, keys: toSkills },
-  { title: '选择宿主 · 去掉一个', note: '空格去掉 Claude Code 的勾，光标移到 Codex', onPath: BOTH_HOSTS, keys: [...toSkills, KEY.space, KEY.down] },
+  { title: '选择宿主 · 检测到两个', note: '进「推荐」后先问装进哪些宿主：两项都默认勾选，名字后面不写目录', onPath: BOTH_HOSTS, keys: toRecommended },
+  { title: '选择宿主 · 去掉一个', note: '空格去掉 Claude Code 的勾，光标移到 Codex', onPath: BOTH_HOSTS, keys: [...toRecommended, KEY.space, KEY.down] },
   { title: 'skill 多选列表 · 两个宿主', note: '上面两行是已回答的提问', onPath: BOTH_HOSTS, keys: twoHosts(pickTwo) },
   { title: '汇总确认 · 两个宿主', note: '每个 skill 在每个宿主下各一行，名字只写在第一行', onPath: BOTH_HOSTS, keys: twoHosts(toSummary) },
   { title: '结果 · 两个宿主', note: '按宿主分别列出，各有各的结果', onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
@@ -392,11 +410,23 @@ const scenes: Scene[] = [
   { title: '确认覆盖 · 输入了别的', note: '只认 y 和 n；输入别的不结束提问，下方说明', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts([...toOverwriteQuestion, 'x', KEY.enter]) },
   { title: '结果 · 未同意覆盖的跳过', note: '那个目录保持原样，其余照常；覆盖了旧版本的写出两个版本', onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '结果 · 同意覆盖', note: '同意之后和别的项一样安装', onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(agreeOverwrite) },
-  { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；skill 分组不可进入，行尾注明原因，光标落在「退出」上', onPath: [] },
-  { title: '主菜单 · 一个宿主都没有 · 在 skill 分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', onPath: [], keys: [KEY.up, KEY.enter] },
-  { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toSkills, KEY.enter] },
-  { title: '主菜单 · 按用途进入', note: '各个用途一行一个，照用途清单的顺序，右边是条目数；十个用途里六个没有条目，不出现。Skill 这个旧入口暂时留在后面；「目录」一行数上外部项目', catalog: withApps },
-  { title: '主菜单 · 按用途进入 · 一个宿主都没有', note: '说明里补一句外部项目仍可浏览；用途照常进得去，光标在第一个用途上，旧入口不可进入', catalog: withApps, onPath: [] },
+  { title: '主菜单 · 一个宿主都没有', note: '上方说明原因；「推荐」照常进得去', onPath: [] },
+  { title: '「推荐」的列表 · 一个宿主都没有', note: '不问装进哪些宿主。状态只有一栏，每个 skill 都不可选：勾选位是短横，原因写在状态的位置，其余暗淡', onPath: [], keys: toRecommended },
+  { title: '「推荐」的列表 · 一个宿主都没有 · 在不可选的条目上按空格', note: '勾不上：列表下方多一行说明', onPath: [], keys: [...toRecommended, KEY.space] },
+  { title: '返回主菜单', note: '已回答的提问收成一行；大标志不重复', keys: [...toRecommended, KEY.enter] },
+  { title: '主菜单 · 按用途进入', note: '第一行是「推荐」，下面各个用途一行一个，照用途清单的顺序，右边是条目数；十个用途里六个没有条目，不出现。没有 Skill 这个分组；「目录」一行数上外部项目', catalog: withApps },
+  { title: '主菜单 · 按用途进入 · 一个宿主都没有', note: '说明里补一句外部项目仍可浏览；「推荐」和用途照常进得去', catalog: withApps, onPath: [] },
+  { title: '主菜单 · 有「推荐」 · skill 另有用途', note: '「推荐」数的是本仓库的全部 skill 加一个带推荐标记的外部项目；写了用途的 skill 也数进那个用途', catalog: withMixed, onPath: BOTH_HOSTS },
+  { title: '「推荐」的列表 · 带推荐标记的外部项目也在', note: '上面是本仓库的全部 skill，下面是带推荐标记的外部项目；这里每一行都是推荐的，行上和「类型」里都不再写', catalog: withMixed, ...MIXED, keys: [...toRecommended, ...down(8)] },
+  { title: '混合列表 · skill 加外部项目 · 两个宿主', note: '组件在上、外部项目在下，段首写着类型，两段之间空一行；skill 每个宿主一栏状态，带推荐的行说明前面写「推荐」；列表下方先是光标所在行的类型', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: toMixedDocuments(true) },
+  { title: '混合列表 · 勾了两个 skill 和两个外部项目', note: '光标在外部项目上：「类型」跟着变；没带推荐标记的行不写「推荐」', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
+  { title: '混合列表 · 光标在带推荐标记的外部项目上', note: '「类型」一行里类型后面跟着「推荐」', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...down(3)] },
+  { title: '混合列表 · 一个宿主', note: '只是少一栏状态；不问装进哪些宿主', catalog: withMixed, ...MIXED, keys: [...toMixedDocuments(), ...pickMixed] },
+  { title: '混合列表 · 一个宿主都没有', note: '状态只有一栏，skill 都不可选并写明原因；外部项目照常可选', catalog: withMixed, onPath: [], keys: [...toMixedDocuments(), ...down(3), KEY.space] },
+  { title: '混合列表 · 只有 skill 的用途', note: '「UI 设计、图像与视频」下只有一个 skill：没有外部项目一段', catalog: withMixed, keys: [...down(4), KEY.enter] },
+  { title: '汇总确认 · 一次勾了 skill 和外部项目', note: '汇总只列要装的 skill，外部项目不在里面；列表收成的一行写着勾选的四个里的前三个', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter] },
+  { title: '汇总确认 · 混合列表 · 返回修改', note: '回到列表，skill 和外部项目的勾选都还在；不重问宿主', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter, KEY.down, KEY.enter] },
+  { title: '结果 · 一次勾了 skill 和外部项目', note: '覆盖前的单独询问、安装、结果照常；合计之后才是外部项目的说明与链接，再回到主菜单', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
   { title: '用途下的列表 · 只有外部项目', note: '多选。表头下面是段标题，写明只给链接；外部项目没有状态，说明紧跟在名称后面；列表下方是光标所在行的类型和说明全文', catalog: withApps, keys: toDocuments },
   { title: '用途下的列表 · 勾了两个', note: '光标所在行的说明比一行长：下方折成两行，续行与说明的左缘对齐', catalog: withApps, keys: pickTwoApps },
   { title: '用途下的列表 · 名字最长的条目', note: '名称一栏按最长的名字定宽，说明相应少占几列', catalog: withApps, keys: toContextMemory },
@@ -441,7 +471,8 @@ const scenes: Scene[] = [
   { title: '结果 · 必填的 key 没填', note: '那一项写明跳过和原因，其余照常', ...KEYED, keys: [...skipExa, KEY.enter] },
   { title: '结果 · 选中的都没填 key', note: '没有命令要执行：不问执行不执行，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
   { title: '主菜单 · 有工具', note: 'catalog.json 里有工具条目时多出这个分组，「目录」一行也数上它', ...TOOLS },
-  { title: '主菜单 · 一个宿主都没有 · 有工具', note: '工具同样是组件：一个宿主都没检测到时进不去，行尾注明原因', ...TOOLS, onPath: [] },
+  { title: '主菜单 · 一个宿主都没有 · 有工具', note: '还没搬进混合列表的旧分组：一个宿主都没检测到时进不去，行尾注明原因；光标落在「推荐」上', ...TOOLS, onPath: [] },
+  { title: '主菜单 · 一个宿主都没有 · 在工具分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
   { title: '工具多选列表', note: '只有一栏状态：已安装、未安装，由条目声明的检查方式决定；装不了的条目不可选，状态栏的位置写原因（当前系统不支持、它要的 AI Agent 没检测到）', ...TOOLS, keys: pickTools },
   { title: '工具多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...TOOLS, keys: [...toTools, ...down(3), KEY.space] },
   { title: '汇总确认 · 两个工具', note: '两条完整的命令都列出来，前面是序号和工具的名字；确认后才执行', ...TOOLS, keys: [...pickTools, KEY.enter] },
@@ -461,7 +492,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en · 给了 --lang 就不问语言', argv: ['--lang', 'en'] },
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
-  { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toRecommended },
   { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
   { title: '英文界面 · 四种状态并存', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 含覆盖项的汇总、确认与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
@@ -471,7 +502,10 @@ const scenes: Scene[] = [
   { title: '英文界面 · 用途下的列表 · 名字最长的条目', argv: ['--lang', 'en'], catalog: withApps, keys: toContextMemory },
   { title: '英文界面 · 外部项目的说明与链接', argv: ['--lang', 'en'], catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '英文界面 · 主菜单 · 按用途进入 · 一个宿主都没有', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
-  { title: '英文界面 · 一个宿主都没有 · 在 skill 分组上按回车', argv: ['--lang', 'en'], onPath: [], keys: [KEY.up, KEY.enter] },
+  { title: '英文界面 · 一个宿主都没有 · 「推荐」的列表', argv: ['--lang', 'en'], onPath: [], keys: [...toRecommended, KEY.space] },
+  { title: '英文界面 · 一个宿主都没有 · 在工具分组上按回车', argv: ['--lang', 'en'], ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
+  { title: '英文界面 · 混合列表', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
+  { title: '英文界面 · 混合的汇总与结果', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
   { title: '英文界面 · MCP 多选列表', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '英文界面 · MCP 多选列表 · 不可选的条目', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '英文界面 · MCP 的汇总与结果', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
@@ -486,11 +520,13 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
-  { title: '不显示颜色 · 选择宿主', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '不显示颜色 · 选择宿主', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, keys: toRecommended },
   { title: '不显示颜色 · 四种状态并存', note: '设置了 NO_COLOR：每种状态的文字本身就不同', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '不显示颜色 · 含覆盖项的汇总、确认与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '不显示颜色 · 一个宿主都没有', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: [] },
   { title: '不显示颜色 · 用途下的列表', note: '设置了 NO_COLOR：段标题、勾选和光标都靠符号认', env: { NO_COLOR: '1' }, catalog: withApps, keys: pickTwoApps },
+  { title: '不显示颜色 · 混合列表', note: '设置了 NO_COLOR：类型靠段标题认，推荐靠行上的字认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
+  { title: '不显示颜色 · 混合列表 · 一个宿主都没有', note: '设置了 NO_COLOR：不可选的行靠行首的短横和行里的原因认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
   { title: '不显示颜色 · 外部项目的说明与链接', note: '设置了 NO_COLOR：名字不加粗，链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '不显示颜色 · MCP 多选列表', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '不显示颜色 · MCP 多选列表 · 不可选的条目', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
@@ -505,12 +541,14 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
   { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
-  { title: '没有 Unicode · 选择宿主', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, keys: toSkills },
+  { title: '没有 Unicode · 选择宿主', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, keys: toRecommended },
   { title: '没有 Unicode · 四种状态并存', note: '版本变化的箭头退成 ->', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '没有 Unicode · 含覆盖项的汇总、确认与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '没有 Unicode · 一个宿主都没有', ...LEGACY_CONSOLE, onPath: [] },
   { title: '没有 Unicode · 主菜单 · 按用途进入', ...LEGACY_CONSOLE, catalog: withApps },
   { title: '没有 Unicode · 用途下的列表', note: '段标题前的横线退成 --，标题里的分隔退成 -', ...LEGACY_CONSOLE, catalog: withApps, keys: pickTwoApps },
+  { title: '没有 Unicode · 混合列表', note: '段标题前的横线退成 --，推荐标记后的分隔退成 -', ...LEGACY_CONSOLE, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
+  { title: '没有 Unicode · 混合列表 · 一个宿主都没有', note: '不可选的勾选位退成 [-]，原因仍落在状态一栏', ...LEGACY_CONSOLE, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
   { title: '没有 Unicode · 外部项目的说明与链接', ...LEGACY_CONSOLE, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
   { title: '没有 Unicode · MCP 多选列表 · 不可选的条目', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },

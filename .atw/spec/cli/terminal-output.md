@@ -6,7 +6,7 @@
 
 ## 只有呈现层往终端上写
 
-`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary(targets)`、`ui.mainMenu(purposes, groups)`，不拼样式码、不算栏宽、不决定空行。
+`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary(targets)`、`ui.mainMenu(recommended, purposes, groups)`，不拼样式码、不算栏宽、不决定空行。
 
 ```ts
 // 错：流程里自己拼
@@ -88,7 +88,7 @@ ASCII 的符号宽度可以和 Unicode 的不同（勾选框 `■` 一列，`[x]
 
 ## 不可选的行
 
-列表里某一行选不了时（一个宿主都没检测到时主菜单上 Skill、MCP、工具这几个旧入口），给那一行一个 `disabled`——它是**原因**，不是布尔值：
+列表里某一行选不了时（一个宿主都没检测到时主菜单上 MCP、工具这两个旧入口，和混合列表里的每个 skill），给那一行一个 `disabled`——它是**原因**，不是布尔值：
 
 ```ts
 // cli/src/prompter.ts
@@ -129,7 +129,7 @@ disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
 | `a` 全选、`i` 反选都跳过不可选的行 | 不用配合；`prompts.test.ts` 里有一条守着 |
 | 一个能选的都没有时照样画得出来，用户只能回车（什么都没勾，等于返回） | 不用另做一个“没有可选的”画面 |
 
-不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。三种列表（skill、MCP、工具）共用 `ui.ts` 的 `entryPicker(message, columns, entries)`：名称、几栏状态（`columns` 是各栏的表头——skill 和 MCP 是宿主的名字，工具只有一栏「状态」）、说明。给一行 `unavailable`（原因）它就不可选。
+不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。两种旧列表（MCP、工具）共用 `ui.ts` 的 `entryPicker(message, columns, entries)`：名称、几栏状态（`columns` 是各栏的表头——MCP 是宿主的名字，工具只有一栏「状态」）、说明。给一行 `unavailable`（原因）它就不可选。混合列表（`mixedPicker`）自己拼不可选的 skill 行，守的是同一条规矩，见「混合列表与外部项目」。
 
 原因放在哪有两种，一张表里只用一种：
 
@@ -276,17 +276,23 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ## 混合列表与外部项目
 
-进入一个用途之后的那张多选列表是 `ui.mixedPicker(apps)`。它和三种旧列表共用的 `entryPicker` 不是一回事：按类型分段、段首有标题、列表下方多一行「类型」。**现在里面只有外部项目一段**，skill、MCP、工具随后面的工单搬进来。
+进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, apps, checked, marksRecommended })`。它和两种旧列表共用的 `entryPicker` 不是一回事：按类型分段、段首有标题、列表下方多一行「类型」。**现在里面有本仓库的 skill 和外部项目两段**，MCP、工具随后面的工单搬进来。提问的值是目录里的条目本身（`Skill | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
+
+`hosts` 是所选的宿主，`skills` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的表示一个宿主都没检测到**，这时状态只有一栏、每个 skill 都不可选。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
 
 | 部分 | 怎么拼 |
 |------|--------|
-| 表头 | 分隔行，和别的多选列表一样比条目多缩进（勾选框的宽度加一格）。现在只有「名称」「说明」两栏：外部项目没有状态 |
+| 表头 | 分隔行，和别的多选列表一样比条目多缩进（勾选框的宽度加一格）。栏是名称、每个所选的宿主一栏状态（一个宿主都没检测到时是一栏「状态」）、说明；一个组件都没有时没有状态栏，只有「名称」「说明」 |
+| 栏宽 | 名称一栏按 skill 和外部项目里最长的名字定；每栏状态按这一栏最长的一格定（表头也算）；剩下的给说明。**组件的说明不足 `MIN_ABOUT`（12 列）时整栏不写**，表头也不写「说明」 |
+| skill 的行 | 名称、各栏状态（`statusCell`，和原先 skill 列表的写法一样）、说明。一段里按名字排 |
+| 不可选的 skill 行 | 一个宿主都没检测到时：原因「需要 AI Agent」写在状态的位置。照交互库的拼法（「名称 + 一个空格 + 原因」），名称少补一格，`disabled` 是补到状态栏总宽的原因加说明；原因用 `REASON_MARK` 圈着，整行压暗时它保持正常亮度 |
+| 推荐的标记 | `marksRecommended` 时，带推荐的行（本仓库的 skill 全是，外部项目看 `recommended`）在说明的最前面写 `推荐 · `（英文 `pick · `，文案是 `recommendedMark`，分隔用 `symbols.separator`）。标记不截断，截断的是它后面的说明；说明一栏连标记都放不下时整格不写 |
 | 段标题 | 也是一行分隔行（不可选，光标跳过它）：同样的缩进，暗淡的两个横线符号，空一格，默认色的标题。横线用 `symbols.rule`，没有 Unicode 时跟着退成 `--` |
-| 外部项目的行 | 名称补到栏宽，说明截断到第 79 列；名字长到说明一列都不剩时不写说明 |
+| 外部项目的行 | 名称补到栏宽，说明从第一栏状态的位置写起、截断到第 79 列；名字长到说明一列都不剩时不写说明。这一段与上面的组件之间有一行空的分隔行，上面没有组件时没有 |
 | 列表下方 | 两行：「类型」和「说明」，各是一次 `belowList(label, format, text, labelWidth)`——第四个参数把两个标签补到一样宽，值的左缘才对齐；说明过长则折行。多出的这一行要告诉 `list(rows, below)`：第二个参数是列表下方除说明之外另外多占的行数，一屏放多少行跟着少一行（见「块与块之间的空行」） |
 | 回答后收成的一行 | 勾选的名字；勾了三个以上只列前三个，后面写「等 N 项」，N 是勾选的总数（英文是 `and N more`，那里的 N 是没列出来的个数）；一个都没勾写「返回」。文案是 `messages.ts` 的 `pickedMany(shown, total)` |
 
-**列表下方的两行是这样送到交互库手里的**：交互库只把光标所在行的 `description`（一段文字）交给 `theme.style.description`，没有别的口子。所以混合列表的每一行把 `description` 写成两行文字——第一行是类型（带推荐的以后在这里接上标记），其余是说明全文——再由这个提问自己的 `style.description` 在第一个换行处拆开，画成两行。
+**列表下方的两行是这样送到交互库手里的**：交互库只把光标所在行的 `description`（一段文字）交给 `theme.style.description`，没有别的口子。所以混合列表的每一行把 `description` 写成两行文字——第一行是类型（`marksRecommended` 时带推荐的后面跟暗淡的分隔和「推荐」），其余是说明全文——再由这个提问自己的 `style.description` 在第一个换行处拆开，画成两行。
 
 ```ts
 // 错：拿说明全文去反查这一行是什么类型——两个条目的说明可以一字不差
@@ -297,6 +303,34 @@ description: `${t.kinds.app}\n${app.description[lang]}`
 ```
 
 测试架子（预设应答的提问器）不经主题，照原样把这两行记进 `output`：断言说明全文、类型的字都可以直接写；两行画成什么样要用 `keys` 在真实的交互库上看。
+
+### 不可选的行下方的类型和说明
+
+**交互库不把不可选的行的 `description` 交给主题**（`@inquirer/checkbox` 5.x 的 `renderItem`：不可选的行在记下说明之前就返回了），光标停在这种行上时列表下方原本什么都没有。混合列表要它照样显示（维护者 2026-10-10 定的），是 `mixedPicker` 自己的主题补上的，靠的是交互库每画一遍调样式函数的先后：
+
+| 先后 | 交互库调的 | `mixedPicker` 在这里做什么 |
+|------|------------|----------------------------|
+| 1 | `style.message` | 把「光标所在的不可选行」清掉（`underCursor = undefined`）：每画一遍从头认 |
+| 2 | 每个不可选的行一次 `style.disabled(整行)` | 整行以光标符号开头的就是光标所在行：去掉光标、勾选框和一个空格，剩下的「名称 + 一个空格 + 原因」拿去 `belowUnavailable` 里找它的 `description`，记进 `underCursor` |
+| 3 | `style.keysHelpTip` | `underCursor` 有值时，把类型和说明两行接在按键提示的**前面**，中间空一行——落在别的行的说明所在的位置 |
+| 4 | 有出错的话 `style.error` | 「这一项现在选不了」。它在交互库的行序里排在按键提示之前，所以落在类型和说明的上面；后面跟着它们时去掉自己末尾的换行，三行才挨着 |
+
+- `belowUnavailable` 是一张「交互库拼出来的那一行 → 它的 `description`」的表，拼不可选的行时填。键是整行（名称补齐后的字加原因加说明），不是说明全文——两个条目的说明可以一字不差。
+- **后面的工单给混合列表加不可选的行（不支持这个系统的工具、所选宿主都不支持的 MCP）时，照样往 `belowUnavailable` 里填**，不然光标停上去下方是空的，而且不报任何错。
+- 这是在配合交互库内部的顺序，不是它承诺的接口：**升级 `@inquirer/checkbox` 之后跑 `spacing.test.ts` 的「光标在不可选的行上」那几条和 `prompts.test.ts` 的「光标停在不可选的 skill 上」**，它们用真实的交互库断言这两行在、且「注意」消失后仍在。预设应答的测试架子看不出这件事：它不管行可不可选都把 `description` 记进 `output`。
+- MCP、工具两张旧列表（`entryPicker`）没有补，光标停在不可选的行上时下方仍是空的；它们随工单 07、08 搬进混合列表后不再有。
+
+```ts
+// 错：想在 style.disabled 里直接把说明画出来——它的返回值是列表里的那一行，画不到列表下方
+disabled: (text) => `${dimmed(text)}\n${description(found)}`
+
+// 错：在 keysHelpTip 里判断这一遍有没有「注意」——style.error 在它之后才被调到，这时还不知道
+keysHelpTip: (keys) => (noticeShown ? … : …)
+
+// 对：画行的时候只记下，到按键提示才画；「注意」自己决定末尾要不要换行
+disabled: (text) => { if (text.startsWith(cursor)) underCursor = belowUnavailable.get(…); return base.disabled(text); },
+keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underCursor)}\n`}${base.keysHelpTip(keys)}`,
+```
 
 勾选的外部项目由 `ui.externalProjects(apps)` 列出：一个分区，标题是「外部项目：N 个，只给链接」；每个一段——缩进两格的粗体名字，「说明」「链接」两行键值——段与段之间空一行。它不以空行收尾，回主菜单时的那一行空行由 `nextRound` 给。
 
@@ -448,10 +482,10 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 单元格的前景色有两种读法（`readCells`）：命名色记编号，转成类名 `c0`–`c7`，色值跟着深色、浅色两套配色变；24 位色记成 `#rrggbb` 直接写进 `style`，两边是同一个值。只认调色板色的话，渐变的标志在预览页上是默认前景色，看上去和不显示颜色一样而不报任何错。
 - 画面取的是无头终端的**整个缓冲区**（`readCells` 读到 `buffer.length`），不是屏幕上那 `ROWS` 行：汇总加结果再回到主菜单的场景会超过一屏，只读前 `ROWS` 行会把底下的截掉而不报任何错（工单 12 之前有四个画面就是这样少了末尾几行）。
 - 要看矮终端里屏幕上还剩什么，场景给 `rows`（如 `rows: 24`）：终端、提问器和安装器拿到的都是这个行数，画面**只取还在屏幕上的那几行**（从 `buffer.baseY` 读起）。「skill 多选列表 · 24 行的终端」用的是 `manySkills`（二十条样例）。
-- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上各个用途排在旧入口前面：进「文档处理」用 `toDocuments`；有外部项目的场景里要进 Skill、MCP、工具，得先下移过用途那几行。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
+- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面、旧入口前面：进「文档处理」用 `toDocuments`；有外部项目的场景里要进 MCP、工具，得先下移过「推荐」和用途那几行。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
 - 要画出工具，场景用 `...TOOLS`（`withTools`：五条为预览编的样例——两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用；主目录里 `bun` 已经装着）。命令是假的：场景的 `shell: (command) => ShellRun` 说它往终端上打什么（`output`）、怎么结束（`exitCode`、`cannotStart`、`hangs`）、装没装上（`installs` 往可执行路径里放一个命令，`creates` 在主目录下写出一个路径），缺省是 `installsTool`（uv 装好，别的以非零状态结束）。名字和命令都长的样例在 `withLongCommandTool`。预览页从不真的执行命令。
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
-- 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给 skill 用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
+- 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问的做法。

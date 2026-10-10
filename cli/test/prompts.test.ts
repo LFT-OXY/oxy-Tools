@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run } from './harness.ts';
+import { displayWidth } from '../src/text.ts';
 import { screenLines } from './terminal.ts';
 
 // 交互库自带的样式按 Node 的规则上色，看的是真实进程的环境和标准输出；测试进程的标准输出不是终端，
@@ -17,10 +18,10 @@ const HINT = '⏎ 选择';
 const PICK_HINT = '⏎ 确认';
 
 describe('真实的提问画面', () => {
-  it('主菜单：光标停在第一个分组上，下方是本地化的按键提示', async () => {
+  it('主菜单：光标停在第一行「推荐」上，下方是本地化的按键提示', async () => {
     const result = await run({ keys: [[HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸ Skill\s+2\s+装进 AI Agent 的能力包$/m);
+    expect(result.output).toMatch(/^▸ 推荐\s+2$/m);
     expect(result.output).toMatch(/^\s+↑↓ 移动 · ⏎ 选择$/m);
   });
 
@@ -33,7 +34,7 @@ describe('真实的提问画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/✓ 选择用途 · Skill$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 推荐$/m);
     expect(result.output).toMatch(/^▸□ alpha\s+未装\s+第一个样例 skill.*…$/m);
     expect(result.output).toMatch(/^▸□ beta-pack\s+未装\s+第二个样例 skill$/m);
     expect(result.output).toMatch(/^\s+说明\s+第二个样例 skill$/m);
@@ -49,7 +50,7 @@ describe('真实的提问画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/✓ 选择要安装的 skill · 返回$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
     expect(result.output).toMatch(/✓ 选择用途 · 退出$/m);
     expect(result.exitCode).toBe(0);
   });
@@ -70,7 +71,7 @@ describe('真实的提问画面', () => {
   it('设置了 NO_COLOR 时，提问部分同样不带样式码', async () => {
     const result = await run({ env: { NO_COLOR: '1' }, keys: [[HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸ Skill/m);
+    expect(result.output).toMatch(/^▸ 推荐/m);
     expect(result.raw).not.toMatch(STYLE_CODE);
   });
 
@@ -84,8 +85,8 @@ describe('真实的提问画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/^> Skill\s+2\s/m);
-    expect(result.output).toMatch(/\+ 选择用途 - Skill$/m);
+    expect(result.output).toMatch(/^> 推荐\s+2$/m);
+    expect(result.output).toMatch(/\+ 选择用途 - 推荐$/m);
     // 提问回答之后，收成的那一行紧接着按键提示重画，所以这里不卡行尾
     expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择/m);
     expect(result.output).not.toMatch(/[▸✓·…↑↓⏎]/);
@@ -191,7 +192,7 @@ describe('真实的多选画面', () => {
       ],
     });
 
-    expect(result.output).toMatch(/✓ 选择要安装的 skill · alpha、beta-pack$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · alpha、beta-pack$/m);
     expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
     expect(result.output).toMatch(/^▸ 开始安装$/m);
   });
@@ -199,7 +200,7 @@ describe('真实的多选画面', () => {
   it('一个都不勾就回车：收成「返回」，回到主菜单', async () => {
     const result = await run({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/✓ 选择要安装的 skill · 返回$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
     expect(result.output).not.toContain('将安装');
   });
 
@@ -275,87 +276,163 @@ describe('真实的多选画面', () => {
 });
 
 describe('真实的画面：一个宿主都没检测到', () => {
-  it('skill 分组行首是短横、行尾注明原因，光标落在「退出」上，回车就退出', async () => {
-    const result = await run({ onPath: [], keys: [[HINT, KEY.enter]] });
+  // 旧分组还在的只有 MCP 和工具：目录里得有 MCP，主菜单上才有不可进入的行
+  const withMcps = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } });
+  const DISABLED_GROUP = /^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 · 需要 AI Agent$/m;
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+  it('MCP 分组行首是短横、行尾注明原因；光标落在第一个能进的「推荐」上', async () => {
+    const result = await run({ catalog: withMcps(), onPath: [], keys: [[HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸ 推荐\s+2$/m);
+    expect(result.output).toMatch(DISABLED_GROUP);
+  });
+
+  // 目录里没有 skill：主菜单的第一行就是不可进入的 MCP 分组
+  const onlyMcps = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } });
+
+  it('第一行不可进入时光标落在「退出」上，回车就退出', async () => {
+    const result = await run({ catalog: onlyMcps(), onPath: [], keys: [[HINT, KEY.enter]] });
+
+    expect(result.output).toMatch(DISABLED_GROUP);
     expect(result.output).toMatch(/^▸ 退出$/m);
     expect(result.output).toMatch(/✓ 选择用途 · 退出$/m);
     expect(result.exitCode).toBe(0);
   });
 
-  it('把光标移到 skill 分组上按回车进不去：列表下方说明这一项选不了，仍停在主菜单', async () => {
+  it('没有 Unicode 的终端里光标同样落在「退出」上', async () => {
+    const result = await run({ catalog: onlyMcps(), onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^> 退出$/m);
+  });
+
+  it('把光标移到 MCP 分组上按回车进不去：列表下方说明这一项选不了，仍停在主菜单', async () => {
     const result = await run({
+      catalog: withMcps(),
       onPath: [],
       keys: [
-        [HINT, KEY.up],
-        ['▸ Skill', KEY.enter],
+        [HINT, KEY.down],
+        ['▸ MCP', KEY.enter],
         ['这一项现在选不了', KEY.ctrlC],
       ],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
-    expect(result.output).not.toContain('选择要安装的 skill');
+    expect(result.output).not.toContain('选择要安装的 MCP');
     expect(result.output).not.toContain('✓ 选择用途');
     expect(result.exitCode).toBe(130);
   });
 
   it('设置了 NO_COLOR 时，不可进入的行和那句说明都不带样式码，圈原因用的零宽空格不打出去', async () => {
     const result = await run({
+      catalog: withMcps(),
       onPath: [],
       env: { NO_COLOR: '1' },
       keys: [
-        [HINT, KEY.up],
-        ['▸ Skill', KEY.enter],
+        [HINT, KEY.down],
+        ['▸ MCP', KEY.enter],
         ['这一项现在选不了', KEY.ctrlC],
       ],
     });
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(DISABLED_GROUP);
     expect(result.raw).not.toMatch(STYLE_CODE);
     expect(result.raw).not.toContain('\u200b');
   });
 
   it('带样式时零宽空格同样不打出去', async () => {
-    const result = await run({ onPath: [], keys: [[HINT, KEY.ctrlC]] });
+    const result = await run({ catalog: withMcps(), onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
     expect(result.raw).not.toContain('\u200b');
   });
 
   it('没有 Unicode 的终端里，原因前面的分隔退成 ASCII', async () => {
-    const result = await run({ onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
+    const result = await run({ catalog: withMcps(), onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 - 需要 AI Agent$/m);
-    expect(result.output).toMatch(/^> 退出$/m);
+    expect(result.output).toMatch(/^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 - 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^> 推荐\s+2$/m);
     expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择$/m);
     expect(result.output).not.toMatch(/[▸✓·…↑↓⏎–]/);
   });
 
   it('英文界面下的那句说明也是英文', async () => {
     const result = await run({
+      catalog: withMcps(),
       onPath: [],
       argv: ['--lang', 'en'],
       keys: [
-        ['⏎ select', KEY.up],
-        ['▸ Skill', KEY.enter],
+        ['⏎ select', KEY.down],
+        ['▸ MCP', KEY.enter],
         ['cannot be selected', KEY.ctrlC],
       ],
     });
 
     expect(result.output).toMatch(/^\s+Notice\s+This item cannot be selected right now$/m);
   });
+
+  it('「推荐」照常进得去：skill 的勾选位是短横，原因写在状态的位置；按空格勾不上', async () => {
+    const result = await run({
+      onPath: [],
+      keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.enter], [HINT, KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/✓ 选择用途 · 推荐$/m);
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
+    expect(result.output).toMatch(/^\s+── Skill$/m);
+    expect(result.output).toMatch(/^▸– alpha\s+需要 AI Agent\s+第一个样例 skill.*…$/m);
+    expect(result.output).toMatch(/^ – beta-pack\s+需要 AI Agent\s+第二个样例 skill$/m);
+    expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
+    expect(result.output).not.toContain('装进哪些 AI Agent');
+  });
+
+  it('光标停在不可选的 skill 上：列表下方照样有它的类型和说明全文', async () => {
+    const result = await run({ onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^▸– alpha\s+需要 AI Agent\s/m);
+    expect(result.output).toMatch(/^\s+类型\s+Skill$/m);
+    expect(result.output).toMatch(/^\s+说明\s+第一个样例 skill，它的说明故意写得很长/m);
+  });
+
+  it('没有 Unicode 的终端里同样有', async () => {
+    const result = await run({
+      onPath: [],
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['回车 选择', KEY.enter], ['回车 确认', KEY.down], ['>[-] beta-pack', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(/^\s+类型\s+Skill$/m);
+    expect(result.output).toMatch(/^\s+说明\s+第二个样例 skill$/m);
+  });
+
+  it('不可选的 skill 行：三栏对得齐；设置了 NO_COLOR 时不带样式码，零宽空格不打出去', async () => {
+    const result = await run({ onPath: [], env: { NO_COLOR: '1' }, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+    const lines = await screenLines(result.raw);
+    const header = lines.find((line) => /^\s+名称\s+状态\s+说明$/.test(line)) ?? '';
+    const row = lines.find((line) => line.startsWith(' – beta-pack')) ?? '';
+
+    // 各栏从第几列开始，按显示宽度算
+    const startOf = (line: string, text: string): number => displayWidth(line.slice(0, line.indexOf(text)));
+
+    expect(startOf(row, 'beta-pack')).toBe(startOf(header, '名称'));
+    expect(startOf(row, '需要 AI Agent')).toBe(startOf(header, '状态'));
+    expect(startOf(row, '第二个样例 skill')).toBe(startOf(header, '说明'));
+    expect(result.raw).not.toMatch(STYLE_CODE);
+    expect(result.raw).not.toContain('\u200b');
+  });
 });
 
 describe('真实的画面：选择宿主', () => {
   const onPath = ['claude', 'codex'];
 
-  it('两项都默认勾选，名字后面是各自的 skill 目录；确认后收成一行', async () => {
+  it('两项都默认勾选，名字后面不写目录；确认后收成一行', async () => {
     const result = await run({ onPath, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸■ Claude Code\s+~\S+skills$/m);
-    expect(result.output).toMatch(/^ ■ Codex\s+~\S+skills$/m);
+    expect(result.output).toMatch(/^▸■ Claude Code$/m);
+    expect(result.output).toMatch(/^ ■ Codex$/m);
+    expect(result.output).not.toMatch(/~\S+skills/);
     expect(result.output).toMatch(/✓ 装进哪些 AI Agent · Claude Code、Codex$/m);
-    expect(result.output).toContain('选择要安装的 skill');
+    expect(result.output).toContain('选择要安装的条目');
   });
 
   it('去掉一个勾再确认：只列出留下的那个', async () => {
@@ -370,7 +447,7 @@ describe('真实的画面：选择宿主', () => {
   it('设置了 NO_COLOR 时不带样式码', async () => {
     const result = await run({ onPath, env: { NO_COLOR: '1' }, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸■ Claude Code\s+~\S+skills$/m);
+    expect(result.output).toMatch(/^▸■ Claude Code$/m);
     expect(result.raw).not.toMatch(STYLE_CODE);
   });
 });
@@ -502,19 +579,25 @@ describe('真实的画面：外部项目', () => {
   const [ATLAS, BOREALIS] = SAMPLE_APPS as [(typeof SAMPLE_APPS)[0], (typeof SAMPLE_APPS)[1]];
   // 和 borealis 在同一个用途下的另外几个
   const more = (...names: string[]): unknown[] => [BOREALIS, ...names.map((name) => ({ ...BOREALIS, name }))];
-  // 主菜单上光标起始在第一个用途上（联网搜索与文档检索，下面是 borealis）；开发工作流与规范下面是 atlas
-  const toFirstPurpose: [string, string][] = [[HINT, KEY.enter]];
+  // 主菜单上光标起始在「推荐」上，下面依次是联网搜索与文档检索（它下面是 borealis）、开发工作流与规范（atlas）
+  const toFirstPurpose: [string, string][] = [
+    [HINT, KEY.down],
+    ['▸ 联网搜索与文档检索', KEY.enter],
+  ];
   const toSecondPurpose: [string, string][] = [
     [HINT, KEY.down],
+    ['▸ 联网搜索与文档检索', KEY.down],
     ['▸ 开发工作流与规范', KEY.enter],
   ];
 
-  it('主菜单：各个用途排在旧分组前面，只有名称和数量；光标停在第一个用途上', async () => {
+  it('主菜单：「推荐」在最前，各个用途跟在后面，只有名称和数量；光标停在「推荐」上', async () => {
     const result = await run({ catalog: withApps(), keys: [[HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/^▸ 联网搜索与文档检索\s+1$/m);
+    expect(result.output).toMatch(/^\s+用途\s+数量$/m);
+    expect(result.output).toMatch(/^▸ 推荐\s+2$/m);
+    expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+1$/m);
     expect(result.output).toMatch(/^\s+开发工作流与规范\s+1$/m);
-    expect(result.output).toMatch(/^\s+Skill\s+2\s+装进 AI Agent 的能力包$/m);
+    expect(result.output).not.toMatch(/^\s+Skill\s+\d/m);
   });
 
   it('列表是多选的：表头、段标题、条目；下方是光标所在行的类型、说明全文和按键提示', async () => {
@@ -538,7 +621,7 @@ describe('真实的画面：外部项目', () => {
     expect(result.output).toMatch(/✓ 选择要安装的条目 · borealis$/m);
     expect(result.output).toMatch(/^── 外部项目：1 个，只给链接 ─+$/m);
     expect(result.output).toMatch(/^\s+链接\s+https:\/\/example\.org\/borealis$/m);
-    expect(result.output.split('只给链接 ─')[1]).toMatch(/^▸ 联网搜索与文档检索\s/m);
+    expect(result.output.split('只给链接 ─')[1]).toMatch(/^▸ 推荐\s/m);
     expect(result.output).not.toContain('开始安装吗');
     expect(result.opened).toEqual([]);
   });
@@ -547,7 +630,7 @@ describe('真实的画面：外部项目', () => {
     const result = await run({ catalog: withApps(), keys: [...toFirstPurpose, [PICK_HINT, KEY.enter], [HINT, KEY.ctrlC]] });
 
     expect(result.output).toMatch(/✓ 选择要安装的条目 · 返回$/m);
-    expect(result.output.split('✓ 选择要安装的条目 · 返回')[1]).toMatch(/^▸ 联网搜索与文档检索\s/m);
+    expect(result.output.split('✓ 选择要安装的条目 · 返回')[1]).toMatch(/^▸ 推荐\s/m);
     expect(result.output).not.toContain('外部项目：');
   });
 
@@ -565,16 +648,16 @@ describe('真实的画面：外部项目', () => {
     expect(result.output).toMatch(new RegExp(`^── 外部项目：${apps.length} 个，只给链接 ─+$`, 'm'));
   });
 
-  it('一个宿主都没检测到时，光标落在第一个用途上，回车就进去；外部项目照常勾得上', async () => {
+  it('一个宿主都没检测到时，用途照常进得去，外部项目照常勾得上', async () => {
     const result = await run({
       catalog: withApps(),
       onPath: [],
       keys: [...toFirstPurpose, [PICK_HINT, KEY.space], ['▸■ borealis', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/^- Skill\s+2\s+装进 AI Agent 的能力包 · 需要 AI Agent$/m);
-    expect(result.output).toMatch(/^▸ 联网搜索与文档检索\s+1$/m);
+    expect(result.output).toMatch(/^▸ 推荐\s+2$/m);
     expect(result.output).toMatch(/✓ 选择用途 · 联网搜索与文档检索$/m);
+    expect(result.output).toMatch(/^▸■ borealis\s/m);
   });
 
   it('设置了 NO_COLOR 时，列表和说明与链接都不带样式码', async () => {
@@ -595,7 +678,8 @@ describe('真实的画面：外部项目', () => {
       platform: 'win32',
       env: { TERM: '' },
       keys: [
-        ['回车 选择', KEY.enter],
+        ['回车 选择', KEY.down],
+        ['> 联网搜索与文档检索', KEY.enter],
         ['回车 确认', KEY.space],
         ['>[x] borealis', KEY.enter],
         ['回车 选择', KEY.ctrlC],
@@ -612,7 +696,7 @@ describe('真实的画面：外部项目', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withApps(),
-      keys: [['⏎ select', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
+      keys: [['⏎ select', KEY.down], ['▸ Web search & docs retrieval', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
     });
 
     expect(result.output).toMatch(/✓ Pick a purpose · Web search & docs retrieval$/m);
@@ -627,7 +711,7 @@ describe('真实的画面：外部项目', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withApps(more('cirrus', 'dune', 'ember', 'fjord')),
-      keys: [['⏎ select', KEY.enter], ['⏎ confirm', 'a'], [' ■ fjord', KEY.enter], ['⏎ select', KEY.ctrlC]],
+      keys: [['⏎ select', KEY.down], ['▸ Web search & docs retrieval', KEY.enter], ['⏎ confirm', 'a'], [' ■ fjord', KEY.enter], ['⏎ select', KEY.ctrlC]],
     });
 
     expect(result.output).toMatch(/✓ Pick entries to install · borealis, cirrus, dune and 2 more$/m);
@@ -994,10 +1078,14 @@ describe('真实的画面：焦点色', () => {
   });
 
   it('光标停在不可选的行上时也是洋红', async () => {
-    const result = await run({ onPath: [], keys: [[HINT, KEY.up], ['▸ Skill', KEY.ctrlC]] });
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }),
+      onPath: [],
+      keys: [[HINT, KEY.down], ['▸ MCP', KEY.ctrlC]],
+    });
 
-    // 只认 Skill 那一行上的光标：起始时光标在「退出」上，那里的洋红不算数
-    expect(result.raw).toMatch(/\x1b\[35m▸(?:\x1b\[[0-9;]*m)* Skill/);
+    // 只认 MCP 那一行上的光标：起始时光标在「推荐」上，那里的洋红不算数
+    expect(result.raw).toMatch(/\x1b\[35m▸(?:\x1b\[[0-9;]*m)* MCP/);
   });
 
   const skillHome = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
@@ -1023,7 +1111,15 @@ describe('真实的画面：焦点色', () => {
         ],
       }),
     ],
-    ['在不可选的行上按回车', () => ({ onPath: [], keys: [[HINT, KEY.up], ['▸ Skill', KEY.enter], ['这一项现在选不了', KEY.ctrlC]] })],
+    [
+      '在不可选的行上按回车',
+      () => ({
+        catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } }),
+        onPath: [],
+        keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], ['这一项现在选不了', KEY.ctrlC]],
+      }),
+    ],
+    ['一个宿主都没检测到的混合列表，在不可选的 skill 上按空格', () => ({ onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]] })],
     [
       '隐藏输入、执行命令',
       () => ({
@@ -1031,7 +1127,13 @@ describe('真实的画面：焦点色', () => {
         keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter], ['粘贴后回车', 'k'], ['粘贴后回车', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
       }),
     ],
-    ['用途下的列表、外部项目的说明与链接', () => ({ catalog: everything(), keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]] })],
+    [
+      '用途下的列表、外部项目的说明与链接',
+      () => ({
+        catalog: everything(),
+        keys: [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter], [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]],
+      }),
+    ],
   ])('%s：输出里没有青色的样式码', async (_label, options) => {
     const result = await run(options());
 
