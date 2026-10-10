@@ -18,6 +18,315 @@
     "unlazy": "agent-behavior",
     "shuorenhua": "prompts-writing"
   },
+  "thirdPartySkills": [
+    {
+      "name": "pua",
+      "description": { "zh": "用中西大厂的 PUA 话术督促 AI Agent 穷尽办法、拿出证据才算完成，另有夸夸、妈妈唠叨等几种口吻（这样装上的是基本功能；失败时自动触发和循环模式要按官方方式装插件）", "en": "Pushes your agent with big-tech performance-review rhetoric to exhaust every approach and show evidence before calling it done, with alternative voices such as praise or nagging-mom (installed this way you get the basics; auto-triggering on failure and loop mode need the official plugin)" },
+      "url": "https://github.com/tanweai/pua",
+      "purpose": "agent-behavior",
+      "source": "tanweai/pua",
+      "skills": [
+        { "name": "ding", "description": { "zh": "钉钉味的职场提醒，取材自长文《置身钉内》和回应《置身钉外》，针对有职场、组织或交付背景的事情", "en": "Ding-style workplace reminders, drawn from a long essay about working inside DingTalk and the response to it, for matters with a workplace, org or delivery context" } },
+        { "name": "mama", "description": { "zh": "妈妈唠叨模式：用中国式妈妈提醒的口吻做督促，底下仍是结构化排障、证据优先和完成质量检查", "en": "Nagging-mom mode: coaching in the voice of a Chinese mother, with the same structured troubleshooting, evidence-first habits and completion checks underneath" } },
+        { "name": "p10", "description": { "zh": "P10（CTO）模式：定战略方向、设计组织结构、管理 P9 团队（内容在 pua 这个 skill 里，要一起装）", "en": "P10 CTO mode: sets strategic direction, designs the org topology and manages P9 teams (its content lives in the pua skill, so install that too)" } },
+        { "name": "p7", "description": { "zh": "P7（骨干工程师）模式：先出方案和影响分析，再写代码，完成后三问自查（内容在 pua 这个 skill 里，要一起装）", "en": "P7 senior engineer mode: plan and impact analysis first, then code, then a three-question self-review (its content lives in the pua skill, so install that too)" } },
+        { "name": "p9", "description": { "zh": "P9（技术负责人）模式：拆任务、写任务提示词、管理多个并行的 AI Agent，自己不写代码（内容在 pua 这个 skill 里，要一起装）", "en": "P9 tech lead mode: breaks down work, writes task prompts and manages several parallel agents without writing code itself (its content lives in the pua skill, so install that too)" } },
+        { "name": "pro", "description": { "zh": "pua 的扩展：自进化记录、上下文压缩后接续状态、KPI 式小结、切换口吻（会在 ~/.pua 下存状态；压缩前后自动保存和恢复要装官方插件；要和 pua 一起装）", "en": "Extensions to pua: self-evolution notes, state continuity across context compaction, KPI-style summaries and flavor switching (keeps state under ~/.pua; automatic save and restore around compaction needs the official plugin; install pua too)" } },
+        { "name": "pua", "description": { "zh": "核心 skill：督促 AI Agent 在反复失败、想放弃或没验证就说完成时换办法、跑测试、拿出证据（这样装上要靠它自己判断时机；失败时自动触发和状态持久化要装官方插件）", "en": "The core skill: pushes the agent to change approach, run tests and show evidence when it keeps failing, wants to give up or claims done without proof (installed this way it relies on its own judgement of when; auto-triggering on failure and persisted state need the official plugin)" } },
+        { "name": "pua-en", "description": { "zh": "pua 的英文版：针对反复失败、消极应付和完成质量问题的督促模式", "en": "English version of pua: performance-coaching mode for repeated failures, passive behavior and completion-quality issues" } },
+        { "name": "pua-ja", "description": { "zh": "pua 的日文版：在反复失败、消极应付或验证不足时督促做结构化排障并拿出证据", "en": "Japanese version of pua: prompts structured troubleshooting and evidence-based completion checks on repeated failure, passive behavior or missing verification" } },
+        { "name": "pua-loop", "description": { "zh": "循环模式：带定期检查和完成证据的自动迭代开发（要按官方方式装插件才能用：它要调用插件里的脚本和钩子，这样单独装上起不来）", "en": "Loop mode: guided iterative development with recurring checks and completion evidence (works only with the official plugin: it calls the plugin's script and hooks, and does not start when installed on its own like this)" } },
+        { "name": "shot", "description": { "zh": "精简的一体版 pua，用来注入给子代理或用在短会话里", "en": "Compact all-in-one pua reference for injecting into sub-agents or short sessions" } },
+        { "name": "yes", "description": { "zh": "夸夸模式：底下的规矩不变，口吻从施压换成共情、鼓励和偶尔的吐槽", "en": "Praise mode: the same rules underneath, with the voice switched from pressure to empathy, encouragement and the occasional tease" } },
+        { "name": "pua-trae", "description": { "zh": "为 Trae 编辑器优化的 pua：只有说明文字，不带钩子和子代理", "en": "pua optimized for the Trae editor: instructions only, with no hooks or sub-agents" } }
+      ]
+    },
+    {
+      "name": "i-have-adhd",
+      "description": { "zh": "让 AI Agent 的回答适合有 ADHD 的读者：先给下一步行动、步骤编号、每轮重述当前状态、不跑题、给具体的时间估计（这样装上的是基本功能，用 /i-have-adhd 点名开启、说 stop adhd mode 关闭；每个会话自动开启要按官方方式装插件）", "en": "Shapes your agent's answers for a reader with ADHD: next action first, numbered steps, state restated each turn, no tangents, specific time estimates (installed this way you get the basics, on with /i-have-adhd and off with \"stop adhd mode\"; always-on needs the official plugin)" },
+      "url": "https://github.com/ayghri/i-have-adhd",
+      "purpose": "agent-behavior",
+      "source": "ayghri/i-have-adhd",
+      "skills": [
+        { "name": "i-have-adhd", "description": { "zh": "让 AI Agent 的回答适合有 ADHD 的读者：先给下一步行动、步骤编号、每轮重述当前状态、不跑题、给具体的时间估计（这样装上的是基本功能，用 /i-have-adhd 点名开启、说 stop adhd mode 关闭；每个会话自动开启要按官方方式装插件）", "en": "Shapes your agent's answers for a reader with ADHD: next action first, numbered steps, state restated each turn, no tangents, specific time estimates (installed this way you get the basics, on with /i-have-adhd and off with \"stop adhd mode\"; always-on needs the official plugin)" } }
+      ]
+    },
+    {
+      "name": "ponytail",
+      "description": { "zh": "让 AI Agent 像最懒的资深开发者那样干活：用最少的新代码把问题完整解决，另有审查、审计等配套 skill（这样装上的是基本功能；每个会话自动生效和状态栏要按官方方式装插件）", "en": "Makes your agent work like the laziest senior developer: solve the whole problem with the least new code, plus companion review and audit skills (installed this way you get the basics; always-on mode and the status line need the official plugin)" },
+      "url": "https://github.com/DietrichGebert/ponytail",
+      "purpose": "agent-behavior",
+      "source": "DietrichGebert/ponytail",
+      "skills": [
+        { "name": "ponytail", "description": { "zh": "懒人资深开发者模式：用最小的改动完整解决任务，回复让忙人一遍看懂（分 lite、full、ultra 三档，说 stop ponytail 关闭；不装官方插件时不会每个会话自动开启）", "en": "Lazy senior dev mode: the smallest change that fully solves the task and a reply a busy human gets in one read (levels lite, full and ultra, off with \"stop ponytail\"; not on by default in every session without the official plugin)" } },
+        { "name": "ponytail-audit", "description": { "zh": "对整个仓库做质量审计：缺陷、安全漏洞、扛不住真实负载的地方、没有测试的高风险代码、慢路径，以及可以删、合并或拆开的部分（只出报告，不改代码）", "en": "Quality audit of a whole repo: bugs, security holes, what breaks under real load, risky code without tests, slow paths, and what to delete, merge or split (a report only, changes nothing)" } },
+        { "name": "ponytail-debt", "description": { "zh": "把代码里每一条 shortcut: 注释汇成一份欠账清单，这些注释是 ponytail 有意留下的捷径（只出报告，不改代码）", "en": "Collects every shortcut: comment, the shortcuts ponytail took on purpose, into one debt ledger (a report only, changes nothing)" } },
+        { "name": "ponytail-gain", "description": { "zh": "显示 ponytail 在基准测试里量出来的代码量、成本和速度上的节省（只显示，不改任何东西）", "en": "Shows ponytail's measured savings in code, cost and speed from its benchmark (display only, changes nothing)" } },
+        { "name": "ponytail-help", "description": { "zh": "显示 ponytail 的档位、skill 和命令速查表", "en": "Shows a quick reference for ponytail's levels, skills and commands" } },
+        { "name": "ponytail-review", "description": { "zh": "审查一次改动：逻辑对不对、安不安全、扛不扛得住真实负载、高风险代码有没有测试、够不够快、每一行是否必要（会读关联的代码，不只看差异）", "en": "Reviews a change: is the logic right, is it safe, does it hold under real load, is risky code tested, is it fast enough, is every line needed (reads the connected code, not only the diff)" } }
+      ]
+    },
+    {
+      "name": "andrej-karpathy-skills",
+      "description": { "zh": "按 Andrej Karpathy 对大模型写代码常见毛病的观察整理的行为准则：不过度设计、只做必要的精准改动、把假设说出来、先定可验证的成功标准", "en": "Behavioral guidelines drawn from Andrej Karpathy's observations on LLM coding pitfalls: avoid overcomplication, make surgical changes, surface assumptions and define verifiable success criteria" },
+      "url": "https://github.com/multica-ai/andrej-karpathy-skills",
+      "purpose": "agent-behavior",
+      "source": "multica-ai/andrej-karpathy-skills",
+      "skills": [
+        { "name": "karpathy-guidelines", "description": { "zh": "按 Andrej Karpathy 对大模型写代码常见毛病的观察整理的行为准则：不过度设计、只做必要的精准改动、把假设说出来、先定可验证的成功标准", "en": "Behavioral guidelines drawn from Andrej Karpathy's observations on LLM coding pitfalls: avoid overcomplication, make surgical changes, surface assumptions and define verifiable success criteria" } }
+      ]
+    },
+    {
+      "name": "caveman",
+      "description": { "zh": "让 AI Agent 像原始人一样说话来省 token：先说答案、去掉废话、技术事实一个不丢，另有压缩版提交信息、代码审查和几种工作纪律 skill（这样装上的是基本功能，不会每个会话自动开启；完整功能要按官方方式安装，其中几个要作者的付费云服务 Caveman Cloud）", "en": "Makes your agent talk like a caveman to save tokens: answer first, fluff gone, every technical fact kept, plus compressed commit messages, code review and a few work-discipline skills (installed this way you get the basics, not on in every session; the full feature set needs the official install, and several skills need Caveman Cloud, the author's paid cloud service)" },
+      "url": "https://github.com/JuliusBrussee/caveman",
+      "purpose": "context-memory",
+      "source": "JuliusBrussee/caveman",
+      "skills": [
+        { "name": "cavecrew", "description": { "zh": "指引把找代码、小改动、审差异交给 cavecrew 的三个子代理去做来省上下文（那三个子代理要按官方方式安装才有，这样单独装上只有说明）", "en": "Guides handing code search, small edits and diff review to cavecrew's three sub-agents to save context (the sub-agents come only with the official install; on its own this is instructions only)" } },
+        { "name": "caveman", "description": { "zh": "原始人口吻：先说答案、去掉废话、技术事实一个不丢（用 /caveman 开启，说 stop caveman 关闭；不按官方方式安装时不会每个会话自动开启）", "en": "Terse caveman voice: answer first, fluff gone, every technical fact kept (on with /caveman, off with \"stop caveman\"; not on in every session without the official install)" } },
+        { "name": "caveman-commit", "description": { "zh": "写压缩到只剩意图的 Conventional Commits 提交信息", "en": "Writes a Conventional Commits message compressed to intent only" } },
+        { "name": "caveman-compress", "description": { "zh": "把 CLAUDE.md、待办清单这类记忆文件压缩成原始人格式来省输入 token，并留一份可读的备份（需要 Python 3；压缩时文件内容会交给 Claude 处理，用 ANTHROPIC_API_KEY 或本机的 claude 命令）", "en": "Compresses a memory file such as CLAUDE.md or a todo list into caveman format to save input tokens, keeping a readable backup (needs Python 3; the file content is sent to Claude for compression, through ANTHROPIC_API_KEY or the local claude command)" } },
+        { "name": "caveman-discover", "description": { "zh": "找出并标注仓库里每一条调用大模型的流程，让 Caveman Cloud 按流程统计花费（要 Caveman Cloud，作者的付费云服务）", "en": "Finds and labels every LLM workflow in the repository so Caveman Cloud groups spend by workflow (needs Caveman Cloud, the author's paid cloud service)" } },
+        { "name": "caveman-evidence-review", "description": { "zh": "只读地查看 Caveman Cloud 记录的数据：花费、流程、调用轨迹、延迟、错误和节省（要付费的 Caveman Cloud 账号和登录过的 caveman 命令行）", "en": "Read-only review of what Caveman Cloud recorded: cost, workflows, traces, latency, errors and savings (needs a paid Caveman Cloud account and a logged-in caveman CLI)" } },
+        { "name": "caveman-explore", "description": { "zh": "只读的仓库探查：给刚接手的代码库摸底、做跨文件定位，只返回「路径:行号」", "en": "Read-only repository explorer for cold-start orientation and cross-file localization that returns path:line citations only" } },
+        { "name": "caveman-help", "description": { "zh": "显示 caveman 各个 skill 和命令的速查表", "en": "Shows a quick-reference card for the caveman skills and their commands" } },
+        { "name": "caveman-learn", "description": { "zh": "照 caveman 的学习报告行动：看 token 花在哪、逐项征得同意后做降成本的修改、汇报效果（要另装 caveman 命令行，由它出报告）", "en": "Acts on a caveman learn report: reviews where tokens go, applies cost-lowering fixes with per-edit consent and reports what they returned (needs the separate caveman CLI, which produces the report)" } },
+        { "name": "caveman-manage", "description": { "zh": "查看和把关 Caveman Cloud 的实验：启动、批准、取消、推广或回滚（要付费的 Caveman Cloud 账号和登录过的 caveman 命令行）", "en": "Inspects and gates Caveman Cloud experiments: start, approve, cancel, promote or roll back (needs a paid Caveman Cloud account and a logged-in caveman CLI)" } },
+        { "name": "caveman-optimize", "description": { "zh": "把 Caveman 的一条优化建议做成可以对照基线评估的候选方案，要你明确批准（要付费的 Caveman Cloud 账号和登录过的 caveman 命令行）", "en": "Turns a Caveman optimization observation into a candidate with a paired baseline evaluation, with your explicit approval (needs a paid Caveman Cloud account and a logged-in caveman CLI)" } },
+        { "name": "caveman-review", "description": { "zh": "压缩式代码审查：每个问题一行，写明位置、问题和改法", "en": "Compressed code review: one line per finding with location, problem and fix" } },
+        { "name": "caveman-setup", "description": { "zh": "把仓库的大模型请求改成经 Caveman Cloud 的网关走，好统计每一次请求（要付费的 Caveman Cloud 的网关地址和密钥；之后你的大模型请求会经过它的网关）", "en": "Wires a repository's LLM requests through the Caveman Cloud gateway so every request is measured (needs a gateway URL and key from the paid Caveman Cloud; your LLM requests then pass through its gateway)" } },
+        { "name": "caveman-stats", "description": { "zh": "显示当前会话记录到的 token 用量和各模式的占比（在 Claude Code 里要按官方方式装上它的钩子才有数据）", "en": "Shows the token usage recorded for the current session and how it splits by mode (in Claude Code the data comes from its hooks, which need the official install)" } },
+        { "name": "investigate-first", "description": { "zh": "工作纪律：原因不明的故障先诊断再动手，按证据给假设排序", "en": "Work discipline: diagnose ambiguous failures before editing, with evidence-ranked hypotheses" } },
+        { "name": "lean-build", "description": { "zh": "工作纪律：做容易做过头的新功能时，复用仓库里已有的东西、守住范围、定好什么时候停", "en": "Work discipline: for feature work at risk of overbuilding, reuse what the repository has, hold the scope and set an explicit stop condition" } },
+        { "name": "megacave", "description": { "zh": "文言文版的原始人口吻，字更少，技术名词原样保留（只能用 /megacave 点名开启）", "en": "Caveman in Classical Chinese, with far fewer characters and technical terms verbatim (invoked only by name with /megacave)" } },
+        { "name": "migration", "description": { "zh": "工作纪律：数据结构、接口、配置或依赖的迁移要做成可回滚、兼容的，并证明原有的东西保住了", "en": "Work discipline: make schema, API, configuration or dependency migrations reversible and compatibility-safe, with proof that what existed is preserved" } },
+        { "name": "safe-refactor", "description": { "zh": "工作纪律：重构时保持行为不变，改结构的前后都要验证", "en": "Work discipline: restructure code while preserving behavior, with verification before and after the structural edits" } },
+        { "name": "surgical-patch", "description": { "zh": "工作纪律：修缺陷和小改动只动该负责的那一层，带回归证明，不碰周围的行为", "en": "Work discipline: fix bugs and small changes at the narrowest responsible layer, with regression proof and the surrounding behavior preserved" } },
+        { "name": "ultracave", "description": { "zh": "压缩到极限的原始人口吻：只留碎片，一个词够就只说一个词（只能用 /ultracave 点名开启）", "en": "Caveman at maximum compression: fragments, one word when one word is enough (invoked only by name with /ultracave)" } },
+        { "name": "verify-and-stop", "description": { "zh": "工作纪律：只证明现有的工作达到了验收条件，不扩大范围", "en": "Work discipline: prove existing work meets its acceptance conditions without expanding scope" } }
+      ]
+    },
+    {
+      "name": "web-access",
+      "description": { "zh": "给 AI Agent 补上联网策略，并通过远程调试操作你自己的浏览器（Chrome 或 Edge）、沿用其中的登录状态（需要 Node.js 22 以上并开启浏览器的远程调试；会检索本机浏览器的书签和历史；脚本路径用的是 Claude Code 的变量，Codex 下没有验证过）", "en": "Gives your agent a web-access strategy and drives your own browser (Chrome or Edge) over remote debugging, reusing its logged-in sessions (needs Node.js 22+ and browser remote debugging enabled; searches your local browser bookmarks and history; script paths use a Claude Code variable and are not verified under Codex)" },
+      "url": "https://github.com/eze-is/web-access",
+      "purpose": "web-search",
+      "source": "eze-is/web-access",
+      "skills": [
+        { "name": "web-access", "description": { "zh": "给 AI Agent 补上联网策略，并通过远程调试操作你自己的浏览器（Chrome 或 Edge）、沿用其中的登录状态（需要 Node.js 22 以上并开启浏览器的远程调试；会检索本机浏览器的书签和历史；脚本路径用的是 Claude Code 的变量，Codex 下没有验证过）", "en": "Gives your agent a web-access strategy and drives your own browser (Chrome or Edge) over remote debugging, reusing its logged-in sessions (needs Node.js 22+ and browser remote debugging enabled; searches your local browser bookmarks and history; script paths use a Claude Code variable and are not verified under Codex)" } }
+      ]
+    },
+    {
+      "name": "anysearch-skill",
+      "description": { "zh": "给 AI Agent 用的实时搜索：通用网页搜索、垂直领域搜索、并行批量搜索和网页全文提取（查询内容和要提取的网址会发往 api.anysearch.com；需要 Python 或 Node.js；API key 可选，不填时限速更严）", "en": "Real-time search for AI agents: general web search, vertical domain search, parallel batch search and full-page content extraction (queries and URLs are sent to api.anysearch.com; needs Python or Node.js; the API key is optional, with lower rate limits without it)" },
+      "url": "https://github.com/anysearch-ai/anysearch-skill",
+      "purpose": "web-search",
+      "source": "anysearch-ai/anysearch-skill",
+      "skills": [
+        { "name": "anysearch", "description": { "zh": "给 AI Agent 用的实时搜索：通用网页搜索、垂直领域搜索、并行批量搜索和网页全文提取（查询内容和要提取的网址会发往 api.anysearch.com；需要 Python 或 Node.js；API key 可选，不填时限速更严）", "en": "Real-time search for AI agents: general web search, vertical domain search, parallel batch search and full-page content extraction (queries and URLs are sent to api.anysearch.com; needs Python or Node.js; the API key is optional, with lower rate limits without it)" } }
+      ]
+    },
+    {
+      "name": "last30days-skill",
+      "description": { "zh": "调研一个话题最近 30 天里大家实际在说什么：从 Reddit、X、YouTube、TikTok、Hacker News、Polymarket、GitHub 和网页上收集帖子和互动数据，汇成有出处的总结（需要 Python 3.12 以上和 Node.js；约 17MB；首次使用有配置向导，读浏览器 Cookie 之前会先问你；各平台的 API key 都是可选的）", "en": "Researches what people actually said about any topic in the last 30 days: gathers posts and engagement from Reddit, X, YouTube, TikTok, Hacker News, Polymarket, GitHub and the web into a grounded summary (needs Python 3.12+ and Node.js; about 17 MB; first use runs a setup wizard that asks before reading browser cookies; every platform API key is optional)" },
+      "url": "https://github.com/mvanhorn/last30days-skill",
+      "purpose": "web-search",
+      "source": "mvanhorn/last30days-skill",
+      "skills": [
+        { "name": "last30days", "description": { "zh": "调研一个话题最近 30 天里大家实际在说什么：从 Reddit、X、YouTube、TikTok、Hacker News、Polymarket、GitHub 和网页上收集帖子和互动数据，汇成有出处的总结（需要 Python 3.12 以上和 Node.js；约 17MB；首次使用有配置向导，读浏览器 Cookie 之前会先问你；各平台的 API key 都是可选的）", "en": "Researches what people actually said about any topic in the last 30 days: gathers posts and engagement from Reddit, X, YouTube, TikTok, Hacker News, Polymarket, GitHub and the web into a grounded summary (needs Python 3.12+ and Node.js; about 17 MB; first use runs a setup wizard that asks before reading browser cookies; every platform API key is optional)" } }
+      ]
+    },
+    {
+      "name": "taste-skill",
+      "description": { "zh": "提升 AI 做界面质量的一组 skill：改进布局、排版、动效和间距，摆脱千篇一律的界面，另含生成网页、移动端和品牌参考图的图像 skill（图像类的要 AI Agent 能生图）", "en": "A set of skills that raise the quality of AI-built interfaces: better layout, typography, motion and spacing instead of generic UI, plus image skills for web, mobile and brand reference boards (the image skills need an agent that can generate images)" },
+      "url": "https://github.com/Leonxlnx/taste-skill",
+      "purpose": "design-media",
+      "source": "Leonxlnx/taste-skill",
+      "skills": [
+        { "name": "brandkit", "description": { "zh": "生成高端品牌视觉的参考图：品牌规范板、标志体系、视觉识别提案（要 AI Agent 能生图）", "en": "Generates premium brand-kit reference images: brand-guidelines boards, logo systems and identity decks (needs an agent that can generate images)" } },
+        { "name": "industrial-brutalist-ui", "description": { "zh": "粗野主义的机械感界面：瑞士印刷排版加军用终端美学，适合数据密集的仪表盘、作品集和编辑类网站", "en": "Raw mechanical interfaces that fuse Swiss typographic print with military terminal aesthetics, for data-heavy dashboards, portfolios and editorial sites" } },
+        { "name": "gpt-taste", "description": { "zh": "界面与 GSAP 动效规范：强制版式随机变化、AIDA 页面结构、宽幅的编辑排版、无缝隙的便当格布局和滚动触发的动画", "en": "UI and GSAP motion rules: enforced layout variance, AIDA page structure, wide editorial typography, gapless bento grids and scroll-triggered animation" } },
+        { "name": "image-to-code", "description": { "zh": "先生成设计图、细读之后照着把网站实现出来（为 Codex 写的；要 AI Agent 能生图）", "en": "Generates the design images first, analyzes them closely, then implements the website to match (written for Codex; needs an agent that can generate images)" } },
+        { "name": "imagegen-frontend-mobile", "description": { "zh": "生成高质量的移动应用界面概念图和流程图，放在手机样机里呈现（要 AI Agent 能生图）", "en": "Generates premium mobile app screen concepts and flows, framed in a phone mockup (needs an agent that can generate images)" } },
+        { "name": "imagegen-frontend-web", "description": { "zh": "生成高质量的网站设计参考图，页面的每个区块单独出一张横图（要 AI Agent 能生图）", "en": "Generates premium website design references, one separate horizontal image per page section (needs an agent that can generate images)" } },
+        { "name": "minimalist-ui", "description": { "zh": "简洁的编辑风界面：暖色的单色调、字体对比、扁平的便当格布局，不用渐变和重阴影", "en": "Clean editorial-style interfaces: warm monochrome palette, typographic contrast and flat bento grids, with no gradients or heavy shadows" } },
+        { "name": "full-output-enforcement", "description": { "zh": "不让模型截断输出：强制写出完整的代码，禁止占位写法，超出长度时干净地分段", "en": "Stops the model from truncating output: enforces complete code, bans placeholder patterns and splits cleanly at token limits" } },
+        { "name": "redesign-existing-projects", "description": { "zh": "把现有的网站和应用升级到高水准：先审查现有设计、找出千篇一律的 AI 痕迹，再在不破坏功能的前提下改", "en": "Upgrades existing websites and apps to premium quality: audits the current design, finds generic AI patterns and applies high-end standards without breaking functionality" } },
+        { "name": "high-end-visual-design", "description": { "zh": "让 AI 像高端设计公司那样做设计：规定字体、间距、阴影、卡片结构和动画，挡掉显得廉价的常见默认做法", "en": "Teaches the AI to design like a high-end agency: exact fonts, spacing, shadows, card structures and animations, blocking the defaults that make designs look cheap" } },
+        { "name": "stitch-design-taste", "description": { "zh": "给 Google Stitch 用的设计体系 skill：生成对 AI Agent 友好的 DESIGN.md，约束排版、配色、布局和微动效", "en": "Design-system skill for Google Stitch: generates agent-friendly DESIGN.md files that constrain typography, color, layout and micro-motion" } },
+        { "name": "design-taste-frontend", "description": { "zh": "给落地页、作品集和改版用的反套路前端 skill：读懂需求、判断合适的设计方向，交出不像模板的界面（taste-skill 当前的默认版本）", "en": "Anti-slop frontend skill for landing pages, portfolios and redesigns: reads the brief, infers the right design direction and ships interfaces that do not look templated (the current default taste-skill)" } },
+        { "name": "design-taste-frontend-v1", "description": { "zh": "taste-skill 最初的 v1 版，留给依赖它原有行为的项目（一般用 design-taste-frontend）", "en": "The original v1 taste-skill, kept for projects that depend on its exact behavior (normally use design-taste-frontend)" } }
+      ]
+    },
+    {
+      "name": "hallmark",
+      "description": { "zh": "反「AI 味」的界面设计 skill：从零做新应用或落地页、审查现有设计、改版，以及从网址或截图里提取设计", "en": "Anti-AI-slop design skill: build a new app or landing page, audit an existing design, redesign, or extract a design from a URL or screenshot" },
+      "url": "https://github.com/Nutlope/hallmark",
+      "purpose": "design-media",
+      "source": "Nutlope/hallmark",
+      "skills": [
+        { "name": "hallmark", "description": { "zh": "反「AI 味」的界面设计 skill：从零做新应用或落地页、审查现有设计、改版，以及从网址或截图里提取设计", "en": "Anti-AI-slop design skill: build a new app or landing page, audit an existing design, redesign, or extract a design from a URL or screenshot" } }
+      ]
+    },
+    {
+      "name": "impeccable",
+      "description": { "zh": "给 AI 编码 Agent 用的前端设计 skill：一个 skill 带多条命令，设计、改版、评审和打磨网站、落地页、仪表盘、组件和表单（这样装上的是基本功能：首次运行会自己联网从 GitHub 下载一个程序到 ~/.impeccable 并执行；装上的是给 Codex 编的那一份，在 Claude Code 里命令的写法会对不上；设计检测钩子等完整功能要按官方方式安装）", "en": "Frontend design skill for AI coding agents: one skill with many commands to design, redesign, critique and polish websites, landing pages, dashboards, components and forms (installed this way you get the basics: its first run downloads a program from GitHub into ~/.impeccable and executes it; what gets installed is the copy built for Codex, so command syntax will not match in Claude Code; the design-detector hook and the rest need the official install)" },
+      "url": "https://github.com/pbakaus/impeccable",
+      "purpose": "design-media",
+      "source": "pbakaus/impeccable",
+      "skills": [
+        { "name": "impeccable", "description": { "zh": "给 AI 编码 Agent 用的前端设计 skill：一个 skill 带多条命令，设计、改版、评审和打磨网站、落地页、仪表盘、组件和表单（这样装上的是基本功能：首次运行会自己联网从 GitHub 下载一个程序到 ~/.impeccable 并执行；装上的是给 Codex 编的那一份，在 Claude Code 里命令的写法会对不上；设计检测钩子等完整功能要按官方方式安装）", "en": "Frontend design skill for AI coding agents: one skill with many commands to design, redesign, critique and polish websites, landing pages, dashboards, components and forms (installed this way you get the basics: its first run downloads a program from GitHub into ~/.impeccable and executes it; what gets installed is the copy built for Codex, so command syntax will not match in Claude Code; the design-detector hook and the rest need the official install)" } }
+      ]
+    },
+    {
+      "name": "emilkowalski-skills",
+      "description": { "zh": "Emil Kowalski 的一组界面与动效设计 skill：做动画、审动画、找出该加动效的地方、把界面试坏、让 Web 应用在手机上有原生的手感等", "en": "Emil Kowalski's set of interface and motion design skills: build and review animations, find where motion is missing, stress-test UI, make web apps feel native on phones and more" },
+      "url": "https://github.com/emilkowalski/skills",
+      "purpose": "design-media",
+      "source": "emilkowalski/skills",
+      "skills": [
+        { "name": "animate", "description": { "zh": "从零做一个动画，按决定手感的先后做决策（要不要动、目的、工具、属性、曲线与时长、怎么打断、怎么退场），并写出实现", "en": "Builds an animation from scratch, deciding in the order that determines how it feels (whether to animate, purpose, tool, properties, curve and duration, interruption, exit), then writes the implementation" } },
+        { "name": "animate-expo", "description": { "zh": "在 React Native 和 Expo 里做动画与手势，用 Reanimated、Gesture Handler、Expo Router 和 expo-haptics 写出实现", "en": "Builds animations and gestures in React Native and Expo, implemented with Reanimated, Gesture Handler, Expo Router and expo-haptics" } },
+        { "name": "animation-vocabulary", "description": { "zh": "动效术语反查：把对一个网页动效的模糊描述对应到它确切的叫法", "en": "Reverse-lookup glossary that turns a vague description of a web animation or motion effect into its exact term" } },
+        { "name": "apple-design", "description": { "zh": "把 Apple 的界面设计与流畅、有物理感的动效做法搬到 Web：手势、弹簧动画、可打断的过渡、半透明材质和排版", "en": "Apple's approach to interface design and fluid, physical motion, translated for the web: gestures, spring animations, interruptible transitions, translucent materials and typography" } },
+        { "name": "ask-sonner", "description": { "zh": "React 提示条（toast）库 Sonner 的用法与排错指南", "en": "Usage and troubleshooting guide to Sonner, the React toast library" } },
+        { "name": "break-ui", "description": { "zh": "用最坏情况的数据（超长名字、缺字段、零条或海量、非拉丁文字、表情符号）把一块界面试坏，列出坏掉的地方和各自的修法", "en": "Tries to break a piece of UI with worst-case data (long names, missing fields, zero or huge counts, non-Latin text, emoji) and reports everything that broke, with the fix for each" } },
+        { "name": "emil-design-eng", "description": { "zh": "Emil Kowalski 关于界面打磨、组件设计、动画取舍和细节的设计工程理念", "en": "Emil Kowalski's design engineering philosophy on UI polish, component design, animation decisions and the invisible details" } },
+        { "name": "find-animation-opportunities", "description": { "zh": "在代码库或界面里找出该有动效而没有的地方，给出带具体数值的建议（只读，不动手实现）", "en": "Searches a codebase or UI for places that should animate but do not, and proposes motion with exact values (read-only, it does not implement)" } },
+        { "name": "improve-animations", "description": { "zh": "通盘审视代码库里的动效代码，给出按优先级排的审计和可以交给别的 AI Agent 执行的改进计划（只读，不动手改）", "en": "Surveys a codebase's animation code and produces a prioritized audit plus implementation plans other agents can execute (read-only, it does not apply them)" } },
+        { "name": "mobile-native", "description": { "zh": "让 Web 应用在手机上有原生的手感：修掉悬停残留、点按高亮、100vh、输入框缩放页面、刘海遮挡这类细节", "en": "Makes a web app feel native on a phone: fixes sticky hover states, tap highlights, the 100vh bug, inputs that zoom the page, content under the notch and similar details" } },
+        { "name": "pick-ui-library", "description": { "zh": "从一份有取舍的精选清单里为某个前端需求挑合适的库（要你点名调用，不会自动触发）", "en": "Picks the right library for a frontend task from a curated, opinionated list (runs only when you invoke it by name)" } },
+        { "name": "prototype", "description": { "zh": "把你描述的一块界面做出几个真正不同的版本，放在可视的切换器后面供你当场比较和选定（要你点名调用，不会自动触发）", "en": "Builds several genuinely different versions of a UI piece you describe, behind a visual picker so you can compare them live and pick one (runs only when you invoke it by name)" } },
+        { "name": "review-animations", "description": { "zh": "按 Emil Kowalski 的高标准审查动画与动效代码，有疑问的一律指出来（要你点名调用，不会自动触发）", "en": "Reviews animation and motion code against Emil Kowalski's high craft bar and flags anything in doubt (runs only when you invoke it by name)" } },
+        { "name": "write-swift", "description": { "zh": "怎样写好现代 Swift：值类型建模、Swift 6 的并发与数据竞争安全、协议与泛型、API 设计、性能、Swift Testing 和宏", "en": "How to write modern Swift well: value-type modeling, Swift 6 concurrency and data-race safety, protocols and generics, API design, performance, Swift Testing and macros" } }
+      ]
+    },
+    {
+      "name": "nuyoah-image-reverse-prompt",
+      "description": { "zh": "偏摄影的图片反推：把参考图拆解成结构字段、参考色卡和可以直接复制的中文生图提示词（要 AI Agent 能看图；产出的提示词默认在末尾加一句，让画面右下角带手写的「nuyoah」署名，你说不要才省略）", "en": "Photography-leaning image reverse prompting: breaks a reference image into structured fields, a reference palette and a copy-ready Chinese image prompt (needs an agent that can see images; by default the prompt ends with a line that puts a handwritten \"nuyoah\" signature in the bottom-right corner, omitted only if you say so)" },
+      "url": "https://github.com/nuyoah-ai-works/nuyoah-image-reverse-prompt",
+      "purpose": "design-media",
+      "source": "nuyoah-ai-works/nuyoah-image-reverse-prompt",
+      "skills": [
+        { "name": "nuyoah-image-reverse-prompt", "description": { "zh": "偏摄影的图片反推：把参考图拆解成结构字段、参考色卡和可以直接复制的中文生图提示词（要 AI Agent 能看图；产出的提示词默认在末尾加一句，让画面右下角带手写的「nuyoah」署名，你说不要才省略）", "en": "Photography-leaning image reverse prompting: breaks a reference image into structured fields, a reference palette and a copy-ready Chinese image prompt (needs an agent that can see images; by default the prompt ends with a line that puts a handwritten \"nuyoah\" signature in the bottom-right corner, omitted only if you say so)" } }
+      ]
+    },
+    {
+      "name": "gorden-ppt-skill",
+      "description": { "zh": "用内置的 21 套中文 PPT 模板或你自己的 .pptx 模板生成和编辑 PowerPoint 文件，只换文字、不破坏原来的排版、配色和字号（约 100MB；需要 Python 3 和 python-pptx；每个会话首次使用会先运行它的更新脚本，联网把本机这一份更新成上游的最新版；仅限非商业使用）", "en": "Generates and edits PowerPoint files from 21 built-in Chinese templates or your own .pptx template, replacing text only and keeping the layout, colors and font sizes (about 100 MB; needs Python 3 and python-pptx; on first use in each session it runs its update script, which updates your local copy to the latest upstream version over the network; noncommercial use only)" },
+      "url": "https://github.com/GordenSun/GordenPPTSkill",
+      "purpose": "documents",
+      "source": "GordenSun/GordenPPTSkill",
+      "skills": [
+        { "name": "gorden-ppt-skill", "description": { "zh": "用内置的 21 套中文 PPT 模板或你自己的 .pptx 模板生成和编辑 PowerPoint 文件，只换文字、不破坏原来的排版、配色和字号（约 100MB；需要 Python 3 和 python-pptx；每个会话首次使用会先运行它的更新脚本，联网把本机这一份更新成上游的最新版；仅限非商业使用）", "en": "Generates and edits PowerPoint files from 21 built-in Chinese templates or your own .pptx template, replacing text only and keeping the layout, colors and font sizes (about 100 MB; needs Python 3 and python-pptx; on first use in each session it runs its update script, which updates your local copy to the latest upstream version over the network; noncommercial use only)" } }
+      ]
+    },
+    {
+      "name": "paper-craft-skills",
+      "description": { "zh": "学术论文的一组 skill：解读成 HTML 长文、方法图解、生成汇报幻灯片（图解和幻灯片要 AI Agent 能生图或另装生图 skill；自带的脚本要 Python 3）", "en": "A set of skills for academic papers: deep-dive HTML articles, illustrated method explainers and presentation slides (the explainers and slides need an agent that can generate images or a separate image skill; bundled scripts need Python 3)" },
+      "url": "https://github.com/zsyggg/paper-craft-skills",
+      "purpose": "documents",
+      "source": "zsyggg/paper-craft-skills",
+      "skills": [
+        { "name": "paper-analyzer", "description": { "zh": "把学术论文解读成可以直接分享的 HTML 长文，带公式渲染、Mermaid 图和代码仓库检索，有多种写作风格（自带的脚本要 Python 3）", "en": "Turns an academic paper into a shareable long-form HTML article with rendered formulas, Mermaid diagrams and code-repo lookup, in several writing styles (bundled scripts need Python 3)" } },
+        { "name": "paper-comic", "description": { "zh": "论文方法图解：分析论文的核心方法，先给出封面、概述图和机制细节图的方案，你确认后再生成（要 AI Agent 能生图，或另装生图 skill）", "en": "Illustrated method explainer: analyzes a paper's core method, proposes a cover, overview and mechanism figures, and generates them after you confirm (needs an agent that can generate images, or a separate image skill)" } },
+        { "name": "paper-deck", "description": { "zh": "把论文或技术文章做成逐页由生图模型生成的 16:9 幻灯片，再合成 PPTX 或 PDF（要 AI Agent 能生图；合成脚本要 Python 3）", "en": "Turns a paper or technical article into 16:9 slides generated page by page with an image model, then merges them into PPTX or PDF (needs an agent that can generate images; the merge script needs Python 3)" } }
+      ]
+    },
+    {
+      "name": "guizang-ppt-skill",
+      "description": { "zh": "生成单个 HTML 文件的横向翻页网页 PPT，有「电子杂志」和「瑞士国际主义」两种风格，带演讲者视图、观众屏同步和讲稿备注（自带的校验脚本要 Node.js，装了 Playwright 时校验更细）", "en": "Generates a horizontal-swipe web slide deck as a single HTML file, in editorial-magazine or Swiss style, with presenter view, audience-screen sync and speaker notes (bundled validation scripts need Node.js and check more with Playwright installed)" },
+      "url": "https://github.com/op7418/guizang-ppt-skill",
+      "purpose": "documents",
+      "source": "op7418/guizang-ppt-skill",
+      "skills": [
+        { "name": "guizang-ppt-skill", "description": { "zh": "生成单个 HTML 文件的横向翻页网页 PPT，有「电子杂志」和「瑞士国际主义」两种风格，带演讲者视图、观众屏同步和讲稿备注（自带的校验脚本要 Node.js，装了 Playwright 时校验更细）", "en": "Generates a horizontal-swipe web slide deck as a single HTML file, in editorial-magazine or Swiss style, with presenter view, audience-screen sync and speaker notes (bundled validation scripts need Node.js and check more with Playwright installed)" } }
+      ]
+    },
+    {
+      "name": "ppt-agent-skills",
+      "description": { "zh": "像做软件工程一样生成演示文稿：走完需求调研、资料搜集、大纲、策划稿、设计稿的全流程，每页截图后做视觉检查，输出 HTML 格式的演示文稿（约 15MB；需要 Python 3 和截图用的浏览器引擎；各步的内容规定由子代理生成，要 AI Agent 支持子代理）", "en": "Generates presentations the way software is engineered: the full flow of requirements, research, outline, planning draft and design draft, with a visual check on a screenshot of every page, output as an HTML deck (about 15 MB; needs Python 3 and a browser engine for screenshots; each step's content must be produced by sub-agents, so the agent has to support them)" },
+      "url": "https://github.com/sunbigfly/ppt-agent-skills",
+      "purpose": "documents",
+      "source": "sunbigfly/ppt-agent-skills",
+      "skills": [
+        { "name": "ppt-agent", "description": { "zh": "像做软件工程一样生成演示文稿：走完需求调研、资料搜集、大纲、策划稿、设计稿的全流程，每页截图后做视觉检查，输出 HTML 格式的演示文稿（约 15MB；需要 Python 3 和截图用的浏览器引擎；各步的内容规定由子代理生成，要 AI Agent 支持子代理）", "en": "Generates presentations the way software is engineered: the full flow of requirements, research, outline, planning draft and design draft, with a visual check on a screenshot of every page, output as an HTML deck (about 15 MB; needs Python 3 and a browser engine for screenshots; each step's content must be produced by sub-agents, so the agent has to support them)" } }
+      ]
+    },
+    {
+      "name": "drawio-skill",
+      "description": { "zh": "生成并编辑可以继续编辑的 draw.io 图表：架构图、UML、ER 图、时序图、BPMN、网络图和泳道图，可以照描述画，也可以从代码、基础设施配置、SQL 和接口定义转（需要 Python 3；导出图片要另装 draw.io 桌面版；要你点名调用，不会自动触发）", "en": "Creates and edits editable draw.io diagrams: architecture, UML, ERD, sequence, BPMN, network and swimlane views, drawn from a description or converted from code, infrastructure config, SQL and API schemas (needs Python 3; exporting images needs the draw.io desktop app; runs only when you invoke it by name)" },
+      "url": "https://github.com/Agents365-ai/drawio-skill",
+      "purpose": "documents",
+      "source": "Agents365-ai/drawio-skill",
+      "skills": [
+        { "name": "drawio-skill", "description": { "zh": "生成并编辑可以继续编辑的 draw.io 图表：架构图、UML、ER 图、时序图、BPMN、网络图和泳道图，可以照描述画，也可以从代码、基础设施配置、SQL 和接口定义转（需要 Python 3；导出图片要另装 draw.io 桌面版；要你点名调用，不会自动触发）", "en": "Creates and edits editable draw.io diagrams: architecture, UML, ERD, sequence, BPMN, network and swimlane views, drawn from a description or converted from code, infrastructure config, SQL and API schemas (needs Python 3; exporting images needs the draw.io desktop app; runs only when you invoke it by name)" } }
+      ]
+    },
+    {
+      "name": "prompt-architect",
+      "description": { "zh": "分析并改进提示词：按意图从 31 种框架里推荐合适的一种，问几个有针对性的问题，把模糊的提示词改成结构清楚的", "en": "Analyzes and improves prompts: recommends the right one of 31 frameworks by intent, asks targeted questions and turns a vague prompt into a well-structured one" },
+      "url": "https://github.com/ckelsoe/prompt-architect",
+      "purpose": "prompts-writing",
+      "source": "ckelsoe/prompt-architect",
+      "skills": [
+        { "name": "prompt-architect", "description": { "zh": "分析并改进提示词：按意图从 31 种框架里推荐合适的一种，问几个有针对性的问题，把模糊的提示词改成结构清楚的", "en": "Analyzes and improves prompts: recommends the right one of 31 frameworks by intent, asks targeted questions and turns a vague prompt into a well-structured one" } }
+      ]
+    },
+    {
+      "name": "humanizer-zh",
+      "description": { "zh": "编辑中文文章、评论和文档里的空话、重复和模板化表达，让文字更自然，同时保留事实、确定程度和作者的声音（用来润色已有的文字，不保证通过 AI 检测）", "en": "Edits empty phrases, repetition and formulaic wording out of Chinese articles, comments and docs so they read naturally, keeping the facts, level of certainty and the author's voice (for polishing existing text, with no promise of passing AI detectors)" },
+      "url": "https://github.com/op7418/Humanizer-zh",
+      "purpose": "prompts-writing",
+      "source": "op7418/Humanizer-zh",
+      "skills": [
+        { "name": "humanizer-zh", "description": { "zh": "编辑中文文章、评论和文档里的空话、重复和模板化表达，让文字更自然，同时保留事实、确定程度和作者的声音（用来润色已有的文字，不保证通过 AI 检测）", "en": "Edits empty phrases, repetition and formulaic wording out of Chinese articles, comments and docs so they read naturally, keeping the facts, level of certainty and the author's voice (for polishing existing text, with no promise of passing AI detectors)" } }
+      ]
+    },
+    {
+      "name": "academic-humanizer",
+      "description": { "zh": "改善 AI 辅助写成的论文、学位论文、答辩回复和基金申请书（NSF、NIH）的清晰度与文风，保留学术惯例，让论断与证据对得上（不改动任何数字、结果和引用；不用于规避 AI 使用声明）", "en": "Improves the clarity and voice of AI-assisted papers, theses, rebuttals and grant proposals (NSF, NIH), keeping scholarly conventions and matching claims to evidence (never changes a number, result or citation; not for evading AI-use disclosure)" },
+      "url": "https://github.com/AIScientists-Dev/academic-humanizer",
+      "purpose": "prompts-writing",
+      "source": "AIScientists-Dev/academic-humanizer",
+      "skills": [
+        { "name": "academic-humanizer", "description": { "zh": "改善 AI 辅助写成的论文、学位论文、答辩回复和基金申请书（NSF、NIH）的清晰度与文风，保留学术惯例，让论断与证据对得上（不改动任何数字、结果和引用；不用于规避 AI 使用声明）", "en": "Improves the clarity and voice of AI-assisted papers, theses, rebuttals and grant proposals (NSF, NIH), keeping scholarly conventions and matching claims to evidence (never changes a number, result or citation; not for evading AI-use disclosure)" } }
+      ]
+    },
+    {
+      "name": "chinese-novelist-skill",
+      "description": { "zh": "分章节创作中文小说：通过递进式问答定下设定，写出 10 到 50 章、每章 3000 到 5000 字的长篇，每章结尾留悬念，支持中断后续写（规划确认之后它会一口气写完全书，中途不再向你确认；字数检查的脚本要 Python，命令名要是 python）", "en": "Writes Chinese novels chapter by chapter: settles the premise through layered questions, then writes 10 to 50 chapters of 3,000 to 5,000 characters each with a cliffhanger at every ending, resumable after interruption (once you confirm the plan it writes the whole book without checking in again; the word-count script needs Python available as the python command)" },
+      "url": "https://github.com/PenglongHuang/chinese-novelist-skill",
+      "purpose": "prompts-writing",
+      "source": "PenglongHuang/chinese-novelist-skill",
+      "skills": [
+        { "name": "chinese-novelist", "description": { "zh": "分章节创作中文小说：通过递进式问答定下设定，写出 10 到 50 章、每章 3000 到 5000 字的长篇，每章结尾留悬念，支持中断后续写（规划确认之后它会一口气写完全书，中途不再向你确认；字数检查的脚本要 Python，命令名要是 python）", "en": "Writes Chinese novels chapter by chapter: settles the premise through layered questions, then writes 10 to 50 chapters of 3,000 to 5,000 characters each with a cliffhanger at every ending, resumable after interruption (once you confirm the plan it writes the whole book without checking in again; the word-count script needs Python available as the python command)" } }
+      ]
+    },
+    {
+      "name": "oh-story-claudecode",
+      "description": { "zh": "网文写作的一套 skill：扫榜、拆文、长篇和短篇写作、去 AI 味、审稿、做封面（13 个 skill 要配合着用；装好后要在写作项目里运行一次 story-setup 并新开会话；需要 Node.js 和 Python）", "en": "A skill pack for writing Chinese web novels: chart scanning, story breakdown, long and short fiction writing, de-AI editing, review and cover art (the 13 skills work together; after installing, run story-setup once in your writing project and start a new session; needs Node.js and Python)" },
+      "url": "https://github.com/zenstory-ai/oh-story-claudecode",
+      "purpose": "prompts-writing",
+      "source": "zenstory-ai/oh-story-claudecode",
+      "skills": [
+        { "name": "browser-cdp", "description": { "zh": "通过远程调试操作 Chrome 浏览器、沿用其中的登录状态，供扫榜等步骤取数据（首次启动会结束你正在运行的 Chrome，没保存的标签页和草稿可能丢失，它会先征求同意；会把登录状态复制到 ~/chrome-debug-profile；要先用 npm 全局安装 agent-browser）", "en": "Drives Chrome over remote debugging and reuses its logged-in sessions, so steps such as chart scanning can fetch data (its first launch ends your running Chrome, which can lose unsaved tabs and drafts, and it asks first; copies your login state into ~/chrome-debug-profile; needs agent-browser installed globally with npm)" } },
+        { "name": "story", "description": { "zh": "网文工具箱的总入口：按你的需求转到对应的 skill，管理你的写作习惯，打开本地的工作台（你说「检查更新」并确认后，它会用自己的命令把这 13 个 skill 全部重装到全局，不管你当初在安装器里选了哪些、装在哪）", "en": "Main entry to the web-novel toolbox: routes your request to the right skill, manages your writing habits and opens a local dashboard (if you ask it to check for updates and confirm, it reinstalls all 13 skills globally with its own command, regardless of which ones you picked in this installer and where)" } },
+        { "name": "story-cover", "description": { "zh": "生成带书名和署名的网文封面（在 Claude Code 里要 GPT_IMAGE_API_KEY，提示词和参考图会发到 OpenAI 或你配置的代理；Codex 里优先用它内置的生图，不需要 key）", "en": "Generates a web-novel cover with title and author name (in Claude Code it needs GPT_IMAGE_API_KEY and sends the prompt and any reference image to OpenAI or the proxy you configure; in Codex it prefers the built-in image generation and needs no key)" } },
+        { "name": "story-deslop", "description": { "zh": "网文去 AI 味：检测并清除文字里的 AI 写作痕迹", "en": "De-AI editing for web novels: detects and removes traces of AI writing from the text" } },
+        { "name": "story-import", "description": { "zh": "导入已有的小说：把写好的半成品或完本反向解析成标准的项目目录，接着用长篇或短篇的写作流程", "en": "Imports an existing novel: parses a finished or half-finished book back into the standard project layout so the long or short writing flow can continue from it" } },
+        { "name": "story-long-analyze", "description": { "zh": "长篇网文拆文：黄金三章、逐章摘要、剧情、情绪、节奏、角色、设定和文风", "en": "Breakdown of long web novels: the opening three chapters, per-chapter summaries, plot, emotion, pacing, characters, setting and style" } },
+        { "name": "story-long-scan", "description": { "zh": "长篇网文扫榜：分析起点、番茄、晋江、七猫等平台的排行榜和新书数据，提炼市场趋势和热门题材", "en": "Chart scanning for long web novels: analyzes rankings and new-book data on platforms such as Qidian, Fanqie, Jinjiang and Qimao to extract market trends and hot genres" } },
+        { "name": "story-long-write", "description": { "zh": "长篇网文的规划与写作：定设定、出卷纲和细纲，你明确要正文时再写章节，支持续写和重写", "en": "Planning and writing long web novels: setting, volume outlines and detailed outlines, chapters written once you explicitly ask for prose, with support for continuing and rewriting" } },
+        { "name": "story-review", "description": { "zh": "多视角对抗式审稿：部署过审稿子代理时并行审，没有时自动降级成单个 AI Agent 审", "en": "Multi-perspective adversarial review: runs reviewer sub-agents in parallel when they are deployed and falls back to a single-agent review when they are not" } },
+        { "name": "story-setup", "description": { "zh": "在写作项目里部署和检查这套工具需要的东西：往项目里写钩子、子代理和配置（装好这套 skill 后要在写作项目里运行一次并新开会话，否则其余的 skill 只能降级使用；它部署的钩子每 24 小时最多联网查一次有没有新版本，设 STORY_NO_UPDATE_CHECK=1 可以关掉）", "en": "Deploys and checks what the toolbox needs inside a writing project: writes hooks, sub-agents and config into the project (run it once in your writing project after installing and start a new session, otherwise the other skills run in a degraded mode; the hook it deploys checks for a new version over the network at most once every 24 hours, and STORY_NO_UPDATE_CHECK=1 turns that off)" } },
+        { "name": "story-short-analyze", "description": { "zh": "短篇网文拆文：拆解爆款短篇的故事核、结构、情感线、反转设计和写作手法，产出拆文报告", "en": "Breakdown of short web fiction: takes apart a hit short story's core idea, structure, emotional line, twists and techniques and produces a breakdown report" } },
+        { "name": "story-short-scan", "description": { "zh": "短篇网文扫榜：分析知乎盐言、七猫、黑岩、点众等平台的热门短篇数据，找出风口题材", "en": "Chart scanning for short web fiction: analyzes hot short-story data on platforms such as Zhihu Yanyan, Qimao, Heiyan and Dianzhong to spot trending genres" } },
+        { "name": "story-short-write", "description": { "zh": "短篇网文写作：从构思到成稿，着重情绪拉扯和节奏把控", "en": "Writing short web fiction from idea to finished draft, with a focus on emotional tension and pacing" } }
+      ]
+    }
+  ],
   "mcps": [
     {
       "name": "acemcp",
@@ -230,6 +539,18 @@
       "purpose": "codebase-understanding"
     },
     {
+      "name": "graphify",
+      "description": { "zh": "把代码库连同文档、SQL 结构、配置和 PDF 变成可以查询的知识图谱，在 Claude Code、Codex 等 AI Agent 里用 /graphify 调用（本体是 Python 程序，用 uv 或 pipx 安装）", "en": "Turns a codebase with its docs, SQL schemas, configs and PDFs into a queryable knowledge graph, used as /graphify in agents such as Claude Code and Codex (a Python program, installed with uv or pipx)" },
+      "url": "https://github.com/Graphify-Labs/graphify",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "understand-anything",
+      "description": { "zh": "把任意代码库分析成可以点开、搜索和提问的交互式知识图谱（Claude Code 插件，也支持 Codex 等 AI Agent）", "en": "Analyzes any codebase into an interactive knowledge graph you can explore, search and ask questions about (a Claude Code plugin that also supports Codex and other agents)" },
+      "url": "https://github.com/Egonex-AI/Understand-Anything",
+      "purpose": "codebase-understanding"
+    },
+    {
       "name": "fastcode",
       "description": { "zh": "带网页界面和命令行的代码理解 Agent，自己调用大模型回答关于代码库的问题，也提供 MCP 模式", "en": "Code-understanding agent with a web UI and CLI that answers questions about a codebase using an LLM, also available as an MCP server" },
       "url": "https://github.com/HKUDS/FastCode",
@@ -290,6 +611,12 @@
       "purpose": "context-memory"
     },
     {
+      "name": "agent-reach",
+      "description": { "zh": "给 AI Agent 用的命令行工具，读取和搜索 Twitter、Reddit、YouTube、GitHub、B 站、小红书等平台的内容（本体是 Python 程序，需要 Python 3.10 以上）", "en": "CLI that lets your AI agent read and search Twitter, Reddit, YouTube, GitHub, Bilibili, XiaoHongShu and more (a Python program; needs Python 3.10+)" },
+      "url": "https://github.com/Panniantong/Agent-Reach",
+      "purpose": "web-search"
+    },
+    {
       "name": "grok-search-rs",
       "description": { "zh": "用 Rust 写的轻量 MCP 服务器，经 Grok 或 OpenAI 兼容的接口联网搜索，并用 Tavily、Firecrawl 抓取网页", "en": "Lightweight MCP server written in Rust for web search through Grok or OpenAI-compatible APIs, with page fetching through Tavily and Firecrawl" },
       "url": "https://github.com/Episkey-G/GrokSearch-rs",
@@ -318,6 +645,12 @@
       "description": { "zh": "嵌在网页里的纯 JavaScript 界面 Agent，让用户用自然语言操作你的 Web 应用，不需要浏览器扩展或无头浏览器（要自备大模型）", "en": "In-page GUI agent in plain JavaScript that lets users control your web app with natural language, with no browser extension or headless browser (bring your own LLM)" },
       "url": "https://github.com/alibaba/page-agent",
       "purpose": "browser-automation"
+    },
+    {
+      "name": "ui-ux-pro-max-skill",
+      "description": { "zh": "给 AI 编码 Agent 提供界面设计知识的 skill，按产品类型推荐风格、配色和字体并生成设计体系（作为 Claude Code 插件或用它自己的命令行安装；需要 Python 3）", "en": "Skill that gives AI coding agents design intelligence: recommends styles, colors and typography by product type and generates a design system (installed as a Claude Code plugin or with its own CLI; needs Python 3)" },
+      "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "purpose": "design-media"
     },
     {
       "name": "design-md",
@@ -353,6 +686,12 @@
       "name": "canvas-ui",
       "description": { "zh": "创意画布组件库，在真实的 HTML 上叠加 WebGL 特效，支持 React、Vue、Svelte 和原生 JavaScript", "en": "Library of creative canvas components that run WebGL effects over real HTML, for React, Vue, Svelte and vanilla JavaScript" },
       "url": "https://github.com/DavidHDev/canvas-ui",
+      "purpose": "design-media"
+    },
+    {
+      "name": "ai-website-cloner-template",
+      "description": { "zh": "用 AI 编码 Agent 把一个网站还原成 Next.js 代码库的项目模板：把模板克隆下来，在里面运行 /clone-website 加网址（需要 Node.js 24 以上）", "en": "Project template for rebuilding a website as a Next.js codebase with an AI coding agent: clone the template, then run /clone-website with a URL inside it (needs Node.js 24+)" },
+      "url": "https://github.com/JCodesMore/ai-website-cloner-template",
       "purpose": "design-media"
     },
     {
@@ -407,6 +746,12 @@
       "name": "pdf-inspector",
       "description": { "zh": "检查、分类 PDF 并提取文本的 Rust 库，能分辨扫描版和文本版，也有 Python 包和命令行", "en": "Rust library for inspecting, classifying and extracting text from PDFs that tells scanned from text-based files, also available as a Python package and CLI" },
       "url": "https://github.com/firecrawl/pdf-inspector",
+      "purpose": "documents"
+    },
+    {
+      "name": "ppt-master",
+      "description": { "zh": "让 AI 根据文档或主题生成原生、可编辑的 PowerPoint 文件，带原生形状、动画、可以改数据的图表和讲稿旁白，也能套用你自己的 .pptx 模板（需要 Python 3.10 以上）", "en": "Has AI turn documents or topics into real, editable PowerPoint decks with native shapes, animations, data-backed charts and narration from speaker notes, optionally on your own .pptx template (needs Python 3.10+)" },
+      "url": "https://github.com/hugohe3/ppt-master",
       "purpose": "documents"
     },
     {
@@ -467,6 +812,12 @@
       "name": "bypassaigc",
       "description": { "zh": "给论文润色、以降低 AI 生成内容检测率为目标的学术写作工具", "en": "Academic writing tool that polishes papers with the aim of lowering their AI-generated-content detection score" },
       "url": "https://github.com/chi111i/BypassAIGC",
+      "purpose": "prompts-writing"
+    },
+    {
+      "name": "webnovel-writer",
+      "description": { "zh": "基于 Claude Code 的长篇网文辅助创作系统，针对 AI 写作里的「遗忘」和「幻觉」，面向 200 万字量级的连载（Claude Code 插件，需要 Python）", "en": "Long-form web-novel writing system built on Claude Code that targets the forgetting and hallucination problems of AI writing, aimed at serials of around two million characters (a Claude Code plugin; needs Python)" },
+      "url": "https://github.com/lingfengQAQ/webnovel-writer",
       "purpose": "prompts-writing"
     },
     {

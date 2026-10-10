@@ -83,7 +83,7 @@ UI 设计规范与审美
 - `Skill` hallmark — https://github.com/Nutlope/hallmark
 - `Skill` Impeccable — https://github.com/pbakaus/impeccable
 - `Skill` skills（emilkowalski）— https://github.com/emilkowalski/skills
-- `Skill` analyse-design — https://www.skills.sh/sammcj/agentic-coding/analyse-design
+- `Skill` analyse-design — https://www.skills.sh/sammcj/agentic-coding/analyse-design （**不进目录**：维护者 2026-10-11 决定去掉，原因见 `prd.md` 的 Further Notes 第 20 条；「汇总」文档本身没有动）
 - `资源` design.md — https://github.com/google-labs-code/design.md
 - `资源` awesome-design-md — https://github.com/VoltAgent/awesome-design-md
 

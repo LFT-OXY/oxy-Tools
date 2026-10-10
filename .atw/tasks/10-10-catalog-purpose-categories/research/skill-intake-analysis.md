@@ -136,6 +136,8 @@ oh-story-claudecode 里要单独标注的：
 
 ## 31 个仓库的归类提议
 
+> 2026-10-11 维护者决定不收 `sammcj/agentic-coding`（下表里的「agentic-coding（只取 analyse-design）」）：实际录入的是 30 个仓库，第三方 Skill 23 个。下表是当时的提议，留着没改。
+
 | 归类 | 仓库 |
 |---|---|
 | 第三方 Skill（`npx skills add`），24 个 | Humanizer-zh、academic-humanizer、andrej-karpathy-skills、emilkowalski/skills、taste-skill、hallmark、guizang-ppt-skill、drawio-skill、anysearch-skill、web-access、paper-craft-skills、GordenPPTSkill、ppt-agent-skills、last30days-skill、i-have-adhd、ponytail、pua、chinese-novelist-skill、oh-story-claudecode、agentic-coding（只取 analyse-design）、nuyoah-image-reverse-prompt、prompt-architect、caveman（只取纯提示词的）、impeccable |

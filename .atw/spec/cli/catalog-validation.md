@@ -75,7 +75,7 @@ export type CatalogFlaw = { file: string } & (
 输出的样子：
 
 ```
-目录校验通过：12 个 skill、0 个第三方 Skill、11 个 MCP、0 个工具、57 个应用项目、10 个用途
+目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个应用项目、10 个用途
 ```
 
 通过信息把**校验过的每一类**都数出来，是 0 也写（第三方 Skill 数的是条目，不是它里面的 skill）：它说的是“这一类查过了”，和主菜单上方「目录」一行只数有条目的分组不是一回事。
@@ -178,7 +178,7 @@ export type CatalogFlaw = { file: string } & (
 
 ### 5. Good/Base/Bad Cases
 
-- Good：仓库的数据（2026-10-10 录入 21 个 MCP 条目和 47 个应用项目之后；第三方 Skill 等工单 13 录入）→ `目录校验通过：12 个 skill、0 个第三方 Skill、11 个 MCP、0 个工具、57 个应用项目、10 个用途`，退出 0。
+- Good：仓库的数据（2026-10-11 录入 23 个第三方 Skill 和 7 个应用项目之后）→ `目录校验通过：12 个 skill、23 个第三方 Skill、11 个 MCP、0 个工具、64 个应用项目、10 个用途`，退出 0。
 - Bad：第三方 Skill 的 `source` 写成了网址，或某个 skill 的名字照上游写成了 `Humanizer-ZH` → 指出第几条、名字、`source` 或 `skills[0].name` 该是什么样，退出 1；安装器里这一条被跳过。
 - Base：工具条目的 `install` 里有一个不认识的系统名（`solaris`）→ 忽略它，照常通过。
 - Bad：`index.json` 某一条的 `path` 写成 `skills/../x` → 指出第几条、名字、`path` 该是什么样，退出 1。
@@ -344,16 +344,19 @@ GitHub 那一边：
 ### 6. Good/Base/Bad Cases
 
 - Good：样例目录登记 `emilkowalski/skills` 的全部 14 个 skill、`ckelsoe/prompt-architect`、`nuyoah-ai-works/nuyoah-image-reverse-prompt` → `上游核对通过：3 个第三方 Skill，共 16 个 skill`，退出 0（2026-10-11 对着真实的 GitHub）。
-- Base：仓库的数据现在一个第三方 Skill 都没有（等工单 13 录入）→ `上游核对通过：0 个第三方 Skill，共 0 个 skill`，退出 0。
+- Good：仓库的数据（2026-10-11 录入之后，带着 `GITHUB_TOKEN`、对着真实的 GitHub）→ `上游核对通过：23 个第三方 Skill，共 100 个 skill`，退出 0。
+- Base：目录里一个第三方 Skill 都没有 → `上游核对通过：0 个第三方 Skill，共 0 个 skill`，退出 0。
 - Bad：来源写的是改名之前的 `ckelsoe/claude-skill-prompt-architect` → `来源仓库已改名为 ckelsoe/prompt-architect`，退出 1；skill 接着对，对得上就只有这一行。
-- Bad：只登记了一个仓库里的一部分 skill → 没登记的每个一行，退出 1。**命令没有「有意只登记一部分」的说法**，见下面的 Design Decision。
+- Bad：只登记了一个仓库里的一部分 skill → 没登记的每个一行，退出 1。命令没有「有意只登记一部分」的说法，见下面的 Design Decision。
 - Bad：`GITHUB_TOKEN` 过期了 → 每个条目一行 `没能核对：HTTP 401（GITHUB_TOKEN 不对或过期了）`，退出 1，没有一条被说成「仓库不存在」。
 
 ### Design Decision: 上游有而没登记的一律报，没有豁免
 
-**Context**：PRD 定的是「上游有而目录里没登记的 skill」要报、有任何一项对不上就非零退出。但工单 13 打算让 `sammcj/agentic-coding` 只登记 55 个里的 `analyse-design` 一个，又要求这条命令对真实的目录「跑过一遍并通过」——两条同时满足不了。
+**Context**：PRD 定的是「上游有而目录里没登记的 skill」要报、有任何一项对不上就非零退出。工单 13 原本打算让 `sammcj/agentic-coding` 只登记 55 个里的 `analyse-design` 一个，又要求这条命令对真实的目录「跑过一遍并通过」——两条同时满足不了。
 
-**Decision**：工单 12 照 PRD 的字面做，不加豁免。要不要给条目加一个「有意只登记一部分」的标记（那是给 `catalog.json` 加字段，要过 [清单与版本](../skills/manifest-versioning.md) 的兼容规则）、还是把那个仓库的 55 个都登记上、还是改工单 13 的验收说法，**由维护者在做工单 13 之前定**；定了之后改这里。
+**Options Considered**：给条目加一个「有意只登记一部分」的标记（给 `catalog.json` 加字段，要过 [清单与版本](../skills/manifest-versioning.md) 的兼容规则）；把那个仓库的 55 个都登记上；放宽工单 13 的验收，让这一条一直报。
+
+**Decision**：都没有选。维护者 2026-10-11 决定那个仓库不收了，所以命令照 PRD 的字面做，不加豁免：**一个第三方 Skill 条目要登记上游的全部 skill**（标了 internal 的除外，见上面第 6 条）。以后再遇到「只想要一个仓库里的一部分」，是同一个决定要重新做一次——要么不收，要么加标记，不要让命令常年报着不通过。
 
 ### 7. 为什么不进 CI
 
