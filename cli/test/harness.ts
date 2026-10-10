@@ -30,6 +30,7 @@ export {
   SAMPLE_PURPOSES,
   SAMPLE_SKILLS,
   SAMPLE_TOOLS,
+  underWebSearch,
 } from './fixtures.ts';
 export { KEY } from './terminal.ts';
 

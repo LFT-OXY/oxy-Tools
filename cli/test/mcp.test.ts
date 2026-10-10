@@ -1,16 +1,20 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, LONG_MCP_ABOUT, SAMPLE_MCPS, STACK_FRAME, accept, catalogDir, choose, pick, run, tempDir, writeTree } from './harness.ts';
+import { EMPTY_CATALOG, LONG_MCP_ABOUT, SAMPLE_MCPS, STACK_FRAME, accept, catalogDir, choose, pick, run, tempDir, underWebSearch, writeTree } from './harness.ts';
 
-const withMcps = (mcps: unknown[] = SAMPLE_MCPS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps } });
+// 样例的 MCP 都放进同一个用途：进去之后是一张只有 MCP 一段的混合列表（样例的 skill 没写用途，只在「推荐」里）
+const WEB_SEARCH = '联网搜索与文档检索';
+const WEB_SEARCH_EN = 'Web search & docs retrieval';
+const QUESTION = '? 选择要安装的条目';
+const withMcps = (mcps: unknown[] = SAMPLE_MCPS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...mcps) } });
 // Claude Code 的用户级配置：主目录下的 .claude.json，顶层的 mcpServers 里一个名字一条
 const claudeConfig = (...names: string[]): string =>
   JSON.stringify({ userID: 'someone', mcpServers: Object.fromEntries(names.map((name) => [name, { type: 'stdio', command: 'old', args: [] }])) });
 // Codex 的用户级配置：主目录下的 .codex/config.toml，一个名字一张 [mcp_servers.<名字>] 表
 const codexConfig = (...names: string[]): string =>
   ['model = "some-model"', ...names.map((name) => `\n[mcp_servers.${name}]\ncommand = "old"\nargs = []`)].join('\n');
-const browseMcps = [choose('MCP'), pick(), choose('退出')];
-const install = (...names: string[]) => [choose('MCP'), pick(...names), choose('执行'), choose('退出')];
+const browseMcps = [choose(WEB_SEARCH), pick(), choose('退出')];
+const install = (...names: string[]) => [choose(WEB_SEARCH), pick(...names), choose('开始安装'), choose('退出')];
 
 // 两个宿主各自的命令写法，2026-10-09 对照官方文档和本机的 claude 2.1.295、codex 0.162.0 核对过
 const CLAUDE_ADD_LOCAL = { command: 'claude', args: ['mcp', 'add', '--scope', 'user', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'] };
@@ -25,22 +29,22 @@ const unwrapped = (text: string): string => text.replace(/\s+/g, ' ');
 // 中文的句子可以在任意两字之间折行：比对整句之前把空白全部去掉
 const squeezed = (text: string): string => text.replace(/\s+/g, '');
 
-describe('MCP 分组', () => {
-  it('目录里有 MCP 条目时，主菜单出现这个分组和它的数量', async () => {
+describe('主菜单上的 MCP', () => {
+  it('没有「MCP」这个分组：MCP 数在它的用途里，「目录」一行照旧按类型数', async () => {
     const result = await run({ catalog: withMcps(), answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器$/m);
+    expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s*\n\s+退出$/m);
+    expect(result.output).not.toMatch(/^[\s-]+MCP\s+\d/m);
     expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 MCP$/m);
     expect(result.exitCode).toBe(0);
   });
 });
 
-describe('MCP 列表', () => {
-  it('多选列表：每行是名字、宿主下的状态和一句话说明；一个都不勾回到主菜单，不执行任何命令', async () => {
+describe('混合列表里的 MCP', () => {
+  it('MCP 自成一段，每行是名字、宿主下的状态和一句话说明；一个都不勾回到主菜单，不执行任何命令', async () => {
     const result = await run({ catalog: withMcps(), answers: browseMcps });
 
-    expect(result.output).toContain('选择要安装的 MCP');
-    expect(result.output).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(result.output).toMatch(/^\? 选择要安装的条目\n\n\s+名称\s+Claude Code\s+说明\n\s+── MCP$/m);
     expect(result.output).toMatch(/ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
     expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.commands).toEqual([]);
@@ -181,7 +185,7 @@ describe('安装 MCP：记录到的命令', () => {
       catalog: withMcps(),
       platform: 'win32',
       onPath: ['claude', 'codex'],
-      answers: [choose('MCP'), accept(), pick('docs-local'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, CODEX_ADD_LOCAL]);
@@ -193,7 +197,7 @@ describe('安装 MCP：汇总确认', () => {
   it('列出每一项装进哪个宿主、是新装还是覆盖，并展示将要执行的完整命令', async () => {
     const result = await run({ catalog: withMcps(), answers: install('docs-local', 'tracker-remote') });
 
-    expect(result.output).toMatch(/^── 将安装 2 个 MCP ─+$/m);
+    expect(result.output).toMatch(/^── 将安装 2 项 ─+$/m);
     expect(result.output).toMatch(/^\s+docs-local\s+Claude Code\s+新装$/m);
     expect(result.output).toMatch(/^\s+tracker-remote\s+Claude Code\s+新装$/m);
     expect(result.output).toMatch(/^── 将执行 2 条命令 ─+$/m);
@@ -202,10 +206,10 @@ describe('安装 MCP：汇总确认', () => {
   });
 
   it('确认之前不执行任何命令：选了取消就什么都不执行，回到主菜单', async () => {
-    const result = await run({ catalog: withMcps(), answers: [choose('MCP'), pick('docs-local'), choose('取消'), choose('退出')] });
+    const result = await run({ catalog: withMcps(), answers: [choose(WEB_SEARCH), pick('docs-local'), choose('取消'), choose('退出')] });
 
     expect(result.output).toContain('claude mcp add --scope user docs-local');
-    expect(result.output).toContain('执行这些命令吗');
+    expect(result.output).toContain('开始安装吗');
     expect(result.commands).toEqual([]);
     expect(result.output.split('选择用途')).toHaveLength(3);
     expect(result.exitCode).toBe(0);
@@ -214,10 +218,10 @@ describe('安装 MCP：汇总确认', () => {
   it('返回修改回到列表，之前勾的还在', async () => {
     const result = await run({
       catalog: withMcps(),
-      answers: [choose('MCP'), pick('docs-local'), choose('返回修改'), accept(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('docs-local'), choose('返回修改'), accept(), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output.split('? 选择要安装的 MCP')).toHaveLength(3);
+    expect(result.output.split(QUESTION)).toHaveLength(3);
     expect(result.output).toMatch(/^\s*■ docs-local\s/m);
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
   });
@@ -333,10 +337,10 @@ describe('安装 MCP：结果', () => {
       catalog: withMcps(),
       env: { CLAUDE_CONFIG_DIR: config },
       commandResult: () => void writeTree(config, { '.claude.json': claudeConfig('docs-local') }),
-      answers: [choose('MCP'), pick('docs-local'), choose('执行'), choose('MCP'), pick(), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('docs-local'), choose('开始安装'), choose(WEB_SEARCH), pick(), choose('退出')],
     });
 
-    const [, before, after] = result.output.split('? 选择要安装的 MCP');
+    const [, before, after] = result.output.split(QUESTION);
     expect(before).toMatch(/ docs-local\s+未配置\s/m);
     expect(after).toMatch(/ docs-local\s+已配置\s/m);
   });
@@ -379,7 +383,7 @@ describe('安装 MCP：检测到两个宿主', () => {
     const result = await run({
       catalog: withMcps(),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('docs-local'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toContain('装进哪些 AI Agent');
@@ -392,10 +396,10 @@ describe('安装 MCP：检测到两个宿主', () => {
     const result = await run({
       catalog: withMcps(),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('docs-local'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^── 将安装 1 个 MCP ─+$/m);
+    expect(result.output).toMatch(/^── 将安装 1 项 ─+$/m);
     expect(result.output).toMatch(/^\s+docs-local\s+Claude Code\s+新装$/m);
     expect(result.output).toMatch(/^\s+Codex\s+新装$/m);
     expect(result.output).toMatch(/^── 将执行 2 条命令 ─+$/m);
@@ -410,7 +414,7 @@ describe('安装 MCP：检测到两个宿主', () => {
     const result = await run({
       catalog: withMcps(),
       onPath: both,
-      answers: [choose('MCP'), pick('Codex'), pick('tracker-remote'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('Codex'), pick('tracker-remote'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+名称\s+Codex\s+说明$/m);
@@ -422,7 +426,7 @@ describe('安装 MCP：检测到两个宿主', () => {
       catalog: withMcps(),
       onPath: both,
       home: { '.claude.json': claudeConfig('docs-local') },
-      answers: [choose('MCP'), accept(), pick('docs-local'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/ docs-local\s+已配置\s+未配置\s/m);
@@ -436,7 +440,7 @@ describe('安装 MCP：检测到两个宿主', () => {
       catalog: withMcps(),
       onPath: both,
       home: { '.codex/config.toml': '[mcp_servers' },
-      answers: [choose('MCP'), accept(), pick(), pick(), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+读不到 Codex 的配置，无法判断哪些 MCP 已配置$/m);
@@ -448,7 +452,7 @@ describe('安装 MCP：检测到两个宿主', () => {
       catalog: withMcps(),
       onPath: both,
       commandResult: (command) => (command === 'claude' ? { exitCode: 2 } : undefined),
-      answers: [choose('MCP'), accept(), pick('docs-local'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+✗\s+docs-local\s+Claude Code\s+失败 添加命令退出状态 2$/m);
@@ -460,7 +464,7 @@ describe('安装 MCP：检测到两个宿主', () => {
     const result = await run({
       catalog: withMcps(),
       onPath: both,
-      answers: [choose('MCP'), pick('Codex'), pick(), accept(), pick(), pick(), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('Codex'), pick(), accept(), pick(), pick(), choose('退出')],
     });
 
     const hostPickers = result.output.split('? 装进哪些 AI Agent');
@@ -477,7 +481,7 @@ describe('MCP 条目只支持一部分宿主', () => {
   const CLAUDE_ADD_CLAUDE_ONLY = { command: 'claude', args: CLAUDE_ADD_LOCAL.args.map((arg) => (arg === 'docs-local' ? 'claude-only' : arg)) };
 
   it('所选宿主里有一部分支持：仍可选，不支持的那一栏标出「不支持」', async () => {
-    const result = await run({ catalog: partly(), onPath: ['claude', 'codex'], answers: [choose('MCP'), accept(), pick(), pick(), choose('退出')] });
+    const result = await run({ catalog: partly(), onPath: ['claude', 'codex'], answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
 
     expect(result.output).toMatch(/^\s*□ claude-only\s+未配置\s+不支持\s+本地进程方式的样例 MCP/m);
     expect(result.output).not.toContain('需要别的 AI Agent');
@@ -487,7 +491,7 @@ describe('MCP 条目只支持一部分宿主', () => {
     const result = await run({
       catalog: partly(),
       onPath: ['claude', 'codex'],
-      answers: [choose('MCP'), accept(), pick('claude-only', 'tracker-remote'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('claude-only', 'tracker-remote'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.commands).toEqual([CLAUDE_ADD_CLAUDE_ONLY, CLAUDE_ADD_REMOTE, CODEX_ADD_REMOTE]);
@@ -497,10 +501,10 @@ describe('MCP 条目只支持一部分宿主', () => {
     expect(result.output).toMatch(/^\s+合计\s+3 成功 · 0 失败 · 0 跳过$/m);
   });
 
-  it('所选宿主一个都不支持：整条不可选，并注明原因', async () => {
+  it('所选宿主一个都不支持：整条不可选，原因写在状态的位置', async () => {
     const result = await run({ catalog: partly(), onPath: ['codex'], answers: browseMcps });
 
-    expect(result.output).toMatch(/^\s*– claude-only\s+不支持\s+本地进程方式的样例 MCP.* · 需要别的 AI Agent$/m);
+    expect(result.output).toMatch(/^\s*– claude-only\s+需要别的 AI Agent\s+本地进程方式的样例 MCP/m);
     expect(result.output).toMatch(/^\s*□ tracker-remote\s+未配置\s/m);
   });
 
@@ -508,10 +512,10 @@ describe('MCP 条目只支持一部分宿主', () => {
     const result = await run({
       catalog: partly(),
       onPath: ['claude', 'codex'],
-      answers: [choose('MCP'), pick('Codex'), pick(), pick(), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('Codex'), pick(), pick(), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s*– claude-only\s+不支持\s.* · 需要别的 AI Agent$/m);
+    expect(result.output).toMatch(/^\s*– claude-only\s+需要别的 AI Agent\s/m);
   });
 
   it('hosts 里有这一版安装器不认识的宿主时，这一条照常可用', async () => {
@@ -526,10 +530,12 @@ describe('MCP 条目只支持一部分宿主', () => {
 });
 
 describe('一个宿主都没检测到时的 MCP', () => {
-  it('MCP 分组不可进入，行尾注明原因', async () => {
-    const result = await run({ catalog: withMcps(), onPath: [], answers: [choose('退出')] });
+  it('用途照常进得去，每个 MCP 都不可选并写明原因；不读宿主的配置，不执行任何命令', async () => {
+    const result = await run({ catalog: withMcps(), onPath: [], home: { '.claude.json': '{ 写坏了' }, answers: browseMcps });
 
-    expect(result.output).toMatch(/^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明\n\s+── MCP\n – docs-local\s+需要 AI Agent\s+本地进程方式的样例 MCP/m);
+    expect(result.output).toMatch(/^ – tracker-remote\s+需要 AI Agent\s+远程地址方式的样例 MCP$/m);
+    expect(result.output).not.toContain('读不到');
     expect(result.commands).toEqual([]);
   });
 });
@@ -541,15 +547,15 @@ describe('写坏的 MCP 条目', () => {
     const result = await run({ catalog: withMcps([broken, ...SAMPLE_MCPS]), answers: browseMcps });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+MCP\s+2\s/m);
+    expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+2$/m);
     expect(result.output).not.toContain('broken');
     expect(result.output).not.toContain('rm -rf');
   });
 
-  it('全部写坏时主菜单没有这个分组', async () => {
+  it('一个用途下的 MCP 全部写坏时，主菜单没有这个用途', async () => {
     const result = await run({ catalog: withMcps([broken]), answers: [choose('退出')] });
 
-    expect(result.output).not.toMatch(/^\s+MCP\s/m);
+    expect(result.output).not.toContain('联网搜索与文档检索');
     expect(result.output).toMatch(/^\s+目录\s+2 skill$/m);
   });
 
@@ -562,26 +568,35 @@ describe('写坏的 MCP 条目', () => {
 });
 
 describe('英文界面的 MCP', () => {
-  it('分组、列表、汇总、命令和结果都是英文', async () => {
+  it('列表、汇总、命令和结果都是英文', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withMcps(),
       home: { '.claude.json': claudeConfig('docs-local') },
-      answers: [choose('MCP'), pick('docs-local', 'tracker-remote'), choose('Run'), choose('Exit')],
+      answers: [choose(WEB_SEARCH_EN), pick('docs-local', 'tracker-remote'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Catalog\s+2 skills · 2 MCP$/m);
-    expect(result.output).toMatch(/^\s+MCP\s+2\s+MCP servers written into your AI Agent config$/m);
-    expect(result.output).toContain('Pick MCP servers to install');
+    expect(result.output).toMatch(/^\? Pick entries to install\n\n\s+Name\s+Claude Code\s+About\n\s+── MCP$/m);
     expect(result.output).toMatch(/ docs-local\s+configured\s/m);
     expect(result.output).toMatch(/ tracker-remote\s+none\s+A sample MCP reached at a remote address$/m);
-    expect(result.output).toMatch(/^── Install 2 MCP servers ─+$/m);
+    expect(result.output).toMatch(/^── Install 2 items ─+\n\n\s+MCP\s+AI Agent\s+Action\s+Note$/m);
     expect(result.output).toMatch(/^\s+docs-local\s+Claude Code\s+overwrite\s+configured; removed, then added$/m);
     expect(result.output).toMatch(/^\s+tracker-remote\s+Claude Code\s+new$/m);
     expect(result.output).toMatch(/^── 3 commands to run ─+$/m);
-    expect(result.output).toContain('Run these commands?');
+    expect(result.output).toContain('? Start installing?');
     expect(result.output).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+configured$/m);
     expect(result.output).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('只支持一部分宿主：不支持的那一栏和不可选的原因都是英文', async () => {
+    const claudeOnly = { ...SAMPLE_MCPS[0], name: 'claude-only', hosts: ['claude-code'] };
+    const partly = { argv: ['--lang', 'en'], catalog: withMcps([claudeOnly]) };
+    const both = await run({ ...partly, onPath: ['claude', 'codex'], answers: [choose(WEB_SEARCH_EN), accept(), pick(), pick(), choose('Exit')] });
+    const codexOnly = await run({ ...partly, onPath: ['codex'], answers: [choose(WEB_SEARCH_EN), pick(), choose('Exit')] });
+
+    expect(both.output).toMatch(/^\s*□ claude-only\s+none\s+unsupported\s/m);
+    expect(codexOnly.output).toMatch(/^\s*– claude-only\s+needs another AI Agent\s/m);
   });
 
   it('读不到配置、状态未知和失败的说法', async () => {
@@ -590,7 +605,7 @@ describe('英文界面的 MCP', () => {
       catalog: withMcps(),
       home: { '.claude.json': '{' },
       commandResult: (_, args) => (isRemove(args) ? undefined : { exitCode: 1 }),
-      answers: [choose('MCP'), pick('docs-local'), choose('Run'), choose('Exit')],
+      answers: [choose(WEB_SEARCH_EN), pick('docs-local'), choose('Install'), choose('Exit')],
     });
 
     expect(unwrapped(result.output)).toContain('Notice Could not read the Claude Code config; cannot tell which MCP servers are configured');
@@ -606,7 +621,7 @@ describe('安装 MCP：名字很长的条目', () => {
     const result = await run({
       catalog: withMcps([long]),
       home: { '.claude.json': claudeConfig(long.name) },
-      answers: [choose('MCP'), pick(long.name), choose('取消'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick(long.name), choose('取消'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+已配置，先移除再添加$/m);
@@ -626,7 +641,7 @@ describe('安装 MCP：宿主添加远程地址时会当场登录', () => {
 
     expect(squeezed(result.output)).toContain(squeezed(LOGIN_NOTICE));
     expect(result.output.indexOf('将执行 1 条命令')).toBeLessThan(result.output.indexOf('可能当场打开浏览器登录'));
-    expect(result.output.indexOf('可能当场打开浏览器登录')).toBeLessThan(result.output.indexOf('执行这些命令吗'));
+    expect(result.output.indexOf('可能当场打开浏览器登录')).toBeLessThan(result.output.indexOf('开始安装吗'));
     expect(result.commands).toEqual([CODEX_ADD_REMOTE]);
   });
 
@@ -634,7 +649,7 @@ describe('安装 MCP：宿主添加远程地址时会当场登录', () => {
     const result = await run({
       catalog: withMcps(),
       onPath: ['claude', 'codex'],
-      answers: [choose('MCP'), accept(), pick('docs-local', 'tracker-remote'), choose('取消'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('docs-local', 'tracker-remote'), choose('取消'), choose('退出')],
     });
 
     expect(squeezed(result.output)).toContain(squeezed(LOGIN_NOTICE));
@@ -658,7 +673,7 @@ describe('安装 MCP：宿主添加远程地址时会当场登录', () => {
       argv: ['--lang', 'en'],
       catalog: withMcps(),
       onPath: ['codex'],
-      answers: [choose('MCP'), pick('tracker-remote'), choose('Cancel'), choose('Exit')],
+      answers: [choose(WEB_SEARCH_EN), pick('tracker-remote'), choose('Cancel'), choose('Exit')],
     });
 
     expect(unwrapped(result.output)).toContain(

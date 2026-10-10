@@ -11,6 +11,7 @@ const WEB_SEARCH = '联网搜索与文档检索';
 const DEV_WORKFLOW = '开发工作流与规范';
 const [ALPHA, BETA_PACK] = SAMPLE_SKILLS as [(typeof SAMPLE_SKILLS)[0], (typeof SAMPLE_SKILLS)[1]];
 const [ATLAS, BOREALIS] = SAMPLE_APPS as [(typeof SAMPLE_APPS)[0], (typeof SAMPLE_APPS)[1]];
+const [DOCS_LOCAL, TRACKER_REMOTE] = SAMPLE_MCPS as [(typeof SAMPLE_MCPS)[0], (typeof SAMPLE_MCPS)[1]];
 const BOTH_HOSTS = ['claude', 'codex'];
 const QUESTION = '? 选择要安装的条目';
 
@@ -56,11 +57,11 @@ describe('主菜单上的「推荐」', () => {
     expect(listed(result.output)).toEqual(['atlas']);
   });
 
-  it('MCP、工具两个旧分组留在各用途之后，照旧带着数量和说明', async () => {
+  it('工具这个旧分组留在各用途之后，照旧带着数量和说明；没有「MCP」这个分组', async () => {
     const result = await run({ catalog: withCatalog({ mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS }), answers: [choose('退出')] });
 
     expect(result.output).toMatch(
-      /^\s+用途\s+数量\s+说明\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+1\n\s+开发工作流与规范\s+1\n\s+MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
+      /^\s+用途\s+数量\s+说明\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s+开发工作流与规范\s+2\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
     );
   });
 
@@ -109,6 +110,27 @@ describe('「推荐」和用途里各有什么', () => {
     expect(listed(devWorkflow)).toEqual(['atlas']);
   });
 
+  it('带推荐标记的 MCP 同时出现在「推荐」和它的用途下；「推荐」里它排在 skill 之后、外部项目之前', async () => {
+    const result = await run({
+      catalog: withCatalog({ mcps: [{ ...DOCS_LOCAL, recommended: true }, TRACKER_REMOTE], apps: [{ ...ATLAS, recommended: true }] }),
+      answers: [choose('推荐'), pick(), choose(WEB_SEARCH), pick(), choose(DEV_WORKFLOW), pick(), choose('退出')],
+    });
+    const [, recommended = '', webSearch = '', devWorkflow = ''] = result.output.split(QUESTION);
+
+    expect(menuRows(result.output)[0]).toMatch(/^推荐\s+4$/);
+    expect(listed(recommended)).toEqual(['alpha', 'beta-pack', 'docs-local', 'atlas']);
+    expect(listed(webSearch)).toEqual(['docs-local']);
+    // 没带标记的 MCP 只在它的用途下
+    expect(listed(devWorkflow)).toEqual(['tracker-remote', 'atlas']);
+  });
+
+  it('MCP 一段里带推荐的在前，其余按名字，不照目录文件里的先后', async () => {
+    const mcps = ['mid', 'zeta', 'early'].map((name) => ({ ...DOCS_LOCAL, name, recommended: name === 'zeta' }));
+    const result = await run({ catalog: withCatalog({ mcps }), answers: [choose(WEB_SEARCH), pick(), choose('退出')] });
+
+    expect(listed(result.output)).toEqual(['zeta', 'early', 'mid']);
+  });
+
   it('skill 按名字排，不照 skill 清单里的先后', async () => {
     const result = await run({ catalog: catalogDir({ index: { version: 1, skills: [BETA_PACK, ALPHA] } }), answers: [choose('推荐'), pick(), choose('退出')] });
 
@@ -140,6 +162,16 @@ describe('混合列表', () => {
     expect(result.output).toMatch(/^ □ atlas\s+推荐 · 第一个样例外部项目/m);
     expect(result.output).toMatch(/^ □ borealis\s+第二个样例外部项目$/m);
     expect(result.output).toMatch(/^外部项目 · 推荐$/m);
+  });
+
+  it('带推荐标记的 MCP：行上写着标记，列表下方「类型」一行里跟着「推荐」；没带的不写', async () => {
+    const result = await run({
+      catalog: withoutSkills({ mcps: [{ ...DOCS_LOCAL, recommended: true }, { ...TRACKER_REMOTE, purpose: 'web-search' }] }),
+      answers: [choose(WEB_SEARCH), pick(), choose('退出')],
+    });
+
+    expect(result.output).toMatch(/^\s+── MCP\n □ docs-local\s+未配置\s+推荐 · 本地进程方式的样例 MCP.*…\n □ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/m);
+    expect(result.output).toMatch(/^MCP · 推荐$/m);
   });
 
   it('「推荐」那张列表里每一行都是推荐的，行上和类型里都不再写', async () => {
@@ -270,7 +302,7 @@ describe('一次勾选 skill 和外部项目', () => {
 
   it('汇总、确认、安装、结果照常，最后才是外部项目的说明与链接', async () => {
     const result = await run({ catalog: mixed(), answers: together });
-    const order = ['将安装 1 个 skill', '? 开始安装吗', '已安装 1.0.0', '1 成功 · 0 失败 · 0 跳过', '外部项目：1 个，只给链接', 'https://example.org/borealis'].map(
+    const order = ['将安装 1 项', '? 开始安装吗', '已安装 1.0.0', '1 成功 · 0 失败 · 0 跳过', '外部项目：1 个，只给链接', 'https://example.org/borealis'].map(
       (text) => result.screen.indexOf(text),
     );
 
@@ -283,7 +315,7 @@ describe('一次勾选 skill 和外部项目', () => {
 
   it('汇总只列组件：外部项目不在里面', async () => {
     const result = await run({ catalog: mixed(), answers: together });
-    const summary = result.output.slice(result.output.indexOf('将安装 1 个 skill'), result.output.indexOf('? 开始安装吗'));
+    const summary = result.output.slice(result.output.indexOf('将安装 1 项'), result.output.indexOf('? 开始安装吗'));
 
     expect(summary).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     expect(summary).not.toContain('borealis');

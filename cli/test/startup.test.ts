@@ -516,7 +516,7 @@ describe('没有 Unicode 的终端', () => {
     });
 
     expect(result.output).toContain(' / _ \\ \\ \\/ /\\ \\ / /');
-    expect(result.output).toMatch(/^-- 将安装 1 个 skill -+$/m);
+    expect(result.output).toMatch(/^-- 将安装 1 项 -+$/m);
     expect(result.output).toMatch(/^\s+\[ \] alpha\s/m);
     expect(result.output).toMatch(/^\s+\+\s+beta-pack\s+Claude Code\s+已安装 2\.3$/m);
     expect(result.output).toMatch(/^\s+合计\s+1 成功 - 0 失败 - 0 跳过$/m);

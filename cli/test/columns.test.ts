@@ -1,11 +1,15 @@
 // 表的栏间隔：每一栏最长的一格后面恰好三格空白，再是下一栏；所有的表同一个间隔。
 // 只卡间隔本身：断言都从一栏里最长的那一格写起，不管行首缩进了几列、后面的字怎么折行。
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, no, pick, run } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, no, pick, run, underWebSearch } from './harness.ts';
 
-// 四个分组都有条目的样例目录
+// 四种类型都有条目的样例目录
 const fullCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+// 只有外部项目：用途下的列表里没有状态栏
+const appsCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } });
+// 两个 MCP 在同一个用途下
+const mcpCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS) } });
 const BOTH_HOSTS = ['claude', 'codex'];
 // 一段文字在终端里占几列：汉字和全角标点占两列
 const columnsOf = (text: string): number => [...text].reduce((sum, char) => sum + (/[⺀-￯]/u.test(char) ? 2 : 1), 0);
@@ -22,7 +26,7 @@ describe('栏间隔：主菜单', () => {
     // 数量右对齐，所以拿表头量这一栏从哪开始
     expect(startOf(screen, '用途', '数量') - startOf(screen, '联网搜索与文档检索 ') - columnsOf('联网搜索与文档检索')).toBe(3);
     expect(screen).toMatch(/数量 {3}说明$/m);
-    expect(screen).toMatch(/2 {3}写进 AI Agent 配置的 MCP 服务器/);
+    expect(screen).toMatch(/2 {3}执行其官方安装命令装上的工具/);
   });
 
   it('英文界面同一个间隔', async () => {
@@ -31,7 +35,7 @@ describe('栏间隔：主菜单', () => {
     const longest = 'Development workflow & conventions';
     expect(startOf(screen, 'Purpose', 'Count') - startOf(screen, `${longest} `) - columnsOf(longest)).toBe(3);
     expect(screen).toMatch(/Count {3}About$/m);
-    expect(screen).toMatch(/2 {3}MCP servers written/);
+    expect(screen).toMatch(/2 {3}Installed by running/);
   });
 });
 
@@ -99,9 +103,9 @@ describe('栏间隔：skill', () => {
 describe('栏间隔：MCP', () => {
   it('多选列表、汇总、结果行同一个间隔', async () => {
     const { screen } = await run({
-      catalog: fullCatalog(),
+      catalog: mcpCatalog(),
       onPath: BOTH_HOSTS,
-      answers: [choose('MCP'), accept(), pick('docs-local', 'tracker-remote'), accept(), choose('退出')],
+      answers: [choose('联网搜索与文档检索'), accept(), pick('docs-local', 'tracker-remote'), accept(), choose('退出')],
     });
 
     expect(screen).toMatch(/tracker-remote {3}未配置/);
@@ -128,7 +132,7 @@ describe('栏间隔：工具', () => {
 describe('栏间隔：用途下的列表', () => {
   it('外部项目的名称与说明之间三格；最长的说明仍被截断，整行不超出第 79 列', async () => {
     const { screen } = await run({
-      catalog: fullCatalog(),
+      catalog: appsCatalog(),
       answers: [choose('联网搜索与文档检索'), pick(), choose('开发工作流与规范'), pick(), choose('退出')],
     });
 
@@ -140,7 +144,7 @@ describe('栏间隔：用途下的列表', () => {
 
   it('英文界面同一个间隔', async () => {
     const { screen } = await run({
-      catalog: fullCatalog(),
+      catalog: appsCatalog(),
       argv: ['--lang', 'en'],
       answers: [choose('Web search & docs retrieval'), pick(), choose('Exit')],
     });

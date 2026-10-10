@@ -1,4 +1,4 @@
-// 交互流程：主菜单、「推荐」、各个用途与旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
+// 交互流程：主菜单、「推荐」、各个用途与工具的旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
 import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Purpose, type Skill, type Tool } from './catalog.ts';
 import type { Host } from './hosts.ts';
@@ -45,24 +45,21 @@ export async function mainMenu(session: Session): Promise<void> {
   const purposes = catalog.purposes
     .map((purpose) => ({ purpose, count: sizeOf(purposeListing(catalog, purpose)) }))
     .filter(({ count }) => count > 0);
-  // 还没搬进混合列表的类型暂时留着旧入口，只列出有条目的；组件要装进宿主，一个宿主都没检测到时进不去
-  const groups = [
-    { id: 'mcp' as const, count: catalog.mcps.length, lacksHost: detected.length === 0 },
-    { id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 },
-  ].filter((group) => group.count > 0);
+  // 还没搬进混合列表的类型暂时留着旧入口，有条目才列出；组件要装进宿主，一个宿主都没检测到时进不去
+  const groups = [{ id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 }].filter((group) => group.count > 0);
   for (;;) {
     const choice = await prompter.select(ui.mainMenu(sizeOf(recommended), purposes, groups));
     if (choice === 'exit') return;
-    if (choice === 'mcp') await installMcps(session, detected);
-    else if (choice === 'tool') await installTools(session, detected);
+    if (choice === 'tool') await installTools(session, detected);
     else await browse(session, detected, choice === 'recommended' ? recommended : purposeListing(catalog, choice));
     ui.nextRound();
   }
 }
 
-/** 一张混合列表里的条目：组件在上，外部项目在下，各按名字排 */
+/** 一张混合列表里的条目：组件在上（先 skill 后 MCP），外部项目在下 */
 interface Listing {
   skills: Skill[];
+  mcps: Mcp[];
   apps: App[];
   /** 把带推荐的行标出来；「推荐」那张列表里每一行都是，不标 */
   marksRecommended: boolean;
@@ -70,26 +67,37 @@ interface Listing {
 
 const byName = <Entry extends { name: string }>(entries: readonly Entry[]): Entry[] =>
   [...entries].sort((a, b) => (a.name < b.name ? -1 : 1));
-const sizeOf = (listing: Listing): number => listing.skills.length + listing.apps.length;
+// 组件的一段里带推荐的在前，其余按名字
+const recommendedFirst = <Entry extends { name: string; recommended: boolean }>(entries: readonly Entry[]): Entry[] => [
+  ...byName(entries.filter((entry) => entry.recommended)),
+  ...byName(entries.filter((entry) => !entry.recommended)),
+];
+const sizeOf = (listing: Listing): number => listing.skills.length + listing.mcps.length + listing.apps.length;
 
 // 「推荐」：本仓库的全部 skill（不看任何标注），加上带推荐标记的其它条目
 function recommendedListing(catalog: Catalog): Listing {
-  return { skills: byName(catalog.skills), apps: byName(catalog.apps.filter((app) => app.recommended)), marksRecommended: false };
+  const marked = ({ recommended }: { recommended: boolean }): boolean => recommended;
+  return { skills: byName(catalog.skills), mcps: byName(catalog.mcps.filter(marked)), apps: byName(catalog.apps.filter(marked)), marksRecommended: false };
 }
 
 function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
   const here = ({ purpose: id }: { purpose?: string }): boolean => id === purpose.id;
-  return { skills: byName(catalog.skills.filter(here)), apps: byName(catalog.apps.filter(here)), marksRecommended: true };
+  return {
+    skills: byName(catalog.skills.filter(here)),
+    mcps: recommendedFirst(catalog.mcps.filter(here)),
+    apps: byName(catalog.apps.filter(here)),
+    marksRecommended: true,
+  };
 }
 
 // 进入「推荐」或一个用途：勾选、确认、装上勾选的组件，最后列出勾选的外部项目的说明与链接
 async function browse(session: Session, detected: readonly Host[], listing: Listing): Promise<void> {
   // 列表里没有组件就没有要装进宿主的东西，不问装进哪些
-  await withHosts(session, listing.skills.length > 0 ? detected : [], async (hosts) => {
+  await withHosts(session, listing.skills.length + listing.mcps.length > 0 ? detected : [], async (hosts) => {
     const plan = await planEntries(session, hosts, listing);
     if (plan === 'back') return 'back';
     if (plan === 'cancel') return 'done';
-    if (plan.jobs.length > 0) await runJobs(session, plan.jobs);
+    await runJobs(session, plan.jobs, plan.mcpJobs);
     if (plan.apps.length > 0) session.ui.externalProjects(plan.apps);
     return 'done';
   });
@@ -101,6 +109,21 @@ interface Job {
   target: InstallTarget;
   /** 目标不是本工具装的，而用户没同意覆盖：这一项不装 */
   declined?: boolean;
+}
+
+interface McpJob {
+  mcp: Mcp;
+  host: Host;
+  target: McpTarget;
+  steps: McpStep[];
+  /** 没填的那个必填变量的名字：有它这一项就不装 */
+  missingVariable?: string;
+}
+
+interface Plan {
+  jobs: Job[];
+  mcpJobs: McpJob[];
+  apps: App[];
 }
 
 // 先定装进哪些宿主，再由 proceed 走后面的画面；它返回 back 表示要回到上一步
@@ -126,19 +149,20 @@ async function withHosts(
   }
 }
 
-// 勾选条目、看汇总、确认；返回要装的每一项和勾选的外部项目。hosts 是空的表示一个宿主都没检测到：组件都勾不上
-async function planEntries(
-  session: Session,
-  hosts: readonly Host[],
-  listing: Listing,
-): Promise<{ jobs: Job[]; apps: App[] } | 'back' | 'cancel'> {
+// 勾选条目、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
+// hosts 是空的表示一个宿主都没检测到：组件都勾不上
+async function planEntries(session: Session, hosts: readonly Host[], listing: Listing): Promise<Plan | 'back' | 'cancel'> {
   const { ui, prompter } = session;
-  let picked: (Skill | App)[] = [];
+  let picked: (Skill | Mcp | App)[] = [];
   for (;;) {
     // 状态每次进列表都现探测
     const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
+    const statuses = mcpStatuses(listing.mcps, hosts);
+    const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
+    if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
+    const mcps = listing.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
     picked = await prompter.checkbox(
-      ui.mixedPicker({ hosts, skills, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
+      ui.mixedPicker({ hosts, skills, mcps, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
@@ -158,12 +182,41 @@ async function planEntries(
           },
         })),
       );
-    // 只勾了外部项目：没有要执行的东西，不问开始不开始
-    if (jobs.length === 0) return { jobs, apps };
-    ui.installSummary(jobs.map((job) => job.target));
+    // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
+    const mcpJobs: McpJob[] = [];
+    for (const { mcp, statuses } of mcps.filter((entry) => picked.includes(entry.mcp))) {
+      // key 按 MCP 问，一次用于它要装进的每个宿主
+      const keys = await askKeys(session, mcp);
+      for (const [column, host] of hosts.entries()) {
+        const status = statuses[column];
+        if (status === undefined || status === 'unsupported') continue;
+        const target = { name: mcp.name, host: host.name, status };
+        if ('missing' in keys) mcpJobs.push({ mcp, host, target, steps: [], missingVariable: keys.missing });
+        else mcpJobs.push({ mcp, host, target, steps: mcpSteps(mcp, host, status, keys.variables) });
+      }
+    }
+    const ready = mcpJobs.filter((job) => job.missingVariable === undefined);
+    // 没有要确认的东西：只勾了外部项目，或勾上的组件全是必填的 key 没填的 MCP（直接去结果里说明）
+    if (jobs.length + ready.length === 0) return { jobs, mcpJobs, apps };
+    const commands = ready.flatMap((job) => job.steps.map((step) => step.command));
+    ui.installSummary({ skills: jobs.map((job) => job.target), mcps: ready.map((job) => job.target) });
+    if (commands.length > 0) ui.commandList(commands);
+    ui.summaryNotices({
+      overwrites: jobs.some((job) => job.target.status.kind !== 'none'),
+      placeholders: commands.some(({ args }) => args.some((arg) => typeof arg !== 'string')),
+      // 勾了却不在汇总里的，按 MCP 各说一次
+      missingKeys: [...new Set(mcpJobs.map((job) => job.mcp))].flatMap((mcp) => {
+        const variable = mcpJobs.find((job) => job.mcp === mcp)?.missingVariable;
+        return variable === undefined ? [] : [{ mcp: mcp.name, variable }];
+      }),
+      // 宿主命令的输出不上屏：它会当场打开浏览器登录的话，事先说一声
+      logins: hosts.flatMap((host) =>
+        host.remoteMcpLogin && ready.some((job) => job.host === host && 'url' in job.mcp.server) ? [{ host: host.name, login: host.remoteMcpLogin }] : [],
+      ),
+    });
     const decision = await prompter.select(ui.confirmInstall());
     if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), apps };
+    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), mcpJobs, apps };
     ui.nextRound();
   }
 }
@@ -179,18 +232,24 @@ async function confirmOverwrites(session: Session, jobs: readonly Job[]): Promis
   return confirmed;
 }
 
-async function runJobs(session: Session, jobs: readonly Job[]): Promise<void> {
+// 本仓库的 skill 在前，MCP 在后，共用一个「正在安装」分区；一项失败不影响其余项
+async function runJobs(session: Session, jobs: readonly Job[], mcpJobs: readonly McpJob[]): Promise<void> {
   const { ui, interrupt } = session;
   // 全都没同意覆盖时没有要下载的，不必查询
   const source = jobs.every((job) => job.declined) ? undefined : await pinSource(session);
-  if (!source && jobs.some((job) => !job.declined)) return;
-  const progress = ui.installation(jobs.map((job) => job.target));
-  for (const { skill, host, target, declined } of jobs) {
+  // 查询失败时出错说明已经给了：skill 一个都不装，结果里也没有它们
+  const skillJobs = !source && jobs.some((job) => !job.declined) ? [] : jobs;
+  if (skillJobs.length + mcpJobs.length === 0) return;
+  const progress = ui.installation(
+    skillJobs.map((job) => job.target),
+    mcpJobs.map((job) => job.target),
+  );
+  for (const { skill, host, target, declined } of skillJobs) {
     if (declined || !source) {
-      progress.skip(target);
+      progress.skill.skip(target);
       continue;
     }
-    const settle = progress.begin(target);
+    const settle = progress.skill.begin(target);
     let outcome: InstallOutcome;
     try {
       await installSkill(skill, host.skillsDir, { source, tempDir: session.tempDir, interrupt });
@@ -200,79 +259,30 @@ async function runJobs(session: Session, jobs: readonly Job[]): Promise<void> {
         settle();
         throw interrupt.aborted ? new PromptAborted() : error;
       }
-      // 这一项失败不影响其余项
+      outcome = { ok: false, problem: error.problem };
+    }
+    settle(outcome);
+  }
+  for (const { mcp, target, steps, missingVariable } of mcpJobs) {
+    if (missingVariable !== undefined) {
+      progress.mcp.skip(target, missingVariable);
+      continue;
+    }
+    const settle = progress.mcp.begin(target);
+    let outcome: McpOutcome;
+    try {
+      await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand);
+      outcome = { ok: true };
+    } catch (error) {
+      if (!(error instanceof McpInstallError)) {
+        settle();
+        throw error;
+      }
       outcome = { ok: false, problem: error.problem };
     }
     settle(outcome);
   }
   progress.finish();
-}
-
-interface McpJob {
-  mcp: Mcp;
-  host: Host;
-  target: McpTarget;
-  steps: McpStep[];
-  /** 没填的那个必填变量的名字：有它这一项就不装 */
-  missingVariable?: string;
-}
-
-async function installMcps(session: Session, detected: readonly Host[]): Promise<void> {
-  await withHosts(session, detected, async (hosts) => {
-    const jobs = await planMcps(session, hosts);
-    if (jobs === 'back') return 'back';
-    if (jobs !== 'cancel') await runMcpJobs(session, jobs);
-    return 'done';
-  });
-}
-
-// 勾选 MCP、看汇总和将要执行的命令、确认；返回要装的每一项
-async function planMcps(session: Session, hosts: readonly Host[]): Promise<McpJob[] | 'back' | 'cancel'> {
-  const { catalog, ui, prompter } = session;
-  let picked: Mcp[] = [];
-  for (;;) {
-    // 状态每次进列表都现探测
-    const statuses = mcpStatuses(catalog.mcps, hosts);
-    const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
-    if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
-    const entries = catalog.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
-    picked = await prompter.checkbox(ui.mcpPicker(hosts, entries, picked));
-    if (picked.length === 0) return 'back';
-    // 每个 MCP 在每个支持它的所选宿主下各是一项；汇总里展示的命令就是之后执行的那几条
-    const jobs: McpJob[] = [];
-    for (const { mcp, statuses } of entries.filter((entry) => picked.includes(entry.mcp))) {
-      // key 按 MCP 问，一次用于它要装进的每个宿主
-      const keys = await askKeys(session, mcp);
-      for (const [column, host] of hosts.entries()) {
-        const status = statuses[column];
-        if (status === undefined || status === 'unsupported') continue;
-        const target = { name: mcp.name, host: host.name, status };
-        if ('missing' in keys) jobs.push({ mcp, host, target, steps: [], missingVariable: keys.missing });
-        else jobs.push({ mcp, host, target, steps: mcpSteps(mcp, host, status, keys.variables) });
-      }
-    }
-    const ready = jobs.filter((job) => job.missingVariable === undefined);
-    // 必填的 key 都没填：没有要执行的命令，不必确认，直接去结果里说明
-    if (ready.length === 0) return jobs;
-    const commands = ready.flatMap((job) => job.steps.map((step) => step.command));
-    ui.mcpSummary(ready.map((job) => job.target));
-    ui.commandList(commands);
-    // 勾了却不在汇总里的，按 MCP 各说一次
-    for (const mcp of new Set(jobs.map((job) => job.mcp))) {
-      const skipped = jobs.find((job) => job.mcp === mcp)?.missingVariable;
-      if (skipped !== undefined) ui.mcpKeyMissingNotice(mcp, skipped);
-    }
-    if (commands.some(({ args }) => args.some((arg) => typeof arg !== 'string'))) ui.keyPlaceholderNotice();
-    // 宿主命令的输出不上屏：它会当场打开浏览器登录的话，事先说一声
-    for (const host of hosts) {
-      const logsIn = ready.some((job) => job.host === host && 'url' in job.mcp.server);
-      if (host.remoteMcpLogin && logsIn) ui.mcpLoginNotice(host, host.remoteMcpLogin);
-    }
-    const decision = await prompter.select(ui.confirmCommands());
-    if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return jobs;
-    ui.nextRound();
-  }
 }
 
 // 逐个问这个 MCP 要的环境变量：先显示说明和申请链接，输入不回显。返回要带上的那些变量的名字；
@@ -297,31 +307,6 @@ async function askKeys(session: Session, mcp: Mcp): Promise<{ variables: string[
     variables.push(variable.name);
   }
   return { variables };
-}
-
-async function runMcpJobs(session: Session, jobs: readonly McpJob[]): Promise<void> {
-  const progress = session.ui.mcpInstallation(jobs.map((job) => job.target));
-  for (const { mcp, target, steps, missingVariable } of jobs) {
-    if (missingVariable !== undefined) {
-      progress.skip(target, missingVariable);
-      continue;
-    }
-    const settle = progress.begin(target);
-    let outcome: McpOutcome;
-    try {
-      await installMcp(steps, session.keys.get(mcp.name) ?? new Map(), session.runCommand);
-      outcome = { ok: true };
-    } catch (error) {
-      if (!(error instanceof McpInstallError)) {
-        settle();
-        throw error;
-      }
-      // 这一项失败不影响其余项
-      outcome = { ok: false, problem: error.problem };
-    }
-    settle(outcome);
-  }
-  progress.finish();
 }
 
 // 工具不装进宿主，所以不问装进哪个：勾选、看将要执行的完整命令、确认，然后逐个执行并复核

@@ -69,8 +69,8 @@ describe('汇总确认', () => {
   it('列出每个 skill 将装到的目录', async () => {
     const result = await run({ answers: installBoth });
 
-    expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
-    expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
+    expect(result.output).toMatch(/^── 将安装 2 项 ─+$/m);
+    expect(result.output).toMatch(/^\s+Skill\s+AI Agent\s+操作\s+位置$/m);
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     expect(result.output).toContain(join('~', '.claude', 'skills', 'alpha'));
     expect(result.output).toContain(join('~', '.claude', 'skills', 'beta-pack'));
@@ -79,7 +79,7 @@ describe('汇总确认', () => {
   it('汇总出现在动手之前：选「取消」什么都不装，回到主菜单', async () => {
     const result = await run({ answers: [choose('推荐'), pick('alpha'), choose('取消'), choose('退出')] });
 
-    expect(result.output).toContain('将安装 1 个 skill');
+    expect(result.output).toContain('将安装 1 项');
     expect(existsSync(skillsDir(result.home))).toBe(false);
     expect(result.output).not.toContain('正在安装');
     expect(result.output.split('选择用途')).toHaveLength(3);
@@ -158,7 +158,7 @@ describe('结果', () => {
       answers: [choose('Recommended'), pick('alpha'), choose('Install'), choose('Exit')],
     });
 
-    expect(result.output).toMatch(/^── Install 1 skill ─+$/m);
+    expect(result.output).toMatch(/^── Install 1 item ─+$/m);
     expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+installed 1\.0\.0$/m);
     expect(result.output).toMatch(/^\s+Total\s+1 succeeded · 0 failed · 0 skipped$/m);
   });

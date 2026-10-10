@@ -13,6 +13,8 @@ import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
 
 const ROWS = 60;
 const down = (times: number): string[] => Array<string>(times).fill(KEY.down);
+// 假装粘贴进来的 key：它不该出现在任何一格画面里
+const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 const BOTH_HOSTS = ['claude', 'codex'];
 
 interface Scene {
@@ -207,15 +209,26 @@ const SHOWCASE_KEYED_MCPS = [
 const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_KEYED_MCPS });
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
 // 混合列表的样例：三个 skill 另外归在「文档处理」下、一个归在「UI 设计、图像与视频」下，mineru 带推荐标记
-const withMixed = catalogOf(
-  { version: 1, skills: SHOWCASE_SKILLS },
+const MIXED_CATALOG = {
+  ...EMPTY_CATALOG,
+  purposes: SHOWCASE_PURPOSES,
+  apps: SHOWCASE_APPS.map((app) => (app.name === 'mineru' ? { ...app, recommended: true } : app)),
+  skillPurposes: { archify: 'documents', explanation: 'documents', pr: 'documents', onetake: 'design-media' },
+};
+const withMixed = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, MIXED_CATALOG);
+// 三种类型同表的样例：在 withMixed 之上，「文档处理」下多三个 MCP——一个带推荐标记，一个只支持 Claude Code，一个的 key 必填
+const DOCUMENT_MCPS = [
+  { name: 'excel', zh: '创建、读取和修改 Excel 工作簿（需要 uv）', en: 'Create, read and edit Excel workbooks (needs uv)', hosts: ['claude-code'], server: { command: 'uvx', args: ['excel-mcp-server', 'stdio'] } },
+  { name: 'markitdown', zh: '把 PDF、Office 文档、图片等转成 Markdown 交给 AI（需要 uv）', en: 'Convert PDFs, Office files and images to Markdown for the AI (needs uv)', recommended: true, server: { command: 'uvx', args: ['markitdown-mcp'] } },
   {
-    ...EMPTY_CATALOG,
-    purposes: SHOWCASE_PURPOSES,
-    apps: SHOWCASE_APPS.map((app) => (app.name === 'mineru' ? { ...app, recommended: true } : app)),
-    skillPurposes: { archify: 'documents', explanation: 'documents', pr: 'documents', onetake: 'design-media' },
+    name: 'mistral-ocr',
+    zh: '识别扫描件和图片里的文字，保留表格与版面，需要 API key',
+    en: 'OCR for scans and images that keeps tables and layout; needs an API key',
+    server: { command: 'npx', args: ['-y', 'mistral-ocr-mcp'] },
+    env: keyed('MISTRAL_API_KEY', true, 'Mistral 的 API 密钥，在控制台的 API Keys 页创建', 'Mistral API key, created on the API Keys page of the console', 'https://console.mistral.ai/api-keys'),
   },
-);
+].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}`, purpose: 'documents' }));
+const withAllKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -325,21 +338,26 @@ const pickMixed = [KEY.down, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space
 // 确认列表、开始安装；pr 在 Claude Code 下不是本工具装的，另问时直接回车（不覆盖）
 const installMixed = [...pickMixed, KEY.enter, KEY.enter, KEY.enter];
 
-// 主菜单上从「推荐」下移到 MCP 再进去
+// withAllKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，markitdown、excel、mistral-ocr 三个 MCP，再是四个外部项目：
+// 勾上 explanation、markitdown 和 mistral-ocr，光标停在 mistral-ocr 上
+const pickSkillAndMcps = [KEY.down, KEY.space, ...down(2), KEY.space, ...down(2), KEY.space];
+// 再勾上 mineru，光标停在它上面
+const pickAllKinds = [...pickSkillAndMcps, KEY.down, KEY.space];
+// 确认之后填好 mistral-ocr 的 key，停在汇总确认上；再回车就开始安装
+const toAllKindsSummary = [...pickAllKinds, KEY.enter, PASTED_KEY, KEY.enter];
+// 样例的 MCP 都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面：下移一行再进去
 const toMcps = [KEY.down, KEY.enter];
 // 勾上 chrome-devtools、context7 和 linear，光标停在 linear 上
 const pickMcps = [...toMcps, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space];
 const runMcps = [...pickMcps, KEY.enter, KEY.enter];
 // 只勾 context7：一个 MCP 装进两个宿主
 const pickOneMcp = [...toMcps, KEY.down, KEY.space, KEY.enter];
-// 检测到两个宿主时，进了 MCP 分组先问装进哪些宿主：两项默认勾选，直接确认
+// 检测到两个宿主时，进了用途先问装进哪些宿主：两项默认勾选，直接确认
 const mcpTwoHosts = (keys: string[]): string[] => [...toMcps, KEY.enter, ...keys.slice(toMcps.length)];
 // 带 key 的样例里 exa 是第三条：只勾它再确认，停在问 key 的提问上
 const toExaKey = [...toMcps, ...down(2), KEY.space, KEY.enter];
 // 勾上 context7（key 可选）和 exa（key 必填），停在第一个 key 的提问上
 const toTwoKeys = [...toMcps, KEY.down, KEY.space, KEY.down, KEY.space, KEY.enter];
-// 假装粘贴进来的 key：它不该出现在任何一格画面里
-const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 // 填好 exa 的 key，停在汇总确认上
 const toKeyedSummary = [...toExaKey, PASTED_KEY, KEY.enter];
 // 勾上 chrome-devtools 和 exa，exa 的 key 留空
@@ -357,6 +375,12 @@ const TOOLS = { catalog: withTools, home: BUN_INSTALLED };
 const KEYED = { catalog: withKeyedMcps };
 const MCP_STATES = { catalog: withMcps, home: CLAUDE_CONFIGURED };
 const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE_CONFIGURED, ...CODEX_UNREADABLE } };
+// 三种类型同表：skill 的四种状态照 MIXED，Claude Code 里 excel 已经配置过
+const ALL_KINDS: Pick<Scene, 'catalog' | 'home' | 'links'> = {
+  catalog: withAllKinds,
+  ...MIXED,
+  home: { ...MIXED.home, '.claude.json': JSON.stringify({ mcpServers: { excel: { command: 'uvx' } } }) },
+};
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -427,6 +451,17 @@ const scenes: Scene[] = [
   { title: '汇总确认 · 一次勾了 skill 和外部项目', note: '汇总只列要装的 skill，外部项目不在里面；列表收成的一行写着勾选的四个里的前三个', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter] },
   { title: '汇总确认 · 混合列表 · 返回修改', note: '回到列表，skill 和外部项目的勾选都还在；不重问宿主', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter, KEY.down, KEY.enter] },
   { title: '结果 · 一次勾了 skill 和外部项目', note: '覆盖前的单独询问、安装、结果照常；合计之后才是外部项目的说明与链接，再回到主菜单', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
+  { title: '混合列表 · skill 加 MCP · 两个宿主', note: '先是 Skill 一段，再是 MCP 一段，最下面是外部项目；两种类型的状态都落在各自宿主的那一栏里。excel 只支持 Claude Code：Codex 那一栏写「不支持」，仍可选', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...down(4)] },
+  { title: '混合列表 · 勾了 skill 和 MCP', note: 'MCP 一段里带推荐的在前；光标在 MCP 上时「类型」写 MCP', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '混合列表 · skill 加 MCP · 一个宿主', note: '只是少一栏状态。excel 在 Claude Code 里已配置', ...ALL_KINDS, keys: [...toMixedDocuments(), ...down(3)] },
+  { title: '混合列表 · skill 加 MCP · 只选了不支持它的宿主', note: '去掉 Claude Code 的勾：excel 一个所选的宿主都不支持，不可选，原因写在状态的位置、占满状态栏', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...down(5), KEY.enter, KEY.space, KEY.enter, ...down(4)] },
+  { title: '混合列表 · skill 加 MCP · 一个宿主都没有', note: '状态只有一栏，skill 和 MCP 都不可选并写明原因；外部项目照常可选', catalog: withAllKinds, onPath: [], keys: [...toMixedDocuments(), ...down(3)] },
+  { title: '填写 key · 混合列表之后', note: '列表确认之后、汇总之前，逐个问勾上的 MCP 要的 key', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickAllKinds, KEY.enter] },
+  { title: '汇总确认 · skill 加带 key 的 MCP', note: '一个分区，按类型分成小表，各张表的栏对齐；将执行的命令只有 MCP 的，key 的位置是占位符；提醒几行挨着。外部项目不在汇总里', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary] },
+  { title: '汇总确认 · skill 加 MCP · 返回修改', note: '回到列表，三种类型的勾选都还在；再确认时填过的 key 不再问', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.down, KEY.enter, KEY.enter] },
+  { title: '正在安装 · skill 之后是 MCP', note: 'skill 已经装完，第一个 MCP 进行中：写的是「正在配置」', onPath: BOTH_HOSTS, ...ALL_KINDS, commands: () => new Promise<never>(() => {}), keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '结果 · 一次勾了 skill、MCP 和外部项目', note: '先是 skill 的各行，再是 MCP 的；合计之后才是外部项目的说明与链接。结果里没有 key 的值', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '结果 · skill 加 MCP · 一条命令失败', note: 'Codex 那边的添加命令非零退出：只有装进 Codex 的那两行失败，其余照常', onPath: BOTH_HOSTS, ...ALL_KINDS, commands: async (command) => (command === 'codex' ? { exitCode: 1 } : ok), keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
   { title: '用途下的列表 · 只有外部项目', note: '多选。表头下面是段标题，写明只给链接；外部项目没有状态，说明紧跟在名称后面；列表下方是光标所在行的类型和说明全文', catalog: withApps, keys: toDocuments },
   { title: '用途下的列表 · 勾了两个', note: '光标所在行的说明比一行长：下方折成两行，续行与说明的左缘对齐', catalog: withApps, keys: pickTwoApps },
   { title: '用途下的列表 · 名字最长的条目', note: '名称一栏按最长的名字定宽，说明相应少占几列', catalog: withApps, keys: toContextMemory },
@@ -435,11 +470,11 @@ const scenes: Scene[] = [
   { title: '外部项目的说明与链接 · 勾了两个', note: '只勾了外部项目：没有汇总，不问开始不开始。每个一段：名字、说明全文、带下划线的完整链接；不打开浏览器。之后回到主菜单', catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '外部项目的说明与链接 · 一个', note: '说明比一行长时折行', catalog: withApps, keys: [...pickOneApp, KEY.enter] },
   { title: '外部项目的说明与链接 · 链接比一行长', note: '链接不截断也不折开，由终端自己折行', catalog: withApps, keys: pickLongLink },
-  { title: '主菜单 · 有 MCP', note: 'catalog.json 里有 MCP 条目时多出这个分组，「目录」一行也数上它', catalog: withMcps },
-  { title: 'MCP 多选列表', note: '状态来自 Claude Code 的用户级配置：已配置、未配置；这个宿主不支持的条目不可选，行尾注明原因', ...MCP_STATES, keys: pickMcps },
-  { title: 'MCP 多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
-  { title: '选择宿主 · 装 MCP', note: '装 MCP 时名字后面不写目录', catalog: withMcps, onPath: BOTH_HOSTS, keys: toMcps },
-  { title: 'MCP 多选列表 · 配置文件读不了', note: 'Codex 的配置读不出来：列表上方说明，它那一栏都是「未知」，没有报错；只有一个宿主支持的条目仍可选', ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '主菜单 · 有 MCP', note: '没有「MCP」这个分组：MCP 数在它的用途里，「目录」一行照旧按类型数', catalog: withMcps },
+  { title: '混合列表 · 只有 MCP 的用途', note: 'MCP 自成一段。状态来自 Claude Code 的用户级配置：已配置、未配置；这个宿主不支持的条目不可选，原因写在状态的位置', ...MCP_STATES, keys: pickMcps },
+  { title: '混合列表 · 在不可选的 MCP 上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明，它的类型和说明照样在', ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '选择宿主 · 只有 MCP 的用途', note: '列表里有组件就问；名字后面不写目录', catalog: withMcps, onPath: BOTH_HOSTS, keys: toMcps },
+  { title: '混合列表 · MCP · 配置文件读不了', note: 'Codex 的配置读不出来：列表上方说明，它那一栏都是「未知」，没有报错；只有一个宿主支持的条目仍可选', ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '汇总确认 · 一个 MCP 装进两个宿主', note: '两条完整的命令都列出来，确认后才执行', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts(pickOneMcp) },
   { title: '汇总确认 · MCP · 覆盖与状态未知', note: '已配置的先移除再添加；状态未知的先尝试移除同名配置。将执行的每一条命令都在下面', ...MCP_TWO_HOSTS, keys: mcpTwoHosts([...pickMcps, KEY.enter]) },
   { title: '汇总确认 · MCP · 只装进支持的宿主', note: 'openai-docs 只支持 Codex：汇总和命令里没有 Claude Code 那一份；远程地址装进 Codex 时，命令下面提醒它可能当场打开浏览器登录', catalog: withMcps, onPath: BOTH_HOSTS, keys: mcpTwoHosts([...toMcps, ...down(3), KEY.space, KEY.enter]) },
@@ -448,7 +483,7 @@ const scenes: Scene[] = [
     note: '有一条备注放不下，就都另起一行，表头不写备注一栏；命令过长时折行，续行与命令的左缘对齐',
     catalog: withLongNameMcp,
     home: { '.claude.json': JSON.stringify({ mcpServers: { [LONG_NAME_MCP.name]: {}, linear: {} } }) },
-    keys: [...toMcps, ...down(2), KEY.space, ...down(2), KEY.space, KEY.enter],
+    keys: [...toMcps, ...down(2), KEY.space, KEY.down, KEY.space, KEY.enter],
   },
   { title: '正在安装 · MCP', note: '一项已配置，另一项进行中：行首的符号转动', ...MCP_STATES, commands: secondHangs, keys: runMcps },
   { title: '结果 · MCP 全部成功', note: '标题由「正在安装」改写成「结果」；之后回到主菜单', ...MCP_STATES, keys: runMcps },
@@ -469,7 +504,7 @@ const scenes: Scene[] = [
   { title: '结果 · 带 key 的 MCP', note: '结果里同样没有 key 的值', ...KEYED, keys: [...toKeyedSummary, KEY.enter] },
   { title: '汇总确认 · 必填的 key 没填', note: '留下的一行说明将跳过它；汇总和命令里只有其余的', ...KEYED, keys: skipExa },
   { title: '结果 · 必填的 key 没填', note: '那一项写明跳过和原因，其余照常', ...KEYED, keys: [...skipExa, KEY.enter] },
-  { title: '结果 · 选中的都没填 key', note: '没有命令要执行：不问执行不执行，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
+  { title: '结果 · 选中的都没填 key', note: '没有要确认的东西：不问开始不开始，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
   { title: '主菜单 · 有工具', note: 'catalog.json 里有工具条目时多出这个分组，「目录」一行也数上它', ...TOOLS },
   { title: '主菜单 · 一个宿主都没有 · 有工具', note: '还没搬进混合列表的旧分组：一个宿主都没检测到时进不去，行尾注明原因；光标落在「推荐」上', ...TOOLS, onPath: [] },
   { title: '主菜单 · 一个宿主都没有 · 在工具分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
@@ -506,8 +541,10 @@ const scenes: Scene[] = [
   { title: '英文界面 · 一个宿主都没有 · 在工具分组上按回车', argv: ['--lang', 'en'], ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
   { title: '英文界面 · 混合列表', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '英文界面 · 混合的汇总与结果', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
-  { title: '英文界面 · MCP 多选列表', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
-  { title: '英文界面 · MCP 多选列表 · 不可选的条目', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '英文界面 · 混合列表 · skill 加 MCP', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '英文界面 · skill 加 MCP 的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '英文界面 · 混合列表 · 只有 MCP', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '英文界面 · 混合列表 · 不可选的 MCP', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '英文界面 · MCP 的汇总与结果', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '英文界面 · 填写 key', argv: ['--lang', 'en'], ...KEYED, keys: toTwoKeys },
   { title: '英文界面 · 含 key 的汇总', argv: ['--lang', 'en'], ...KEYED, keys: [...toTwoKeys, KEY.enter, PASTED_KEY, KEY.enter] },
@@ -527,9 +564,11 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 用途下的列表', note: '设置了 NO_COLOR：段标题、勾选和光标都靠符号认', env: { NO_COLOR: '1' }, catalog: withApps, keys: pickTwoApps },
   { title: '不显示颜色 · 混合列表', note: '设置了 NO_COLOR：类型靠段标题认，推荐靠行上的字认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '不显示颜色 · 混合列表 · 一个宿主都没有', note: '设置了 NO_COLOR：不可选的行靠行首的短横和行里的原因认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
+  { title: '不显示颜色 · 混合列表 · skill 加 MCP', note: '设置了 NO_COLOR：两种类型的状态都是字，不靠颜色', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '不显示颜色 · skill 加 MCP 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
   { title: '不显示颜色 · 外部项目的说明与链接', note: '设置了 NO_COLOR：名字不加粗，链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
-  { title: '不显示颜色 · MCP 多选列表', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
-  { title: '不显示颜色 · MCP 多选列表 · 不可选的条目', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '不显示颜色 · 混合列表 · 只有 MCP', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
+  { title: '不显示颜色 · 混合列表 · 不可选的 MCP', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '不显示颜色 · 填写 key', note: '设置了 NO_COLOR：申请地址没有下划线，文字照旧', env: { NO_COLOR: '1' }, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '不显示颜色 · 含 key 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
@@ -549,9 +588,11 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 用途下的列表', note: '段标题前的横线退成 --，标题里的分隔退成 -', ...LEGACY_CONSOLE, catalog: withApps, keys: pickTwoApps },
   { title: '没有 Unicode · 混合列表', note: '段标题前的横线退成 --，推荐标记后的分隔退成 -', ...LEGACY_CONSOLE, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '没有 Unicode · 混合列表 · 一个宿主都没有', note: '不可选的勾选位退成 [-]，原因仍落在状态一栏', ...LEGACY_CONSOLE, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
+  { title: '没有 Unicode · 混合列表 · skill 加 MCP', note: '各栏照样对齐', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '没有 Unicode · skill 加 MCP 的汇总与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
   { title: '没有 Unicode · 外部项目的说明与链接', ...LEGACY_CONSOLE, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
-  { title: '没有 Unicode · MCP 多选列表', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
-  { title: '没有 Unicode · MCP 多选列表 · 不可选的条目', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
+  { title: '没有 Unicode · 混合列表 · 只有 MCP', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
+  { title: '没有 Unicode · 混合列表 · 不可选的 MCP', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },

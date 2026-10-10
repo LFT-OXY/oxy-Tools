@@ -68,6 +68,9 @@ export const SAMPLE_MCPS = [
   },
 ];
 
+/** 把这些条目都归到样例的第一个用途下：进「联网搜索与文档检索」就是它们同在的那张列表 */
+export const underWebSearch = (...entries: unknown[]): object[] => entries.map((entry) => ({ ...(entry as object), purpose: 'web-search' }));
+
 /** 带 key 的 MCP：一个必填的环境变量。只能是本地进程方式 */
 export const KEYED_MCP = {
   name: 'search-keyed',

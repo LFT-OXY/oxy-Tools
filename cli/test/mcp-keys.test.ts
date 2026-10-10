@@ -1,9 +1,12 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_MCPS, STACK_FRAME, accept, blank, catalogDir, choose, pick, run, secret } from './harness.ts';
+import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_MCPS, STACK_FRAME, accept, blank, catalogDir, choose, pick, run, secret, underWebSearch } from './harness.ts';
 import { screenLines } from './terminal.ts';
 
-const withMcps = (...mcps: unknown[]): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps } });
+// 样例的 MCP 都放进同一个用途：进去之后是一张只有 MCP 一段的混合列表
+const WEB_SEARCH = '联网搜索与文档检索';
+const WEB_SEARCH_EN = 'Web search & docs retrieval';
+const withMcps = (...mcps: unknown[]): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...mcps) } });
 // 用户粘贴进来的 key；它不许出现在任何终端输出里
 const KEY_VALUE = 'sk-test-4f9a2c71d0';
 const TEAM = {
@@ -15,7 +18,7 @@ const TEAM = {
 // 必填的在前、可选的在后
 const WITH_OPTIONAL = { ...KEYED_MCP, env: [...KEYED_MCP.env, TEAM] };
 const both = ['claude', 'codex'];
-const install = (...keys: ReturnType<typeof secret>[]) => [choose('MCP'), pick('search-keyed'), ...keys, choose('执行'), choose('退出')];
+const install = (...keys: ReturnType<typeof secret>[]) => [choose(WEB_SEARCH), pick('search-keyed'), ...keys, choose('开始安装'), choose('退出')];
 
 // 两个宿主带环境变量的添加命令，2026-10-09 对照各自的 --help，并在本机用 claude 2.1.295、codex 0.162.0
 // 在临时配置目录里实测过：值原样进了配置里这个 MCP 的 env；变量跟在名字后面，一个变量一个 -e / --env
@@ -72,7 +75,7 @@ describe('带 key 的 MCP：填写 key', () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output.split('? SEARCH_API_KEY')).toHaveLength(2);
@@ -86,7 +89,7 @@ describe('带 key 的 MCP：填写 key', () => {
   });
 
   it('有几个变量就逐个问，各有各的说明，照目录里的顺序都带上', async () => {
-    const result = await run({ catalog: withMcps(WITH_OPTIONAL), onPath: both, answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), secret('team-42'), choose('执行'), choose('退出')] });
+    const result = await run({ catalog: withMcps(WITH_OPTIONAL), onPath: both, answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), secret('team-42'), choose('开始安装'), choose('退出')] });
 
     expect(result.output).toMatch(/^── search-keyed 可选的 key ─+$/m);
     expect(result.output).toMatch(/^\s+变量\s+SEARCH_TEAM_ID（可选）$/m);
@@ -95,7 +98,7 @@ describe('带 key 的 MCP：填写 key', () => {
   });
 
   it('不带环境变量的 MCP 不问', async () => {
-    const result = await run({ catalog: withMcps(SAMPLE_MCPS[0], KEYED_MCP), answers: [choose('MCP'), pick('docs-local'), choose('执行'), choose('退出')] });
+    const result = await run({ catalog: withMcps(SAMPLE_MCPS[0], KEYED_MCP), answers: [choose(WEB_SEARCH), pick('docs-local'), choose('开始安装'), choose('退出')] });
 
     expect(result.output).not.toMatch(/^── .* key ─/m);
     expect(result.output).not.toContain('占位符');
@@ -125,11 +128,11 @@ describe('带 key 的 MCP：必填项留空', () => {
   it('跳过这个 MCP 并在结果里说明原因，其余选中的照常安装', async () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP, SAMPLE_MCPS[0]),
-      answers: [choose('MCP'), pick('search-keyed', 'docs-local'), blank(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'docs-local'), blank(), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^– SEARCH_API_KEY · 必填，未填写；将跳过 search-keyed$/m);
-    expect(result.output).toMatch(/^── 将安装 1 个 MCP ─+$/m);
+    expect(result.output).toMatch(/^── 将安装 1 项 ─+$/m);
     expect(result.output).toMatch(/^── 将执行 1 条命令 ─+$/m);
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
     expect(result.output).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的 SEARCH_API_KEY$/m);
@@ -144,21 +147,21 @@ describe('带 key 的 MCP：必填项留空', () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP, SAMPLE_MCPS[0]),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed', 'docs-local'), blank(), choose('取消'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed', 'docs-local'), blank(), choose('取消'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+search-keyed 缺少必填的 SEARCH_API_KEY，这次不安装$/m);
     // 按 MCP 说一次，不是每个宿主说一次
     expect(result.output.split('这次不安装')).toHaveLength(2);
     expect(result.output.indexOf('将执行 2 条命令')).toBeLessThan(result.output.indexOf('这次不安装'));
-    expect(result.output.indexOf('这次不安装')).toBeLessThan(result.output.indexOf('执行这些命令吗'));
+    expect(result.output.indexOf('这次不安装')).toBeLessThan(result.output.indexOf('开始安装吗'));
   });
 
   it('变量名长到一行放不下时，结果的标题照样改写成「结果」，没有写到别的行上', async () => {
     const LONG = 'SEARCH_SERVICE_PRODUCTION_ACCOUNT_PERSONAL_ACCESS_TOKEN';
     const result = await run({
       catalog: withMcps({ ...KEYED_MCP, env: [{ ...KEYED_MCP.env[0], name: LONG }] }, SAMPLE_MCPS[0]),
-      answers: [choose('MCP'), pick('search-keyed', 'docs-local'), blank(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'docs-local'), blank(), choose('开始安装'), choose('退出')],
     });
 
     const lines = await screenLines(result.raw);
@@ -166,16 +169,17 @@ describe('带 key 的 MCP：必填项留空', () => {
     expect(title).toBeGreaterThan(-1);
     expect(lines.some((line) => line.includes('正在安装'))).toBe(false);
     expect(lines[title + 1]).toBe('');
+    // 一段里按名字排：docs-local 在前
+    expect(lines[title + 2]).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/);
     // 原因自己折了行；变量名是一个折不开的词，再被终端折成两行
-    expect(lines[title + 2]).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的$/);
-    expect(`${lines[title + 3]?.trim()}${lines[title + 4]?.trim()}`).toBe(LONG);
-    expect(lines[title + 5]).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/);
+    expect(lines[title + 3]).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的$/);
+    expect(`${lines[title + 4]?.trim()}${lines[title + 5]?.trim()}`).toBe(LONG);
   });
 
   it('这个 MCP 后面的变量不再问', async () => {
     const result = await run({
       catalog: withMcps(WITH_OPTIONAL, SAMPLE_MCPS[0]),
-      answers: [choose('MCP'), pick('search-keyed', 'docs-local'), blank(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'docs-local'), blank(), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).not.toContain('SEARCH_TEAM_ID');
@@ -186,7 +190,7 @@ describe('带 key 的 MCP：必填项留空', () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP, SAMPLE_MCPS[0]),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed', 'docs-local'), blank(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed', 'docs-local'), blank(), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的 SEARCH_API_KEY$/m);
@@ -194,10 +198,10 @@ describe('带 key 的 MCP：必填项留空', () => {
     expect(result.output).toMatch(/^\s+合计\s+2 成功 · 0 失败 · 2 跳过$/m);
   });
 
-  it('选中的都因此被跳过时没有命令要执行：不问执行不执行，直接给出结果并回到主菜单', async () => {
-    const result = await run({ catalog: withMcps(KEYED_MCP), answers: [choose('MCP'), pick('search-keyed'), blank(), choose('退出')] });
+  it('选中的都因此被跳过时没有命令要执行：不问开始不开始，直接给出结果并回到主菜单', async () => {
+    const result = await run({ catalog: withMcps(KEYED_MCP), answers: [choose(WEB_SEARCH), pick('search-keyed'), blank(), choose('退出')] });
 
-    expect(result.output).not.toContain('执行这些命令吗');
+    expect(result.output).not.toContain('开始安装吗');
     expect(result.output).not.toContain('将执行');
     expect(result.commands).toEqual([]);
     expect(result.output).toMatch(/^\s+–\s+search-keyed\s+Claude Code\s+跳过 未填写必填的 SEARCH_API_KEY$/m);
@@ -212,7 +216,7 @@ describe('带 key 的 MCP：汇总确认', () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
     const shown = unwrapped(result.output);
@@ -220,11 +224,11 @@ describe('带 key 的 MCP：汇总确认', () => {
     expect(shown).toContain(' 2 codex mcp add search-keyed --env SEARCH_API_KEY=<SEARCH_API_KEY> -- npx -y @example/search-mcp ');
     expect(result.output).toMatch(/^\s+注意\s+key 以占位符显示，执行时才代入真实的值$/m);
     expect(result.output.indexOf('将执行 2 条命令')).toBeLessThan(result.output.indexOf('key 以占位符显示'));
-    expect(result.output.indexOf('key 以占位符显示')).toBeLessThan(result.output.indexOf('执行这些命令吗'));
+    expect(result.output.indexOf('key 以占位符显示')).toBeLessThan(result.output.indexOf('开始安装吗'));
   });
 
   it('确认之前不执行：选了取消，带着 key 的命令也没有执行', async () => {
-    const result = await run({ catalog: withMcps(KEYED_MCP), answers: [choose('MCP'), pick('search-keyed'), secret(KEY_VALUE), choose('取消'), choose('退出')] });
+    const result = await run({ catalog: withMcps(KEYED_MCP), answers: [choose(WEB_SEARCH), pick('search-keyed'), secret(KEY_VALUE), choose('取消'), choose('退出')] });
 
     expect(result.output).toContain('SEARCH_API_KEY=<SEARCH_API_KEY>');
     expect(result.commands).toEqual([]);
@@ -248,7 +252,7 @@ describe('带 key 的 MCP：key 的值不出现在任何输出里', () => {
     const result = await run({
       catalog: withMcps(WITH_OPTIONAL),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), secret('team-42'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), secret('team-42'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.commands).toHaveLength(2);
@@ -284,7 +288,7 @@ describe('带 key 的 MCP：key 的值不出现在任何输出里', () => {
         if (args.includes('search-keyed')) throw new TypeError(`The argument 'args' is invalid. Received ${command} ${args.join(' ')}`);
         return undefined;
       },
-      answers: [choose('MCP'), pick('search-keyed', 'docs-local'), secret(KEY_VALUE), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'docs-local'), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output).toMatch(/^\s+✗\s+search-keyed\s+Claude Code\s+失败 添加命令没能运行$/m);
@@ -296,7 +300,7 @@ describe('带 key 的 MCP：key 的值不出现在任何输出里', () => {
   });
 
   it('安装器不把它写进任何文件：主目录和临时目录里什么都没有多', async () => {
-    const result = await run({ catalog: withMcps(KEYED_MCP), onPath: both, answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('执行'), choose('退出')] });
+    const result = await run({ catalog: withMcps(KEYED_MCP), onPath: both, answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('开始安装'), choose('退出')] });
 
     expect(result.commands).toHaveLength(2);
     expect(readdirSync(result.home)).toEqual([]);
@@ -308,7 +312,7 @@ describe('带 key 的 MCP：同一次运行里一个变量只问一次', () => {
   it('返回修改后再确认，填过的不再问，留下一行说明', async () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP),
-      answers: [choose('MCP'), pick('search-keyed'), secret(KEY_VALUE), choose('返回修改'), accept(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed'), secret(KEY_VALUE), choose('返回修改'), accept(), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output.split('? SEARCH_API_KEY')).toHaveLength(2);
@@ -319,7 +323,7 @@ describe('带 key 的 MCP：同一次运行里一个变量只问一次', () => {
   it('装完回到主菜单再装一次，同样不再问', async () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP),
-      answers: [choose('MCP'), pick('search-keyed'), secret(KEY_VALUE), choose('执行'), choose('MCP'), pick('search-keyed'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed'), secret(KEY_VALUE), choose('开始安装'), choose(WEB_SEARCH), pick('search-keyed'), choose('开始安装'), choose('退出')],
     });
 
     expect(result.commands).toEqual([CLAUDE_ADD_KEYED, CLAUDE_ADD_KEYED]);
@@ -328,23 +332,25 @@ describe('带 key 的 MCP：同一次运行里一个变量只问一次', () => {
   it('留空的不算填过：回头再选它时重新问', async () => {
     const result = await run({
       catalog: withMcps(KEYED_MCP, SAMPLE_MCPS[0]),
-      answers: [choose('MCP'), pick('search-keyed', 'docs-local'), blank(), choose('返回修改'), accept(), secret(KEY_VALUE), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'docs-local'), blank(), choose('返回修改'), accept(), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
     expect(result.output.split('? SEARCH_API_KEY')).toHaveLength(3);
-    expect(result.commands).toEqual([CLAUDE_ADD_KEYED, CLAUDE_ADD_LOCAL]);
+    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, CLAUDE_ADD_KEYED]);
   });
 
   it('两个 MCP 用了同名的变量时各问各的，值不串', async () => {
+    // 照列表里的先后问：other-keyed 按名字排在前面
     const result = await run({
       catalog: withMcps(KEYED_MCP, { ...KEYED_MCP, name: 'other-keyed' }),
-      answers: [choose('MCP'), pick('search-keyed', 'other-keyed'), secret(KEY_VALUE), secret('other-value-77'), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('search-keyed', 'other-keyed'), secret('other-value-77'), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^── other-keyed 需要 key ─+$/m);
-    expect(result.commands.map(({ args }) => args.filter((arg) => arg.startsWith('SEARCH_API_KEY=')))).toEqual([
-      [`SEARCH_API_KEY=${KEY_VALUE}`],
-      ['SEARCH_API_KEY=other-value-77'],
+    expect(result.output.indexOf('── other-keyed 需要 key ─')).toBeLessThan(result.output.indexOf('── search-keyed 需要 key ─'));
+    expect(result.output.indexOf('── other-keyed 需要 key ─')).toBeGreaterThan(-1);
+    expect(result.commands.map(({ args }) => args.filter((arg) => arg.endsWith('-keyed') || arg.startsWith('SEARCH_API_KEY=')))).toEqual([
+      ['other-keyed', 'SEARCH_API_KEY=other-value-77'],
+      ['search-keyed', `SEARCH_API_KEY=${KEY_VALUE}`],
     ]);
   });
 });
@@ -354,7 +360,7 @@ describe('带 key 的 MCP：只支持一部分宿主', () => {
     const result = await run({
       catalog: withMcps({ ...KEYED_MCP, hosts: ['codex'] }),
       onPath: both,
-      answers: [choose('MCP'), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), accept(), pick('search-keyed'), secret(KEY_VALUE), choose('开始安装'), choose('退出')],
     });
 
     expect(result.commands).toEqual([CODEX_ADD_KEYED]);
@@ -363,7 +369,7 @@ describe('带 key 的 MCP：只支持一部分宿主', () => {
 
 describe('目录里写坏的环境变量', () => {
   const variable = KEYED_MCP.env[0];
-  const browse = [choose('MCP'), pick(), choose('退出')];
+  const browse = [choose(WEB_SEARCH), pick(), choose('退出')];
 
   it.each([
     ['远程地址方式的条目带了环境变量', { ...KEYED_MCP, server: { url: 'https://mcp.example.org/mcp' } }],
@@ -382,7 +388,7 @@ describe('目录里写坏的环境变量', () => {
     const result = await run({ catalog: withMcps(entry, SAMPLE_MCPS[0]), answers: browse });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+MCP\s+1\s/m);
+    expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+1$/m);
     expect(result.output).not.toContain('search-keyed');
     expect(result.exitCode).toBe(0);
   });
@@ -400,7 +406,7 @@ describe('英文界面的带 key 的 MCP', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withMcps(WITH_OPTIONAL, { ...KEYED_MCP, name: 'other-keyed' }),
-      answers: [choose('MCP'), pick('search-keyed', 'other-keyed'), secret(KEY_VALUE), blank(), blank(), choose('Run'), choose('Exit')],
+      answers: [choose(WEB_SEARCH_EN), pick('search-keyed', 'other-keyed'), blank(), secret(KEY_VALUE), blank(), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^── search-keyed needs a key ─+$/m);
@@ -426,7 +432,7 @@ describe('英文界面的带 key 的 MCP', () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withMcps(KEYED_MCP),
-      answers: [choose('MCP'), pick('search-keyed'), secret(KEY_VALUE), choose('Go back and change'), accept(), choose('Cancel'), choose('Exit')],
+      answers: [choose(WEB_SEARCH_EN), pick('search-keyed'), secret(KEY_VALUE), choose('Go back and change'), accept(), choose('Cancel'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^✓ SEARCH_API_KEY · already entered in this run; not asked again$/m);

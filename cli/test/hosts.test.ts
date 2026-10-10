@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_MCPS, accept, catalogDir, choose, pick, run } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run } from './harness.ts';
 
 const claudeSkills = (home: string): string => join(home, '.claude', 'skills');
 const codexSkills = (home: string): string => join(home, '.agents', 'skills');
@@ -112,7 +112,7 @@ describe('检测到两个宿主', () => {
       answers: [choose('推荐'), bothHosts, pick('alpha', 'beta-pack'), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^── 将安装 2 个 skill ─+$/m);
+    expect(result.output).toMatch(/^── 将安装 2 项 ─+$/m);
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     // 同一条目的后续行不重复名字
     expect(result.output).toMatch(/^\s+Codex\s+新装\s+~\S+alpha$/m);
@@ -208,23 +208,23 @@ describe('一个宿主都没检测到', () => {
     expect(readdirSync(result.home)).toEqual([]);
   });
 
-  // 目录里没有 skill 也没有外部项目：主菜单上只有 MCP 这个旧分组和退出
-  const onlyMcps = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS } });
+  // 目录里只有工具：主菜单上只有工具这个旧分组和退出
+  const onlyTools = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } });
 
   it('旧分组不可进入并注明原因，光标落在能选的那一项上', async () => {
     // 直接回车：第一行不可进入，光标起始所在的那一项是「退出」，所以这一个应答就结束了
-    const result = await run({ catalog: onlyMcps(), onPath: [], answers: [accept()] });
+    const result = await run({ catalog: onlyTools(), onPath: [], answers: [accept()] });
 
-    expect(result.output).toMatch(/^- MCP\s+2\s+写进 AI Agent 配置的 MCP 服务器 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^- 工具\s+2\s+执行其官方安装命令装上的工具 · 需要 AI Agent$/m);
     expect(result.output).not.toContain('选择要安装的');
     expect(result.exitCode).toBe(0);
     expect(readdirSync(result.home)).toEqual([]);
   });
 
   it('英文界面下旧分组的原因也是英文', async () => {
-    const result = await run({ argv: ['--lang', 'en'], catalog: onlyMcps(), onPath: [], answers: [accept()] });
+    const result = await run({ argv: ['--lang', 'en'], catalog: onlyTools(), onPath: [], answers: [accept()] });
 
-    expect(result.output).toMatch(/^- MCP\s+2\s+MCP servers written into your AI Agent.* · needs an AI Agent$/m);
+    expect(result.output).toMatch(/^- Tools\s+2\s+Installed by running.* · needs an AI Agent$/m);
     expect(result.exitCode).toBe(0);
   });
 

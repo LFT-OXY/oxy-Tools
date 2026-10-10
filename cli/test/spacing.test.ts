@@ -1,27 +1,31 @@
 // 块与块之间的空行：提问与选项、分区标题与内容、已回答的提问与下一块、说明与按键提示之间各隔一行，
 // 任何地方都没有连着两行空行。提问是交互库画的，所以这里的画面都由无头终端还原。
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, KEY, KEYED_MCP, LONG_ABOUT, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run, secret } from './harness.ts';
+import { EMPTY_CATALOG, KEY, KEYED_MCP, LONG_ABOUT, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run, secret, underWebSearch } from './harness.ts';
 import { screenLines } from './terminal.ts';
 
 // 按键提示是每个提问最后画出来的一行，等到它就说明这个提问已经在等按键了
 const HINT = '⏎ 选择';
 const PICK_HINT = '⏎ 确认';
 const BOTH_HOSTS = ['claude', 'codex'];
-// 两个用途下各有一个外部项目，两个旧分组也都有条目：主菜单上「推荐」在最前，各个用途排在旧分组前面
-const fullCatalog = (): string =>
-  catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
-// 没有外部项目，主菜单上只有「推荐」和两个旧分组：光标起始就在「推荐」上
-const componentCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS } });
+// 两个用途下各有一个外部项目，工具这个旧分组也有条目：主菜单上「推荐」在最前，各个用途排在旧分组前面
+const fullCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+// 这些 MCP 都放进第一个用途：进去之后是一张只有 MCP 一段的列表
+const withMcps = (...mcps: unknown[]): Record<string, unknown> => ({ ...EMPTY_CATALOG, mcps: underWebSearch(...mcps) });
+// 没有外部项目：主菜单上是「推荐」、放着两个 MCP 的第一个用途、工具这个旧分组
+const componentCatalog = (): string => catalogDir({ catalog: { ...withMcps(...SAMPLE_MCPS), tools: SAMPLE_TOOLS } });
 
-// 主菜单上把光标从「推荐」移到别的分组再回车；目录里没有外部项目时才这样走
-const toMcps: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.enter]];
-const toTools: [string, string][] = [[HINT, KEY.down], ['▸ MCP', KEY.down], ['▸ 工具', KEY.enter]];
-// fullCatalog 的主菜单上「推荐」下面是第一个用途，它下面是 borealis
+// 主菜单上「推荐」下面是第一个用途：fullCatalog 里它下面是 borealis，放了 MCP 的目录里是那几个 MCP
 const toPurpose: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter]];
+const toMcps = toPurpose;
+// 第一个用途下面就是旧分组；别的用途下没有条目时才这样走
+const toTools: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 工具', KEY.enter]];
 // alpha 另外归在第一个用途下：那张列表里 skill 和外部项目都有
 const mixedCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS, skillPurposes: { alpha: 'web-search' } } });
+// 再加上 MCP：第一个用途下三种类型各有一条（alpha、docs-local、borealis）
+const allKindsCatalog = (): string =>
+  catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, apps: SAMPLE_APPS, skillPurposes: { alpha: 'web-search' } } });
 
 // 最后留在画面上的每一行
 const screenOf = async (options: Parameters<typeof run>[0]): Promise<string[]> => screenLines((await run(options)).raw);
@@ -53,7 +57,7 @@ describe('提问与它下面的表或选项之间空一行', () => {
 
   it.each([
     ['「推荐」', [[HINT, KEY.enter]], '? 选择要安装的条目', /^\s+名称\s+Claude Code\s+说明$/],
-    ['MCP', toMcps, '? 选择要安装的 MCP', /^\s+名称\s+Claude Code\s+说明$/],
+    ['只有 MCP 的用途', toMcps, '? 选择要安装的条目', /^\s+名称\s+Claude Code\s+说明$/],
     ['工具', toTools, '? 选择要安装的工具', /^\s+名称\s+状态\s+说明$/],
   ] as [string, [string, string][], string, RegExp][])('%s 的多选列表：与表头之间', async (_label, toList, question, header) => {
     const lines = await screenOf({ catalog: componentCatalog(), keys: [...toList, [PICK_HINT, KEY.ctrlC]] });
@@ -69,6 +73,22 @@ describe('提问与它下面的表或选项之间空一行', () => {
       expect.stringMatching(/^\s+名称\s+说明$/),
       expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
       expect.stringMatching(/^▸□ borealis\s/),
+    ]);
+  });
+
+  it('三种类型都有：组件的两段之间不空，组件与外部项目之间空一行', async () => {
+    const lines = await screenOf({ catalog: allKindsCatalog(), keys: [...toPurpose, [PICK_HINT, KEY.ctrlC]] });
+
+    expect(after(lines, '? 选择要安装的条目', 9)).toEqual([
+      '',
+      expect.stringMatching(/^\s+名称\s+Claude Code\s+说明$/),
+      expect.stringMatching(/^\s+── Skill$/),
+      expect.stringMatching(/^▸□ alpha\s+未装\s+推荐 · /),
+      expect.stringMatching(/^\s+── MCP$/),
+      expect.stringMatching(/^ □ docs-local\s+未配置\s/),
+      '',
+      expect.stringMatching(/^\s+── 外部项目 · 只给链接，不安装$/),
+      expect.stringMatching(/^ □ borealis\s/),
     ]);
   });
 
@@ -202,16 +222,34 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
     expect(after(lines, /^▸– beta-pack\s/, 2)).toEqual(['', expect.stringMatching(/^\s+类型\s+Skill$/)]);
   });
 
-  it('多选：在不可选的条目上按空格，「这一项现在选不了」与按键提示之间空一行', async () => {
+  it('所选宿主都不支持的 MCP：在它上面按空格，「这一项现在选不了」后面跟着它的类型和说明', async () => {
     // 第一条只支持 Claude Code：只检测到 Codex 时它不可选
-    const mcps = [{ ...SAMPLE_MCPS[0], name: 'claude-only', hosts: ['claude-code'] }, SAMPLE_MCPS[1]];
     const lines = await screenOf({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps } }),
+      catalog: catalogDir({ catalog: withMcps({ ...SAMPLE_MCPS[0], name: 'claude-only', hosts: ['claude-code'] }, SAMPLE_MCPS[1]) }),
       onPath: ['codex'],
       keys: [...toMcps, [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
     });
 
-    expect(after(lines, /^ □ tracker-remote\s/, 4)).toEqual([
+    expect(after(lines, /^ □ tracker-remote\s/, 7)).toEqual([
+      '',
+      expect.stringMatching(/^\s+注意\s+这一项现在选不了$/),
+      expect.stringMatching(/^\s+类型\s+MCP$/),
+      expect.stringMatching(/^\s+说明\s+本地进程方式的样例 MCP/),
+      expect.stringMatching(/^\s+\S/),
+      '',
+      expect.stringMatching(PICK_KEYS),
+    ]);
+  });
+
+  it('工具的列表：在不可选的条目上按空格，「这一项现在选不了」与按键提示之间空一行', async () => {
+    // 第一条把这个系统标为不支持：它不可选，光标起始就停在它上面
+    const tools = [{ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', linux: null } }, ...SAMPLE_TOOLS];
+    const lines = await screenOf({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools } }),
+      keys: [[HINT, KEY.down], ['▸ 工具', KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
+    });
+
+    expect(after(lines, /^ □ linter\s/, 4)).toEqual([
       '',
       expect.stringMatching(/^\s+注意\s+这一项现在选不了$/),
       '',
@@ -223,7 +261,7 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
     const lines = await screenOf({
       catalog: componentCatalog(),
       onPath: [],
-      keys: [[HINT, KEY.down], ['▸ MCP', KEY.enter], ['这一项现在选不了', KEY.ctrlC]],
+      keys: [...toTools, ['这一项现在选不了', KEY.ctrlC]],
     });
 
     expect(after(lines, '  退出', 4)).toEqual([
@@ -319,27 +357,27 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
       keys: [...toMcps, [PICK_HINT, KEY.ctrlC]],
     });
 
-    expect(after(lines, '✓ 选择用途 · MCP', 4)).toEqual(['', expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/), '', '? 选择要安装的 MCP']);
+    expect(after(lines, '✓ 选择用途 · 联网搜索与文档检索', 4)).toEqual(['', expect.stringMatching(/^\s+注意\s+读不到 Claude Code 的配置/), '', '? 选择要安装的条目']);
   });
 
   it('沿用的 key 留下的一行和已回答的提问同一个画法：紧挨着上一行', async () => {
     const pickKeyed: [string, string][] = [...toMcps, [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter]];
     const lines = await screenOf({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP] } }),
+      catalog: catalogDir({ catalog: withMcps(KEYED_MCP) }),
       keys: [...pickKeyed, ['粘贴后回车', 'k'], ['粘贴后回车', KEY.enter], [HINT, KEY.enter], ...pickKeyed, [HINT, KEY.ctrlC]],
     });
 
-    const second = lines.lastIndexOf('✓ 选择要安装的 MCP · search-keyed');
+    const second = lines.lastIndexOf('✓ 选择要安装的条目 · search-keyed');
     expect(lines.slice(second + 1, second + 4)).toEqual([
       '✓ SEARCH_API_KEY · 本次运行已填写，不再询问',
       '',
-      expect.stringMatching(/^── 将安装 1 个 MCP ─+$/),
+      expect.stringMatching(/^── 将安装 1 项 ─+$/),
     ]);
   });
 
   it('填写 key：提问擦掉后，留下的一行与上面的说明隔一行', async () => {
     const lines = await screenOf({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP] } }),
+      catalog: catalogDir({ catalog: withMcps(KEYED_MCP) }),
       keys: [...toMcps, [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter], ['粘贴后回车', 'k'], ['粘贴后回车', KEY.enter], [HINT, KEY.ctrlC]],
     });
 
@@ -355,17 +393,17 @@ describe('分区标题下方空一行', () => {
   it('skill 的汇总：标题与表头之间', async () => {
     const lines = await printed({ answers: [choose('推荐'), pick('alpha'), choose('取消'), choose('退出')] });
 
-    expect(after(lines, /^── 将安装 1 个 skill ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+条目\s+AI Agent\s+操作\s+位置$/)]);
+    expect(after(lines, /^── 将安装 1 项 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+Skill\s+AI Agent\s+操作\s+位置$/)]);
   });
 
   it('MCP 的汇总、将执行的命令、key 的说明', async () => {
     const lines = await printed({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP] } }),
-      answers: [choose('MCP'), pick('search-keyed'), secret('k'), choose('取消'), choose('退出')],
+      catalog: catalogDir({ catalog: withMcps(KEYED_MCP) }),
+      answers: [choose('联网搜索与文档检索'), pick('search-keyed'), secret('k'), choose('取消'), choose('退出')],
     });
 
     expect(after(lines, /^── search-keyed 需要 key ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+变量\s+SEARCH_API_KEY/)]);
-    expect(after(lines, /^── 将安装 1 个 MCP ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+条目\s+AI Agent\s+操作$/)]);
+    expect(after(lines, /^── 将安装 1 项 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+MCP\s+AI Agent\s+操作$/)]);
     expect(after(lines, /^── 将执行 1 条命令 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+1\s+claude mcp add/)]);
   });
 
@@ -503,10 +541,10 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(visible.filter((line) => /^.□ app-\d\d\s/.test(line))).toHaveLength(13);
   });
 
-  it('24 行的终端里主菜单不滚动：「推荐」、十个用途、两个旧分组、「退出」和表头都在', async () => {
+  it('24 行的终端里主菜单不滚动：「推荐」、十个用途、工具这个旧分组、「退出」和表头都在', async () => {
     const purposes = Array.from({ length: 10 }, (_, index) => ({ id: `purpose-${index}`, name: { zh: `第 ${index} 个用途`, en: `Purpose ${index}` } }));
     const apps = purposes.map(({ id }, index) => ({ ...SAMPLE_APPS[1], name: `app-${index}`, purpose: id }));
-    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes: [...purposes, ...EMPTY_CATALOG.purposes], mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps } });
+    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes, tools: SAMPLE_TOOLS.map((tool) => ({ ...tool, purpose: 'purpose-0' })), apps } });
     const result = await run({ catalog, rows: ROWS, keys: [[HINT, KEY.ctrlC]] });
     const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
 
@@ -517,7 +555,7 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(visible.some((line) => /^\s+用途\s+数量\s+说明$/.test(line))).toBe(true);
   });
 
-  it('很矮的终端里列表最少也有 7 行：「推荐」、一个用途、两个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
+  it('很矮的终端里列表最少也有 7 行：「推荐」、两个用途、工具这个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
     const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: [SAMPLE_APPS[1]] } });
     const result = await run({ catalog, rows: 12, keys: [[HINT, KEY.ctrlC]] });
     const lines = await screenLines(result.raw, 60);
@@ -527,7 +565,7 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
       expect.stringMatching(/^\s+用途\s+数量\s+说明$/),
       expect.stringMatching(/^▸ 推荐\s/),
       expect.stringMatching(/^\s+联网搜索与文档检索\s/),
-      expect.stringMatching(/^\s+MCP\s/),
+      expect.stringMatching(/^\s+开发工作流与规范\s/),
       expect.stringMatching(/^\s+工具\s/),
       '',
       expect.stringMatching(/^\s+退出$/),
@@ -554,7 +592,9 @@ describe('任何地方都没有连着两行空行', () => {
     return at === -1 ? undefined : shown.slice(Math.max(0, at - 2), at + 4).join('\n');
   };
   const unmanaged = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
-  const keyed = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: [KEYED_MCP, ...SAMPLE_MCPS] } });
+  // 一段里按名字排：docs-local、search-keyed、tracker-remote
+  const keyed = (): string => catalogDir({ catalog: withMcps(KEYED_MCP, ...SAMPLE_MCPS) });
+  const pickKeyed: [string, string][] = [...toMcps, [PICK_HINT, KEY.down], ['▸□ search-keyed', KEY.space], ['▸■ search-keyed', KEY.enter]];
 
   // 样例目录建在临时目录里，每条测试结束就删：所以到用的时候才建
   it.each<[string, () => Parameters<typeof run>[0], [string, string][]]>([
@@ -593,16 +633,14 @@ describe('任何地方都没有连着两行空行', () => {
         ['粘贴后回车', 'k'],
         ['粘贴后回车', KEY.enter],
         [HINT, KEY.enter],
-        ...toMcps,
-        [PICK_HINT, KEY.space],
-        ['▸■ search-keyed', KEY.enter],
+        ...pickKeyed,
         [HINT, KEY.down],
       ],
     ],
     [
       'MCP：必填的 key 留空，直接到结果',
       () => ({ catalog: keyed() }),
-      [...toMcps, [PICK_HINT, KEY.space], ['▸■ search-keyed', KEY.enter], ['粘贴后回车', KEY.enter], [HINT, KEY.down]],
+      [...pickKeyed, ['粘贴后回车', KEY.enter], [HINT, KEY.down]],
     ],
     [
       '工具：两条命令、各自的执行分区、结果',
@@ -626,12 +664,17 @@ describe('任何地方都没有连着两行空行', () => {
     [
       '一个宿主都没检测到：在不可进入的分组上按回车',
       () => ({ catalog: fullCatalog(), onPath: [] }),
-      [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ MCP', KEY.enter], ['这一项现在选不了', KEY.down]],
+      [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ 工具', KEY.enter], ['这一项现在选不了', KEY.down]],
     ],
     [
       '混合列表：一次勾 skill 和外部项目，装完列出链接再回主菜单',
       () => ({ catalog: mixedCatalog() }),
       [...toPurpose, [PICK_HINT, 'a'], [' ■ borealis', KEY.enter], [HINT, KEY.enter], [HINT, KEY.down]],
+    ],
+    [
+      '混合列表：一次勾 skill、MCP 和外部项目，汇总、命令、装完列出链接再回主菜单',
+      () => ({ catalog: allKindsCatalog(), home: unmanaged }),
+      [...toPurpose, [PICK_HINT, 'a'], [' ■ borealis', KEY.enter], [HINT, KEY.enter], ['(y/N)', KEY.enter], [HINT, KEY.down]],
     ],
     [
       '一个宿主都没检测到：进「推荐」，在不可选的 skill 上按空格，再什么都不勾返回',

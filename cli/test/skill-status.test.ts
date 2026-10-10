@@ -109,7 +109,7 @@ describe('覆盖已装的 skill', () => {
   it('全是新装时每行写「新装」，没有覆盖的提醒', async () => {
     const result = await run({ answers: installBoth });
 
-    expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
+    expect(result.output).toMatch(/^\s+Skill\s+AI Agent\s+操作\s+位置$/m);
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+新装\s+~\S+alpha$/m);
     expect(result.output).toMatch(/^\s+beta-pack\s+Claude Code\s+新装\s+~\S+beta-pack$/m);
     expect(result.output).not.toContain('覆盖');
@@ -122,7 +122,7 @@ describe('覆盖已装的 skill', () => {
       answers: installBoth,
     });
 
-    expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置\s+备注$/m);
+    expect(result.output).toMatch(/^\s+Skill\s+AI Agent\s+操作\s+位置\s+备注$/m);
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+覆盖\s+~\S+alpha\s+重装 1\.0\.0$/m);
     expect(result.output).toMatch(/^\s+beta-pack\s+Claude Code\s+覆盖\s+~\S+beta-pack\s+2\.0 → 2\.3$/m);
     expect(result.output).toMatch(NOTICE);
@@ -172,7 +172,7 @@ describe('覆盖已装的 skill', () => {
         answers: [choose('推荐'), pick(longName), choose('开始安装'), choose('退出')],
       });
 
-      expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
+      expect(result.output).toMatch(/^\s+Skill\s+AI Agent\s+操作\s+位置$/m);
       expect(result.output).not.toContain('备注');
     });
 
@@ -183,7 +183,7 @@ describe('覆盖已装的 skill', () => {
         answers: [choose('推荐'), pick('beta-pack', longName), choose('开始安装'), no(), choose('退出')],
       });
 
-      expect(result.output).toMatch(/^\s+条目\s+AI Agent\s+操作\s+位置$/m);
+      expect(result.output).toMatch(/^\s+Skill\s+AI Agent\s+操作\s+位置$/m);
       expect(result.output).not.toMatch(/^\s+备注$/m);
       expect(result.output).toMatch(/^\s+beta-pack\s+Claude Code\s+覆盖\s+~\S+beta-pack$/m);
       expect(result.output).toMatch(/^\s+2\.0 → 2\.3$/m);
@@ -198,7 +198,7 @@ describe('覆盖已装的 skill', () => {
       answers: [choose('Recommended'), pick('alpha', 'beta-pack'), choose('Install'), choose('Exit')],
     });
 
-    expect(result.output).toMatch(/^\s+Entry\s+AI Agent\s+Action\s+Location(\s+Note)?$/m);
+    expect(result.output).toMatch(/^\s+Skills\s+AI Agent\s+Action\s+Location(\s+Note)?$/m);
     expect(result.output).toMatch(/^\s+alpha\s+Claude Code\s+overwrite\s+~\S+alpha\s+reinstall 1\.0\.0$/m);
     expect(result.output).toMatch(/^\s+beta-pack\s+Claude Code\s+overwrite\s+~\S+beta-pack\s+2\.0 → 2\.3$/m);
     expect(result.output).toMatch(/^\s+Notice\s+Overwriting replaces the whole directory; local changes are lost$/m);

@@ -6,14 +6,14 @@
 
 ## 只有呈现层往终端上写
 
-`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary(targets)`、`ui.mainMenu(recommended, purposes, groups)`，不拼样式码、不算栏宽、不决定空行。
+`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary({ skills, mcps })`、`ui.mainMenu(recommended, purposes, groups)`，不拼样式码、不算栏宽、不决定空行。
 
 ```ts
 // 错：流程里自己拼
 stdout.write(`\x1b[1m${target.name}\x1b[22m  ${target.location}\n`);
 
 // 对：交给呈现层
-ui.installSummary(targets);
+ui.installSummary({ skills, mcps });
 ```
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
@@ -88,7 +88,7 @@ ASCII 的符号宽度可以和 Unicode 的不同（勾选框 `■` 一列，`[x]
 
 ## 不可选的行
 
-列表里某一行选不了时（一个宿主都没检测到时主菜单上 MCP、工具这两个旧入口，和混合列表里的每个 skill），给那一行一个 `disabled`——它是**原因**，不是布尔值：
+列表里某一行选不了时（一个宿主都没检测到时主菜单上工具这个旧入口，和混合列表里的每个组件；所选宿主都不支持的 MCP），给那一行一个 `disabled`——它是**原因**，不是布尔值：
 
 ```ts
 // cli/src/prompter.ts
@@ -119,32 +119,29 @@ disabled: `${symbols.separator} ${REASON_MARK}${reason}${REASON_MARK}`,
 
 > **Warning**：`row.disabled` 里带着零宽空格。任何不经 `theme.style.disabled` 就把它打出去的路径都会把零宽空格漏到终端上；测试架子画这种行时也走主题。`prompts.test.ts` 里有带样式和不带样式两条断言输出里没有 `\u200b`。
 
-**多选里不可选的行**（`@inquirer/checkbox` 5.x，MCP 列表里所选宿主都不支持的条目）和单选的有几处不同，都是读它的源码并实测得来的：
+**多选里不可选的行**（`@inquirer/checkbox` 5.x，混合列表里不可选的组件、工具列表里装不了的条目）和单选的有几处不同，都是读它的源码并实测得来的：
 
 | 行为 | 呈现层怎么配合 |
 |------|----------------|
 | 这一行拼成 `<光标或空格><勾选框> <name> <disabled>`，勾选框取 `theme.icon.disabledUnchecked`（勾着的取 `disabledChecked`），整行交给 `theme.style.disabled` | 两个图标都盖成同一个不带样式的符号（`–`，没有 Unicode 时 `[-]`）：整行本来就会被压暗；这种行勾不上，「勾着」的那个用不到，但不盖的话它按 Node 的规则上绿色 |
-| **没有办法指定光标的起始位置**：它停在第一项上，哪怕那一项不可选 | 不处理。条目照目录的顺序排，光标可能起始就在不可选的行上，这时列表下方没有说明全文 |
+| **没有办法指定光标的起始位置**：它停在第一项上，哪怕那一项不可选 | 不处理。光标可能起始就在不可选的行上；混合列表这时照样在列表下方显示它的类型和说明（见「不可选的行下方的类型和说明」），工具的旧列表下方是空的 |
 | 在这一行上按空格：勾不上，下方多一行 `theme.i18n.disabledError` | 和单选共用同一句话、同一个画法 |
 | `a` 全选、`i` 反选都跳过不可选的行 | 不用配合；`prompts.test.ts` 里有一条守着 |
 | 一个能选的都没有时照样画得出来，用户只能回车（什么都没勾，等于返回） | 不用另做一个“没有可选的”画面 |
 
-不可选的行里，名字后面各栏的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。两种旧列表（MCP、工具）共用 `ui.ts` 的 `entryPicker(message, columns, entries)`：名称、几栏状态（`columns` 是各栏的表头——MCP 是宿主的名字，工具只有一栏「状态」）、说明。给一行 `unavailable`（原因）它就不可选。混合列表（`mixedPicker`）自己拼不可选的 skill 行，守的是同一条规矩，见「混合列表与外部项目」。
+不可选的行里，名字后面的文字**不要自己带样式**：行内片段的收尾码会把外层的暗淡一并关掉。
 
-原因放在哪有两种，一张表里只用一种：
-
-| | 原因的位置 | 用在 | 怎么拼 |
-|---|---|---|---|
-| 缺省 | 接在说明后面，前面一个分隔符（`… · 需要别的 AI Agent`） | MCP | `name` 是整行，`disabled` 是分隔符加圈起来的原因 |
-| `reasonAsStatus: true` | 顶替状态，写在状态栏的位置（`不支持 macOS`），说明照常跟在后面 | 工具（只有一栏状态） | 这时不看 `cells`。交互库把行拼成「`name` + 一个空格 + `disabled`」，所以 `name` 只是名称、少补一格，`disabled` 是圈起来的原因补齐到状态栏的宽度、再接说明 |
+**原因一律写在状态的位置**，混合列表（`mixedPicker`）和工具的旧列表（`entryPicker(message, columns, entries)`，只剩工具在用，等工单 08）是同一个拼法：交互库把行拼成「`name` + 一个空格 + `disabled`」，所以 `name` 只是名称、少补一格，`disabled` 是圈起来的原因补齐到状态栏的总宽、再接说明。这种行不写各栏的状态（`cells`）：原因顶替了它们。原先 MCP 的旧列表把原因接在行尾的说明后面（`… · 需要别的 AI Agent`），混合列表里说明一栏可能只剩十几列、放不下，工单 07 起没有这种写法了。
 
 ```ts
 // 错：把圈起来的原因塞进 cells、再另给一句 disabled——行尾多出一截，零宽空格也跟着 name 走了别的路
 { name: `${cells([entry.name, mark(reason)])}${about}`, disabled: reason }
 
 // 对：原因在 disabled 里，位置靠 name 少补的那一格对上
-{ name: pad(entry.name, widths[0] - 1), disabled: `${pad(mark(reason), widths[1])}${about}` }
+{ name: pad(entry.name, nameWidth - 1), disabled: `${pad(mark(reason), statusWidth)}${about}` }
 ```
+
+**原因可以比状态栏宽**：只选了一个宿主时状态只有一栏（`Codex` 加栏间隔 9 列），「需要别的 AI Agent」要 17 列。`mixedPicker` 先按可选的行算各栏状态的宽度，原因加栏间隔比它们合起来还宽时，把差的那几列加在最后一栏上——表头、可选的行、说明的起始位置都跟着它走。不这样做的话 `pad` 不截断，不可选的那一行的说明会比别的行靠右，整行也可能超过 79 列。
 
 `displayWidth` 把零宽空格算作 0 列，所以圈起来的原因可以直接交给 `pad`。
 
@@ -210,25 +207,32 @@ export interface ConfirmQuestion {
 
 ---
 
-## 带备注的表
+## 汇总：按类型分的小表与备注
 
-呈现层的 `table(header, rows)` 把最后一栏当备注，**整张表一个放法**：
+`ui.installSummary({ skills, mcps })` 打一个分区「将安装 N 项」，里面每种类型一张小表（这一轮没有的类型没有它的小表），小表之间空一行，分区以空行收尾。小表由 `ui.ts` 的 `summaryTables(tables)` 一起排，**几张表合起来算栏宽**：
+
+| 栏 | 宽度 |
+|----|------|
+| 条目（表头是类型的名字，取混合列表段标题的那个词）、AI Agent、操作 | 整个分区里这一栏最长的一格加栏间隔，各张小表对齐 |
+| 位置 | 只有 skill 的小表有；按这一栏最长的一格定 |
+| 备注 | 见下 |
+
+备注**整个分区一个放法**：
 
 | 情况 | 画法 |
 |------|------|
-| 每一格备注（连同表头）接在行尾都不超过 79 列 | 备注成一栏，表头写它 |
-| 有一格放不下 | 全部另起一行，缩进到它前一栏的左缘（skill 的汇总里是「位置」，MCP 的是「操作」）；表头不写这一栏。从那里起连最长的一格都放不下时，所有备注一起往左挪到刚好放得下，不让终端来折 |
-| 一格备注都没有 | 表头不写这一栏 |
+| 每一格备注（连同表头）接在行尾都不超过 79 列。**只看有备注的行**：没有备注的行后面什么都不写，它的位置再长也不算放不下 | 备注成一栏：skill 的小表里在「位置」后面，MCP 的小表里紧跟「操作」。有备注的小表表头写它，没有的不写 |
+| 有一格放不下 | 整个分区的备注全部另起一行，缩进到「位置」的左缘（MCP 的小表没有这一栏，也从同一列起）；表头都不写这一栏。从那里起连最长的一格都放不下时，所有备注一起往左挪到刚好放得下，不让终端来折 |
 
-表头永远只有一行。
+表头永远只有一行。同一个条目装进几个宿主就有几行，名字只写在第一行。
 
 ```ts
 // 错：逐行决定——同一张表里有的备注在栏里、有的折到路径下面，折下去的像是路径的续行；
 // 表头自己也可能被拆成两行（「备注」独占一行），哪怕一格备注都没有
 rows.flatMap((row) => (fits(row) ? [inline(row)] : [start(row), ownLine(row)]));
 
-// 对：先看整张表放不放得下，再统一决定
-const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
+// 对：先看整个分区放不放得下，再统一决定
+const inline = tables.every((table) => notesOf(table).every((note) => startOf(table) + displayWidth(note) <= USABLE));
 ```
 
 名字和路径都来自目录，长度不由我们定：真实目录里的 `writing-for-agents` 就足以让前四栏占到 78 列。**预览页的样例里要有一条长名字**，不然这种拆行在画面上看不到。工单 08 补上 MCP 的长名字样例时就查出过一处：备注另起一行后仍从「操作」一栏的左缘起，超出了 80 列。
@@ -237,14 +241,14 @@ const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWid
 
 ## 将执行的命令
 
-执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。接着是 `ui.confirmCommands()`：执行、返回修改、取消，和 skill 的「开始安装吗」是同一个单选（`decision`）。
+执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。它接在汇总的小表后面；这一轮只装本仓库的 skill 时没有命令，也就没有这个分区。接着是 `ui.summaryNotices(notices)` 和 `ui.confirmInstall()`：开始安装、返回修改、取消（`decision`）。工具的旧入口仍用 `ui.confirmCommands()`（「执行这些命令吗」），等工单 08。
 
 | 情况 | 画法 |
 |------|------|
 | 命令比一行长 | 按词折行，续行与命令的左缘对齐；**从不截断**。一个比一行还长的参数独占一行，由终端自己折 |
 | 参数里有 shell 会另作解释的字符（网址里的 `&`、`?`） | 展示时给这个参数加单引号（`commandLine`），照着敲也是同一条命令；执行时不经过 shell，参数原样传 |
 | 命令里有 key（`KeyArgument`） | 写成 `变量名=<变量名>`，尖括号这一段是黄色粗体，不加引号；真实的值不到呈现层来。`commandLine(command, placeholder)` 的第二个参数给占位符上样式 |
-| 要提醒的事 | 命令之后空一行，每件事一行「注意」键值，各自后面空一行。先后是：必填的 key 没填而不安装的 MCP（一个 MCP 一行）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、宿主会当场打开浏览器登录 |
+| 要提醒的事 | `ui.summaryNotices(notices)`：命令之后（没有命令时是小表之后）空一行，每件事一行「注意」键值，**几行挨着**，最后空一行；一件都没有时什么都不打。先后是：覆盖即整目录替换（有 skill 的覆盖项才有）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、必填的 key 没填而不安装的 MCP（一个 MCP 一行）、宿主会当场打开浏览器登录（一个宿主一行）。流程只说有哪几件事，句子和先后由呈现层定 |
 
 ```ts
 // 错：命令交给会截断的栏，用户确认的就不是完整的命令
@@ -263,7 +267,7 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 | 段 | 函数 | 画法 |
 |----|------|------|
 | 将执行的命令 | `ui.toolCommandList(targets)` | 和 `commandList` 同一个分区标题（「将执行 N 条命令」）。每条是暗淡的右对齐序号、工具名（按最长的名字定宽）、完整命令；过长时折行，续行与**命令**的左缘对齐，从不截断。命令是一整行 shell，**原样写出，不加引号、不改一个字** |
-| 确认 | `ui.confirmCommands()` | 与 MCP 共用 |
+| 确认 | `ui.confirmCommands()` | 「执行这些命令吗」：执行、返回修改、取消。只剩工具在用；混合列表的确认是 `ui.confirmInstall()` |
 | 一个工具的执行 | `ui.toolInstallation(targets).begin(target)` | 以工具名为标题的分区，标题下方空一行，然后是一行暗淡的 `$` 加命令。之后命令自己的输出直接进终端，**不经过呈现层**：顶格、没有样式，呈现层也不知道它有几行 |
 | 这个工具的结论 | `begin` 返回的函数，收 `ToolResult` | 上方空一行，然后和结果行同一个画法：`✓ <名字> 已可用<说明>`（「已可用」绿）或 `✗ <名字> 失败 <原因>`（红色粗体），过长时折行 |
 | 收尾 | `finish()` | 不止一个工具时先打一个「结果」分区，把各项的结论原样再列一遍；然后空一行、通栏横线和「合计」 |
@@ -276,17 +280,20 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ## 混合列表与外部项目
 
-进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, apps, checked, marksRecommended })`。它和两种旧列表共用的 `entryPicker` 不是一回事：按类型分段、段首有标题、列表下方多一行「类型」。**现在里面有本仓库的 skill 和外部项目两段**，MCP、工具随后面的工单搬进来。提问的值是目录里的条目本身（`Skill | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
+进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, mcps, apps, checked, marksRecommended })`。它和工具的旧列表用的 `entryPicker` 不是一回事：按类型分段、段首有标题、列表下方多一行「类型」。**现在里面有本仓库的 skill、MCP、外部项目三段**，工具随工单 08 搬进来。提问的值是目录里的条目本身（`Skill | Mcp | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
 
-`hosts` 是所选的宿主，`skills` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的表示一个宿主都没检测到**，这时状态只有一栏、每个 skill 都不可选。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
+`hosts` 是所选的宿主，`skills`、`mcps` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的表示一个宿主都没检测到**，这时状态只有一栏、每个组件都不可选。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
+
+组件的各段在 `mixedPicker` 里先归成同一种行（`{ value, name, about, recommended, cells, unavailable? }`），再由同一段代码拼：加一种组件就是在 `sections` 里加一段，说清它的各栏状态和什么时候不可选，栏宽、推荐的标记、不可选的拼法、`belowUnavailable` 都不用再写一遍。
 
 | 部分 | 怎么拼 |
 |------|--------|
 | 表头 | 分隔行，和别的多选列表一样比条目多缩进（勾选框的宽度加一格）。栏是名称、每个所选的宿主一栏状态（一个宿主都没检测到时是一栏「状态」）、说明；一个组件都没有时没有状态栏，只有「名称」「说明」 |
-| 栏宽 | 名称一栏按 skill 和外部项目里最长的名字定；每栏状态按这一栏最长的一格定（表头也算）；剩下的给说明。**组件的说明不足 `MIN_ABOUT`（12 列）时整栏不写**，表头也不写「说明」 |
+| 栏宽 | 名称一栏按所有条目里最长的名字定；每栏状态按这一栏最长的一格定（表头也算；不可选的行不写状态，不算），不可选的原因更宽时撑宽最后一栏（见「不可选的行」）；剩下的给说明。**组件的说明不足 `MIN_ABOUT`（12 列）时整栏不写**，表头也不写「说明」 |
 | skill 的行 | 名称、各栏状态（`statusCell`，和原先 skill 列表的写法一样）、说明。一段里按名字排 |
-| 不可选的 skill 行 | 一个宿主都没检测到时：原因「需要 AI Agent」写在状态的位置。照交互库的拼法（「名称 + 一个空格 + 原因」），名称少补一格，`disabled` 是补到状态栏总宽的原因加说明；原因用 `REASON_MARK` 圈着，整行压暗时它保持正常亮度 |
-| 推荐的标记 | `marksRecommended` 时，带推荐的行（本仓库的 skill 全是，外部项目看 `recommended`）在说明的最前面写 `推荐 · `（英文 `pick · `，文案是 `recommendedMark`，分隔用 `symbols.separator`）。标记不截断，截断的是它后面的说明；说明一栏连标记都放不下时整格不写 |
+| MCP 的行 | 名称、各栏状态（`mcpStatusCell`：未配置、已配置、未知、不支持）、说明。排在 skill 一段后面，段与段之间不空行；一段里带推荐的在前、其余按名字（流程排好了交进来） |
+| 不可选的组件行 | 一个宿主都没检测到时每个组件都是，原因「需要 AI Agent」；所选的宿主一个都不支持的 MCP，原因「需要别的 AI Agent」。原因写在状态的位置：照交互库的拼法（「名称 + 一个空格 + 原因」），名称少补一格，`disabled` 是补到状态栏总宽的原因加说明；原因用 `REASON_MARK` 圈着，整行压暗时它保持正常亮度 |
+| 推荐的标记 | `marksRecommended` 时，带推荐的行（本仓库的 skill 全是，MCP 和外部项目看 `recommended`）在说明的最前面写 `推荐 · `（英文 `pick · `，文案是 `recommendedMark`，分隔用 `symbols.separator`）。标记不截断，截断的是它后面的说明；说明一栏连标记都放不下时整格不写 |
 | 段标题 | 也是一行分隔行（不可选，光标跳过它）：同样的缩进，暗淡的两个横线符号，空一格，默认色的标题。横线用 `symbols.rule`，没有 Unicode 时跟着退成 `--` |
 | 外部项目的行 | 名称补到栏宽，说明从第一栏状态的位置写起、截断到第 79 列；名字长到说明一列都不剩时不写说明。这一段与上面的组件之间有一行空的分隔行，上面没有组件时没有 |
 | 列表下方 | 两行：「类型」和「说明」，各是一次 `belowList(label, format, text, labelWidth)`——第四个参数把两个标签补到一样宽，值的左缘才对齐；说明过长则折行。多出的这一行要告诉 `list(rows, below)`：第二个参数是列表下方除说明之外另外多占的行数，一屏放多少行跟着少一行（见「块与块之间的空行」） |
@@ -316,9 +323,9 @@ description: `${t.kinds.app}\n${app.description[lang]}`
 | 4 | 有出错的话 `style.error` | 「这一项现在选不了」。它在交互库的行序里排在按键提示之前，所以落在类型和说明的上面；后面跟着它们时去掉自己末尾的换行，三行才挨着 |
 
 - `belowUnavailable` 是一张「交互库拼出来的那一行 → 它的 `description`」的表，拼不可选的行时填。键是整行（名称补齐后的字加原因加说明），不是说明全文——两个条目的说明可以一字不差。
-- **后面的工单给混合列表加不可选的行（不支持这个系统的工具、所选宿主都不支持的 MCP）时，照样往 `belowUnavailable` 里填**，不然光标停上去下方是空的，而且不报任何错。
+- 组件的各段共用一段拼行的代码，不可选的行都在那里填 `belowUnavailable`（所选宿主都不支持的 MCP 就是这样带上的）。**哪天给混合列表加一种不走这段代码的不可选行，照样要往里填**，不然光标停上去下方是空的，而且不报任何错。
 - 这是在配合交互库内部的顺序，不是它承诺的接口：**升级 `@inquirer/checkbox` 之后跑 `spacing.test.ts` 的「光标在不可选的行上」那几条和 `prompts.test.ts` 的「光标停在不可选的 skill 上」**，它们用真实的交互库断言这两行在、且「注意」消失后仍在。预设应答的测试架子看不出这件事：它不管行可不可选都把 `description` 记进 `output`。
-- MCP、工具两张旧列表（`entryPicker`）没有补，光标停在不可选的行上时下方仍是空的；它们随工单 07、08 搬进混合列表后不再有。
+- 工具的旧列表（`entryPicker`）没有补，光标停在不可选的行上时下方仍是空的；它随工单 08 搬进混合列表后不再有。
 
 ```ts
 // 错：想在 style.disabled 里直接把说明画出来——它的返回值是列表里的那一行，画不到列表下方
@@ -374,7 +381,7 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 
 | 帮手 | 给什么 | 用在 |
 |------|--------|------|
-| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、MCP 列表上方的那一行「注意」 |
+| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、混合列表上方读不到宿主配置的那一行「注意」 |
 | `heading(title, format?)` | 一个分区的开头：`gapAbove()`、标题、一行空行 | 每一个分区。出错说明用 `errors.heading`；帮助的三个分区在同一次 `print` 里，空行是直接写的 |
 | `gap()` | 上面不是空行时当场打一行空行 | 回到上一轮（`nextRound`）；转动的加载提示之前（`loading`）——那一行擦掉之后，接着打的本机信息或分区就落在它的位置上，空行得先给，不然读完的一刻画面会往下跳一行 |
 
@@ -428,7 +435,7 @@ return { message, default: false, answers, theme: asking() }; // 是否题
 
 ## 改写已经打出去的行
 
-转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。「正在安装」分区各类组件共用一个 `progress(targets, doing)`：`ui.installation`（skill）和 `ui.mcpInstallation` 只负责把各自的结果说成文字，行数、改写标题都在它里面。再加一类组件时照此接上，不要另写一遍。
+转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。「正在安装」分区各类组件共用一个 `progress(targets)`：行照 `targets` 的先后排，名字、宿主两栏按全部的行定宽；每一项 `begin(target, doing)` 时给出进行中那一行写的字（skill 是「正在下载」，MCP 是「正在配置」）。对外是一个 `ui.installation(skills, mcps)`，返回 `{ skill: { begin, skip }, mcp: { begin, skip }, finish }`：两类组件只负责把各自的结果说成文字，行数、改写标题都在 `progress` 里。再加一类组件时照此接上，不要另写一遍，也不要另开一个分区——那样标题就要改写两处。
 
 **结果行和合计是再下面一层的 `tally()`**，`progress` 和工具的 `toolInstallation` 共用：`succeeded(lead, text)`、`failed(lead, reason)`、`skipped(lead, reason)` 各返回一项的结果行（`lead` 给结果符号排好位置；原因过长时自己折行）并记进合计，`total()` 返回一行空行、通栏横线和「合计」那一行。套不进 `progress` 的组件（工具：输出不归呈现层管）直接用它，**不要再抄一遍失败行的拼法和合计**。
 
@@ -482,10 +489,10 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 单元格的前景色有两种读法（`readCells`）：命名色记编号，转成类名 `c0`–`c7`，色值跟着深色、浅色两套配色变；24 位色记成 `#rrggbb` 直接写进 `style`，两边是同一个值。只认调色板色的话，渐变的标志在预览页上是默认前景色，看上去和不显示颜色一样而不报任何错。
 - 画面取的是无头终端的**整个缓冲区**（`readCells` 读到 `buffer.length`），不是屏幕上那 `ROWS` 行：汇总加结果再回到主菜单的场景会超过一屏，只读前 `ROWS` 行会把底下的截掉而不报任何错（工单 12 之前有四个画面就是这样少了末尾几行）。
 - 要看矮终端里屏幕上还剩什么，场景给 `rows`（如 `rows: 24`）：终端、提问器和安装器拿到的都是这个行数，画面**只取还在屏幕上的那几行**（从 `buffer.baseY` 读起）。「skill 多选列表 · 24 行的终端」用的是 `manySkills`（二十条样例）。
-- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面、旧入口前面：进「文档处理」用 `toDocuments`；有外部项目的场景里要进 MCP、工具，得先下移过「推荐」和用途那几行。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
+- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面、旧入口前面：进「文档处理」用 `toDocuments`；有外部项目的场景里要进 MCP、工具，得先下移过「推荐」和用途那几行。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。要三种类型同表，场景用 `...ALL_KINDS`（`withAllKinds`：在 `withMixed` 之上「文档处理」下多三个 MCP——`markitdown` 带推荐标记、`excel` 只支持 Claude Code、`mistral-ocr` 的 key 必填；主目录里 skill 的四种状态照 `MIXED`，Claude Code 里 `excel` 已配置）：`pickSkillAndMcps` 勾一个 skill 和两个 MCP，`pickAllKinds` 再勾一个外部项目，`toAllKindsSummary` 填好 key 停在汇总上。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
 - 要画出工具，场景用 `...TOOLS`（`withTools`：五条为预览编的样例——两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用；主目录里 `bun` 已经装着）。命令是假的：场景的 `shell: (command) => ShellRun` 说它往终端上打什么（`output`）、怎么结束（`exitCode`、`cannotStart`、`hangs`）、装没装上（`installs` 往可执行路径里放一个命令，`creates` 在主目录下写出一个路径），缺省是 `installsTool`（uv 装好，别的以非零状态结束）。名字和命令都长的样例在 `withLongCommandTool`。预览页从不真的执行命令。
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
-- 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（MCP 分组在主菜单第二行，`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
+- 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（这四条样例都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面，`toMcps` 下移一行进去；`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问的做法。

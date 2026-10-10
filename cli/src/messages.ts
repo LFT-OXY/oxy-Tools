@@ -74,15 +74,14 @@ export interface Messages {
   /** 工具不可选的原因：条目把当前系统标为不支持 */
   unsupportedOs: (os: ToolOs) => string;
   pickHosts: string;
-  pickMcps: string;
   pickTools: string;
   /** 进入「推荐」或一个用途之后的那张列表 */
   pickEntries: string;
   /** 列表下方写光标所在行类型的那一行的标签 */
   typeLabel: string;
   /** 条目的类型：sections 是列表里段首的标题和它后面的一句说明，kinds 是列表下方「类型」一行里的写法 */
-  sections: { skill: { title: string }; app: { title: string; note: string } };
-  kinds: { skill: string; app: string };
+  sections: { skill: { title: string }; mcp: { title: string }; app: { title: string; note: string } };
+  kinds: { skill: string; mcp: string; app: string };
   /** 列表回答之后收成的那一行，勾得多时只列前几个名字：shown 是列出来的那几个，total 是勾选的总数 */
   pickedMany: (shown: readonly string[], total: number) => string;
   /** 列出勾选的外部项目的那个分区的标题 */
@@ -90,7 +89,6 @@ export interface Messages {
   linkKey: string;
   /** 并列几个名字时用的分隔 */
   listSeparator: string;
-  entryColumn: string;
   agentColumn: string;
   actionColumn: string;
   locationColumn: string;
@@ -100,8 +98,8 @@ export interface Messages {
   /** 汇总里覆盖项的备注 */
   reinstallNote: (version: string) => string;
   unmanagedNote: string;
+  /** 汇总那个分区的标题：count 是要装的组件条目数 */
   installSummary: (count: number) => string;
-  mcpSummary: (count: number) => string;
   /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
   mcpConfiguredNote: string;
   mcpUnknownNote: string;
@@ -161,7 +159,7 @@ export interface Messages {
   totalKey: string;
   totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
   /** 还没搬进混合列表的类型在主菜单上的旧入口 */
-  groups: Record<'mcp' | 'tool', { label: string; about: string }>;
+  groups: Record<'tool', { label: string; about: string }>;
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -217,17 +215,15 @@ const zh: Messages = {
   toolStatus: { none: '未安装', installed: '已安装' },
   unsupportedOs: (os) => `不支持 ${OS_NAMES[os]}`,
   pickHosts: '装进哪些 AI Agent',
-  pickMcps: '选择要安装的 MCP',
   pickTools: '选择要安装的工具',
   pickEntries: '选择要安装的条目',
   typeLabel: '类型',
-  sections: { skill: { title: 'Skill' }, app: { title: '外部项目', note: '只给链接，不安装' } },
-  kinds: { skill: 'Skill', app: '外部项目' },
+  sections: { skill: { title: 'Skill' }, mcp: { title: 'MCP' }, app: { title: '外部项目', note: '只给链接，不安装' } },
+  kinds: { skill: 'Skill', mcp: 'MCP', app: '外部项目' },
   pickedMany: (shown, total) => `${shown.join('、')} 等 ${total} 项`,
   externalProjects: (count) => `外部项目：${count} 个，只给链接`,
   linkKey: '链接',
   listSeparator: '、',
-  entryColumn: '条目',
   agentColumn: 'AI Agent',
   actionColumn: '操作',
   locationColumn: '位置',
@@ -235,8 +231,7 @@ const zh: Messages = {
   actions: { fresh: '新装', overwrite: '覆盖', unknown: '添加' },
   reinstallNote: (version) => `重装 ${version}`,
   unmanagedNote: '非本工具安装，另行确认',
-  installSummary: (count) => `将安装 ${count} 个 skill`,
-  mcpSummary: (count) => `将安装 ${count} 个 MCP`,
+  installSummary: (count) => `将安装 ${count} 项`,
   mcpConfiguredNote: '已配置，先移除再添加',
   mcpUnknownNote: '状态未知，先尝试移除同名配置',
   mcpLoginNotice: (host, login) =>
@@ -311,7 +306,6 @@ const zh: Messages = {
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
   groups: {
-    mcp: { label: 'MCP', about: '写进 AI Agent 配置的 MCP 服务器' },
     tool: { label: '工具', about: '执行其官方安装命令装上的工具' },
   },
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）' },
@@ -467,17 +461,15 @@ const en: Messages = {
   toolStatus: { none: 'none', installed: 'installed' },
   unsupportedOs: (os) => `not for ${OS_NAMES[os]}`,
   pickHosts: 'Install into which AI Agents',
-  pickMcps: 'Pick MCP servers to install',
   pickTools: 'Pick tools to install',
   pickEntries: 'Pick entries to install',
   typeLabel: 'Type',
-  sections: { skill: { title: 'Skills' }, app: { title: 'External projects', note: 'links only, nothing is installed' } },
-  kinds: { skill: 'Skill', app: 'External project' },
+  sections: { skill: { title: 'Skills' }, mcp: { title: 'MCP' }, app: { title: 'External projects', note: 'links only, nothing is installed' } },
+  kinds: { skill: 'Skill', mcp: 'MCP', app: 'External project' },
   pickedMany: (shown, total) => `${shown.join(', ')} and ${total - shown.length} more`,
   externalProjects: (count) => `External projects: ${count}, links only`,
   linkKey: 'Link',
   listSeparator: ', ',
-  entryColumn: 'Entry',
   agentColumn: 'AI Agent',
   actionColumn: 'Action',
   locationColumn: 'Location',
@@ -485,8 +477,7 @@ const en: Messages = {
   actions: { fresh: 'new', overwrite: 'overwrite', unknown: 'add' },
   reinstallNote: (version) => `reinstall ${version}`,
   unmanagedNote: 'unmanaged; asked separately',
-  installSummary: (count) => `Install ${count} ${count === 1 ? 'skill' : 'skills'}`,
-  mcpSummary: (count) => `Install ${count} MCP ${count === 1 ? 'server' : 'servers'}`,
+  installSummary: (count) => `Install ${count} ${count === 1 ? 'item' : 'items'}`,
   mcpConfiguredNote: 'configured; removed, then added',
   mcpUnknownNote: 'status unknown; removal tried first',
   mcpLoginNotice: (host, login) =>
@@ -561,7 +552,6 @@ const en: Messages = {
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
   groups: {
-    mcp: { label: 'MCP', about: 'MCP servers written into your AI Agent config' },
     tool: { label: 'Tools', about: 'Installed by running their official install commands' },
   },
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)' },

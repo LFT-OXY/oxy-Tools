@@ -86,7 +86,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 - **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, host.skillsDir, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
 - 钉住的来源整次运行共用，不因宿主多而多查询。
-- 问不问宿主、勾完之后怎么返回，混合列表和 MCP 的旧入口共用一段流程（`flow.ts` 的 `withHosts`）。
+- 问不问宿主、勾完之后怎么返回，都在 `flow.ts` 的 `withHosts` 里；这一问同时管 skill 和 MCP。
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；混合列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，不重问宿主。
 - skill 不再有自己的入口：它在主菜单的「推荐」里（本仓库的全部 skill），写了用途的另在那个用途下；和外部项目在同一张混合列表里勾选，主菜单与流程见 [入口与测试](./installer-entry.md)。
 

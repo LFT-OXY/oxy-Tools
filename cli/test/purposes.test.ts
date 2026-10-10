@@ -4,7 +4,8 @@ import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_PURPOSES, SAMPLE_TOOLS,
 const [DOCS_LOCAL, TRACKER_REMOTE] = SAMPLE_MCPS as [(typeof SAMPLE_MCPS)[0], (typeof SAMPLE_MCPS)[1]];
 const without = <Entry extends { purpose: string }>({ purpose: _purpose, ...entry }: Entry): Omit<Entry, 'purpose'> => entry;
 const [WEB_SEARCH, DEV_WORKFLOW] = SAMPLE_PURPOSES as [(typeof SAMPLE_PURPOSES)[0], (typeof SAMPLE_PURPOSES)[1]];
-const browseMcps = [choose('MCP'), pick(), choose('退出')];
+// tracker-remote 所在的用途：进去就是它那张列表
+const browseMcps = [choose('开发工作流与规范'), pick(), choose('退出')];
 
 describe('条目的用途', () => {
   it('没有用途的条目被跳过并提示数量，其余条目照常', async () => {

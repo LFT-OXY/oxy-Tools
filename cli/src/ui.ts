@@ -89,8 +89,8 @@ const ERASE_LINE = '\r\x1b[2K';
 // 零宽空格：圈出不可选的行里的原因。整行压暗时跳过圈着的这一段，圈本身不打出去
 const REASON_MARK = '\u200b';
 
-/** 还没搬进混合列表的类型：它们在主菜单上暂时留着旧入口 */
-export type GroupId = 'mcp' | 'tool';
+/** 还没搬进混合列表的类型：它在主菜单上暂时留着旧入口 */
+export type GroupId = 'tool';
 export type MenuChoice = 'recommended' | Purpose | GroupId | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
@@ -231,27 +231,41 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   const columnWidths = (rows: readonly (readonly string[])[]): number[] =>
     (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => displayWidth(row[column] ?? ''))) + GUTTER);
 
-  // 带表头的表：表头暗淡，哪一栏都不截断。最后一栏是备注，整张表一个放法：每一格都放得下才成一栏；
-  // 有一格放不下就都另起一行，与它前一栏的左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），
-  // 表头不写这一栏。一格备注都没有时也不写
-  const table = (header: readonly string[], rows: readonly (readonly string[])[]): string[] => {
-    const last = header.length - 1;
-    const widths = columnWidths([header, ...rows]).slice(0, last);
-    const total = (columns: readonly number[]): number => 2 + columns.reduce((sum, width) => sum + width, 0);
-    const start = (cells: readonly string[]): string =>
-      `  ${cells.slice(0, last).map((cell, column) => pad(cell, widths[column] ?? 0)).join('')}`;
-    const notes = rows.map((row) => row[last] ?? '');
-    const noteHeader = notes.some((note) => note !== '') ? (header[last] ?? '') : '';
-    const inline = [noteHeader, ...notes].every((note) => total(widths) + displayWidth(note) <= USABLE);
-    const indent = Math.max(2, Math.min(total(widths.slice(0, -1)), USABLE - Math.max(...notes.map(displayWidth))));
-    const ownLine = (note: string): string[] => (note === '' ? [] : [`${' '.repeat(indent)}${note}`]);
-    return [
-      dim(`${start(header)}${inline ? noteHeader : ''}`.trimEnd()),
-      ...rows.flatMap((row, index) => {
-        const note = notes[index] ?? '';
-        return inline ? [`${start(row)}${note}`.trimEnd()] : [start(row).trimEnd(), ...ownLine(note)];
+  // 汇总里按类型分的几张小表，合起来排：条目（表头是类型的名字）、宿主、操作三栏各张表对齐，located 的表多一栏位置。
+  // 表头暗淡，哪一栏都不截断。备注整个分区一个放法：每一格都放得下才成一栏；有一格放不下就都另起一行，与位置的
+  // 左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），表头不写这一栏。一格备注都没有的表也不写
+  const summaryTables = (
+    tables: readonly {
+      title: string;
+      located: boolean;
+      rows: readonly { cells: readonly [name: string, host: string, action: string]; location: string; note: string }[];
+    }[],
+  ): string[] => {
+    type Table = (typeof tables)[number];
+    const widths = columnWidths(tables.flatMap((table) => [[table.title, t.agentColumn, t.actionColumn], ...table.rows.map((row) => row.cells)]));
+    const locationWidth = Math.max(displayWidth(t.locationColumn), ...tables.flatMap((table) => table.rows.map((row) => displayWidth(row.location)))) + GUTTER;
+    const noteStart = 2 + widths.reduce((sum, width) => sum + width, 0);
+    const start = (table: Table, cells: readonly string[], location: string): string =>
+      `  ${cells.map((cell, column) => pad(cell, widths[column] ?? 0)).join('')}${table.located ? pad(location, locationWidth) : ''}`;
+    const noteHeader = (table: Table): string => (table.rows.some((row) => row.note !== '') ? t.noteColumn : '');
+    // 没有备注的行不参与：它后面什么都不写，位置再长也碍不着别的行
+    const inline = tables.every((table) =>
+      [noteHeader(table), ...table.rows.map((row) => row.note)].every(
+        (note) => note === '' || noteStart + (table.located ? locationWidth : 0) + displayWidth(note) <= USABLE,
+      ),
+    );
+    const longestNote = Math.max(...tables.flatMap((table) => table.rows.map((row) => displayWidth(row.note))));
+    const indent = Math.max(2, Math.min(noteStart, USABLE - longestNote));
+    return tables.flatMap((table, index) => [
+      // 小表之间空一行
+      ...(index === 0 ? [] : ['']),
+      dim(`${start(table, [table.title, t.agentColumn, t.actionColumn], t.locationColumn)}${inline ? noteHeader(table) : ''}`.trimEnd()),
+      ...table.rows.flatMap((row) => {
+        const line = start(table, row.cells, row.location);
+        if (inline) return [`${line}${row.note}`.trimEnd()];
+        return [line.trimEnd(), ...(row.note === '' ? [] : [`${' '.repeat(indent)}${row.note}`])];
       }),
-    ];
+    ]);
   };
 
   // 行首的符号转动；返回的函数把这一行擦掉
@@ -393,8 +407,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     };
   };
 
-  // 「正在安装」分区，各类组件共用：doing 是进行中的那一行写的字；每一项的结果由调用方说成文字
-  const progress = (targets: readonly { name: string; host: string }[], doing: string) => {
+  // 「正在安装」分区，各类组件共用：每一项进行中的那一行写的字（doing）和它的结果都由调用方说成文字
+  const progress = (targets: readonly { name: string; host: string }[]) => {
     type Target = (typeof targets)[number];
     const [nameWidth = 0, hostWidth = 0] = columnWidths(targets.map((target) => [target.name, target.host]));
     const lead = (target: Target) => (mark: string): string => `  ${mark}  ${pad(target.name, nameWidth)}${pad(target.host, hostWidth)}`;
@@ -408,7 +422,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     };
     print(...heading(t.installing));
     return {
-      begin(target: Target): (result?: { ok: true; text: string } | { ok: false; reason: string }) => void {
+      begin(target: Target, doing: string): (result?: { ok: true; text: string } | { ok: false; reason: string }) => void {
         const erase = spin((mark) => `${lead(target)(mark)}${doing}${dim(symbols.ellipsis)}`);
         return (result) => {
           erase();
@@ -432,60 +446,37 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   };
 
   // 多选的条目表：名称、几栏状态、说明。columns 是各栏状态的表头，cells 与它一一对应；unavailable 是这一行
-  // 不可选的原因，接在说明后面——reasonAsStatus 的行（只有一栏状态的工具列表）改写在状态栏的位置，这时不看 cells。
-  // 一个都不勾就确认表示返回
+  // 不可选的原因，写在状态栏的位置，这时不看 cells。一个都不勾就确认表示返回
   const entryPicker = <Value>(
     message: string,
     columns: readonly string[],
-    entries: readonly {
-      value: Value;
-      name: string;
-      cells: readonly string[];
-      about: string;
-      checked: boolean;
-      unavailable?: string;
-      reasonAsStatus?: boolean;
-    }[],
+    entries: readonly { value: Value; name: string; cells: readonly string[]; about: string; checked: boolean; unavailable?: string }[],
   ): CheckboxQuestion<Value> => {
     // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头要多缩进
     const lead = displayWidth(symbols.checked) + 2;
     const header = [t.nameColumn, ...columns];
-    const inStatus = (entry: (typeof entries)[number]): entry is (typeof entries)[number] & { unavailable: string } =>
-      entry.unavailable !== undefined && entry.reasonAsStatus === true;
-    const rows = entries.map((entry) => [entry.name, ...(inStatus(entry) ? [entry.unavailable] : entry.cells)]);
+    const rows = entries.map((entry) => [entry.name, ...(entry.unavailable === undefined ? entry.cells : [entry.unavailable])]);
     const widths = columnWidths([header, ...rows]);
     const aboutWidth = USABLE - lead - widths.reduce((sum, width) => sum + width, 0);
     const cells = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0)).join('');
+    const about = (entry: (typeof entries)[number]): string => (aboutWidth > 0 ? truncate(entry.about, aboutWidth, symbols.ellipsis) : '');
     return {
       message,
       ...list([
         { separator: dim(`${' '.repeat(lead - 1)}${cells(header)}${t.aboutColumn}`) },
-        ...entries.map((entry, index) => {
-          // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：原因要落在状态栏时，名称少补一格，说明跟在原因后面
-          if (inStatus(entry)) {
-            return {
-              value: entry.value,
-              short: entry.name,
-              name: pad(entry.name, (widths[0] ?? 0) - 1),
-              description: entry.about,
-              checked: entry.checked,
-              disabled: `${pad(`${REASON_MARK}${entry.unavailable}${REASON_MARK}`, widths[1] ?? 0)}${
-                aboutWidth > 0 ? truncate(entry.about, aboutWidth, symbols.ellipsis) : ''
-              }`,
-            };
-          }
-          const reason = entry.unavailable === undefined ? undefined : `${symbols.separator} ${REASON_MARK}${entry.unavailable}${REASON_MARK}`;
-          // 原因接在说明后面，说明相应少占几列
-          const room = aboutWidth - (reason === undefined ? 0 : displayWidth(` ${reason}`));
-          return {
-            value: entry.value,
-            short: entry.name,
-            name: `${cells(rows[index] ?? [])}${room > 0 ? truncate(entry.about, room, symbols.ellipsis) : ''}`,
-            description: entry.about,
-            checked: entry.checked,
-            ...(reason === undefined ? {} : { disabled: reason }),
-          };
-        }),
+        ...entries.map((entry, index) => ({
+          value: entry.value,
+          short: entry.name,
+          description: entry.about,
+          checked: entry.checked,
+          // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：名称少补一格，说明跟在原因后面
+          ...(entry.unavailable === undefined
+            ? { name: `${cells(rows[index] ?? [])}${about(entry)}` }
+            : {
+                name: pad(entry.name, (widths[0] ?? 0) - 1),
+                disabled: `${pad(`${REASON_MARK}${entry.unavailable}${REASON_MARK}`, widths[1] ?? 0)}${about(entry)}`,
+              }),
+        })),
       ]),
     };
   };
@@ -650,44 +641,80 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上，每个所选的宿主
-     * 一栏状态（statuses 与 hosts 一一对应）；外部项目在下，没有状态。hosts 是空的表示一个宿主都没检测到：
-     * 状态只有一栏，组件都不可选。checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来
-     * ——「推荐」那张列表里每一行都是，不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
+     * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（先 skill 后 MCP），
+     * 每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；外部项目在下，没有状态。hosts 是空的表示一个宿主都
+     * 没检测到：状态只有一栏，组件都不可选。所选的宿主一个都不支持的 MCP 同样不可选；原因都写在状态的位置。
+     * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
+     * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
     mixedPicker({
       hosts,
       skills,
+      mcps,
       apps,
       checked,
       marksRecommended,
     }: {
       hosts: readonly Host[];
       skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
+      mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
       apps: readonly App[];
-      checked: readonly (Skill | App)[];
+      checked: readonly (Skill | Mcp | App)[];
       marksRecommended: boolean;
-    }): CheckboxQuestion<Skill | App> {
+    }): CheckboxQuestion<Skill | Mcp | App> {
       // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头和段标题要多缩进
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
       const hostless = hosts.length === 0;
+      // 组件各段的行：cells 是各栏状态；unavailable 是这一行不可选的原因，写在状态的位置、占满各个状态栏，这时不看 cells
+      const sections: {
+        title: string;
+        kind: string;
+        rows: { value: Skill | Mcp; name: string; about: string; recommended: boolean; cells: string[]; unavailable?: string }[];
+      }[] = [
+        {
+          ...t.sections.skill,
+          kind: t.kinds.skill,
+          // 本仓库的 skill 都是推荐的
+          rows: skills.map(({ skill, statuses }) => ({
+            value: skill,
+            name: skill.name,
+            about: skill.description[lang],
+            recommended: true,
+            cells: statuses.map((status) => statusCell(status, skill.version)),
+            ...(hostless ? { unavailable: t.needsHost } : {}),
+          })),
+        },
+        {
+          ...t.sections.mcp,
+          kind: t.kinds.mcp,
+          rows: mcps.map(({ mcp, statuses }) => ({
+            value: mcp,
+            name: mcp.name,
+            about: mcp.description[lang],
+            recommended: mcp.recommended,
+            cells: statuses.map(mcpStatusCell),
+            ...(hostless ? { unavailable: t.needsHost } : statuses.every((status) => status === 'unsupported') ? { unavailable: t.unsupportedByHosts } : {}),
+          })),
+        },
+      ].filter((section) => section.rows.length > 0);
+      const components = sections.flatMap((section) => section.rows);
       // 一个组件都没有时没有状态栏
-      const columns = skills.length === 0 ? [] : hostless ? [t.statusColumn] : hosts.map((host) => host.name);
-      // 不可选的行整行压暗，原因自己不带样式
-      const statusCells = skills.map(({ skill, statuses }) =>
-        hostless ? [t.needsHost] : statuses.map((status) => statusCell(status, skill.version)),
+      const columns = components.length === 0 ? [] : hostless ? [t.statusColumn] : hosts.map((host) => host.name);
+      const nameWidth = Math.max(displayWidth(t.nameColumn), ...[...components, ...apps].map((entry) => displayWidth(entry.name))) + GUTTER;
+      const cellWidths = columns.map(
+        (column, at) =>
+          Math.max(displayWidth(column), ...components.map((row) => (row.unavailable === undefined ? displayWidth(row.cells[at] ?? '') : 0))) + GUTTER,
       );
-      const names = [...skills.map(({ skill }) => skill.name), ...apps.map((app) => app.name)];
-      const nameWidth = Math.max(displayWidth(t.nameColumn), ...names.map(displayWidth)) + GUTTER;
-      const statusWidths = columns.map(
-        (column, at) => Math.max(displayWidth(column), ...statusCells.map((cells) => displayWidth(cells[at] ?? ''))) + GUTTER,
-      );
+      // 原因比各栏状态合起来还宽时，把最后一栏撑到放得下它
+      const reasonWidth = Math.max(0, ...components.map((row) => displayWidth(row.unavailable ?? ''))) + GUTTER;
+      const short = Math.max(0, reasonWidth - cellWidths.reduce((sum, width) => sum + width, 0));
+      const statusWidths = cellWidths.map((width, at) => (at === cellWidths.length - 1 ? width + short : width));
       const statusWidth = statusWidths.reduce((sum, width) => sum + width, 0);
       // 外部项目没有状态，说明从第一栏状态的位置写起
       const wideAbout = USABLE - lead - nameWidth;
       const aboutWidth = wideAbout - statusWidth;
-      const showsAbout = skills.length === 0 || aboutWidth >= MIN_ABOUT;
+      const showsAbout = components.length === 0 || aboutWidth >= MIN_ABOUT;
       const labelWidth = Math.max(displayWidth(t.typeLabel), displayWidth(t.aboutColumn)) + 2;
       // 回答之后收成的那一行最多列出几个名字
       const namesShown = 3;
@@ -707,23 +734,24 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       });
       const rows = [
         { separator: dim(`${indent}${pad(t.nameColumn, nameWidth)}${columns.map((column, at) => pad(column, statusWidths[at] ?? 0)).join('')}${showsAbout ? t.aboutColumn : ''}`.trimEnd()) },
-        ...(skills.length > 0 ? [title(t.sections.skill)] : []),
-        // 本仓库的 skill 都是推荐的
-        ...skills.map(({ skill }, row) => {
-          const text = showsAbout ? about(skill.description[lang], aboutWidth, true) : '';
-          const choice = { value: skill, short: skill.name, description: below(t.kinds.skill, true, skill.description[lang]), checked: checked.includes(skill) };
-          // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：原因写在状态的位置、占满各个状态栏，名称少补一格
-          if (hostless) {
-            const name = pad(skill.name, nameWidth - 1);
-            const disabled = `${pad(`${REASON_MARK}${t.needsHost}${REASON_MARK}`, statusWidth)}${text}`.trimEnd();
-            belowUnavailable.set(`${name} ${disabled}`, choice.description);
-            return { ...choice, name, disabled };
-          }
-          const cells = (statusCells[row] ?? []).map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join('');
-          return { ...choice, name: `${pad(skill.name, nameWidth)}${cells}${text}`.trimEnd() };
-        }),
+        ...sections.flatMap((section) => [
+          title(section),
+          ...section.rows.map((row) => {
+            const text = showsAbout ? about(row.about, aboutWidth, row.recommended) : '';
+            const choice = { value: row.value, short: row.name, description: below(section.kind, row.recommended, row.about), checked: checked.includes(row.value) };
+            // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：名称少补一格。整行压暗，原因自己不带样式
+            if (row.unavailable !== undefined) {
+              const name = pad(row.name, nameWidth - 1);
+              const disabled = `${pad(`${REASON_MARK}${row.unavailable}${REASON_MARK}`, statusWidth)}${text}`.trimEnd();
+              belowUnavailable.set(`${name} ${disabled}`, choice.description);
+              return { ...choice, name, disabled };
+            }
+            const cells = row.cells.map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join('');
+            return { ...choice, name: `${pad(row.name, nameWidth)}${cells}${text}`.trimEnd() };
+          }),
+        ]),
         // 外部项目一段与上面的组件之间空一行
-        ...(skills.length > 0 && apps.length > 0 ? [{ separator: ' ' }] : []),
+        ...(components.length > 0 && apps.length > 0 ? [{ separator: ' ' }] : []),
         ...(apps.length > 0 ? [title(t.sections.app)] : []),
         ...apps.map((app) => ({
           value: app,
@@ -795,45 +823,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       };
     },
 
-    /** 读不到某些宿主的配置时，在 MCP 列表上方说明：它们那一栏的状态都是未知。 */
+    /** 读不到某些宿主的配置时，在混合列表上方说明：MCP 在它们那一栏的状态都是未知。 */
     mcpConfigUnreadable(hosts: readonly Host[]): void {
       print(...gapAbove(), ...keyValue(t.noticeKey, t.mcpConfigUnreadable(hosts.map((host) => host.name).join(t.listSeparator)), attention), '');
     },
 
     /**
-     * 勾选要安装的 MCP：名称、每个宿主一栏状态、说明。statuses 与 hosts 一一对应；checked 是提问出现时已经勾上的那些。
-     * 所选的宿主一个都不支持的条目不可选，行尾注明原因；只有一部分不支持的仍可选。
+     * 汇总：一个分区，里面按类型分成小表，顺序与执行的先后一致。每一项将装进哪个宿主、是新装还是覆盖，skill 另写
+     * 装到哪里。同一个条目装进几个宿主就有几行，名字只写在第一行。MCP 的状态未知时说不出是新装还是覆盖，只写添加，
+     * 备注里说明会先尝试移除。
      */
-    mcpPicker(
-      hosts: readonly Host[],
-      entries: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[],
-      checked: readonly Mcp[],
-    ): CheckboxQuestion<Mcp> {
-      return entryPicker(
-        t.pickMcps,
-        hosts.map((host) => host.name),
-        entries.map(({ mcp, statuses }) => {
-          const unavailable = statuses.every((status) => status === 'unsupported');
-          return {
-            value: mcp,
-            name: mcp.name,
-            // 不可选的行整行压暗，状态词自己不再带样式：行内的收尾码会把后半行的暗淡一并关掉
-            cells: statuses.map((status) => (unavailable ? t.mcpStatus[status] : mcpStatusCell(status))),
-            about: mcp.description[lang],
-            checked: checked.includes(mcp),
-            ...(unavailable ? { unavailable: t.unsupportedByHosts } : {}),
-          };
-        }),
-      );
-    },
-
-    /**
-     * 汇总：每一项将装到哪里、是新装还是覆盖。同一个条目装进几个宿主就有几行，名字只写在第一行。
-     * 有覆盖项时提醒本地改动会丢失。
-     */
-    installSummary(targets: readonly InstallTarget[]): void {
-      const overwrites = (target: InstallTarget): boolean => target.status.kind !== 'none';
-      const note = ({ status, version }: InstallTarget): string => {
+    installSummary({ skills, mcps }: { skills: readonly InstallTarget[]; mcps: readonly McpTarget[] }): void {
+      const skillNote = ({ status, version }: InstallTarget): string => {
         switch (status.kind) {
           case 'none':
             return '';
@@ -845,21 +846,33 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             return t.unmanagedNote;
         }
       };
-      print(
-        ...heading(t.installSummary(new Set(targets.map((target) => target.name)).size)),
-        ...table(
-          [t.entryColumn, t.agentColumn, t.actionColumn, t.locationColumn, t.noteColumn],
-          targets.map((target, index) => [
-            target.name === targets[index - 1]?.name ? '' : target.name,
-            target.host,
-            overwrites(target) ? paint(attention, t.actions.overwrite) : t.actions.fresh,
-            target.location,
-            note(target),
-          ]),
-        ),
-        '',
-        ...(targets.some(overwrites) ? [...keyValue(t.noticeKey, t.replaceNotice, attention), ''] : []),
-      );
+      const mcpAction = { none: t.actions.fresh, configured: paint(attention, t.actions.overwrite), unknown: t.actions.unknown };
+      const mcpNote = { none: '', configured: t.mcpConfiguredNote, unknown: t.mcpUnknownNote };
+      const once = (targets: readonly { name: string }[], index: number): string =>
+        targets[index]?.name === targets[index - 1]?.name ? '' : (targets[index]?.name ?? '');
+      const tables = [
+        {
+          title: t.sections.skill.title,
+          located: true,
+          rows: skills.map((target, index) => ({
+            cells: [once(skills, index), target.host, target.status.kind === 'none' ? t.actions.fresh : paint(attention, t.actions.overwrite)] as const,
+            location: target.location,
+            note: skillNote(target),
+          })),
+        },
+        {
+          title: t.sections.mcp.title,
+          located: false,
+          rows: mcps.map((target, index) => ({
+            cells: [once(mcps, index), target.host, mcpAction[target.status]] as const,
+            location: '',
+            note: mcpNote[target.status],
+          })),
+        },
+      ].filter((table) => table.rows.length > 0);
+      // 名字只在各自的类型里唯一：一个 skill 和一个 MCP 同名时是两项
+      const count = new Set(skills.map((target) => target.name)).size + new Set(mcps.map((target) => target.name)).size;
+      print(...heading(t.installSummary(count)), ...summaryTables(tables), '');
     },
 
     confirmInstall(): SelectQuestion<InstallDecision> {
@@ -872,51 +885,46 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 「正在安装」分区：每一项先 begin，进行中的那一行行首的符号转动；用它返回的函数交出结果，这一行就改写成结果
-     * （不给结果则只擦掉这一行）；用户没同意覆盖的那些不 begin，改用 skip。全部结束后 finish 把标题换成「结果」并打出合计。
+     * 「正在安装」分区，本仓库的 skill 和 MCP 共用，行照传进来的先后排。每一项先 begin，进行中的那一行行首的符号转动；
+     * 用它返回的函数交出结果，这一行就改写成结果（不给结果则只擦掉这一行）。不装的那些不 begin，改用 skip：skill 是
+     * 用户没同意覆盖，MCP 是必填的 key 没填（给出没填的变量名）。全部结束后 finish 把标题换成「结果」并打出合计。
      */
-    installation(targets: readonly InstallTarget[]) {
-      const rows = progress(targets, t.downloading);
+    installation(skills: readonly InstallTarget[], mcps: readonly McpTarget[]) {
+      const rows = progress([...skills, ...mcps]);
       return {
-        begin(target: InstallTarget): (outcome?: InstallOutcome) => void {
-          const settle = rows.begin(target);
-          return (outcome) =>
-            settle(
-              outcome &&
-                (outcome.ok
-                  ? {
-                      ok: true,
-                      text: `${paint('green', t.installed)} ${
-                        target.status.kind === 'other-version' ? versionChange(target.status, outcome.version) : outcome.version
-                      }`,
-                    }
-                  : { ok: false, reason: t.installProblem(outcome.problem) }),
-            );
+        skill: {
+          begin(target: InstallTarget): (outcome?: InstallOutcome) => void {
+            const settle = rows.begin(target, t.downloading);
+            return (outcome) =>
+              settle(
+                outcome &&
+                  (outcome.ok
+                    ? {
+                        ok: true,
+                        text: `${paint('green', t.installed)} ${
+                          target.status.kind === 'other-version' ? versionChange(target.status, outcome.version) : outcome.version
+                        }`,
+                      }
+                    : { ok: false, reason: t.installProblem(outcome.problem) }),
+              );
+          },
+          skip: (target: InstallTarget): void => rows.skip(target, t.overwriteDeclined),
         },
-        skip: (target: InstallTarget): void => rows.skip(target, t.overwriteDeclined),
+        mcp: {
+          begin(target: McpTarget): (outcome?: McpOutcome) => void {
+            const settle = rows.begin(target, t.configuring);
+            return (outcome) =>
+              settle(
+                outcome &&
+                  (outcome.ok
+                    ? { ok: true, text: paint('green', t.mcpStatus.configured) }
+                    : { ok: false, reason: t.mcpInstallProblem(outcome.problem) }),
+              );
+          },
+          skip: (target: McpTarget, missingVariable: string): void => rows.skip(target, t.keyMissing(missingVariable)),
+        },
         finish: rows.finish,
       };
-    },
-
-    /**
-     * MCP 的汇总：每一项装进哪个宿主、是新装还是覆盖。同一个条目装进几个宿主就有几行，名字只写在第一行。
-     * 状态未知时说不出是新装还是覆盖，只写安装，备注里说明会先尝试移除。
-     */
-    mcpSummary(targets: readonly McpTarget[]): void {
-      const action = { none: t.actions.fresh, configured: paint(attention, t.actions.overwrite), unknown: t.actions.unknown };
-      const note = { none: '', configured: t.mcpConfiguredNote, unknown: t.mcpUnknownNote };
-      print(
-        ...heading(t.mcpSummary(new Set(targets.map((target) => target.name)).size)),
-        ...table(
-          [t.entryColumn, t.agentColumn, t.actionColumn, t.noteColumn],
-          targets.map((target, index) => [
-            target.name === targets[index - 1]?.name ? '' : target.name,
-            target.host,
-            action[target.status],
-            note[target.status],
-          ]),
-        ),
-      );
     },
 
     /** 将要执行的完整命令，逐条编号；过长时折行，续行与命令的左缘对齐。命令本身从不截断。 */
@@ -931,9 +939,29 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       );
     },
 
-    /** 接在将执行的命令后面：命令里 key 的位置是占位符。 */
-    keyPlaceholderNotice(): void {
-      print(...keyValue(t.noticeKey, t.keyPlaceholderNotice, attention), '');
+    /**
+     * 汇总最后要提醒的事，各占一行，几行挨着：有覆盖项时本地改动会丢失；命令里 key 的位置是占位符；必填的 key 没填、
+     * 不在这次要装的里面的 MCP；添加远程地址的 MCP 时可能当场打开浏览器登录的宿主（它的输出不会显示在这里，login 是
+     * 事后补登录的命令）。一件都没有时什么都不打。
+     */
+    summaryNotices({
+      overwrites,
+      placeholders,
+      missingKeys,
+      logins,
+    }: {
+      overwrites: boolean;
+      placeholders: boolean;
+      missingKeys: readonly { mcp: string; variable: string }[];
+      logins: readonly { host: string; login: Command }[];
+    }): void {
+      const notices = [
+        ...(overwrites ? [t.replaceNotice] : []),
+        ...(placeholders ? [t.keyPlaceholderNotice] : []),
+        ...missingKeys.map(({ mcp, variable }) => t.keyMissingNotice(mcp, variable)),
+        ...logins.map(({ host, login }) => t.mcpLoginNotice(host, commandLine(login))),
+      ];
+      if (notices.length > 0) print(...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 
     /** 问一个 key 之前：哪个 MCP 要它、它是什么、去哪申请、留空会怎样。 */
@@ -960,16 +988,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       print(...hanging('', `${mark} ${paint('bold', variable.name)} ${dim(symbols.separator)} `, t.keyOutcome(outcome, mcp.name, variable.required)));
     },
 
-    /** 接在将执行的命令后面：这个 MCP 必填的 key 没填，不在这次要装的里面。 */
-    mcpKeyMissingNotice(mcp: Mcp, variable: string): void {
-      print(...keyValue(t.noticeKey, t.keyMissingNotice(mcp.name, variable), attention), '');
-    },
-
-    /** 接在将执行的命令后面：这个宿主添加远程地址的 MCP 时可能当场打开浏览器登录，而它的输出不会显示在这里。 */
-    mcpLoginNotice(host: Host, login: Command): void {
-      print(...keyValue(t.noticeKey, t.mcpLoginNotice(host.name, commandLine(login)), attention), '');
-    },
-
     confirmCommands(): SelectQuestion<InstallDecision> {
       return decision(t.confirmCommands, t.runCommands);
     },
@@ -992,7 +1010,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           about: tool.description[lang],
           checked: checked.includes(tool),
           ...(unavailable
-            ? { unavailable: unavailable.kind === 'os' ? t.unsupportedOs(unavailable.os) : t.unsupportedByHosts, reasonAsStatus: true }
+            ? { unavailable: unavailable.kind === 'os' ? t.unsupportedOs(unavailable.os) : t.unsupportedByHosts }
             : {}),
         })),
       );
@@ -1037,25 +1055,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           if (targets.length > 1) print(...heading(t.results), ...conclusions);
           print(...results.total());
         },
-      };
-    },
-
-    /** MCP 的「正在安装」分区，用法同 installation；必填的 key 没填的那些不 begin，改用 skip，给出没填的变量名。 */
-    mcpInstallation(targets: readonly McpTarget[]) {
-      const rows = progress(targets, t.configuring);
-      return {
-        begin(target: McpTarget): (outcome?: McpOutcome) => void {
-          const settle = rows.begin(target);
-          return (outcome) =>
-            settle(
-              outcome &&
-                (outcome.ok
-                  ? { ok: true, text: paint('green', t.mcpStatus.configured) }
-                  : { ok: false, reason: t.mcpInstallProblem(outcome.problem) }),
-            );
-        },
-        skip: (target: McpTarget, missingVariable: string): void => rows.skip(target, t.keyMissing(missingVariable)),
-        finish: rows.finish,
       };
     },
   };
