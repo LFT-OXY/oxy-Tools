@@ -6,6 +6,8 @@ import { EMPTY_CATALOG, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, accept, catalogD
 // 四种类型都有条目的样例目录
 const fullCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+// 两个工具在同一个用途下
+const toolCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: underWebSearch(...SAMPLE_TOOLS) } });
 // 只有外部项目：用途下的列表里没有状态栏
 const appsCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } });
 // 两个 MCP 在同一个用途下
@@ -20,13 +22,11 @@ const startOf = (screen: string, cell: string, text = cell): number => {
 };
 
 describe('栏间隔：主菜单', () => {
-  it('「用途」一栏最长的一格后面三格是数量一栏；旧分组的数量之后三格是说明', async () => {
+  it('「用途」一栏最长的一格后面三格是数量一栏', async () => {
     const { screen } = await run({ catalog: fullCatalog(), answers: [choose('退出')] });
 
     // 数量右对齐，所以拿表头量这一栏从哪开始
     expect(startOf(screen, '用途', '数量') - startOf(screen, '联网搜索与文档检索 ') - columnsOf('联网搜索与文档检索')).toBe(3);
-    expect(screen).toMatch(/数量 {3}说明$/m);
-    expect(screen).toMatch(/2 {3}执行其官方安装命令装上的工具/);
   });
 
   it('英文界面同一个间隔', async () => {
@@ -34,8 +34,6 @@ describe('栏间隔：主菜单', () => {
 
     const longest = 'Development workflow & conventions';
     expect(startOf(screen, 'Purpose', 'Count') - startOf(screen, `${longest} `) - columnsOf(longest)).toBe(3);
-    expect(screen).toMatch(/Count {3}About$/m);
-    expect(screen).toMatch(/2 {3}Installed by running/);
   });
 });
 
@@ -117,14 +115,14 @@ describe('栏间隔：MCP', () => {
 });
 
 describe('栏间隔：工具', () => {
-  it('多选列表、将执行的命令（工具名与命令之间）、结论行同一个间隔', async () => {
+  it('混合列表里工具的一段、汇总里工具的小表、结论行同一个间隔', async () => {
     const { screen } = await run({
-      catalog: fullCatalog(),
-      answers: [choose('工具'), pick('fetcher', 'linter'), accept(), choose('退出')],
+      catalog: toolCatalog(),
+      answers: [choose('联网搜索与文档检索'), pick('fetcher', 'linter'), accept(), choose('退出')],
     });
 
     expect(screen).toMatch(/fetcher {3}未安装 {3}第一个样例工具/);
-    expect(screen).toMatch(/fetcher {3}curl -LsSf/);
+    expect(screen).toMatch(/fetcher {3}执行安装命令$/m);
     expect(screen).toMatch(/fetcher {3}失败 /);
   });
 });

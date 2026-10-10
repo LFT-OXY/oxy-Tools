@@ -228,7 +228,15 @@ const DOCUMENT_MCPS = [
     env: keyed('MISTRAL_API_KEY', true, 'Mistral 的 API 密钥，在控制台的 API Keys 页创建', 'Mistral API key, created on the API Keys page of the console', 'https://console.mistral.ai/api-keys'),
   },
 ].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}`, purpose: 'documents' }));
-const withAllKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS });
+const withThreeKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS });
+// 四种类型同表的样例：再往「文档处理」下加三个工具——一个带推荐标记，一个只支持 Linux，一个场景里已经装着。
+// 第一条的命令里有引号：工具的命令原样写出
+const DOCUMENT_TOOLS = [
+  { name: 'docling', zh: '把 PDF、Office 文档解析成结构化的 Markdown 或 JSON，在本机运行', en: 'Parse PDFs and Office files into structured Markdown or JSON, running locally', recommended: true, install: { default: "pip install 'docling[ocr]'" }, check: { command: 'docling' } },
+  { name: 'officecli', zh: '在命令行里读写 Word、Excel、PPT 文件', en: 'Read and write Word, Excel and PowerPoint files from the command line', install: { default: 'npm install -g officecli', macos: null, windows: null }, check: { command: 'officecli' } },
+  { name: 'pandoc', zh: '在 Markdown、Word、HTML、PDF 等几十种文档格式之间互相转换', en: 'Convert between dozens of document formats such as Markdown, Word, HTML and PDF', install: { default: 'brew install pandoc' }, check: { command: 'pandoc' } },
+].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}`, purpose: 'documents' }));
+const withFourKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS });
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -277,6 +285,11 @@ const allInstall = (command: string): ShellRun =>
 const firstStillRunning = (): ShellRun => ({ output: UV_OUTPUT.split('\n').slice(0, 3).join('\n') + '\n', hangs: true });
 // bun 已经装过：主目录下有它的检查路径
 const BUN_INSTALLED = { '.bun/bin/bun': '' };
+// docling 的安装命令说的话；装好了
+const DOCLING_OUTPUT = ['Collecting docling[ocr]', '  Downloading docling-2.55.1-py3-none-any.whl (281 kB)', 'Installing collected packages: docling', 'Successfully installed docling-2.55.1', ''].join('\n');
+const installsDocling = (): ShellRun => ({ output: DOCLING_OUTPUT, installs: 'docling' });
+// 打了一半，还没结束
+const doclingStillRunning = (): ShellRun => ({ output: DOCLING_OUTPUT.split('\n').slice(0, 2).join('\n') + '\n', hangs: true });
 
 const CLAUDE_SKILLS = '.claude/skills';
 const CODEX_SKILLS = '.agents/skills';
@@ -338,13 +351,13 @@ const pickMixed = [KEY.down, KEY.space, KEY.down, KEY.space, KEY.down, KEY.space
 // 确认列表、开始安装；pr 在 Claude Code 下不是本工具装的，另问时直接回车（不覆盖）
 const installMixed = [...pickMixed, KEY.enter, KEY.enter, KEY.enter];
 
-// withAllKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，markitdown、excel、mistral-ocr 三个 MCP，再是四个外部项目：
+// withThreeKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，markitdown、excel、mistral-ocr 三个 MCP，再是四个外部项目：
 // 勾上 explanation、markitdown 和 mistral-ocr，光标停在 mistral-ocr 上
 const pickSkillAndMcps = [KEY.down, KEY.space, ...down(2), KEY.space, ...down(2), KEY.space];
 // 再勾上 mineru，光标停在它上面
-const pickAllKinds = [...pickSkillAndMcps, KEY.down, KEY.space];
+const pickThreeKinds = [...pickSkillAndMcps, KEY.down, KEY.space];
 // 确认之后填好 mistral-ocr 的 key，停在汇总确认上；再回车就开始安装
-const toAllKindsSummary = [...pickAllKinds, KEY.enter, PASTED_KEY, KEY.enter];
+const toThreeKindsSummary = [...pickThreeKinds, KEY.enter, PASTED_KEY, KEY.enter];
 // 样例的 MCP 都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面：下移一行再进去
 const toMcps = [KEY.down, KEY.enter];
 // 勾上 chrome-devtools、context7 和 linear，光标停在 linear 上
@@ -362,24 +375,39 @@ const toTwoKeys = [...toMcps, KEY.down, KEY.space, KEY.down, KEY.space, KEY.ente
 const toKeyedSummary = [...toExaKey, PASTED_KEY, KEY.enter];
 // 勾上 chrome-devtools 和 exa，exa 的 key 留空
 const skipExa = [...toMcps, KEY.space, ...down(2), KEY.space, KEY.enter, KEY.enter];
-// 主菜单上从「推荐」下移到工具再进去（样例目录里旧分组只有工具一个）
+// 样例的工具都在「开发工作流与规范」下，主菜单上它紧跟在「推荐」后面：下移一行再进去。
+// 里面只有工具一段，按名字排是 bubblewrap、bun、codex-usage、openspec、uv；光标起始在 bubblewrap 上
 const toTools = [KEY.down, KEY.enter];
-// 勾上 uv 和 openspec，光标停在 openspec 上
-const pickTools = [...toTools, KEY.space, ...down(2), KEY.space];
+// 勾上 openspec 和 uv，光标停在 uv 上
+const pickTools = [...toTools, ...down(3), KEY.space, KEY.down, KEY.space];
 const runTools = [...pickTools, KEY.enter, KEY.enter];
-// 勾上 uv 和 bun 再执行
-const runUvAndBun = [...toTools, KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter];
+// 只勾 uv
+const pickUv = [...toTools, ...down(4), KEY.space];
+// 勾上 bun 和 uv 再执行
+const runUvAndBun = [...toTools, KEY.down, KEY.space, ...down(3), KEY.space, KEY.enter, KEY.enter];
 // 只勾 bun 再执行
 const runBun = [...toTools, KEY.down, KEY.space, KEY.enter, KEY.enter];
+// withFourKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，markitdown、excel、mistral-ocr 三个 MCP，
+// docling、officecli、pandoc 三个工具，再是四个外部项目：勾上 explanation、markitdown、docling 和 mineru，光标停在 mineru 上
+const pickFourKinds = [KEY.down, KEY.space, ...down(2), KEY.space, ...down(3), KEY.space, ...down(3), KEY.space];
+// 这四个都不要 key：确认列表就到汇总，再回车开始安装
+const toFourKindsSummary = [...pickFourKinds, KEY.enter];
 const TOOLS = { catalog: withTools, home: BUN_INSTALLED };
 const KEYED = { catalog: withKeyedMcps };
 const MCP_STATES = { catalog: withMcps, home: CLAUDE_CONFIGURED };
 const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE_CONFIGURED, ...CODEX_UNREADABLE } };
 // 三种类型同表：skill 的四种状态照 MIXED，Claude Code 里 excel 已经配置过
-const ALL_KINDS: Pick<Scene, 'catalog' | 'home' | 'links'> = {
-  catalog: withAllKinds,
+const THREE_KINDS: Pick<Scene, 'catalog' | 'home' | 'links'> = {
+  catalog: withThreeKinds,
   ...MIXED,
   home: { ...MIXED.home, '.claude.json': JSON.stringify({ mcpServers: { excel: { command: 'uvx' } } }) },
+};
+// 四种类型同表：主目录照 THREE_KINDS；检测到两个宿主，可执行路径上已经有 pandoc；docling 的安装命令缺省装得上
+const FOUR_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'> = {
+  ...THREE_KINDS,
+  catalog: withFourKinds,
+  onPath: [...BOTH_HOSTS, 'pandoc'],
+  shell: installsDocling,
 };
 
 const scenes: Scene[] = [
@@ -451,17 +479,17 @@ const scenes: Scene[] = [
   { title: '汇总确认 · 一次勾了 skill 和外部项目', note: '汇总只列要装的 skill，外部项目不在里面；列表收成的一行写着勾选的四个里的前三个', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter] },
   { title: '汇总确认 · 混合列表 · 返回修改', note: '回到列表，skill 和外部项目的勾选都还在；不重问宿主', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed, KEY.enter, KEY.down, KEY.enter] },
   { title: '结果 · 一次勾了 skill 和外部项目', note: '覆盖前的单独询问、安装、结果照常；合计之后才是外部项目的说明与链接，再回到主菜单', catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
-  { title: '混合列表 · skill 加 MCP · 两个宿主', note: '先是 Skill 一段，再是 MCP 一段，最下面是外部项目；两种类型的状态都落在各自宿主的那一栏里。excel 只支持 Claude Code：Codex 那一栏写「不支持」，仍可选', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...down(4)] },
-  { title: '混合列表 · 勾了 skill 和 MCP', note: 'MCP 一段里带推荐的在前；光标在 MCP 上时「类型」写 MCP', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
-  { title: '混合列表 · skill 加 MCP · 一个宿主', note: '只是少一栏状态。excel 在 Claude Code 里已配置', ...ALL_KINDS, keys: [...toMixedDocuments(), ...down(3)] },
-  { title: '混合列表 · skill 加 MCP · 只选了不支持它的宿主', note: '去掉 Claude Code 的勾：excel 一个所选的宿主都不支持，不可选，原因写在状态的位置、占满状态栏', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...down(5), KEY.enter, KEY.space, KEY.enter, ...down(4)] },
-  { title: '混合列表 · skill 加 MCP · 一个宿主都没有', note: '状态只有一栏，skill 和 MCP 都不可选并写明原因；外部项目照常可选', catalog: withAllKinds, onPath: [], keys: [...toMixedDocuments(), ...down(3)] },
-  { title: '填写 key · 混合列表之后', note: '列表确认之后、汇总之前，逐个问勾上的 MCP 要的 key', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickAllKinds, KEY.enter] },
-  { title: '汇总确认 · skill 加带 key 的 MCP', note: '一个分区，按类型分成小表，各张表的栏对齐；将执行的命令只有 MCP 的，key 的位置是占位符；提醒几行挨着。外部项目不在汇总里', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary] },
-  { title: '汇总确认 · skill 加 MCP · 返回修改', note: '回到列表，三种类型的勾选都还在；再确认时填过的 key 不再问', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.down, KEY.enter, KEY.enter] },
-  { title: '正在安装 · skill 之后是 MCP', note: 'skill 已经装完，第一个 MCP 进行中：写的是「正在配置」', onPath: BOTH_HOSTS, ...ALL_KINDS, commands: () => new Promise<never>(() => {}), keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
-  { title: '结果 · 一次勾了 skill、MCP 和外部项目', note: '先是 skill 的各行，再是 MCP 的；合计之后才是外部项目的说明与链接。结果里没有 key 的值', onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
-  { title: '结果 · skill 加 MCP · 一条命令失败', note: 'Codex 那边的添加命令非零退出：只有装进 Codex 的那两行失败，其余照常', onPath: BOTH_HOSTS, ...ALL_KINDS, commands: async (command) => (command === 'codex' ? { exitCode: 1 } : ok), keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '混合列表 · skill 加 MCP · 两个宿主', note: '先是 Skill 一段，再是 MCP 一段，最下面是外部项目；两种类型的状态都落在各自宿主的那一栏里。excel 只支持 Claude Code：Codex 那一栏写「不支持」，仍可选', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...down(4)] },
+  { title: '混合列表 · 勾了 skill 和 MCP', note: 'MCP 一段里带推荐的在前；光标在 MCP 上时「类型」写 MCP', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '混合列表 · skill 加 MCP · 一个宿主', note: '只是少一栏状态。excel 在 Claude Code 里已配置', ...THREE_KINDS, keys: [...toMixedDocuments(), ...down(3)] },
+  { title: '混合列表 · skill 加 MCP · 只选了不支持它的宿主', note: '去掉 Claude Code 的勾：excel 一个所选的宿主都不支持，不可选，原因写在状态的位置、占满状态栏', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...down(5), KEY.enter, KEY.space, KEY.enter, ...down(4)] },
+  { title: '混合列表 · skill 加 MCP · 一个宿主都没有', note: '状态只有一栏，skill 和 MCP 都不可选并写明原因；外部项目照常可选', catalog: withThreeKinds, onPath: [], keys: [...toMixedDocuments(), ...down(3)] },
+  { title: '填写 key · 混合列表之后', note: '列表确认之后、汇总之前，逐个问勾上的 MCP 要的 key', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...pickThreeKinds, KEY.enter] },
+  { title: '汇总确认 · skill 加带 key 的 MCP', note: '一个分区，按类型分成小表，各张表的栏对齐；将执行的命令只有 MCP 的，key 的位置是占位符；提醒几行挨着。外部项目不在汇总里', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary] },
+  { title: '汇总确认 · skill 加 MCP · 返回修改', note: '回到列表，三种类型的勾选都还在；再确认时填过的 key 不再问', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.down, KEY.enter, KEY.enter] },
+  { title: '正在安装 · skill 之后是 MCP', note: 'skill 已经装完，第一个 MCP 进行中：写的是「正在配置」', onPath: BOTH_HOSTS, ...THREE_KINDS, commands: () => new Promise<never>(() => {}), keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
+  { title: '结果 · 一次勾了 skill、MCP 和外部项目', note: '先是 skill 的各行，再是 MCP 的；合计之后才是外部项目的说明与链接。结果里没有 key 的值', onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
+  { title: '结果 · skill 加 MCP · 一条命令失败', note: 'Codex 那边的添加命令非零退出：只有装进 Codex 的那两行失败，其余照常', onPath: BOTH_HOSTS, ...THREE_KINDS, commands: async (command) => (command === 'codex' ? { exitCode: 1 } : ok), keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
   { title: '用途下的列表 · 只有外部项目', note: '多选。表头下面是段标题，写明只给链接；外部项目没有状态，说明紧跟在名称后面；列表下方是光标所在行的类型和说明全文', catalog: withApps, keys: toDocuments },
   { title: '用途下的列表 · 勾了两个', note: '光标所在行的说明比一行长：下方折成两行，续行与说明的左缘对齐', catalog: withApps, keys: pickTwoApps },
   { title: '用途下的列表 · 名字最长的条目', note: '名称一栏按最长的名字定宽，说明相应少占几列', catalog: withApps, keys: toContextMemory },
@@ -505,20 +533,32 @@ const scenes: Scene[] = [
   { title: '汇总确认 · 必填的 key 没填', note: '留下的一行说明将跳过它；汇总和命令里只有其余的', ...KEYED, keys: skipExa },
   { title: '结果 · 必填的 key 没填', note: '那一项写明跳过和原因，其余照常', ...KEYED, keys: [...skipExa, KEY.enter] },
   { title: '结果 · 选中的都没填 key', note: '没有要确认的东西：不问开始不开始，直接给出结果，回到主菜单', ...KEYED, keys: [...toExaKey, KEY.enter] },
-  { title: '主菜单 · 有工具', note: 'catalog.json 里有工具条目时多出这个分组，「目录」一行也数上它', ...TOOLS },
-  { title: '主菜单 · 一个宿主都没有 · 有工具', note: '还没搬进混合列表的旧分组：一个宿主都没检测到时进不去，行尾注明原因；光标落在「推荐」上', ...TOOLS, onPath: [] },
-  { title: '主菜单 · 一个宿主都没有 · 在工具分组上按回车', note: '光标能移上去，但进不去：列表下方多一行说明', ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
-  { title: '工具多选列表', note: '只有一栏状态：已安装、未安装，由条目声明的检查方式决定；装不了的条目不可选，状态栏的位置写原因（当前系统不支持、它要的 AI Agent 没检测到）', ...TOOLS, keys: pickTools },
-  { title: '工具多选列表 · 在不可选的条目上按空格', note: '光标能移上去，但勾不上：列表下方多一行说明', ...TOOLS, keys: [...toTools, ...down(3), KEY.space] },
-  { title: '汇总确认 · 两个工具', note: '两条完整的命令都列出来，前面是序号和工具的名字；确认后才执行', ...TOOLS, keys: [...pickTools, KEY.enter] },
-  { title: '汇总确认 · 工具 · 命令比一行长', note: '命令折行，续行与命令的左缘对齐，从不截断', catalog: withLongCommandTool, keys: [...toTools, KEY.space, KEY.down, KEY.space, KEY.enter] },
-  { title: '汇总确认 · 工具 · Windows 上的命令', note: '条目给这个系统另写了命令：展示和执行的都是那一条', ...TOOLS, platform: 'win32', env: { WT_SESSION: '1' }, keys: [...toTools, KEY.space, KEY.enter] },
-  { title: '执行工具的安装命令 · 进行中', note: '每个工具一个以它名字为标题的分区，第一行是要执行的命令；命令自己的输出原样透传，顶格、不加样式', ...TOOLS, shell: firstStillRunning, keys: runTools },
+  { title: '主菜单 · 有工具', note: '没有「工具」这个分组：工具数在它的用途里，「目录」一行照旧按类型数。主菜单上只有「推荐」、各个用途和退出，表头只有用途和数量', ...TOOLS },
+  { title: '主菜单 · 四种类型都有', note: '「推荐」数上带推荐标记的 MCP、工具和外部项目；每个用途数的是它下面四种类型的条目', ...FOUR_KINDS },
+  { title: '混合列表 · 四种类型都有 · 两个宿主', note: '依次是 Skill、MCP、工具三段，外部项目在最下面。工具只有一个状态，写在第一栏状态的位置；带推荐标记的工具行上写「推荐」，光标在它上面时「类型」写工具', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
+  { title: '混合列表 · 四种类型各勾了一个', note: '不同类型的条目一起勾选', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '混合列表 · 光标在不可选的工具上', note: 'officecli 不支持这个系统：勾选位是短横，原因写在状态的位置、占满状态栏，其余暗淡；列表下方照样是它的类型和说明', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7)] },
+  { title: '混合列表 · 在不可选的工具上按空格', note: '勾不上：列表下方多一行说明，排在类型和说明的前面', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7), KEY.space] },
+  { title: '混合列表 · 四种类型都有 · 一个宿主', note: '只是少一栏状态', ...FOUR_KINDS, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...down(8)] },
+  { title: '混合列表 · 四种类型都有 · 一个宿主都没有', note: '状态只有一栏；工具和别的组件一样不可选，原因都是「需要 AI Agent」，标了不支持这个系统的那条也是；外部项目照常可选', ...FOUR_KINDS, onPath: [], keys: [...toMixedDocuments(), ...down(7)] },
+  { title: '混合列表 · 只有工具的用途', note: '工具自成一段，只有一栏状态：已安装、未安装，由条目声明的检查方式决定；装不了的条目不可选，状态的位置写原因（当前系统不支持、它要的 AI Agent 没检测到）', ...TOOLS, keys: pickTools },
+  { title: '混合列表 · 只有工具的用途 · 两个宿主', note: '不问装进哪些宿主：工具不装进宿主。检测到了 Codex，只给它用的那条可选了', ...TOOLS, onPath: BOTH_HOSTS, keys: toTools },
+  { title: '混合列表 · 只有工具的用途 · 在不可选的条目上按空格', note: '光标起始就在不可选的第一行上；勾不上，列表下方多一行说明', ...TOOLS, keys: [...toTools, KEY.space] },
+  { title: '混合列表 · 只有工具的用途 · 一个宿主都没有', note: '用途照常进得去，每个工具都不可选并写明原因', ...TOOLS, onPath: [], keys: toTools },
+  { title: '汇总确认 · 四种类型', note: '小表依次是 Skill、MCP、工具；工具的小表只有条目和操作两栏。将执行的命令先是 MCP 的、再是工具的，工具的命令原样写出。外部项目不在汇总里', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary] },
+  { title: '汇总确认 · 四种类型 · 返回修改', note: '回到列表，四种类型的勾选都还在', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.down, KEY.enter] },
+  { title: '汇总确认 · 两个工具', note: '只有工具一张小表；两条完整的命令都列出来，前面是序号；确认后才执行', ...TOOLS, keys: [...pickTools, KEY.enter] },
+  { title: '汇总确认 · 工具 · 命令比一行长', note: '命令折行，续行与命令的左缘对齐，从不截断', catalog: withLongCommandTool, keys: [...toTools, ...down(4), KEY.space, KEY.down, KEY.space, KEY.enter] },
+  { title: '汇总确认 · 工具 · Windows 上的命令', note: '条目给这个系统另写了命令：展示和执行的都是那一条', ...TOOLS, platform: 'win32', env: { WT_SESSION: '1' }, keys: [...pickUv, KEY.enter] },
+  { title: '执行 · 工具排在最后 · 进行中', note: 'skill 和 MCP 已经在「正在安装」分区里装完；工具另起一个以它名字为标题的分区，第一行是要执行的命令，命令自己的输出原样透传，顶格、不加样式', ...FOUR_KINDS, shell: doclingStillRunning, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '结果 · 四种类型 · 工具排在最后', note: '「正在安装」的标题不回头改写；工具的结论紧跟在它的输出后面，名字后面留着宿主一栏的位置；最后用「结果」分区把每一行再列一遍，合计之后才是外部项目的说明与链接', ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '结果 · 四种类型 · 工具没装上', note: '命令以非零状态结束、复核也不通过：只有这一行失败，其余照常', ...FOUR_KINDS, shell: () => ({ output: 'ERROR: Could not find a version that satisfies the requirement docling[ocr]\n', exitCode: 1 }), keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '执行工具的安装命令 · 只有工具 · 进行中', note: '这一轮只有工具时没有「正在安装」分区', ...TOOLS, shell: firstStillRunning, keys: [...pickUv, KEY.enter, KEY.enter] },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
-  { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
+  { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面。只装一个工具时不重复「结果」分区', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
   { title: '结果 · 工具 · 命令没能运行', note: '命令没能起来：原因只写错误码，复核照做', catalog: withTools, shell: () => ({ output: '', cannotStart: 'ENOENT' }), keys: runBun },
-  { title: '结果 · 工具 · 命令正常结束但复核不通过', note: '命令以 0 退出，可执行路径上却找不到它：算失败，并提醒可能要重开终端', ...TOOLS, shell: () => ({ output: UV_OUTPUT }), keys: [...toTools, KEY.space, KEY.enter, KEY.enter] },
+  { title: '结果 · 工具 · 命令正常结束但复核不通过', note: '命令以 0 退出，可执行路径上却找不到它：算失败，并提醒可能要重开终端', ...TOOLS, shell: () => ({ output: UV_OUTPUT }), keys: [...pickUv, KEY.enter, KEY.enter] },
   { title: '出错 · 目录读取失败', note: '断网', catalog: offline },
   { title: '出错 · 目录格式版本不受支持', note: 'catalog.json 的格式版本高于安装器所支持的', catalog: newerFormat },
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
@@ -538,18 +578,21 @@ const scenes: Scene[] = [
   { title: '英文界面 · 外部项目的说明与链接', argv: ['--lang', 'en'], catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '英文界面 · 主菜单 · 按用途进入 · 一个宿主都没有', argv: ['--lang', 'en'], catalog: withApps, onPath: [] },
   { title: '英文界面 · 一个宿主都没有 · 「推荐」的列表', argv: ['--lang', 'en'], onPath: [], keys: [...toRecommended, KEY.space] },
-  { title: '英文界面 · 一个宿主都没有 · 在工具分组上按回车', argv: ['--lang', 'en'], ...TOOLS, onPath: [], keys: [KEY.down, KEY.enter] },
   { title: '英文界面 · 混合列表', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '英文界面 · 混合的汇总与结果', argv: ['--lang', 'en'], catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...installMixed] },
-  { title: '英文界面 · 混合列表 · skill 加 MCP', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
-  { title: '英文界面 · skill 加 MCP 的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '英文界面 · 混合列表 · skill 加 MCP', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '英文界面 · skill 加 MCP 的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
   { title: '英文界面 · 混合列表 · 只有 MCP', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '英文界面 · 混合列表 · 不可选的 MCP', argv: ['--lang', 'en'], ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '英文界面 · MCP 的汇总与结果', argv: ['--lang', 'en'], ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '英文界面 · 填写 key', argv: ['--lang', 'en'], ...KEYED, keys: toTwoKeys },
   { title: '英文界面 · 含 key 的汇总', argv: ['--lang', 'en'], ...KEYED, keys: [...toTwoKeys, KEY.enter, PASTED_KEY, KEY.enter] },
   { title: '英文界面 · 必填的 key 没填', argv: ['--lang', 'en'], ...KEYED, keys: [...skipExa, KEY.enter] },
-  { title: '英文界面 · 工具多选列表', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
+  { title: '英文界面 · 主菜单 · 四种类型都有', argv: ['--lang', 'en'], ...FOUR_KINDS },
+  { title: '英文界面 · 混合列表 · 四种类型', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '英文界面 · 混合列表 · 光标在不可选的工具上', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7)] },
+  { title: '英文界面 · 四种类型的汇总与结果', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '英文界面 · 混合列表 · 只有工具', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
   { title: '英文界面 · 出错', argv: ['--lang', 'en'], catalog: offline },
   { title: '英文界面 · 帮助', note: 'npx oxy-tools --help --lang en', argv: ['--help', '--lang', 'en'] },
@@ -564,15 +607,17 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 用途下的列表', note: '设置了 NO_COLOR：段标题、勾选和光标都靠符号认', env: { NO_COLOR: '1' }, catalog: withApps, keys: pickTwoApps },
   { title: '不显示颜色 · 混合列表', note: '设置了 NO_COLOR：类型靠段标题认，推荐靠行上的字认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '不显示颜色 · 混合列表 · 一个宿主都没有', note: '设置了 NO_COLOR：不可选的行靠行首的短横和行里的原因认', env: { NO_COLOR: '1' }, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
-  { title: '不显示颜色 · 混合列表 · skill 加 MCP', note: '设置了 NO_COLOR：两种类型的状态都是字，不靠颜色', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
-  { title: '不显示颜色 · skill 加 MCP 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '不显示颜色 · 混合列表 · skill 加 MCP', note: '设置了 NO_COLOR：两种类型的状态都是字，不靠颜色', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '不显示颜色 · skill 加 MCP 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
   { title: '不显示颜色 · 外部项目的说明与链接', note: '设置了 NO_COLOR：名字不加粗，链接没有下划线，文字照旧', env: { NO_COLOR: '1' }, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '不显示颜色 · 混合列表 · 只有 MCP', note: '设置了 NO_COLOR：四种状态的文字本身就不同', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, keys: mcpTwoHosts(pickMcps) },
   { title: '不显示颜色 · 混合列表 · 不可选的 MCP', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '不显示颜色 · MCP 的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '不显示颜色 · 填写 key', note: '设置了 NO_COLOR：申请地址没有下划线，文字照旧', env: { NO_COLOR: '1' }, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '不显示颜色 · 含 key 的汇总与结果', note: '设置了 NO_COLOR：占位符靠尖括号认', env: { NO_COLOR: '1' }, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
-  { title: '不显示颜色 · 工具多选列表', note: '设置了 NO_COLOR：状态和不可选的原因都是字，不靠颜色', env: { NO_COLOR: '1' }, ...TOOLS, keys: pickTools },
+  { title: '不显示颜色 · 混合列表 · 四种类型', note: '设置了 NO_COLOR：类型靠段标题认，状态和不可选的原因都是字', env: { NO_COLOR: '1' }, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '不显示颜色 · 四种类型的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '不显示颜色 · 混合列表 · 只有工具', note: '设置了 NO_COLOR：状态和不可选的原因都是字，不靠颜色', env: { NO_COLOR: '1' }, ...TOOLS, keys: pickTools },
   { title: '不显示颜色 · 工具的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...TOOLS, keys: runTools },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
@@ -588,15 +633,17 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 用途下的列表', note: '段标题前的横线退成 --，标题里的分隔退成 -', ...LEGACY_CONSOLE, catalog: withApps, keys: pickTwoApps },
   { title: '没有 Unicode · 混合列表', note: '段标题前的横线退成 --，推荐标记后的分隔退成 -', ...LEGACY_CONSOLE, catalog: withMixed, onPath: BOTH_HOSTS, ...MIXED, keys: [...toMixedDocuments(true), ...pickMixed] },
   { title: '没有 Unicode · 混合列表 · 一个宿主都没有', note: '不可选的勾选位退成 [-]，原因仍落在状态一栏', ...LEGACY_CONSOLE, catalog: withMixed, onPath: [], keys: toMixedDocuments() },
-  { title: '没有 Unicode · 混合列表 · skill 加 MCP', note: '各栏照样对齐', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
-  { title: '没有 Unicode · skill 加 MCP 的汇总与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...ALL_KINDS, keys: [...toMixedDocuments(true), ...toAllKindsSummary, KEY.enter] },
+  { title: '没有 Unicode · 混合列表 · skill 加 MCP', note: '各栏照样对齐', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...pickSkillAndMcps] },
+  { title: '没有 Unicode · skill 加 MCP 的汇总与结果', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, ...THREE_KINDS, keys: [...toMixedDocuments(true), ...toThreeKindsSummary, KEY.enter] },
   { title: '没有 Unicode · 外部项目的说明与链接', ...LEGACY_CONSOLE, catalog: withApps, keys: [...pickTwoApps, KEY.enter] },
   { title: '没有 Unicode · 混合列表 · 只有 MCP', note: '不可选的勾选位退成 [-]', ...LEGACY_CONSOLE, ...MCP_STATES, keys: pickMcps },
   { title: '没有 Unicode · 混合列表 · 不可选的 MCP', note: '在不可选的条目上按空格：光标照样显眼，下方多一行说明', ...LEGACY_CONSOLE, ...MCP_STATES, keys: [...toMcps, ...down(3), KEY.space] },
   { title: '没有 Unicode · MCP 的汇总与结果', ...LEGACY_CONSOLE, ...MCP_TWO_HOSTS, commands: linearFails, keys: mcpTwoHosts(runMcps) },
   { title: '没有 Unicode · 填写 key', note: '留下的那一行的记号退成 -', ...LEGACY_CONSOLE, ...KEYED, keys: [...toTwoKeys, KEY.enter] },
   { title: '没有 Unicode · 含 key 的汇总与结果', ...LEGACY_CONSOLE, ...KEYED, keys: [...skipExa.slice(0, -1), PASTED_KEY, KEY.enter, KEY.enter] },
-  { title: '没有 Unicode · 工具多选列表', note: '不可选的勾选位退成 [-]，各栏照样对齐；这个系统是 Windows，不支持它的那条写明原因', ...LEGACY_CONSOLE, ...TOOLS, keys: pickTools },
+  { title: '没有 Unicode · 混合列表 · 四种类型', note: '段标题前的横线退成 --，不可选的勾选位退成 [-]，各栏照样对齐', ...LEGACY_CONSOLE, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
+  { title: '没有 Unicode · 四种类型的汇总与结果', ...LEGACY_CONSOLE, ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
+  { title: '没有 Unicode · 混合列表 · 只有工具', note: '不可选的勾选位退成 [-]，各栏照样对齐；这个系统是 Windows，不支持它的那条写明原因', ...LEGACY_CONSOLE, ...TOOLS, keys: pickTools },
   { title: '没有 Unicode · 工具的汇总与结果', ...LEGACY_CONSOLE, ...TOOLS, shell: installsToolOnWindows, keys: runTools },
   { title: '没有 Unicode · 出错', ...LEGACY_CONSOLE, catalog: offline },
 ];

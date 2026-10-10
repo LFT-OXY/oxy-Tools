@@ -48,16 +48,16 @@ describe('主菜单按用途进入', () => {
     expect(result.output).not.toContain(DEV_WORKFLOW);
   });
 
-  it('工具这个旧分组留在各用途之后，照旧带着数量和说明；MCP 数在各自的用途里，没有「Skill」「MCP」这两个分组', async () => {
+  it('主菜单上只有「推荐」、各个用途和退出：四种类型都数在各自的用途里，没有按类型分的行', async () => {
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } }),
       answers: [choose('退出')],
     });
 
     expect(result.output).toMatch(
-      /^\s+用途\s+数量\s+说明\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s+开发工作流与规范\s+2\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
+      /^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+3\n\s+开发工作流与规范\s+3\n\s*\n\s+退出$/m,
     );
-    expect(result.output).not.toMatch(/^\s+(Skill|MCP)\s+\d/m);
+    expect(result.output).not.toMatch(/^[\s-]+(Skill|MCP|工具|应用项目|外部项目)\s+\d/m);
   });
 });
 
@@ -170,7 +170,7 @@ describe('一个宿主都没检测到时的外部项目', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('上方的说明补一句外部项目仍可浏览；旧分组不可进入，光标直接落在第一行上', async () => {
+  it('上方的说明补一句外部项目仍可浏览；主菜单上没有进不去的行，光标直接落在第一行上', async () => {
     // 直接回车进的就是第一行「推荐」
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } }),
@@ -179,10 +179,13 @@ describe('一个宿主都没检测到时的外部项目', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览$/m);
-    expect(result.output).toMatch(/^- 工具\s+2\s+执行其官方安装命令装上的工具 · 需要 AI Agent$/m);
+    // 单选里不可选的行以短横开头
+    expect(result.output).not.toMatch(/^- /m);
     // 第一个应答进的是「推荐」：它下面是本仓库的 skill
     expect(result.output.split('? 选择要安装的条目')[1]).toMatch(/^ – alpha\s+需要 AI Agent\s/m);
-    expect(result.output).toMatch(/ borealis\s+第二个样例外部项目$/m);
+    // 用途下的工具和别的组件一样不可选，外部项目照常
+    expect(result.output.split('? 选择要安装的条目')[2]).toMatch(/^ – fetcher\s+需要 AI Agent\s/m);
+    expect(result.output).toMatch(/^ □ borealis\s+第二个样例外部项目$/m);
   });
 
   it('目录里只有外部项目时，主菜单只有用途和退出', async () => {

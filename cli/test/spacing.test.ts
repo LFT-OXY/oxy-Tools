@@ -8,18 +8,21 @@ import { screenLines } from './terminal.ts';
 const HINT = '⏎ 选择';
 const PICK_HINT = '⏎ 确认';
 const BOTH_HOSTS = ['claude', 'codex'];
-// 两个用途下各有一个外部项目，工具这个旧分组也有条目：主菜单上「推荐」在最前，各个用途排在旧分组前面
-const fullCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS } });
+// 两个用途下各有一个外部项目：主菜单上「推荐」在最前，后面是这两个用途
+const fullCatalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS } });
 // 这些 MCP 都放进第一个用途：进去之后是一张只有 MCP 一段的列表
 const withMcps = (...mcps: unknown[]): Record<string, unknown> => ({ ...EMPTY_CATALOG, mcps: underWebSearch(...mcps) });
-// 没有外部项目：主菜单上是「推荐」、放着两个 MCP 的第一个用途、工具这个旧分组
-const componentCatalog = (): string => catalogDir({ catalog: { ...withMcps(...SAMPLE_MCPS), tools: SAMPLE_TOOLS } });
+// 没有外部项目：主菜单上是「推荐」、放着两个 MCP 的第一个用途、放着两个工具的第二个用途
+const componentCatalog = (): string =>
+  catalogDir({ catalog: { ...withMcps(...SAMPLE_MCPS), tools: SAMPLE_TOOLS.map((tool) => ({ ...tool, purpose: 'dev-workflow' })) } });
+// 两个工具在第一个用途下，别的什么都没有
+const toolCatalog = (tools: unknown[] = SAMPLE_TOOLS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: underWebSearch(...tools) } });
 
 // 主菜单上「推荐」下面是第一个用途：fullCatalog 里它下面是 borealis，放了 MCP 的目录里是那几个 MCP
 const toPurpose: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter]];
 const toMcps = toPurpose;
-// 第一个用途下面就是旧分组；别的用途下没有条目时才这样走
-const toTools: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 工具', KEY.enter]];
+// componentCatalog 里工具都在第二个用途下：进去之后是一张只有工具一段的列表，按名字排是 fetcher、linter
+const toTools: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 开发工作流与规范', KEY.enter]];
 // alpha 另外归在第一个用途下：那张列表里 skill 和外部项目都有
 const mixedCatalog = (): string =>
   catalogDir({ catalog: { ...EMPTY_CATALOG, apps: SAMPLE_APPS, skillPurposes: { alpha: 'web-search' } } });
@@ -58,7 +61,7 @@ describe('提问与它下面的表或选项之间空一行', () => {
   it.each([
     ['「推荐」', [[HINT, KEY.enter]], '? 选择要安装的条目', /^\s+名称\s+Claude Code\s+说明$/],
     ['只有 MCP 的用途', toMcps, '? 选择要安装的条目', /^\s+名称\s+Claude Code\s+说明$/],
-    ['工具', toTools, '? 选择要安装的工具', /^\s+名称\s+状态\s+说明$/],
+    ['只有工具的用途', toTools, '? 选择要安装的条目', /^\s+名称\s+状态\s+说明$/],
   ] as [string, [string, string][], string, RegExp][])('%s 的多选列表：与表头之间', async (_label, toList, question, header) => {
     const lines = await screenOf({ catalog: componentCatalog(), keys: [...toList, [PICK_HINT, KEY.ctrlC]] });
 
@@ -241,34 +244,21 @@ describe('列表下方：说明全文与按键提示之间空一行', () => {
     ]);
   });
 
-  it('工具的列表：在不可选的条目上按空格，「这一项现在选不了」与按键提示之间空一行', async () => {
-    // 第一条把这个系统标为不支持：它不可选，光标起始就停在它上面
-    const tools = [{ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', linux: null } }, ...SAMPLE_TOOLS];
+  it('不可选的工具：在它上面按空格，「这一项现在选不了」、类型、说明三行挨着，与按键提示之间空一行', async () => {
+    // picky 把这个系统标为不支持：一段里按名字排，它在最后
+    const picky = { ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', linux: null } };
     const lines = await screenOf({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools } }),
-      keys: [[HINT, KEY.down], ['▸ 工具', KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
+      catalog: toolCatalog([picky, ...SAMPLE_TOOLS]),
+      keys: [...toPurpose, [PICK_HINT, KEY.down], ['▸□ linter', KEY.down], ['▸– picky', KEY.space], ['这一项现在选不了', KEY.ctrlC]],
     });
 
-    expect(after(lines, /^ □ linter\s/, 4)).toEqual([
+    expect(after(lines, /^▸– picky\s+不支持 Linux\s/, 6)).toEqual([
       '',
       expect.stringMatching(/^\s+注意\s+这一项现在选不了$/),
+      expect.stringMatching(/^\s+类型\s+工具$/),
+      expect.stringMatching(/^\s+说明\s+第二个样例工具$/),
       '',
       expect.stringMatching(PICK_KEYS),
-    ]);
-  });
-
-  it('单选：在不可进入的分组上按回车，同一个画法', async () => {
-    const lines = await screenOf({
-      catalog: componentCatalog(),
-      onPath: [],
-      keys: [...toTools, ['这一项现在选不了', KEY.ctrlC]],
-    });
-
-    expect(after(lines, '  退出', 4)).toEqual([
-      '',
-      expect.stringMatching(/^\s+注意\s+这一项现在选不了$/),
-      '',
-      expect.stringMatching(SELECT_KEYS),
     ]);
   });
 });
@@ -437,10 +427,23 @@ describe('分区标题下方空一行', () => {
     for (const title of titles) expect(after(lines, new RegExp(`^── ${title} ─+$`), 2)).toEqual(['', expect.stringMatching(/\S/)]);
   });
 
-  it('每个工具的执行：空行只在标题下方，接着是那一行命令；结论与收尾的通栏横线之间空一行', async () => {
-    const lines = await printed({ catalog: fullCatalog(), answers: [choose('工具'), pick('linter'), accept(), choose('退出')] });
+  it('只装工具时的汇总：标题下方空一行，工具的小表与将执行的命令之间空一行', async () => {
+    const lines = await printed({ catalog: toolCatalog(), answers: [choose('联网搜索与文档检索'), pick('linter'), choose('取消'), choose('退出')] });
 
-    expect(after(lines, /^── 将执行 1 条命令 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+1\s+linter\s+npm install/)]);
+    expect(after(lines, /^── 将安装 1 项 ─+$/, 7)).toEqual([
+      '',
+      expect.stringMatching(/^\s+工具\s+操作$/),
+      expect.stringMatching(/^\s+linter\s+执行安装命令$/),
+      '',
+      expect.stringMatching(/^── 将执行 1 条命令 ─+$/),
+      '',
+      expect.stringMatching(/^\s+1\s+npm install/),
+    ]);
+  });
+
+  it('每个工具的执行：空行只在标题下方，接着是那一行命令；结论与收尾的通栏横线之间空一行', async () => {
+    const lines = await printed({ catalog: toolCatalog(), answers: [choose('联网搜索与文档检索'), pick('linter'), accept(), choose('退出')] });
+
     expect(after(lines, /^── linter ─+$/, 7)).toEqual([
       '',
       expect.stringMatching(/^\s+\$ npm install -g @example\/linter@latest$/),
@@ -453,7 +456,7 @@ describe('分区标题下方空一行', () => {
   });
 
   it('装了不止一个工具时的「结果」分区：标题下方、最后一行结论与通栏横线之间', async () => {
-    const lines = await printed({ catalog: fullCatalog(), answers: [choose('工具'), pick('fetcher', 'linter'), accept(), choose('退出')] });
+    const lines = await printed({ catalog: toolCatalog(), answers: [choose('联网搜索与文档检索'), pick('fetcher', 'linter'), accept(), choose('退出')] });
 
     expect(after(lines, /^── 结果 ─+$/, 2)).toEqual(['', expect.stringMatching(/^\s+✗\s+fetcher\s+失败 /)]);
     const results = lines.slice(lines.findIndex((line) => /^── 结果 ─+$/.test(line)));
@@ -541,32 +544,34 @@ describe('24 行的终端：列表一屏放多少行把空行算在内', () => {
     expect(visible.filter((line) => /^.□ app-\d\d\s/.test(line))).toHaveLength(13);
   });
 
-  it('24 行的终端里主菜单不滚动：「推荐」、十个用途、工具这个旧分组、「退出」和表头都在', async () => {
+  it('24 行的终端里主菜单不滚动：「推荐」、十个用途、「退出」和表头都在', async () => {
     const purposes = Array.from({ length: 10 }, (_, index) => ({ id: `purpose-${index}`, name: { zh: `第 ${index} 个用途`, en: `Purpose ${index}` } }));
     const apps = purposes.map(({ id }, index) => ({ ...SAMPLE_APPS[1], name: `app-${index}`, purpose: id }));
-    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes, tools: SAMPLE_TOOLS.map((tool) => ({ ...tool, purpose: 'purpose-0' })), apps } });
+    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes, apps } });
     const result = await run({ catalog, rows: ROWS, keys: [[HINT, KEY.ctrlC]] });
     const visible = (await screenLines(result.raw, ROWS)).slice(-ROWS);
 
     expect(visible).toContain('? 选择用途');
     expect(visible.filter((line) => /^▸ 推荐\s+2$/.test(line))).toHaveLength(1);
     expect(visible.filter((line) => /第 \d 个用途\s+1$/.test(line))).toHaveLength(10);
-    expect(after(visible, /^\s+工具\s/, 2)).toEqual(['', expect.stringMatching(/^\s+退出$/)]);
-    expect(visible.some((line) => /^\s+用途\s+数量\s+说明$/.test(line))).toBe(true);
+    expect(after(visible, /^\s+第 9 个用途\s/, 2)).toEqual(['', expect.stringMatching(/^\s+退出$/)]);
+    expect(visible.some((line) => /^\s+用途\s+数量$/.test(line))).toBe(true);
   });
 
-  it('很矮的终端里列表最少也有 7 行：「推荐」、两个用途、工具这个旧分组、「退出」和表头都在，主菜单不滚动', async () => {
-    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: [SAMPLE_APPS[1]] } });
+  it('很矮的终端里列表最少也有 7 行：「推荐」、三个用途、「退出」和表头都在，主菜单不滚动', async () => {
+    const purposes = [...EMPTY_CATALOG.purposes, { id: 'documents', name: { zh: '文档处理', en: 'Document processing' } }];
+    const apps = [SAMPLE_APPS[1], { ...SAMPLE_APPS[0], purpose: 'documents' }];
+    const catalog = catalogDir({ catalog: { ...EMPTY_CATALOG, purposes, mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps } });
     const result = await run({ catalog, rows: 12, keys: [[HINT, KEY.ctrlC]] });
     const lines = await screenLines(result.raw, 60);
 
     expect(after(lines, '? 选择用途', 8)).toEqual([
       '',
-      expect.stringMatching(/^\s+用途\s+数量\s+说明$/),
+      expect.stringMatching(/^\s+用途\s+数量$/),
       expect.stringMatching(/^▸ 推荐\s/),
       expect.stringMatching(/^\s+联网搜索与文档检索\s/),
       expect.stringMatching(/^\s+开发工作流与规范\s/),
-      expect.stringMatching(/^\s+工具\s/),
+      expect.stringMatching(/^\s+文档处理\s/),
       '',
       expect.stringMatching(/^\s+退出$/),
     ]);
@@ -662,9 +667,9 @@ describe('任何地方都没有连着两行空行', () => {
       ],
     ],
     [
-      '一个宿主都没检测到：在不可进入的分组上按回车',
-      () => ({ catalog: fullCatalog(), onPath: [] }),
-      [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.down], ['▸ 开发工作流与规范', KEY.down], ['▸ 工具', KEY.enter], ['这一项现在选不了', KEY.down]],
+      '一个宿主都没检测到：在不可选的工具上按空格',
+      () => ({ catalog: componentCatalog(), onPath: [] }),
+      [...toTools, [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.down]],
     ],
     [
       '混合列表：一次勾 skill 和外部项目，装完列出链接再回主菜单',

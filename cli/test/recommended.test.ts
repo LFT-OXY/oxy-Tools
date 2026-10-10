@@ -57,11 +57,11 @@ describe('主菜单上的「推荐」', () => {
     expect(listed(result.output)).toEqual(['atlas']);
   });
 
-  it('工具这个旧分组留在各用途之后，照旧带着数量和说明；没有「MCP」这个分组', async () => {
+  it('「推荐」下面只有各个用途：MCP、工具、外部项目都数在各自的用途里，没有按类型分的行', async () => {
     const result = await run({ catalog: withCatalog({ mcps: SAMPLE_MCPS, tools: SAMPLE_TOOLS, apps: SAMPLE_APPS }), answers: [choose('退出')] });
 
     expect(result.output).toMatch(
-      /^\s+用途\s+数量\s+说明\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s+开发工作流与规范\s+2\n\s+工具\s+2\s+执行其官方安装命令装上的工具\n\s*\n\s+退出$/m,
+      /^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+3\n\s+开发工作流与规范\s+3\n\s*\n\s+退出$/m,
     );
   });
 

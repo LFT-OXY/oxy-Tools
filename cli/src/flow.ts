@@ -1,4 +1,4 @@
-// 交互流程：主菜单、「推荐」、各个用途与工具的旧入口的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
+// 交互流程：主菜单、「推荐」与各个用途的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层。
 import { join, relative } from 'node:path';
 import { CatalogError, type App, type Catalog, type CatalogSource, type Mcp, type PinnedSource, type Purpose, type Skill, type Tool } from './catalog.ts';
 import type { Host } from './hosts.ts';
@@ -45,21 +45,19 @@ export async function mainMenu(session: Session): Promise<void> {
   const purposes = catalog.purposes
     .map((purpose) => ({ purpose, count: sizeOf(purposeListing(catalog, purpose)) }))
     .filter(({ count }) => count > 0);
-  // 还没搬进混合列表的类型暂时留着旧入口，有条目才列出；组件要装进宿主，一个宿主都没检测到时进不去
-  const groups = [{ id: 'tool' as const, count: catalog.tools.length, lacksHost: detected.length === 0 }].filter((group) => group.count > 0);
   for (;;) {
-    const choice = await prompter.select(ui.mainMenu(sizeOf(recommended), purposes, groups));
+    const choice = await prompter.select(ui.mainMenu(sizeOf(recommended), purposes));
     if (choice === 'exit') return;
-    if (choice === 'tool') await installTools(session, detected);
-    else await browse(session, detected, choice === 'recommended' ? recommended : purposeListing(catalog, choice));
+    await browse(session, detected, choice === 'recommended' ? recommended : purposeListing(catalog, choice));
     ui.nextRound();
   }
 }
 
-/** 一张混合列表里的条目：组件在上（先 skill 后 MCP），外部项目在下 */
+/** 一张混合列表里的条目：组件在上（skill、MCP、工具），外部项目在下 */
 interface Listing {
   skills: Skill[];
   mcps: Mcp[];
+  tools: Tool[];
   apps: App[];
   /** 把带推荐的行标出来；「推荐」那张列表里每一行都是，不标 */
   marksRecommended: boolean;
@@ -72,12 +70,18 @@ const recommendedFirst = <Entry extends { name: string; recommended: boolean }>(
   ...byName(entries.filter((entry) => entry.recommended)),
   ...byName(entries.filter((entry) => !entry.recommended)),
 ];
-const sizeOf = (listing: Listing): number => listing.skills.length + listing.mcps.length + listing.apps.length;
+const sizeOf = (listing: Listing): number => listing.skills.length + listing.mcps.length + listing.tools.length + listing.apps.length;
 
 // 「推荐」：本仓库的全部 skill（不看任何标注），加上带推荐标记的其它条目
 function recommendedListing(catalog: Catalog): Listing {
   const marked = ({ recommended }: { recommended: boolean }): boolean => recommended;
-  return { skills: byName(catalog.skills), mcps: byName(catalog.mcps.filter(marked)), apps: byName(catalog.apps.filter(marked)), marksRecommended: false };
+  return {
+    skills: byName(catalog.skills),
+    mcps: byName(catalog.mcps.filter(marked)),
+    tools: byName(catalog.tools.filter(marked)),
+    apps: byName(catalog.apps.filter(marked)),
+    marksRecommended: false,
+  };
 }
 
 function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
@@ -85,6 +89,7 @@ function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
   return {
     skills: byName(catalog.skills.filter(here)),
     mcps: recommendedFirst(catalog.mcps.filter(here)),
+    tools: recommendedFirst(catalog.tools.filter(here)),
     apps: byName(catalog.apps.filter(here)),
     marksRecommended: true,
   };
@@ -92,12 +97,12 @@ function purposeListing(catalog: Catalog, purpose: Purpose): Listing {
 
 // 进入「推荐」或一个用途：勾选、确认、装上勾选的组件，最后列出勾选的外部项目的说明与链接
 async function browse(session: Session, detected: readonly Host[], listing: Listing): Promise<void> {
-  // 列表里没有组件就没有要装进宿主的东西，不问装进哪些
+  // 列表里没有 skill 和 MCP 就没有要装进宿主的东西，不问装进哪些：工具不装进宿主
   await withHosts(session, listing.skills.length + listing.mcps.length > 0 ? detected : [], async (hosts) => {
-    const plan = await planEntries(session, hosts, listing);
+    const plan = await planEntries(session, detected, hosts, listing);
     if (plan === 'back') return 'back';
     if (plan === 'cancel') return 'done';
-    await runJobs(session, plan.jobs, plan.mcpJobs);
+    await runJobs(session, plan);
     if (plan.apps.length > 0) session.ui.externalProjects(plan.apps);
     return 'done';
   });
@@ -120,9 +125,15 @@ interface McpJob {
   missingVariable?: string;
 }
 
+interface ToolJob {
+  tool: Tool;
+  target: ToolTarget;
+}
+
 interface Plan {
   jobs: Job[];
   mcpJobs: McpJob[];
+  toolJobs: ToolJob[];
   apps: App[];
 }
 
@@ -150,10 +161,10 @@ async function withHosts(
 }
 
 // 勾选条目、填 key、看汇总和将要执行的命令、确认；返回要装的每一项和勾选的外部项目。
-// hosts 是空的表示一个宿主都没检测到：组件都勾不上
-async function planEntries(session: Session, hosts: readonly Host[], listing: Listing): Promise<Plan | 'back' | 'cancel'> {
+// hosts 是这一轮要装进的宿主，是空的时 skill 和 MCP 都勾不上；工具看的是 detected（检测到的宿主），不看选了哪些
+async function planEntries(session: Session, detected: readonly Host[], hosts: readonly Host[], listing: Listing): Promise<Plan | 'back' | 'cancel'> {
   const { ui, prompter } = session;
-  let picked: (Skill | Mcp | App)[] = [];
+  let picked: (Skill | Mcp | Tool | App)[] = [];
   for (;;) {
     // 状态每次进列表都现探测
     const skills = listing.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
@@ -161,8 +172,21 @@ async function planEntries(session: Session, hosts: readonly Host[], listing: Li
     const unreadable = hosts.filter((_, column) => statuses.some((row) => row[column] === 'unknown'));
     if (unreadable.length > 0) ui.mcpConfigUnreadable(unreadable);
     const mcps = listing.mcps.map((mcp, row) => ({ mcp, statuses: statuses[row] ?? [] }));
+    const tools = listing.tools.map((tool) => {
+      const command = installCommand(tool, session.platform);
+      // 先看有没有宿主，再看系统，再看它要的宿主
+      const unavailable: ToolUnavailable | undefined =
+        detected.length === 0
+          ? { kind: 'no-host' }
+          : 'unsupported' in command
+            ? { kind: 'os', os: command.unsupported }
+            : tool.hosts && !detected.some((host) => tool.hosts?.includes(host.id))
+              ? { kind: 'hosts' }
+              : undefined;
+      return { tool, command, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
+    });
     picked = await prompter.checkbox(
-      ui.mixedPicker({ hosts, skills, mcps, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
+      ui.mixedPicker({ hosts, skills, mcps, tools, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }),
     );
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
@@ -196,11 +220,16 @@ async function planEntries(session: Session, hosts: readonly Host[], listing: Li
       }
     }
     const ready = mcpJobs.filter((job) => job.missingVariable === undefined);
+    // 汇总里展示的命令就是之后执行的那一行
+    const toolJobs = tools.flatMap(({ tool, command }) =>
+      picked.includes(tool) && 'command' in command ? [{ tool, target: { name: tool.name, command: command.command, evidence: evidenceOf(session, tool) } }] : [],
+    );
     // 没有要确认的东西：只勾了外部项目，或勾上的组件全是必填的 key 没填的 MCP（直接去结果里说明）
-    if (jobs.length + ready.length === 0) return { jobs, mcpJobs, apps };
+    if (jobs.length + ready.length + toolJobs.length === 0) return { jobs, mcpJobs, toolJobs, apps };
     const commands = ready.flatMap((job) => job.steps.map((step) => step.command));
-    ui.installSummary({ skills: jobs.map((job) => job.target), mcps: ready.map((job) => job.target) });
-    if (commands.length > 0) ui.commandList(commands);
+    ui.installSummary({ skills: jobs.map((job) => job.target), mcps: ready.map((job) => job.target), tools: toolJobs.map((job) => job.target) });
+    // 照执行的先后：MCP 的在前，工具的在后
+    if (commands.length + toolJobs.length > 0) ui.commandList([...commands, ...toolJobs.map((job) => job.target.command)]);
     ui.summaryNotices({
       overwrites: jobs.some((job) => job.target.status.kind !== 'none'),
       placeholders: commands.some(({ args }) => args.some((arg) => typeof arg !== 'string')),
@@ -216,7 +245,7 @@ async function planEntries(session: Session, hosts: readonly Host[], listing: Li
     });
     const decision = await prompter.select(ui.confirmInstall());
     if (decision === 'cancel') return 'cancel';
-    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), mcpJobs, apps };
+    if (decision === 'install') return { jobs: await confirmOverwrites(session, jobs), mcpJobs, toolJobs, apps };
     ui.nextRound();
   }
 }
@@ -232,17 +261,19 @@ async function confirmOverwrites(session: Session, jobs: readonly Job[]): Promis
   return confirmed;
 }
 
-// 本仓库的 skill 在前，MCP 在后，共用一个「正在安装」分区；一项失败不影响其余项
-async function runJobs(session: Session, jobs: readonly Job[], mcpJobs: readonly McpJob[]): Promise<void> {
+// 本仓库的 skill 在前，MCP 在后，共用一个「正在安装」分区；工具排在最后，它的命令会直接接管终端的输入输出。
+// 一项失败不影响其余项
+async function runJobs(session: Session, { jobs, mcpJobs, toolJobs }: Plan): Promise<void> {
   const { ui, interrupt } = session;
   // 全都没同意覆盖时没有要下载的，不必查询
   const source = jobs.every((job) => job.declined) ? undefined : await pinSource(session);
   // 查询失败时出错说明已经给了：skill 一个都不装，结果里也没有它们
   const skillJobs = !source && jobs.some((job) => !job.declined) ? [] : jobs;
-  if (skillJobs.length + mcpJobs.length === 0) return;
+  if (skillJobs.length + mcpJobs.length + toolJobs.length === 0) return;
   const progress = ui.installation(
     skillJobs.map((job) => job.target),
     mcpJobs.map((job) => job.target),
+    toolJobs.map((job) => job.target),
   );
   for (const { skill, host, target, declined } of skillJobs) {
     if (declined || !source) {
@@ -282,6 +313,11 @@ async function runJobs(session: Session, jobs: readonly Job[], mcpJobs: readonly
     }
     settle(outcome);
   }
+  for (const { tool, target } of toolJobs) {
+    const settle = progress.tool.begin(target);
+    // 成功与否看复核，不看命令的退出状态
+    settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
+  }
   progress.finish();
 }
 
@@ -309,50 +345,9 @@ async function askKeys(session: Session, mcp: Mcp): Promise<{ variables: string[
   return { variables };
 }
 
-// 工具不装进宿主，所以不问装进哪个：勾选、看将要执行的完整命令、确认，然后逐个执行并复核
-async function installTools(session: Session, detected: readonly Host[]): Promise<void> {
-  const { catalog, ui, prompter } = session;
-  let picked: Tool[] = [];
-  for (;;) {
-    // 状态每次进列表都现探测
-    const entries = catalog.tools.map((tool) => {
-      const plan = installCommand(tool, session.platform);
-      const unavailable: ToolUnavailable | undefined =
-        'unsupported' in plan
-          ? { kind: 'os', os: plan.unsupported }
-          : tool.hosts && !detected.some((host) => tool.hosts?.includes(host.id))
-            ? { kind: 'hosts' }
-            : undefined;
-      return { tool, plan, status: toolStatus(tool, session), ...(unavailable ? { unavailable } : {}) };
-    });
-    picked = await prompter.checkbox(ui.toolPicker(entries, picked));
-    // 一个都不勾就确认：返回主菜单
-    if (picked.length === 0) return;
-    // 汇总里展示的命令就是之后执行的那一行
-    const jobs = entries.flatMap(({ tool, plan }) =>
-      picked.includes(tool) && 'command' in plan ? [{ tool, target: { name: tool.name, command: plan.command, evidence: evidenceOf(session, tool) } }] : [],
-    );
-    ui.toolCommandList(jobs.map((job) => job.target));
-    const decision = await prompter.select(ui.confirmCommands());
-    if (decision === 'cancel') return;
-    if (decision === 'install') return runTools(session, jobs);
-    ui.nextRound();
-  }
-}
-
 // 复核时查的东西，写成给用户看的样子
 function evidenceOf(session: Session, { check }: Tool): ToolTarget['evidence'] {
   return 'command' in check ? check : { path: homeRelative(session, join(session.homeDir, ...check.path.split('/'))) };
-}
-
-async function runTools(session: Session, jobs: readonly { tool: Tool; target: ToolTarget }[]): Promise<void> {
-  const progress = session.ui.toolInstallation(jobs.map((job) => job.target));
-  for (const { tool, target } of jobs) {
-    const settle = progress.begin(target);
-    // 成功与否看复核，不看命令的退出状态；一项没装上不影响其余项
-    settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
-  }
-  progress.finish();
 }
 
 // 给用户看的路径：主目录写成 ~

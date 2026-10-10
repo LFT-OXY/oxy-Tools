@@ -208,23 +208,23 @@ describe('一个宿主都没检测到', () => {
     expect(readdirSync(result.home)).toEqual([]);
   });
 
-  // 目录里只有工具：主菜单上只有工具这个旧分组和退出
+  // 目录里只有工具：主菜单上只有它们所在的两个用途和退出
   const onlyTools = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } });
 
-  it('旧分组不可进入并注明原因，光标落在能选的那一项上', async () => {
-    // 直接回车：第一行不可进入，光标起始所在的那一项是「退出」，所以这一个应答就结束了
-    const result = await run({ catalog: onlyTools(), onPath: [], answers: [accept()] });
+  it('工具所在的用途照常进得去，里面的工具不可选并注明原因', async () => {
+    // 直接回车：光标起始在第一行上，它是第一个用途
+    const result = await run({ catalog: onlyTools(), onPath: [], answers: [accept(), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^- 工具\s+2\s+执行其官方安装命令装上的工具 · 需要 AI Agent$/m);
-    expect(result.output).not.toContain('选择要安装的');
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明\n\s+── 工具\n – fetcher\s+需要 AI Agent\s+第一个样例工具/m);
+    expect(result.commands).toEqual([]);
     expect(result.exitCode).toBe(0);
     expect(readdirSync(result.home)).toEqual([]);
   });
 
-  it('英文界面下旧分组的原因也是英文', async () => {
-    const result = await run({ argv: ['--lang', 'en'], catalog: onlyTools(), onPath: [], answers: [accept()] });
+  it('英文界面下工具的原因也是英文', async () => {
+    const result = await run({ argv: ['--lang', 'en'], catalog: onlyTools(), onPath: [], answers: [accept(), pick(), choose('Exit')] });
 
-    expect(result.output).toMatch(/^- Tools\s+2\s+Installed by running.* · needs an AI Agent$/m);
+    expect(result.output).toMatch(/^ – fetcher\s+needs an AI Agent\s+The first sample tool/m);
     expect(result.exitCode).toBe(0);
   });
 

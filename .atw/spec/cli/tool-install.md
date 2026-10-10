@@ -42,7 +42,7 @@ export interface CommandOptions { shell: true }
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 
 // cli/src/ui.ts
-export type ToolUnavailable = { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
+export type ToolUnavailable = { kind: 'no-host' } | { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
 export interface ToolTarget { name: string; command: string; evidence: ToolEvidence } // evidence：{ command } | { path: 给用户看的路径 }
 ```
 
@@ -103,21 +103,23 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 | 情况 | 原因的文字 |
 |------|------------|
+| 一个宿主都没检测到 | `需要 AI Agent`（与别的组件同一句） |
 | `installCommand` 给出 `unsupported` | `不支持 macOS` / `不支持 Linux` / `不支持 Windows`（英文 `not for macOS`） |
 | 条目写了 `hosts`，而其中没有一个是**检测到的**宿主 | `需要别的 AI Agent`（与 MCP 同一句） |
 
-两种都写在**状态栏的位置**（画法见 [终端输出](./terminal-output.md) 的「不可选的行」）。先判系统，再判宿主。
+三种都写在**状态的位置**（画法见 [终端输出](./terminal-output.md) 的「混合列表与外部项目」）。照表里的先后判：一个宿主都没有时不再看系统和 `hosts`。
 
-工具不装进宿主：不问装进哪个，`hosts` 只决定可不可选。但它仍是组件——**一个宿主都没检测到时「工具」这个旧入口进不去**（这时能进的只有「推荐」和各个用途，里面的 skill 和 MCP 不可选，外部项目照常可选）。
+工具不装进宿主：`hosts` 只决定可不可选，看的是**检测到的**宿主，不是这一轮选的那几个；状态只有一个，与选了哪些宿主无关。但它仍是组件——一个宿主都没检测到时和别的组件一样不可选。
 
-**流程（`flow.ts` 的 `installTools`）**
+**流程**（`flow.ts`：工具没有自己的入口，和别的类型一起走混合列表，见 [入口与测试](./installer-entry.md) 的「主菜单与流程」）
 
-1. 多选列表；一个都不勾就确认 → 回主菜单。
-2. 「将执行 N 条命令」分区：每条是序号、工具名、完整命令。**任何命令都不许在这之前跑**。
-3. 单选：执行（缺省）、返回修改（回列表，勾选还在）、取消（回主菜单）。
-4. 逐个执行：每个工具一个以它名字为标题的分区，第一行 `$ <命令>`，然后命令自己的输出，然后空一行、一行结论。
-5. 不止一个工具时，一个「结果」分区把各项的结论再列一遍（维护者 2026-10-09 定的：前面的结论早被输出顶出屏幕了）；只装一个时不重复。
-6. 通栏横线、「合计」，回主菜单。
+1. 混合列表里工具自成一段，排在 MCP 之后。**这张列表里只有工具和外部项目时不问装进哪些宿主**：没有要装进宿主的东西。
+2. 汇总「将安装 N 项」里工具是最后一张小表，只有条目和操作两栏，操作写「执行安装命令」。
+3. 「将执行 N 条命令」分区：工具的命令和 MCP 的列在同一处、接着编号，排在最后，整行原样写出。**任何命令都不许在这之前跑**。
+4. 确认只问一次，和别的类型同一问：开始安装（缺省）、返回修改（回列表，勾选还在）、取消（回主菜单）。
+5. 逐个执行，**排在本仓库的 skill 和 MCP 之后**：每个工具一个以它名字为标题的分区，第一行 `$ <命令>`，然后命令自己的输出，然后空一行、一行结论。
+6. 这一轮的结果不止一行时（不止一个工具，或工具之外还有别的组件），一个「结果」分区把每一行再列一遍（维护者 2026-10-09 定的：前面的结论早被输出顶出屏幕了）；只装一个工具、没有别的组件时不重复。
+7. 通栏横线、「合计」；勾了外部项目的接着是它们的说明与链接，再回主菜单。
 
 **外部命令执行器的 shell 模式（`systemCommandRunner`，`options.shell`）**
 
@@ -152,23 +154,26 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 ### 5. Good/Base/Bad Cases
 
 - Good：勾了 `uv` 和 `openspec` → 两条完整命令编号列出，确认后各一个分区，命令的输出原样在里面，结论各一行，末尾「结果」分区重列两行，合计。
+- Good：一次勾了一个 skill、一个 MCP、一个工具 → 汇总里三张小表，命令先是 MCP 的再是工具的；skill 和 MCP 在「正在安装」分区里装完，然后才是工具的分区，最后「结果」分区把三行都列一遍。
 - Good：Windows 上条目写了 `install.windows` → 展示和执行的都是那一条，`default` 不出现。
 - Base：条目的 `install.macos` 是 `null`，在 macOS 上 → 那一行不可选，状态栏写「不支持 macOS」；在 Linux 上照常可选，用 `default`。
 - Base：条目的 `hosts` 是 `["codex"]`，只检测到 Claude Code → 不可选，状态栏写「需要别的 AI Agent」。
+- Base：一个宿主都没检测到 → 每个工具都不可选，写「需要 AI Agent」，标了不支持这个系统的那条也是这一句。
 - Base：安装脚本把工具装进了一个不在当前 `PATH` 上的目录，条目用 `check.command` → 命令以 0 退出，结论是「失败 …；可能要重开终端才找得到」。这种工具该用 `check.path` 登记。
 - Bad：`install.default` 里有换行或制表符 → 这一条被跳过，目录校验命令指出 `install.default`。
 - Bad：`check.command` 写成 `bin/uv` 或 `uv --version` → 被跳过，指出 `check.command`。
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/tools.test.ts`；真实的多选画面在 `prompts.test.ts`，条目校验的说法在 `validate-catalog.test.ts`。
+都经 `runInstaller`，从用途进入，在 `cli/test/tools.test.ts`；四种类型一起勾选的在 `mixed.test.ts`，真实的多选画面在 `prompts.test.ts`，条目校验的说法在 `validate-catalog.test.ts`。
 
 - 记录到的命令：**期望值写成字面的字符串**，带 `shell: true`、`args: []`（`{ command: 'curl … | sh', args: [], shell: true }`）。
 - 按系统选命令：没另写时用缺省的、另写了时展示和执行的都是那一条、安装器不认识的平台用缺省的。
 - 系统不支持：三个系统各一条，断言勾选位、原因的文字、其余照常；在别的系统上同一条可选。
-- 宿主：一个都没检测到时不可选；有一个检测到就可选且不问装进哪个；不认识的宿主标识不碍事；一个宿主都没有时分组进不去。
+- 宿主：它要的宿主一个都没检测到时不可选；有一个检测到就可选且不问装进哪个；不认识的宿主标识不碍事；一个宿主都没有时每个工具都不可选、原因是「需要 AI Agent」。
 - 先展示后执行：选「取消」时 `result.commands` 是空的而命令已经在输出里、且在提问之前；缺省是执行；返回修改后勾选还在；长命令折行不截断。
 - 结论：上表每一行各一条；外加执行器当场抛出、错误消息不出现在输出里；一项失败不影响其余项；不止一个时有「结果」分区且结论各出现两次，只一个时没有。
+- 和别的类型一起：汇总里都有、命令的先后（MCP 在前，工具在后）、工具的分区排在「正在安装」之后、结果各一行、最后是外部项目的链接。
 - 两种检查方式各有“已安装”的状态测试和“装完再进列表是新状态”的测试；Windows 上 `PATHEXT` 一条。
 - 安装器自己不往主目录和临时目录里写东西。
 
@@ -185,7 +190,7 @@ return { ok: result.exitCode === 0 };
 
 ```ts
 // 展示一份、执行时再按系统选一遍：两处迟早对不上
-ui.toolCommandList(tools.map((tool) => tool.install.default));
+ui.commandList(tools.map((tool) => tool.install.default));
 await runCommand(installCommand(tool, platform).command, [], { shell: true });
 ```
 
@@ -205,12 +210,21 @@ const installed = (await runCommand(check.command, ['--version'])).exitCode === 
 command: `${tool.install.default} --name ${tool.name}`,
 ```
 
+```ts
+// 拿这一轮选的宿主（hosts）判断工具可不可选：列表里只有工具和外部项目时根本不问宿主，hosts 是空的，
+// 于是检测到了宿主也全成了「需要 AI Agent」；问了宿主时，只勾 Codex 又会把要 Claude Code 的工具挡掉
+const unavailable = hosts.length === 0 ? { kind: 'no-host' } : tool.hosts && !hosts.some(…) ? { kind: 'hosts' } : undefined;
+```
+
 #### Correct
 
 ```ts
+// 可不可选看检测到的宿主（detected），和这一轮选了哪些无关
+const unavailable = detected.length === 0 ? { kind: 'no-host' } : 'unsupported' in command ? { kind: 'os', os: command.unsupported } : …;
+
 // 先算出要执行的那一行，展示的和执行的是同一个字符串；成败看复核
 const plan = installCommand(tool, session.platform);
-ui.toolCommandList(jobs.map((job) => job.target));
+ui.commandList([...mcpCommands, ...toolJobs.map((job) => job.target.command)]);
 settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
 ```
 
@@ -225,4 +239,4 @@ settle(await installTool(target.command, session.runCommand, () => toolStatus(to
 - **命令的输出不以换行结尾时**，结论上方那一个空行只是把那半行收掉，结论会紧贴着输出。输入输出是直接接在终端上的，呈现层看不到它最后一个字符是什么。
 - **执行中按 Ctrl+C**：信号同时到命令和安装器，`bin.ts` 随即以 130 退出，已经装完的那些没有合计。和下载 skill 时按 Ctrl+C 一样。
 - **宿主的原因顶替了状态**：因为要的宿主没检测到而不可选的条目，看不到它是已安装还是未安装。
-- **工具名很长时命令被挤窄**：命令的左缘在名字栏之后，名字栏按最长的名字定宽，命令因此折得更碎（视觉评审提过改成名字独占一行，没有改，要改先改 [界面设计](./ui-design.md)）。
+- **将执行的命令里看不出哪一条是哪个工具的**：命令不再带工具名一栏（工单 01 定的画法），只能从命令本身和汇总里小表的先后认。

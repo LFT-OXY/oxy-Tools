@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run } from './harness.ts';
+import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run, underWebSearch } from './harness.ts';
 import { displayWidth } from '../src/text.ts';
 import { screenLines } from './terminal.ts';
 
@@ -276,82 +276,89 @@ describe('真实的多选画面', () => {
 });
 
 describe('真实的画面：一个宿主都没检测到', () => {
-  // 旧分组还在的只有工具：目录里得有工具，主菜单上才有不可进入的行
+  // 样例的两个工具分在两个用途下：主菜单上是「推荐」和这两个用途
   const withTools = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } });
-  const DISABLED_GROUP = /^- 工具\s+2\s+执行其官方安装命令装上的工具 · 需要 AI Agent$/m;
+  const WEB_SEARCH = '▸ 联网搜索与文档检索';
+  // 进「联网搜索与文档检索」：里面只有 fetcher 一个工具，光标就停在它上面
+  const toTool: [string, string][] = [[HINT, KEY.down], [WEB_SEARCH, KEY.enter]];
+  const UNAVAILABLE_TOOL = /^▸– fetcher\s+需要 AI Agent\s+第一个样例工具.*…$/m;
 
-  it('工具分组行首是短横、行尾注明原因；光标落在第一个能进的「推荐」上', async () => {
+  it('主菜单上没有进不去的行：光标起始在「推荐」上，工具所在的用途照常列出', async () => {
     const result = await run({ catalog: withTools(), onPath: [], keys: [[HINT, KEY.ctrlC]] });
 
     expect(result.output).toMatch(/^▸ 推荐\s+2$/m);
-    expect(result.output).toMatch(DISABLED_GROUP);
+    expect(result.output).toMatch(/^  联网搜索与文档检索\s+1$/m);
+    // 单选里不可选的行以短横开头
+    expect(result.output).not.toMatch(/^- /m);
   });
 
-  // 目录里没有 skill：主菜单的第一行就是不可进入的工具分组
+  // 目录里没有 skill：主菜单的第一行是工具所在的用途
   const onlyTools = (): string => catalogDir({ index: { version: 1, skills: [] }, catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } });
 
-  it('第一行不可进入时光标落在「退出」上，回车就退出', async () => {
-    const result = await run({ catalog: onlyTools(), onPath: [], keys: [[HINT, KEY.enter]] });
+  it('目录里只有工具时光标落在第一个用途上，回车进得去；里面的工具不可选，原因写在状态的位置', async () => {
+    const result = await run({ catalog: onlyTools(), onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(DISABLED_GROUP);
-    expect(result.output).toMatch(/^▸ 退出$/m);
-    expect(result.output).toMatch(/✓ 选择用途 · 退出$/m);
-    expect(result.exitCode).toBe(0);
-  });
-
-  it('没有 Unicode 的终端里光标同样落在「退出」上', async () => {
-    const result = await run({ catalog: onlyTools(), onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
-
-    expect(result.output).toMatch(/^> 退出$/m);
-  });
-
-  it('把光标移到工具分组上按回车进不去：列表下方说明这一项选不了，仍停在主菜单', async () => {
-    const result = await run({
-      catalog: withTools(),
-      onPath: [],
-      keys: [
-        [HINT, KEY.down],
-        ['▸ 工具', KEY.enter],
-        ['这一项现在选不了', KEY.ctrlC],
-      ],
-    });
-
-    expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
-    expect(result.output).not.toContain('选择要安装的工具');
-    expect(result.output).not.toContain('✓ 选择用途');
+    expect(result.output).toMatch(/^▸ 联网搜索与文档检索\s+1$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 联网搜索与文档检索$/m);
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
+    expect(result.output).toMatch(/^\s+── 工具$/m);
+    expect(result.output).toMatch(UNAVAILABLE_TOOL);
     expect(result.exitCode).toBe(130);
   });
 
-  it('设置了 NO_COLOR 时，不可进入的行和那句说明都不带样式码，圈原因用的零宽空格不打出去', async () => {
+  it('没有 Unicode 的终端里光标同样落在第一个用途上', async () => {
+    const result = await run({ catalog: onlyTools(), onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
+
+    expect(result.output).toMatch(/^> 联网搜索与文档检索\s+1$/m);
+  });
+
+  it('在不可选的工具上按空格勾不上：列表下方说明这一项选不了，它的类型和说明照样在', async () => {
+    const result = await run({
+      catalog: withTools(),
+      onPath: [],
+      keys: [...toTool, [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
+    });
+
+    expect(result.output).toMatch(UNAVAILABLE_TOOL);
+    expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了\n\s+类型\s+工具\n\s+说明\s+第一个样例工具/m);
+    expect(result.output).not.toContain('✓ 选择要安装的条目');
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('设置了 NO_COLOR 时，不可选的工具和那句说明都不带样式码，圈原因用的零宽空格不打出去', async () => {
     const result = await run({
       catalog: withTools(),
       onPath: [],
       env: { NO_COLOR: '1' },
-      keys: [
-        [HINT, KEY.down],
-        ['▸ 工具', KEY.enter],
-        ['这一项现在选不了', KEY.ctrlC],
-      ],
+      keys: [...toTool, [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(DISABLED_GROUP);
+    expect(result.output).toMatch(UNAVAILABLE_TOOL);
     expect(result.raw).not.toMatch(STYLE_CODE);
     expect(result.raw).not.toContain('\u200b');
   });
 
   it('带样式时零宽空格同样不打出去', async () => {
-    const result = await run({ catalog: withTools(), onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
+    const result = await run({ catalog: withTools(), onPath: [], keys: [...toTool, [PICK_HINT, KEY.ctrlC]] });
 
+    expect(result.raw).toMatch(STYLE_CODE);
     expect(result.raw).not.toContain('\u200b');
   });
 
-  it('没有 Unicode 的终端里，原因前面的分隔退成 ASCII', async () => {
-    const result = await run({ catalog: withTools(), onPath: [], platform: 'win32', env: { TERM: '' }, keys: [['回车 选择', KEY.ctrlC]] });
+  it('没有 Unicode 的终端里，主菜单和不可选的工具的符号都退成 ASCII', async () => {
+    const result = await run({
+      catalog: withTools(),
+      onPath: [],
+      platform: 'win32',
+      env: { TERM: '' },
+      keys: [['回车 选择', KEY.down], ['> 联网搜索与文档检索', KEY.enter], ['回车 确认', KEY.ctrlC]],
+    });
 
-    expect(result.output).toMatch(/^- 工具\s+2\s+执行其官方安装命令装上的工具 - 需要 AI Agent$/m);
     expect(result.output).toMatch(/^> 推荐\s+2$/m);
-    expect(result.output).toMatch(/^\s+上下键 移动 - 回车 选择$/m);
-    expect(result.output).not.toMatch(/[▸✓·…↑↓⏎–]/);
+    expect(result.output).toMatch(/^\s+上下键 移动 - 空格 选择 - a 全选 - i 反选 - 回车 确认（不选则返回）$/m);
+    expect(result.output).toMatch(/^\s+-- 工具$/m);
+    expect(result.output).toMatch(/^>\[-\] fetcher\s+需要 AI Agent\s+第一个样例工具.*\.\.\.$/m);
+    expect(result.output).not.toMatch(/[▸✓·…↑↓⏎–─]/);
   });
 
   it('英文界面下的那句说明也是英文', async () => {
@@ -361,12 +368,15 @@ describe('真实的画面：一个宿主都没检测到', () => {
       argv: ['--lang', 'en'],
       keys: [
         ['⏎ select', KEY.down],
-        ['▸ Tools', KEY.enter],
+        ['▸ Web search & docs retrieval', KEY.enter],
+        ['⏎ confirm', KEY.space],
         ['cannot be selected', KEY.ctrlC],
       ],
     });
 
+    expect(result.output).toMatch(/^▸– fetcher\s+needs an AI Agent\s/m);
     expect(result.output).toMatch(/^\s+Notice\s+This item cannot be selected right now$/m);
+    expect(result.output).toMatch(/^\s+Type\s+Tool$/m);
   });
 
   it('「推荐」照常进得去：skill 的勾选位是短横，原因写在状态的位置；按空格勾不上', async () => {
@@ -848,66 +858,67 @@ describe('真实的画面：MCP', () => {
 });
 
 describe('真实的画面：工具', () => {
-  // 第一条把 macOS 标为不支持；样例里用 darwin 跑，它不可选
-  const tools = [{ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', macos: null } }, ...SAMPLE_TOOLS];
+  // 三个工具在同一个用途下，段里按名字排：fetcher、linter、picky。picky 把 macOS 标为不支持，用 darwin 跑时它不可选
+  const tools = underWebSearch({ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', macos: null } }, ...SAMPLE_TOOLS);
   const catalog = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools } });
-  const toTools: [string, string][] = [[HINT, KEY.down], ['▸ 工具', KEY.enter]];
+  const toTools: [string, string][] = [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter]];
+  const toPicky: [string, string][] = [...toTools, [PICK_HINT, KEY.down], ['▸□ linter', KEY.down]];
+  // 光标起始在 fetcher 上：勾上它、确认、开始安装，回到主菜单
+  const installFetcher: [string, string][] = [...toTools, [PICK_HINT, KEY.space], ['▸■ fetcher', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]];
   const mac = { platform: 'darwin' as const };
 
-  it('列表是多选：每行前面有勾选框，之后是一栏状态和说明，下方是按键提示', async () => {
+  it('工具在混合列表里自成一段：每行前面有勾选框，之后是一栏状态和说明，下方是类型、说明和按键提示', async () => {
     const result = await run({ catalog: catalog(), keys: [...toTools, [PICK_HINT, KEY.ctrlC]] });
 
-    expect(result.output).toMatch(/✓ 选择用途 · 工具$/m);
+    expect(result.output).toMatch(/✓ 选择用途 · 联网搜索与文档检索$/m);
     expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
-    expect(result.output).toMatch(/^▸□ picky\s+未安装\s+第二个样例工具$/m);
-    expect(result.output).toMatch(/^ □ fetcher\s+未安装\s+第一个样例工具.*…$/m);
+    expect(result.output).toMatch(/^\s+── 工具$/m);
+    expect(result.output).toMatch(/^▸□ fetcher\s+未安装\s+第一个样例工具.*…$/m);
+    expect(result.output).toMatch(/^ □ picky\s+未安装\s+第二个样例工具$/m);
+    expect(result.output).toMatch(/^\s+类型\s+工具$/m);
     expect(result.output).toMatch(/^\s+↑↓ 移动 · 空格 选择 · a 全选 · i 反选 · ⏎ 确认（不选则返回）$/m);
   });
 
-  it('当前系统不支持的条目：勾选位是短横，状态栏的位置写原因', async () => {
-    const result = await run({ catalog: catalog(), ...mac, keys: [...toTools, [PICK_HINT, KEY.ctrlC]] });
+  it('当前系统不支持的条目：勾选位是短横，状态的位置写原因；光标停上去时下方照样有它的类型和说明', async () => {
+    const result = await run({ catalog: catalog(), ...mac, keys: [...toPicky, ['▸– picky', KEY.ctrlC]] });
 
+    expect(result.output).toMatch(/^ – picky\s+不支持 macOS\s+第二个样例工具$/m);
     expect(result.output).toMatch(/^▸– picky\s+不支持 macOS\s+第二个样例工具$/m);
     expect(result.output).toMatch(/^ □ linter\s+未安装\s+第二个样例工具$/m);
+    const below = result.output.slice(result.output.lastIndexOf('▸– picky'));
+    expect(below).toMatch(/^\s+类型\s+工具\n\s+说明\s+第二个样例工具$/m);
   });
 
   it('在不可选的条目上按空格勾不上：列表下方说明这一项选不了；全选也不会勾上它', async () => {
     const result = await run({
       catalog: catalog(),
       ...mac,
-      keys: [...toTools, [PICK_HINT, KEY.space], ['这一项现在选不了', 'a'], [' ■ linter', KEY.enter], [HINT, KEY.ctrlC]],
+      keys: [...toPicky, ['▸– picky', KEY.space], ['这一项现在选不了', 'a'], [' ■ linter', KEY.enter], [HINT, KEY.ctrlC]],
     });
 
     expect(result.output).toMatch(/^\s+注意\s+这一项现在选不了$/m);
-    expect(result.output).toMatch(/✓ 选择要安装的工具 · fetcher、linter$/m);
+    expect(result.output).toMatch(/✓ 选择要安装的条目 · fetcher、linter$/m);
     expect(result.output).toMatch(/^── 将执行 2 条命令 ─+$/m);
     expect(result.output).not.toContain('@example/picky');
   });
 
   it('从勾选到执行走一遍：确认后每个工具一个分区，结论之后回到主菜单', async () => {
-    const result = await run({
-      catalog: catalog(),
-      keys: [...toTools, [PICK_HINT, KEY.down], ['▸□ fetcher', KEY.space], ['▸■ fetcher', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
-    });
+    const result = await run({ catalog: catalog(), keys: installFetcher });
 
-    expect(result.output).toMatch(/^▸ 执行$/m);
-    expect(result.output).toMatch(/✓ 执行这些命令吗 · 执行$/m);
+    expect(result.output).toMatch(/^▸ 开始安装$/m);
+    expect(result.output).toMatch(/✓ 开始安装吗 · 开始安装$/m);
     expect(result.output).toMatch(/^── fetcher ─+$/m);
     expect(result.output).toMatch(/^\s+\$ curl -LsSf https:\/\/example\.com\/fetcher\/install\.sh \| sh$/m);
     expect(result.output).toMatch(/^\s+✗\s+fetcher\s+失败 命令已正常结束，但在 PATH 中找不到 fetcher/m);
     expect(result.commands).toHaveLength(1);
   });
 
-  it('设置了 NO_COLOR 时，列表、不可选的行、命令和结论都不带样式码，零宽空格不打出去', async () => {
-    const result = await run({
-      catalog: catalog(),
-      ...mac,
-      env: { NO_COLOR: '1' },
-      keys: [...toTools, [PICK_HINT, KEY.down], ['▸□ fetcher', KEY.space], ['▸■ fetcher', KEY.enter], [HINT, KEY.enter], [HINT, KEY.ctrlC]],
-    });
+  it('设置了 NO_COLOR 时，列表、不可选的行、汇总、命令和结论都不带样式码，零宽空格不打出去', async () => {
+    const result = await run({ catalog: catalog(), ...mac, env: { NO_COLOR: '1' }, keys: installFetcher });
 
     expect(result.output).toMatch(/^ – picky\s+不支持 macOS\s+第二个样例工具$/m);
-    expect(result.output).toMatch(/^\s+1\s+fetcher\s+curl /m);
+    expect(result.output).toMatch(/^\s+fetcher\s+执行安装命令$/m);
+    expect(result.output).toMatch(/^\s+1\s+curl /m);
     expect(result.output).toMatch(/^\s+✗\s+fetcher\s+失败 /m);
     expect(result.raw).not.toMatch(STYLE_CODE);
     expect(result.raw).not.toContain('\u200b');
@@ -925,25 +936,26 @@ describe('真实的画面：工具', () => {
       catalog: catalog(),
       platform: 'win32',
       env: { TERM: '' },
-      keys: [['回车 选择', KEY.down], ['> 工具', KEY.enter], ['回车 确认', KEY.space], ['>[x] picky', KEY.enter], ['回车 选择', KEY.enter], ['回车 选择', KEY.ctrlC]],
+      keys: [['回车 选择', KEY.down], ['> 联网搜索与文档检索', KEY.enter], ['回车 确认', KEY.space], ['>[x] fetcher', KEY.enter], ['回车 选择', KEY.enter], ['回车 选择', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/^\s+\d\s+picky\s+npm install -g @example\/picky$/m);
-    expect(result.output).toMatch(/^\s+x\s+picky\s+失败 /m);
+    expect(result.output).toMatch(/^\s+-- 工具$/m);
+    expect(result.output).toMatch(/^\s+\d\s+powershell -ExecutionPolicy ByPass /m);
+    expect(result.output).toMatch(/^\s+x\s+fetcher\s+失败 /m);
     expect(result.output).not.toMatch(/[▸✓✗■□·…↑↓⏎–─]/);
   });
 
   it('没有 Unicode 的终端里不可选的行', async () => {
-    const windowsless = [{ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', windows: null } }, SAMPLE_TOOLS[1]];
+    const windowsless = underWebSearch({ ...SAMPLE_TOOLS[1], name: 'picky', install: { default: 'npm install -g @example/picky', windows: null } }, SAMPLE_TOOLS[1]);
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools: windowsless } }),
       platform: 'win32',
       env: { TERM: '' },
-      keys: [['回车 选择', KEY.down], ['> 工具', KEY.enter], ['回车 确认', KEY.ctrlC]],
+      keys: [['回车 选择', KEY.down], ['> 联网搜索与文档检索', KEY.enter], ['回车 确认', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/^>\[-\] picky\s+不支持 Windows\s+第二个样例工具$/m);
-    expect(result.output).toMatch(/^ \[ \] linter\s+未安装\s+第二个样例工具$/m);
+    expect(result.output).toMatch(/^>\[ \] linter\s+未安装\s+第二个样例工具$/m);
+    expect(result.output).toMatch(/^ \[-\] picky\s+不支持 Windows\s+第二个样例工具$/m);
   });
 
   it('英文界面下的列表、不可选的原因和按键提示', async () => {
@@ -951,12 +963,14 @@ describe('真实的画面：工具', () => {
       catalog: catalog(),
       ...mac,
       argv: ['--lang', 'en'],
-      keys: [['⏎ select', KEY.down], ['▸ Tools', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
+      keys: [['⏎ select', KEY.down], ['▸ Web search & docs retrieval', KEY.enter], ['⏎ confirm', KEY.ctrlC]],
     });
 
-    expect(result.output).toMatch(/✓ Pick a purpose · Tools$/m);
+    expect(result.output).toMatch(/✓ Pick a purpose · Web search & docs retrieval$/m);
     expect(result.output).toMatch(/^\s+Name\s+Status\s+About$/m);
-    expect(result.output).toMatch(/^▸– picky\s+not for macOS\s+The second sample tool$/m);
+    expect(result.output).toMatch(/^\s+── Tools$/m);
+    expect(result.output).toMatch(/^ – picky\s+not for macOS\s+The second sample tool$/m);
+    expect(result.output).toMatch(/^\s+Type\s+Tool$/m);
     expect(result.output).toMatch(/^\s+↑↓ move · space select · a all · i invert · ⏎ confirm \(none = back\)$/m);
   });
 });
@@ -1086,11 +1100,11 @@ describe('真实的画面：焦点色', () => {
     const result = await run({
       catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } }),
       onPath: [],
-      keys: [[HINT, KEY.down], ['▸ 工具', KEY.ctrlC]],
+      keys: [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter], [PICK_HINT, KEY.ctrlC]],
     });
 
-    // 只认工具那一行上的光标：起始时光标在「推荐」上，那里的洋红不算数
-    expect(result.raw).toMatch(/\x1b\[35m▸(?:\x1b\[[0-9;]*m)* 工具/);
+    // 只认不可选的那一行上的光标：它后面紧跟着不可选的勾选位
+    expect(result.raw).toMatch(/\x1b\[35m▸(?:\x1b\[[0-9;]*m)*–/);
   });
 
   const skillHome = { '.claude/skills/alpha/SKILL.md': '用户自己写的 skill' };
@@ -1117,11 +1131,11 @@ describe('真实的画面：焦点色', () => {
       }),
     ],
     [
-      '在不可选的行上按回车',
+      '在不可选的工具上按空格',
       () => ({
         catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools: SAMPLE_TOOLS } }),
         onPath: [],
-        keys: [[HINT, KEY.down], ['▸ 工具', KEY.enter], ['这一项现在选不了', KEY.ctrlC]],
+        keys: [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]],
       }),
     ],
     ['一个宿主都没检测到的混合列表，在不可选的 skill 上按空格', () => ({ onPath: [], keys: [[HINT, KEY.enter], [PICK_HINT, KEY.space], ['这一项现在选不了', KEY.ctrlC]] })],
@@ -1136,7 +1150,8 @@ describe('真实的画面：焦点色', () => {
       '用途下的列表、外部项目的说明与链接',
       () => ({
         catalog: everything(),
-        keys: [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter], [PICK_HINT, KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]],
+        // 这个用途下 fetcher（工具）在上、borealis 在下：只勾外部项目
+        keys: [[HINT, KEY.down], ['▸ 联网搜索与文档检索', KEY.enter], [PICK_HINT, KEY.down], ['▸□ borealis', KEY.space], ['▸■ borealis', KEY.enter], [HINT, KEY.ctrlC]],
       }),
     ],
   ])('%s：输出里没有青色的样式码', async (_label, options) => {

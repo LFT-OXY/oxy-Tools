@@ -1,10 +1,10 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { githubCatalogSource } from '../src/catalog.ts';
 import { fakeGitHub } from './github.ts';
 import { displayWidth } from '../src/text.ts';
-import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, STACK_FRAME, accept, blank, catalogDir, choose, no, pick, run, secret } from './harness.ts';
+import { EMPTY_CATALOG, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_TOOLS, STACK_FRAME, accept, blank, catalogDir, choose, no, pick, run, secret, tempDir } from './harness.ts';
 
 // 「联网搜索与文档检索」下三种类型各有一条：alpha（本仓库的 skill）、docs-local（MCP）、borealis（外部项目）
 const WEB_SEARCH = '联网搜索与文档检索';
@@ -289,5 +289,181 @@ describe('汇总里的提醒', () => {
     expect(result.output).not.toContain('开始安装吗');
     inOrder(result.screen, ['跳过 未填写必填的 SEARCH_API_KEY', '0 成功 · 0 失败 · 1 跳过', '外部项目：1 个，只给链接']);
     expect(result.commands).toEqual([]);
+  });
+});
+
+describe('四种类型同表：工具和别的类型一起勾选、一起装', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // 「联网搜索与文档检索」下四种类型各有一条：alpha（skill）、docs-local（MCP）、fetcher（工具）、borealis（外部项目）
+  const withTool = (catalog: Record<string, unknown> = {}): string => mixed({ tools: SAMPLE_TOOLS, ...catalog });
+  // 整行交给 shell，一字不差
+  const FETCHER_COMMAND = { command: 'curl -LsSf https://example.com/fetcher/install.sh | sh', args: [], shell: true };
+  const everything = [choose(WEB_SEARCH), pick('alpha', 'docs-local', 'fetcher', 'borealis'), choose('开始安装'), choose('退出')];
+  // 假装装好了：往可执行路径里放一个 fetcher。那个目录里先有 claude（检测到一个宿主）
+  const installsFetcher = (): { env: { PATH: string }; commandResult: (command: string) => undefined } => {
+    const dir = tempDir('path');
+    writeFileSync(join(dir, 'claude'), '', { mode: 0o755 });
+    return {
+      env: { PATH: dir },
+      commandResult: (command) => void (command.startsWith('curl') && writeFileSync(join(dir, 'fetcher'), '', { mode: 0o755 })),
+    };
+  };
+
+  it('列表里依次是 Skill、MCP、工具三段，外部项目在最下面', async () => {
+    const result = await run({ catalog: withTool(), answers: [choose(WEB_SEARCH), pick(), choose('退出')] });
+
+    expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+4$/m);
+    expect(result.output).toMatch(
+      /^\s+名称\s+Claude Code\s+说明\n\s+── Skill\n □ alpha\s.*\n\s+── MCP\n □ docs-local\s.*\n\s+── 工具\n □ fetcher\s+未安装\s+第一个样例工具.*…\n\n\s+── 外部项目 · 只给链接，不安装\n □ borealis\s+第二个样例外部项目$/m,
+    );
+  });
+
+  it('两个宿主：工具只有一个状态，写在第一栏状态的位置；它的说明和别的行从同一列起', async () => {
+    const startOf = (list: string, name: string, text: string): number => {
+      const line = list.split('\n').find((candidate) => new RegExp(`^ ?[□■–]? *${name}\\s`).test(candidate)) ?? '';
+      return displayWidth(line.slice(0, line.indexOf(text)));
+    };
+    const result = await run({ catalog: withTool(), onPath: BOTH_HOSTS, answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
+    const list = result.output.split(QUESTION)[1] ?? '';
+
+    expect(list).toMatch(/^ □ fetcher\s+未安装\s+第一个样例工具/m);
+    expect(startOf(list, 'fetcher', '未安装')).toBe(startOf(list, '名称', 'Claude Code'));
+    expect(startOf(list, 'fetcher', '第一个样例工具')).toBe(startOf(list, '名称', '说明'));
+    expect(startOf(list, 'docs-local', '本地进程方式')).toBe(startOf(list, '名称', '说明'));
+  });
+
+  it('工具的状态和可不可选与选了哪些宿主无关：只选 Codex，要 Claude Code 的工具照样可选', async () => {
+    const claudeOnly = { ...SAMPLE_TOOLS[0], hosts: ['claude-code'] };
+    const result = await run({
+      catalog: withTool({ tools: [claudeOnly] }),
+      onPath: BOTH_HOSTS,
+      // 宿主那一问只勾 Codex
+      answers: [choose(WEB_SEARCH), pick('Codex'), pick(), pick(), choose('退出')],
+    });
+
+    expect(result.output.split(QUESTION)[1]).toMatch(/^ □ fetcher\s+未安装\s/m);
+  });
+
+  it('汇总里三张小表依次是 Skill、MCP、工具；将执行的命令先是 MCP 的再是工具的；外部项目不在里面', async () => {
+    const result = await run({ catalog: withTool(), answers: everything });
+    const summary = summaryOf(result.output);
+
+    expect(summary).toMatch(/^── 将安装 3 项 ─+$/m);
+    expect(summary).toMatch(
+      /^\s+Skill\s+AI Agent\s+操作\s+位置\n\s+alpha\s+Claude Code\s+新装\s+~\S+alpha\n\n\s+MCP\s+AI Agent\s+操作\n\s+docs-local\s+Claude Code\s+新装\n\n\s+工具\s+操作\n\s+fetcher\s+执行安装命令$/m,
+    );
+    expect(summary).toMatch(
+      /^── 将执行 2 条命令 ─+\n\n\s+1\s+claude mcp add --scope user docs-local -- npx -y @example\/docs-mcp@latest\n\s+2\s+curl -LsSf https:\/\/example\.com\/fetcher\/install\.sh \| sh$/m,
+    );
+    expect(summary).not.toContain('borealis');
+  });
+
+  it('skill 先装、MCP 其次、工具最后；结果各一行，最后是外部项目的链接，没有调用链接打开器', async () => {
+    const result = await run({ catalog: withTool(), ...installsFetcher(), answers: everything });
+
+    inOrder(result.screen, [
+      '? 开始安装吗',
+      '── 正在安装 ─',
+      '已安装 1.0.0',
+      '已配置',
+      '── fetcher ─',
+      '$ curl -LsSf https://example.com/fetcher/install.sh | sh',
+      '已可用，在 PATH 中找到 fetcher',
+      '── 结果 ─',
+      '3 成功 · 0 失败 · 0 跳过',
+      '外部项目：1 个，只给链接',
+      'https://example.org/borealis',
+    ]);
+    expect(existsSync(join(result.home, '.claude/skills/alpha/SKILL.md'))).toBe(true);
+    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, FETCHER_COMMAND]);
+    expect(result.opened).toEqual([]);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('有工具时最后的「结果」分区把每一行再列一遍：skill、MCP、工具各一行，工具的那一行没有宿主', async () => {
+    const result = await run({ catalog: withTool(), ...installsFetcher(), answers: everything });
+    const recap = result.screen.slice(result.screen.lastIndexOf('── 结果 ─'));
+
+    expect(recap).toMatch(
+      /^── 结果 ─+\n\n\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0\n\s+✓\s+docs-local\s+Claude Code\s+已配置\n\s+✓\s+fetcher\s+已可用，在 PATH 中找到 fetcher\n\n─+\n\s+合计\s+3 成功 · 0 失败 · 0 跳过$/m,
+    );
+    // 工具自己分区里的那一行还在：结论出现两次
+    expect(result.screen.split('已可用，在 PATH 中找到 fetcher')).toHaveLength(3);
+  });
+
+  it('工具没装上不影响 skill、MCP 和外部项目；MCP 的命令失败也不影响工具', async () => {
+    const result = await run({ catalog: withTool(), commandResult: () => ({ exitCode: 1 }), answers: everything });
+
+    expect(result.output).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
+    expect(result.output).toMatch(/^\s+✗\s+docs-local\s+Claude Code\s+失败 添加命令退出状态 1$/m);
+    expect(result.output).toMatch(/^\s+✗\s+fetcher\s+失败 命令退出状态 1；在 PATH 中找不到 fetcher$/m);
+    expect(result.output).toMatch(/^\s+合计\s+1 成功 · 2 失败 · 0 跳过$/m);
+    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, FETCHER_COMMAND]);
+    expect(result.output).toContain('外部项目：1 个，只给链接');
+    expect(result.output).not.toMatch(STACK_FRAME);
+    expect(result.stderr).toBe('');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('确认之前什么都不做：取消则工具的命令也不执行', async () => {
+    const result = await run({ catalog: withTool(), answers: [choose(WEB_SEARCH), pick('alpha', 'docs-local', 'fetcher'), choose('取消'), choose('退出')] });
+
+    expect(result.output).toContain(FETCHER_COMMAND.command);
+    expect(result.commands).toEqual([]);
+    expect(readdirSync(result.home)).toEqual([]);
+  });
+
+  it('返回修改：工具的勾选也还在', async () => {
+    const result = await run({
+      catalog: withTool(),
+      answers: [choose(WEB_SEARCH), pick('alpha', 'fetcher', 'borealis'), choose('返回修改'), accept(), choose('取消'), choose('退出')],
+    });
+    const again = result.output.split(QUESTION)[2] ?? '';
+
+    expect(again).toMatch(/^ ■ alpha\s/m);
+    expect(again).toMatch(/^ □ docs-local\s/m);
+    expect(again).toMatch(/^ ■ fetcher\s/m);
+    expect(again).toMatch(/^ ■ borealis\s/m);
+  });
+
+  it('向 GitHub 查询失败：skill 一个都不装，MCP 和工具照常', async () => {
+    fakeGitHub({
+      intercept: (url) =>
+        url.includes('api.github.com')
+          ? Response.json({ message: 'API rate limit exceeded' }, { status: 403, headers: { 'x-ratelimit-remaining': '0' } })
+          : url.endsWith('/main/catalog.json')
+            ? Response.json({ ...MIXED, tools: SAMPLE_TOOLS })
+            : undefined,
+    });
+
+    const result = await run({ catalog: githubCatalogSource(), answers: everything });
+
+    expect(result.stderr).toContain('出错：GitHub 限流');
+    expect(result.output).not.toMatch(/alpha\s+Claude Code\s+(已安装|失败|跳过)/);
+    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, FETCHER_COMMAND]);
+    expect(result.output).toMatch(/^\s+合计\s+1 成功 · 1 失败 · 0 跳过$/m);
+  });
+
+  it('只勾了一个工具和一个外部项目：没有「正在安装」分区，结论不重复，之后是外部项目的链接', async () => {
+    const result = await run({ catalog: withTool(), answers: [choose(WEB_SEARCH), pick('fetcher', 'borealis'), choose('开始安装'), choose('退出')] });
+
+    expect(result.output).toMatch(/^── 将安装 1 项 ─+$/m);
+    expect(result.output).not.toContain('正在安装');
+    expect(result.output).not.toMatch(/^── 结果 ─/m);
+    inOrder(result.screen, ['── fetcher ─', '0 成功 · 1 失败 · 0 跳过', '外部项目：1 个，只给链接']);
+  });
+
+  it('没同意覆盖的 skill 跳过，工具照常；「结果」里跳过的那一行也在', async () => {
+    const result = await run({
+      catalog: withTool(),
+      home: { '.claude/skills/alpha/SKILL.md': '别处装的\n' },
+      answers: [choose(WEB_SEARCH), pick('alpha', 'fetcher'), choose('开始安装'), no(), choose('退出')],
+    });
+    const recap = result.screen.slice(result.screen.lastIndexOf('── 结果 ─'));
+
+    expect(recap).toMatch(/alpha\s+Claude Code\s+跳过 未同意覆盖，保持原样\n\s+✗\s+fetcher\s+失败 /);
+    expect(result.commands).toEqual([FETCHER_COMMAND]);
+    expect(recap).toMatch(/^\s+合计\s+0 成功 · 1 失败 · 1 跳过$/m);
   });
 });

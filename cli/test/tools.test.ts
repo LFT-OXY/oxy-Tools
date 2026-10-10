@@ -1,12 +1,15 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CATALOG, LONG_TOOL_ABOUT, SAMPLE_TOOLS, STACK_FRAME, accept, catalogDir, choose, pick, run, tempDir } from './harness.ts';
+import { EMPTY_CATALOG, LONG_TOOL_ABOUT, SAMPLE_TOOLS, STACK_FRAME, accept, catalogDir, choose, pick, run, tempDir, underWebSearch } from './harness.ts';
 
 const [FETCHER, LINTER] = SAMPLE_TOOLS as [(typeof SAMPLE_TOOLS)[0], (typeof SAMPLE_TOOLS)[1]];
-const withTools = (tools: unknown[] = SAMPLE_TOOLS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools } });
-const browseTools = [choose('工具'), pick(), choose('退出')];
-const install = (...names: string[]) => [choose('工具'), pick(...names), choose('执行'), choose('退出')];
+// 工具没有自己的入口：样例的两个都归到「联网搜索与文档检索」下，进这个用途就是它们同在的那张列表
+const WEB_SEARCH = '联网搜索与文档检索';
+const QUESTION = '? 选择要安装的条目';
+const withTools = (tools: unknown[] = SAMPLE_TOOLS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, tools: underWebSearch(...tools) } });
+const browseTools = [choose(WEB_SEARCH), pick(), choose('退出')];
+const install = (...names: string[]) => [choose(WEB_SEARCH), pick(...names), choose('开始安装'), choose('退出')];
 // 两个样例各自的安装命令：整行交给 shell，一字不差
 const FETCHER_COMMAND = { command: 'curl -LsSf https://example.com/fetcher/install.sh | sh', args: [], shell: true };
 const LINTER_COMMAND = { command: 'npm install -g @example/linter@latest', args: [], shell: true };
@@ -32,28 +35,38 @@ const installsLinter = (_command: string, _args: readonly string[], { home }: { 
   writeFileSync(join(home, LINTER_FILE), '');
 };
 
-describe('工具分组', () => {
-  it('目录里有工具条目时，主菜单出现这个分组和它的数量', async () => {
+describe('主菜单上没有工具这个分组', () => {
+  it('工具数在它的用途里，「目录」一行照旧按类型数；主菜单上找不到「工具」这一行，表头只有用途和数量', async () => {
     const result = await run({ catalog: withTools(), answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+工具\s+2\s+执行其官方安装命令装上的工具$/m);
+    expect(result.output).toMatch(/^\s+用途\s+数量\n\s+推荐\s+2\n\s+联网搜索与文档检索\s+2\n\s*\n\s+退出$/m);
+    expect(result.output).not.toMatch(/^[\s-]+工具\s/m);
     expect(result.output).toMatch(/^\s+目录\s+2 skill · 2 工具$/m);
     expect(result.exitCode).toBe(0);
   });
 
-  it('目录里没有工具条目时，主菜单没有这个分组', async () => {
-    const result = await run({ answers: [choose('退出')] });
+  it('带推荐标记的工具另在「推荐」里，那里的行上不写「推荐」；它的用途下照常有它，行上写着', async () => {
+    const [fetcher, linter] = SAMPLE_TOOLS;
+    const result = await run({
+      catalog: withTools([{ ...linter, recommended: true }, fetcher]),
+      answers: [choose('推荐'), pick(), choose(WEB_SEARCH), pick(), choose('退出')],
+    });
+    const [, recommended = '', purpose = ''] = result.output.split(QUESTION);
 
-    expect(result.output).not.toMatch(/^\s+工具\s/m);
+    expect(result.output).toMatch(/^\s+推荐\s+3$/m);
+    expect(recommended).toMatch(/^\s+── 工具\n □ linter\s+未安装\s+第二个样例工具$/m);
+    expect(recommended).not.toMatch(/ fetcher\s/);
+    // 一段里带推荐的在前，其余按名字
+    expect(purpose).toMatch(/^\s+── 工具\n □ linter\s+未安装\s+推荐 · 第二个样例工具\n □ fetcher\s+未安装\s+第一个样例工具/m);
   });
 });
 
 describe('工具列表', () => {
-  it('多选列表：每行是名字、状态和一句话说明；一个都不勾回到主菜单，不问装进哪个宿主，不执行任何命令', async () => {
+  it('工具自成一段：每行是名字、状态和一句话说明；一个都不勾回到主菜单，不问装进哪个宿主，不执行任何命令', async () => {
     const result = await run({ catalog: withTools(), onPath: ['claude', 'codex'], answers: browseTools });
 
-    expect(result.output).toContain('选择要安装的工具');
-    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明$/m);
+    expect(result.output).toContain('选择要安装的条目');
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明\n\s+── 工具$/m);
     expect(result.output).toMatch(/ linter\s+未安装\s+第二个样例工具$/m);
     expect(result.output).not.toContain('装进哪些 AI Agent');
     expect(result.output.split('选择用途')).toHaveLength(3);
@@ -66,6 +79,12 @@ describe('工具列表', () => {
 
     expect(result.output).toMatch(/ fetcher\s+未安装\s+第一个样例工具.*…$/m);
     expect(result.output).toContain(LONG_TOOL_ABOUT.zh);
+  });
+
+  it('列表下方「类型」一行写的是工具', async () => {
+    const result = await run({ catalog: withTools([SAMPLE_TOOLS[1]]), answers: browseTools });
+
+    expect(result.output).toMatch(/ linter\s+未安装\s+第二个样例工具\n工具\n第二个样例工具$/m);
   });
 });
 
@@ -108,7 +127,7 @@ describe('按操作系统选安装命令', () => {
   it('条目给当前系统另写了命令时，展示和执行的都是那一条', async () => {
     const result = await run({ catalog: withTools(), platform: 'win32', answers: install('fetcher') });
 
-    expect(unwrapped(result.output)).toContain(`1 fetcher ${WINDOWS_COMMAND}`);
+    expect(unwrapped(result.output)).toContain(`1 ${WINDOWS_COMMAND}`);
     expect(result.output).not.toContain('install.sh');
     expect(result.commands).toEqual([{ command: WINDOWS_COMMAND, args: [], shell: true }]);
   });
@@ -170,35 +189,47 @@ describe('工具声明了支持的宿主', () => {
     expect(result.output).not.toContain('格式有误');
   });
 
-  it('一个宿主都没检测到时，工具分组不可进入，行尾注明原因', async () => {
-    const result = await run({ catalog: withTools(), onPath: [], answers: [choose('退出')] });
+  it('一个宿主都没检测到时，工具和别的组件一样不可选并写明原因；标了不支持这个系统的也是这一句', async () => {
+    const result = await run({
+      catalog: withTools([FETCHER, { ...LINTER, install: { ...LINTER.install, linux: null } }]),
+      onPath: [],
+      platform: 'linux',
+      answers: browseTools,
+    });
 
-    expect(result.output).toMatch(/^-\s+工具\s+2\s+执行其官方安装命令装上的工具 · 需要 AI Agent$/m);
+    expect(result.output).toMatch(/^\s+名称\s+状态\s+说明\n\s+── 工具\n – fetcher\s+需要 AI Agent\s+第一个样例工具.*\n – linter\s+需要 AI Agent\s+第二个样例工具$/m);
+    expect(result.output).not.toContain('不支持 Linux');
     expect(result.commands).toEqual([]);
   });
 });
 
 describe('执行之前：展示完整的命令并确认', () => {
-  it('勾了两个工具：两条完整的命令都列出来，前面是序号和工具的名字', async () => {
+  it('汇总里工具一张小表：只有条目和操作两栏，不写宿主和位置', async () => {
+    const result = await run({ catalog: withTools(), onPath: ['claude', 'codex'], answers: install('fetcher', 'linter') });
+
+    expect(result.output).toMatch(/^── 将安装 2 项 ─+\n\n\s+工具\s+操作\n\s+fetcher\s+执行安装命令\n\s+linter\s+执行安装命令\n\n── 将执行/m);
+  });
+
+  it('勾了两个工具：两条完整的命令都列出来，前面是序号，命令整行原样写出', async () => {
     const result = await run({ catalog: withTools(), answers: install('fetcher', 'linter') });
 
     expect(result.output).toMatch(/^── 将执行 2 条命令 ─+$/m);
-    expect(result.output).toMatch(/^\s+1\s+fetcher\s+curl -LsSf https:\/\/example\.com\/fetcher\/install\.sh \| sh$/m);
-    expect(result.output).toMatch(/^\s+2\s+linter\s+npm install -g @example\/linter@latest$/m);
+    expect(result.output).toMatch(/^\s+1\s+curl -LsSf https:\/\/example\.com\/fetcher\/install\.sh \| sh$/m);
+    expect(result.output).toMatch(/^\s+2\s+npm install -g @example\/linter@latest$/m);
   });
 
   it('选「取消」：命令已经展示过，但一条都没有执行；回到主菜单', async () => {
-    const result = await run({ catalog: withTools(), answers: [choose('工具'), pick('fetcher', 'linter'), choose('取消'), choose('退出')] });
+    const result = await run({ catalog: withTools(), answers: [choose(WEB_SEARCH), pick('fetcher', 'linter'), choose('取消'), choose('退出')] });
 
     expect(result.output).toContain(FETCHER_COMMAND.command);
     expect(result.output).toContain(LINTER_COMMAND.command);
-    expect(result.output.indexOf(LINTER_COMMAND.command)).toBeLessThan(result.output.indexOf('执行这些命令吗'));
+    expect(result.output.indexOf(LINTER_COMMAND.command)).toBeLessThan(result.output.indexOf('开始安装吗'));
     expect(result.commands).toEqual([]);
     expect(result.output.split('选择用途')).toHaveLength(3);
   });
 
-  it('确认的缺省是执行；展示的就是执行的那几条，一字不差', async () => {
-    const result = await run({ catalog: withTools(), answers: [choose('工具'), pick('fetcher', 'linter'), accept(), choose('退出')] });
+  it('确认的缺省是开始安装；展示的就是执行的那几条，一字不差', async () => {
+    const result = await run({ catalog: withTools(), answers: [choose(WEB_SEARCH), pick('fetcher', 'linter'), accept(), choose('退出')] });
 
     expect(result.commands).toEqual([FETCHER_COMMAND, LINTER_COMMAND]);
   });
@@ -206,10 +237,10 @@ describe('执行之前：展示完整的命令并确认', () => {
   it('选「返回修改」回到列表，之前勾的还在；改完再确认', async () => {
     const result = await run({
       catalog: withTools(),
-      answers: [choose('工具'), pick('fetcher'), choose('返回修改'), accept(), choose('执行'), choose('退出')],
+      answers: [choose(WEB_SEARCH), pick('fetcher'), choose('返回修改'), accept(), choose('开始安装'), choose('退出')],
     });
 
-    const lists = result.output.split('? 选择要安装的工具');
+    const lists = result.output.split(QUESTION);
     expect(lists).toHaveLength(3);
     expect(lists[2]).toMatch(/^\s*■ fetcher\s/m);
     expect(lists[2]).toMatch(/^\s*□ linter\s/m);
@@ -220,7 +251,7 @@ describe('执行之前：展示完整的命令并确认', () => {
     const long = 'curl --proto =https --tlsv1.2 -LsSf https://example.com/a-rather-long-path/to/the/installer/script.sh | sh -s -- --yes --no-modify-path';
     const result = await run({ catalog: withTools([{ ...FETCHER, install: { default: long } }]), answers: install('fetcher') });
 
-    expect(unwrapped(result.output)).toContain(`1 fetcher ${long}`);
+    expect(unwrapped(result.output)).toContain(`1 ${long}`);
     expect(result.output).not.toContain('…  ');
     expect(result.commands).toEqual([{ command: long, args: [], shell: true }]);
   });
@@ -361,10 +392,10 @@ describe('执行与复核', () => {
     const result = await run({
       catalog: withTools(),
       commandResult: installsLinter,
-      answers: [choose('工具'), pick('linter'), choose('执行'), ...browseTools],
+      answers: [choose(WEB_SEARCH), pick('linter'), choose('开始安装'), ...browseTools],
     });
 
-    const lists = result.output.split('? 选择要安装的工具');
+    const lists = result.output.split(QUESTION);
     expect(lists[1]).toMatch(/ linter\s+未安装\s/m);
     expect(lists[2]).toMatch(/ linter\s+已安装\s/m);
   });
@@ -385,17 +416,18 @@ describe('执行与复核', () => {
 });
 
 describe('英文界面的工具', () => {
-  it('分组、列表、不可选的原因、命令和结论都是英文', async () => {
+  it('段标题、列表、不可选的原因、汇总、命令和结论都是英文', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
       platform: 'darwin',
       catalog: withTools([FETCHER, LINTER, { ...LINTER, name: 'picky', install: { ...LINTER.install, macos: null } }]),
       commandResult: (command, ...rest) => (command.startsWith('npm') ? installsLinter(command, ...rest) : undefined),
-      answers: [choose('Tools'), pick('fetcher', 'linter'), choose('Run'), choose('Exit')],
+      answers: [choose('Web search & docs retrieval'), pick('fetcher', 'linter'), choose('Install'), choose('Exit')],
     });
 
     expect(result.output).toMatch(/^\s+Catalog\s+2 skills · 3 tools$/m);
-    expect(result.output).toMatch(/^\s+Name\s+Status\s+About$/m);
+    expect(result.output).toMatch(/^\s+Name\s+Status\s+About\n\s+── Tools$/m);
+    expect(result.output).toMatch(/^\s+Tools\s+Action\n\s+fetcher\s+run install command$/m);
     expect(result.output).toMatch(/^\s*– picky\s+not for macOS\s+The second sample tool$/m);
     expect(result.output).toMatch(/^── 2 commands to run ─+$/m);
     expect(unwrapped(result.output)).toContain('x fetcher failed the command finished normally, but fetcher not found on PATH; a new terminal may be needed to find it'.replace('x ', '✗ '));
@@ -418,7 +450,7 @@ describe('写坏的工具条目', () => {
     });
 
     expect(result.output).toMatch(/^\s+注意\s+目录中有 1 个条目格式有误，已跳过$/m);
-    expect(result.output).toMatch(/^\s+工具\s+1\s/m);
+    expect(result.output).toMatch(/^\s+联网搜索与文档检索\s+1$/m);
     expect(result.output).not.toMatch(/ fetcher\s/);
     expect(result.exitCode).toBe(0);
   });
