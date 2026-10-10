@@ -105,7 +105,7 @@
 | `tools` | 数组 | 工具条目。可缺省 |
 | `apps` | 数组 | 应用项目条目。可缺省 |
 
-`mcps` 现在有 11 条，`apps` 有 10 条（2026-10-10 录入「汇总」文档里标了 MCP 的 21 个条目：装法试通的 11 个是 MCP，其余 10 个先作为应用项目），`tools` 还是空的。主菜单只列有条目的分组。
+`mcps` 现在有 11 条，`apps` 有 57 条（2026-10-10 录入「汇总」文档：标了 MCP 的 21 个条目里装法试通的 11 个是 MCP，其余 10 个先作为应用项目；既不是 MCP 也不是 Skill 的 47 个条目都作为应用项目），`tools` 还是空的。主菜单只列有条目的分组。
 
 `purposes` 现在有 10 个用途，`skillPurposes` 里有 4 个 skill（`archify`、`onetake`、`unlazy`、`shuorenhua`）。增删改一个用途只要提交本仓库，不用发 npm 版本。**本仓库 skill 的用途记在这里而不是 `index.json`**：skill 清单在对 A Team Workflow 的承诺之内，给它的条目加字段会不会坏在本仓库内无从验证。本仓库的 skill 不靠任何标注就属于「推荐」，所以大多数 skill 在 `skillPurposes` 里没有、也不该有。
 
@@ -192,6 +192,33 @@
 
 // 对：官方说明原样给出的命令；名字是官方给这个服务器取的名字
 { "name": "playwright", "server": { "command": "npx", "args": ["@playwright/mcp@latest"] } }
+```
+
+### 往目录里加一条应用项目
+
+应用项目只有共有字段，装不出东西，所以没有「试通」；要守的是名字、说明和链接。下面是 2026-10-10 录入 47 条时的做法，标了「未确认」的是实现者定的，维护者还没有逐条确认。
+
+| 事项 | 规矩 |
+|------|------|
+| 类型 | 装法没有实际试通过的一律是应用项目，哪怕它官方给了一条安装命令。看起来一条命令能装的另记一张候选清单（官方命令、怎么算装好了、前提），等在虚拟机里试通后再改成工具 |
+| 名字（未确认） | 仓库名转成小写 kebab-case，不替它拆词（`OfficeCLI` → `officecli`、`MuMuAINovel` → `mumuainovel`）——先前录入的 `grok-search-rs` 是拆了词的，两种写法现在并存，哪一种算数等维护者定；名字规则不收的字符换成连字符（`design.md` → `design-md`）。来源里写错的名字照仓库名改 |
+| 和别的数组重名 | 允许，名字只在各自的数组里唯一：`apps` 的 `playwright`（开发库）和 `mcps` 的 `playwright` 并存 |
+| 说明 | 从来源文档取意思，再对照仓库的官方简介和 README 的开头改写成一句「它做什么」。来源文档和官方说法对不上时以官方的为准；只有来源文档里有、官方说明里找不到的说法不写。效果类的说法（省多少、快几倍、能降低什么）没有验证过，不当事实写 |
+| 说明里要注明的 | 只注从官方说明里看得到、且不知道就用不了的前提：要账号、只支持某个系统、要自备大模型。写在句末的括号里，写法同 `onetake` |
+| 链接（未确认） | 写来源文档给的那个，方便日后按链接和来源对账。仓库换了所有者、旧链接还在跳转的也先不改，在录入记录里写明新地址 |
+| 数组里的先后 | 照来源文档的顺序，同一个用途的排在一起 |
+| 仓库还在不在 | 只读地查一眼：`gh api repos/<所有者>/<仓库> --jq '[.full_name, .archived]'`。`full_name` 和写的不一样就是改了名或换了所有者；已归档的在说明里注明 |
+
+**成批录入要对账。** 目录校验命令只查每一条写得对不对，查不出「漏了一条」「同一个项目录了两条」「用途标错了」。成批录入时写一段脚本拿来源清单和 `catalog.json` 按链接逐条对：每个链接恰好一条、用途对得上、没有同时出现在别的数组里。2026-10-10 用的那一段在任务 `10-10-catalog-purpose-categories` 的 `research/external-project-entries.md`，可以照着改。
+
+```jsonc
+// 错：照抄了仓库简介，一句里是两句；「降低检测率」是没验证过的效果
+{ "name": "awesome-design-md", "description": { "en": "…; drop one into your project and coding agents generate matching UI" } }
+{ "name": "bypassaigc", "description": { "zh": "给论文润色并降低 AI 生成内容检测率的学术写作工具" } }
+
+// 对：改写成一句；效果写成它的目的
+{ "name": "awesome-design-md", "description": { "en": "Collection of DESIGN.md files derived from popular brands' design systems, for coding agents to follow when generating UI in the same style" } }
+{ "name": "bypassaigc", "description": { "zh": "给论文润色、以降低 AI 生成内容检测率为目标的学术写作工具" } }
 ```
 
 写坏的条目只有那一条被安装器跳过，其余照常；不认识的字段一律忽略。`purposes` 和 `skillPurposes` 写坏了不会让整份目录读不了：`purposes` 里写坏的一项不算数（用它的条目跟着被跳过），`skillPurposes` 里写坏的一项只是不起作用（那个 skill 照常在「推荐」里）——这两样安装器都不提，由目录校验命令报出来。每个字段逐字的规则和为什么收得这么紧：

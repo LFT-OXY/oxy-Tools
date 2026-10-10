@@ -158,6 +158,42 @@
   "tools": [],
   "apps": [
     {
+      "name": "spec-kit",
+      "description": { "zh": "规范驱动开发的工具包：先把需求写成规格，再让 AI 编码 Agent 照着出方案、拆任务、实现", "en": "Toolkit for spec-driven development: write requirements as a spec, then have your AI coding agent plan, break down and implement against it" },
+      "url": "https://github.com/github/spec-kit",
+      "purpose": "dev-workflow"
+    },
+    {
+      "name": "openspec",
+      "description": { "zh": "给 AI 编码助手用的规范驱动开发框架，先把要改什么写成规格，再动手写代码", "en": "Spec-driven development framework for AI coding assistants: write down what will change as a spec before any code is written" },
+      "url": "https://github.com/Fission-AI/OpenSpec",
+      "purpose": "dev-workflow"
+    },
+    {
+      "name": "autoloop",
+      "description": { "zh": "让 AI 编码 Agent 围绕一个可测量的指标反复改进代码的迭代优化循环工具", "en": "Iterative optimization loop that has AI coding agents repeatedly improve code against one measurable metric" },
+      "url": "https://github.com/armgabrielyan/autoloop",
+      "purpose": "dev-workflow"
+    },
+    {
+      "name": "ralph",
+      "description": { "zh": "自主运行的 AI Agent 循环，反复调用编码 Agent，直到需求文档（PRD）里的每一项都完成", "en": "Autonomous AI agent loop that runs a coding agent over and over until every item in the PRD is complete" },
+      "url": "https://github.com/snarktank/ralph",
+      "purpose": "dev-workflow"
+    },
+    {
+      "name": "ralphy",
+      "description": { "zh": "循环运行 Claude Code、Codex、OpenCode 等编码 Agent 的命令行工具，直到任务或需求文档（PRD）完成", "en": "CLI that runs coding agents such as Claude Code, Codex and OpenCode in a loop until the task or PRD is done" },
+      "url": "https://github.com/michaelshimeles/ralphy",
+      "purpose": "dev-workflow"
+    },
+    {
+      "name": "open-ralph-wiggum",
+      "description": { "zh": "用一条 ralph 命令让 OpenCode、Claude Code、Codex 或 Copilot 在循环里反复执行同一个提示词，直到任务完成", "en": "One ralph command that keeps OpenCode, Claude Code, Codex or Copilot running the same prompt in a loop until the task is done" },
+      "url": "https://github.com/Th0rgal/open-ralph-wiggum",
+      "purpose": "dev-workflow"
+    },
+    {
       "name": "cunzhi",
       "description": { "zh": "AI 想提前结束对话时弹出对话框，让你接着追问，直到问题真正解决", "en": "Pops up a dialog when the AI tries to wrap up early, so you can keep going until the problem is actually solved" },
       "url": "https://github.com/imhuso/cunzhi",
@@ -200,6 +236,36 @@
       "purpose": "codebase-understanding"
     },
     {
+      "name": "auggie",
+      "description": { "zh": "Augment Code 的终端编码 Agent，能理解代码库并按自然语言的要求分析和修改代码（需要 Augment 账号）", "en": "Augment Code's terminal coding agent that understands your codebase and analyzes and edits code from natural-language requests (needs an Augment account)" },
+      "url": "https://github.com/augmentcode/auggie",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "mgrep",
+      "description": { "zh": "在命令行里用自然语言对代码、图片、PDF 等内容做语义搜索（需要 Mixedbread 账号）", "en": "Semantic search from the command line over code, images, PDFs and more using natural language (needs a Mixedbread account)" },
+      "url": "https://github.com/mixedbread-ai/mgrep",
+      "purpose": "codebase-understanding"
+    },
+    {
+      "name": "claude-mem",
+      "description": { "zh": "自动记录 AI Agent 在会话里做过的事并压缩成摘要，在以后的会话里把相关内容带回来", "en": "Automatically captures what your AI agent does in a session, compresses it into summaries and brings the relevant context back in later sessions" },
+      "url": "https://github.com/thedotmack/claude-mem",
+      "purpose": "context-memory"
+    },
+    {
+      "name": "sivtr",
+      "description": { "zh": "把终端输出和 AI 编码会话记进本地的工作记忆，之后可以搜索和复用", "en": "Local working memory for terminal output and AI coding sessions that you and your agent can search and reuse later" },
+      "url": "https://github.com/Ariestar/sivtr",
+      "purpose": "context-memory"
+    },
+    {
+      "name": "openrag",
+      "description": { "zh": "基于 Langflow、Docling 和 OpenSearch 的检索增强生成（RAG）平台，上传文档后在聊天界面里搜索和提问", "en": "Retrieval-augmented generation (RAG) platform built on Langflow, Docling and OpenSearch: upload documents, then search and ask questions in a chat interface" },
+      "url": "https://github.com/langflow-ai/openrag",
+      "purpose": "context-memory"
+    },
+    {
       "name": "context-mode",
       "description": { "zh": "把工具的大段输出放进沙箱处理，只把结果交给 AI，节省上下文窗口并保留会话记忆", "en": "Processes large tool outputs in a sandbox and hands only the result to the AI, saving context window and keeping session memory" },
       "url": "https://github.com/mksglu/context-mode",
@@ -212,10 +278,226 @@
       "purpose": "context-memory"
     },
     {
+      "name": "rtk",
+      "description": { "zh": "在常用开发命令的输出送进大模型之前先过滤压缩的命令行代理，减少 token 用量", "en": "CLI proxy that filters and compresses the output of common dev commands before it reaches the LLM to cut token usage" },
+      "url": "https://github.com/rtk-ai/rtk",
+      "purpose": "context-memory"
+    },
+    {
+      "name": "opencode-dynamic-context-pruning",
+      "description": { "zh": "OpenCode 的插件，自动清理和压缩对话上下文来减少 token 用量", "en": "OpenCode plugin that automatically prunes and compresses conversation context to cut token usage" },
+      "url": "https://github.com/Opencode-DCP/opencode-dynamic-context-pruning",
+      "purpose": "context-memory"
+    },
+    {
       "name": "grok-search-rs",
       "description": { "zh": "用 Rust 写的轻量 MCP 服务器，经 Grok 或 OpenAI 兼容的接口联网搜索，并用 Tavily、Firecrawl 抓取网页", "en": "Lightweight MCP server written in Rust for web search through Grok or OpenAI-compatible APIs, with page fetching through Tavily and Firecrawl" },
       "url": "https://github.com/Episkey-G/GrokSearch-rs",
       "purpose": "web-search"
+    },
+    {
+      "name": "playwright-cli",
+      "description": { "zh": "给编码 Agent 用的 Playwright 命令行，用命令操作浏览器、检查选择器、截图和生成 Playwright 代码", "en": "Playwright command line for coding agents to drive the browser, inspect selectors, take screenshots and generate Playwright code" },
+      "url": "https://github.com/microsoft/playwright-cli",
+      "purpose": "browser-automation"
+    },
+    {
+      "name": "ego-lite",
+      "description": { "zh": "给 AI Agent 做浏览器自动化用的浏览器，Agent 在各自隔离的空间里操作并共用你的登录状态，不打断你自己的浏览（目前只有 macOS 版）", "en": "Browser for AI agent automation: agents work in isolated spaces and share your logged-in state without interrupting your own browsing (macOS only for now)" },
+      "url": "https://github.com/citrolabs/ego-lite",
+      "purpose": "browser-automation"
+    },
+    {
+      "name": "playwright",
+      "description": { "zh": "Web 自动化与测试框架，用同一套 API 驱动 Chromium、Firefox 和 WebKit", "en": "Framework for web automation and testing that drives Chromium, Firefox and WebKit through a single API" },
+      "url": "https://github.com/microsoft/playwright",
+      "purpose": "browser-automation"
+    },
+    {
+      "name": "page-agent",
+      "description": { "zh": "嵌在网页里的纯 JavaScript 界面 Agent，让用户用自然语言操作你的 Web 应用，不需要浏览器扩展或无头浏览器（要自备大模型）", "en": "In-page GUI agent in plain JavaScript that lets users control your web app with natural language, with no browser extension or headless browser (bring your own LLM)" },
+      "url": "https://github.com/alibaba/page-agent",
+      "purpose": "browser-automation"
+    },
+    {
+      "name": "design-md",
+      "description": { "zh": "向编码 Agent 描述一套视觉设计体系的 DESIGN.md 格式规范，附带检查和导出用的命令行", "en": "Format specification for describing a visual identity to coding agents in a DESIGN.md file, with a CLI to lint and export it" },
+      "url": "https://github.com/google-labs-code/design.md",
+      "purpose": "design-media"
+    },
+    {
+      "name": "awesome-design-md",
+      "description": { "zh": "从知名品牌的设计体系整理出的 DESIGN.md 文件合集，供编码 Agent 照着做出同样风格的界面", "en": "Collection of DESIGN.md files derived from popular brands' design systems, for coding agents to follow when generating UI in the same style" },
+      "url": "https://github.com/VoltAgent/awesome-design-md",
+      "purpose": "design-media"
+    },
+    {
+      "name": "open-design",
+      "description": { "zh": "本地优先的桌面设计工作台，让你的编码 Agent 生成原型、落地页、幻灯片、图片和视频并导出成文件", "en": "Local-first desktop design workbench where your coding agent produces prototypes, landing pages, slides, images and video as exportable files" },
+      "url": "https://github.com/nexu-io/open-design",
+      "purpose": "design-media"
+    },
+    {
+      "name": "penpot",
+      "description": { "zh": "开源的设计与原型平台，可以在浏览器里用或自行部署，基于 SVG、CSS、HTML 等开放标准", "en": "Open-source design and prototyping platform, usable in the browser or self-hosted, built on open standards such as SVG, CSS and HTML" },
+      "url": "https://github.com/penpot/penpot",
+      "purpose": "design-media"
+    },
+    {
+      "name": "galaxy",
+      "description": { "zh": "社区贡献的开源 UI 元素合集，每个元素用 CSS 或 Tailwind 写成，可以直接拿来用", "en": "Community-made open-source collection of UI elements written in CSS or Tailwind, free to copy and use" },
+      "url": "https://github.com/uiverse-io/galaxy",
+      "purpose": "design-media"
+    },
+    {
+      "name": "canvas-ui",
+      "description": { "zh": "创意画布组件库，在真实的 HTML 上叠加 WebGL 特效，支持 React、Vue、Svelte 和原生 JavaScript", "en": "Library of creative canvas components that run WebGL effects over real HTML, for React, Vue, Svelte and vanilla JavaScript" },
+      "url": "https://github.com/DavidHDev/canvas-ui",
+      "purpose": "design-media"
+    },
+    {
+      "name": "screenshot-to-code",
+      "description": { "zh": "把一张截图转成 HTML、Tailwind、React 或 Vue 代码的应用", "en": "App that converts a screenshot into HTML, Tailwind, React or Vue code" },
+      "url": "https://github.com/abi/screenshot-to-code",
+      "purpose": "design-media"
+    },
+    {
+      "name": "ui-screenshot-to-prompt",
+      "description": { "zh": "分析界面截图，拆出组件和设计规律，生成给 AI 编码工具用的详细提示词", "en": "Analyzes a UI screenshot, breaks down its components and design patterns, and generates a detailed prompt for AI coding tools" },
+      "url": "https://github.com/s-smits/ui-screenshot-to-prompt",
+      "purpose": "design-media"
+    },
+    {
+      "name": "zhijuan-prompt-card",
+      "description": { "zh": "本地优先的 Chrome 扩展，把网页上的图片、截图或页面区域转成可以直接拿去生成图像的提示词（要自备能识图的大模型接口）", "en": "Local-first Chrome extension that writes image-generator prompts from images, screenshots or regions of a page (bring your own vision-capable LLM endpoint)" },
+      "url": "https://github.com/papperrollinggery/zhijuan-prompt-card",
+      "purpose": "design-media"
+    },
+    {
+      "name": "awesome-gpt-image-2",
+      "description": { "zh": "GPT Image 2 的提示词与案例库，附完整提示词、可套用的模板和配套的 Skill", "en": "Prompt and case library for GPT Image 2, with full prompts, reusable templates and companion skills" },
+      "url": "https://github.com/freestylefly/awesome-gpt-image-2",
+      "purpose": "design-media"
+    },
+    {
+      "name": "openmontage",
+      "description": { "zh": "把 AI 编码助手变成视频制作流水线的开源系统，由 Agent 完成调研、写脚本、生成素材、剪辑和合成", "en": "Open-source system that turns your AI coding assistant into a video production pipeline: research, scripting, asset generation, editing and compositing" },
+      "url": "https://github.com/calesthio/OpenMontage",
+      "purpose": "design-media"
+    },
+    {
+      "name": "supervision",
+      "description": { "zh": "计算机视觉的 Python 工具库，提供数据集加载、标注绘制、区域计数等可复用的组件", "en": "Python toolkit for computer vision with reusable building blocks for loading datasets, drawing annotations and counting objects in zones" },
+      "url": "https://github.com/roboflow/supervision",
+      "purpose": "design-media"
+    },
+    {
+      "name": "mineru",
+      "description": { "zh": "把 PDF、Office 文档等复杂文件转成适合大模型读的 Markdown 或 JSON", "en": "Converts complex documents such as PDFs and Office files into LLM-ready Markdown or JSON" },
+      "url": "https://github.com/opendatalab/MinerU",
+      "purpose": "documents"
+    },
+    {
+      "name": "stirling-pdf",
+      "description": { "zh": "开源的 PDF 编辑平台，可以当桌面应用用、在浏览器里用或部署到自己的服务器，对 PDF 做编辑、签名、遮盖和转换", "en": "Open-source PDF editing platform that runs as a desktop app, in the browser or on your own server, for editing, signing, redacting and converting PDFs" },
+      "url": "https://github.com/Stirling-Tools/Stirling-PDF",
+      "purpose": "documents"
+    },
+    {
+      "name": "pdf-inspector",
+      "description": { "zh": "检查、分类 PDF 并提取文本的 Rust 库，能分辨扫描版和文本版，也有 Python 包和命令行", "en": "Rust library for inspecting, classifying and extracting text from PDFs that tells scanned from text-based files, also available as a Python package and CLI" },
+      "url": "https://github.com/firecrawl/pdf-inspector",
+      "purpose": "documents"
+    },
+    {
+      "name": "officecli",
+      "description": { "zh": "给 AI Agent 用的命令行工具，读取、编辑和自动化处理 Word、Excel、PowerPoint 文件，不需要安装 Office", "en": "Command-line tool for AI agents to read, edit and automate Word, Excel and PowerPoint files, with no Office installation required" },
+      "url": "https://github.com/iOfficeAI/OfficeCLI",
+      "purpose": "documents"
+    },
+    {
+      "name": "sv-excel-agent",
+      "description": { "zh": "给大模型配上 MCP 工具，让它读取、编辑和自动化处理 Excel 表格的 AI Agent", "en": "AI agent for Excel that gives LLMs MCP tools to read, edit and automate spreadsheets" },
+      "url": "https://github.com/SylvianAI/sv-excel-agent",
+      "purpose": "documents"
+    },
+    {
+      "name": "pandoc",
+      "description": { "zh": "在 Markdown、HTML、Word、LaTeX 等多种文档格式之间互相转换的命令行工具", "en": "Command-line tool that converts documents between formats such as Markdown, HTML, Word and LaTeX" },
+      "url": "https://github.com/jgm/pandoc",
+      "purpose": "documents"
+    },
+    {
+      "name": "pastemd",
+      "description": { "zh": "把 Markdown 和网页上的 AI 对话内容按原格式粘贴进 Word、WPS 和 Excel 的桌面工具", "en": "Desktop utility that pastes Markdown and AI chat responses from the web into Word, WPS and Excel with formatting intact" },
+      "url": "https://github.com/RICHQAQ/PasteMD",
+      "purpose": "documents"
+    },
+    {
+      "name": "markitdown",
+      "description": { "zh": "把 PDF、Office 文档等各种文件转成 Markdown 的 Python 工具，方便交给大模型处理", "en": "Python tool that converts PDFs, Office documents and other files to Markdown for use with LLMs" },
+      "url": "https://github.com/microsoft/markitdown",
+      "purpose": "documents"
+    },
+    {
+      "name": "pdfcraft",
+      "description": { "zh": "完全在浏览器里处理文件的 PDF 工具集，编辑、转换、合并、拆分和加密都不用上传到服务器", "en": "PDF toolkit that runs entirely in your browser to edit, convert, merge, split and secure files without uploading them to a server" },
+      "url": "https://github.com/PDFCraftTool/pdfcraft",
+      "purpose": "documents"
+    },
+    {
+      "name": "word-formatter-pro",
+      "description": { "zh": "把格式混乱的 Word 文档自动排成符合规范的版式的桌面应用", "en": "Desktop app that automatically reformats messy Word documents into a standards-compliant layout" },
+      "url": "https://github.com/cwyalpha/Word-Formatter-Pro",
+      "purpose": "documents"
+    },
+    {
+      "name": "prompt-optimizer",
+      "description": { "zh": "优化 AI 提示词的工具，有网页版、桌面版、Chrome 扩展和 Docker 部署四种用法", "en": "Tool for optimizing AI prompts, available as a web app, desktop app, Chrome extension or Docker deployment" },
+      "url": "https://github.com/linshenkx/prompt-optimizer",
+      "purpose": "prompts-writing"
+    },
+    {
+      "name": "dspy-gepa",
+      "description": { "zh": "DSPy 的提示词优化器 GEPA：读执行轨迹，反思失败的原因，自动改写流程里每一步的提示词", "en": "GEPA, a prompt optimizer in DSPy that reads execution traces, reflects on failures and automatically rewrites the prompt of each step in a pipeline" },
+      "url": "https://dspy.ai/api/optimizers/GEPA/overview/",
+      "purpose": "prompts-writing"
+    },
+    {
+      "name": "bypassaigc",
+      "description": { "zh": "给论文润色、以降低 AI 生成内容检测率为目标的学术写作工具", "en": "Academic writing tool that polishes papers with the aim of lowering their AI-generated-content detection score" },
+      "url": "https://github.com/chi111i/BypassAIGC",
+      "purpose": "prompts-writing"
+    },
+    {
+      "name": "mumuainovel",
+      "description": { "zh": "基于 AI 的小说创作助手，帮你构思并写出故事", "en": "AI-powered novel writing assistant that helps you plan and write stories" },
+      "url": "https://github.com/xiamuceer-j/MuMuAINovel",
+      "purpose": "prompts-writing"
+    },
+    {
+      "name": "open-code-review",
+      "description": { "zh": "阿里巴巴开源的代码审查工具，把确定性的流水线和大模型 Agent 结合起来，给出行级的审查意见", "en": "Alibaba's open-source code review tool that combines deterministic pipelines with an LLM agent to produce line-level review comments" },
+      "url": "https://github.com/alibaba/open-code-review",
+      "purpose": "review-security"
+    },
+    {
+      "name": "plannotator",
+      "description": { "zh": "在浏览器里批注和审查 AI 编码 Agent 的计划与代码改动，再把意见发回给 Agent", "en": "Browser-based review UI for annotating your coding agent's plans and code diffs and sending the feedback back to the agent" },
+      "url": "https://github.com/backnotprop/plannotator",
+      "purpose": "review-security"
+    },
+    {
+      "name": "shannon",
+      "description": { "zh": "针对 Web 应用和 API 的 AI 渗透测试工具，分析源代码、找出攻击路径并实际执行利用来证明漏洞存在", "en": "AI penetration-testing tool for web apps and APIs that reads your source code, finds attack paths and runs real exploits to prove each vulnerability" },
+      "url": "https://github.com/KeygraphHQ/shannon",
+      "purpose": "review-security"
+    },
+    {
+      "name": "agent-as-a-judge",
+      "description": { "zh": "用 Agent 来评估其它 Agent 完成任务的过程和结果的评测框架", "en": "Evaluation framework that uses agents to judge how other agents carry out and complete their tasks" },
+      "url": "https://github.com/metauto-ai/agent-as-a-judge",
+      "purpose": "review-security"
     }
   ]
 }
