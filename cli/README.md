@@ -42,7 +42,7 @@ npx oxy-tools
 
 | 参数 | 作用 |
 |------|------|
-| `--lang <zh\|en>` | 界面语言，缺省按系统语言环境判断 |
+| `--lang <zh\|en>` | 界面语言；缺省时启动后询问 |
 | `-h`, `--help` | 显示帮助 |
 | `-v`, `--version` | 显示版本号 |
 
@@ -107,7 +107,7 @@ What you can rely on:
 
 | Flag | Effect |
 |------|--------|
-| `--lang <zh\|en>` | Interface language; defaults to the system locale |
+| `--lang <zh\|en>` | Interface language; asked at startup when omitted |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show the version number |
 

@@ -57,13 +57,10 @@ const EXIT_INTERRUPTED = 130;
 export async function runInstaller(options: InstallerOptions): Promise<number> {
   const { env, stdout } = options;
   const args = parseArguments(options.argv);
-  const ui = createUi({
-    out: stdout,
-    err: options.stderr,
-    lang: args.lang ?? detectLang(env, options.systemLocale),
-    env,
-    platform: options.platform,
-  });
+  const speaking = (lang: Lang, continued = false) =>
+    createUi({ out: stdout, err: options.stderr, lang, env, platform: options.platform, continued });
+  // 没给 --lang 时先按系统语言说话：不问语言就退出的几种情况、大标志和语言提问都用它
+  let ui = speaking(args.lang ?? detectLang(env, options.systemLocale));
 
   try {
     if (args.invalid) {
@@ -84,6 +81,10 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     }
 
     ui.logo(VERSION);
+    if (args.lang === undefined) {
+      // 语言提问收成的那一行留在标题区下面：按选定的语言接着写时，画面上已经有内容
+      ui = speaking(await options.prompter.select(ui.languageQuestion()), true);
+    }
     const loading = ui.loading('catalog');
     // 维护者预览用：环境变量把目录来源改为本地目录
     const localCatalog = env['OXY_TOOLS_CATALOG'];

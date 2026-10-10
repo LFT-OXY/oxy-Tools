@@ -38,6 +38,8 @@ interface Scene {
   shell?: (command: string) => ShellRun;
   /** 依次按下的键；画面停在按完之后的样子 */
   keys?: string[];
+  /** 语言提问也由 keys 来按，不给 keys 就停在它上面；缺省由假键盘替用户按回车，keys 里不用写它 */
+  answersLanguage?: boolean;
 }
 
 /** 一条假装执行的工具安装命令 */
@@ -297,7 +299,10 @@ const scenes: Scene[] = [
   { title: '标题区 · 渐变', note: 'COLORTERM=truecolor：标志从左到右由粉到紫到蓝，同一列的方块同色', env: TRUECOLOR },
   { title: '标题区 · 洋红（没有 COLORTERM）', note: '终端没有声明支持 24 位色：整个标志是终端自己的洋红，和焦点符号同色' },
   { title: '标题区 · 不显示颜色', note: '设置了 NO_COLOR：哪怕同时有 COLORTERM=truecolor，标志也不上色', env: { ...TRUECOLOR, NO_COLOR: '1' } },
-  { title: '主菜单', note: '只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
+  { title: '语言提问 · 系统语言是中文', note: '大标志之后的第一问：光标停在「中文」上，按键提示是中文；提问和两个选项不随界面语言变', answersLanguage: true },
+  { title: '语言提问 · 系统语言不是中文', note: 'LANG=en_US.UTF-8：光标停在 English 上，按键提示是英文', env: { LANG: 'en_US.UTF-8' }, answersLanguage: true },
+  { title: '语言提问 · 选了与系统语言不同的一项', note: '下移到 English 再回车：收成一行，之后的画面都是选定的语言', answersLanguage: true, keys: [KEY.down, KEY.enter] },
+  { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有 Skill 一个分组和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
   { title: '汇总确认 · 选了两个 skill', note: '列出每个 skill 将装到的目录；可开始安装、返回修改或取消', keys: toSummary },
@@ -398,7 +403,7 @@ const scenes: Scene[] = [
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
   { title: '出错 · 无法识别的参数', note: 'npx oxy-tools --frobnicate', argv: ['--frobnicate'] },
   { title: '帮助', note: 'npx oxy-tools --help', argv: ['--help'] },
-  { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en', argv: ['--lang', 'en'] },
+  { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en · 给了 --lang 就不问语言', argv: ['--lang', 'en'] },
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
   { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toSkills },
@@ -421,6 +426,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
   { title: '英文界面 · 出错', argv: ['--lang', 'en'], catalog: offline },
   { title: '英文界面 · 帮助', note: 'npx oxy-tools --help --lang en', argv: ['--help', '--lang', 'en'] },
+  { title: '不显示颜色 · 语言提问', note: '设置了 NO_COLOR：光标靠 ▸ 认，不靠颜色', env: { NO_COLOR: '1' }, answersLanguage: true },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
@@ -439,6 +445,7 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 工具的汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, ...TOOLS, keys: runTools },
   { title: '不显示颜色 · 出错', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: offline },
   { title: '没有 Unicode · 启动与加载', note: 'Windows 旧式控制台：符号和大标志退成 ASCII', ...LEGACY_CONSOLE, catalog: neverLoads },
+  { title: '没有 Unicode · 语言提问', note: '光标退成 >，按键提示里的按键改用文字；三段固定的字不变', ...LEGACY_CONSOLE, answersLanguage: true },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
   { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
@@ -492,7 +499,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     while (Date.now() - lastWrite < 60 && Date.now() < deadline) await sleep(10);
   };
 
-  const { keyboard, prompter } = keyboardPrompter(write, ROWS);
+  const { keyboard, prompter } = keyboardPrompter(write, ROWS, scene.answersLanguage);
   const tty = scene.tty ?? true;
   const bin = scratchDir('bin');
   for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });

@@ -6,26 +6,49 @@ import type { Prompter } from '../src/prompter.ts';
 
 export const KEY = { up: '\x1b[A', down: '\x1b[B', enter: '\r', space: ' ', ctrlC: '\x03' };
 export const COLUMNS = 80;
+/** 语言提问的文案：它不随界面语言变，架子靠它认出这一问 */
+export const LANGUAGE_QUESTION = 'Language / 语言';
+// 语言提问的最后一个选项
+const LAST_LANGUAGE = 'English';
 
-/** 提问由真实的交互库画到 write 上；往返回的 keyboard 里写按键。 */
+/**
+ * 提问由真实的交互库画到 write 上；往返回的 keyboard 里写按键。
+ * 语言提问缺省由它替用户按回车，接受光标起始所在的那一项；answersLanguage 为真时不替，留给调用方自己按。
+ */
 export function keyboardPrompter(
   write: (text: string) => void,
   rows: number,
+  answersLanguage = false,
 ): { keyboard: PassThrough; prompter: Prompter } {
   const keyboard = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => keyboard });
+  // 语言提问已经问出去、还没替用户按回车
+  let languagePending = false;
   // 交互库在每个提示结束时会关掉输出流，所以每个提示给一个新的
-  const prompter = inquirerPrompter(() => ({
+  const real = inquirerPrompter(() => ({
     input: keyboard,
     output: Object.assign(
       new Writable({
         write(chunk: Buffer, _encoding, callback) {
-          write(chunk.toString());
+          const text = chunk.toString();
+          write(text);
+          // 交互库画完第一帧才开始听按键，早按的会丢：等最后一个选项画出来，再让出这一轮才按
+          if (languagePending && text.includes(LAST_LANGUAGE)) {
+            languagePending = false;
+            setImmediate(() => keyboard.write(KEY.enter));
+          }
           callback();
         },
       }),
       { isTTY: true, columns: COLUMNS, rows },
     ),
   }));
+  const prompter: Prompter = {
+    ...real,
+    select: (question) => {
+      if (question.message === LANGUAGE_QUESTION && !answersLanguage) languagePending = true;
+      return real.select(question);
+    },
+  };
   return { keyboard, prompter };
 }
 

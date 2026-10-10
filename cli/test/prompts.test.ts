@@ -92,6 +92,82 @@ describe('真实的提问画面', () => {
   });
 });
 
+describe('真实的画面：语言提问', () => {
+  it('系统语言是中文：光标停在「中文」上，下面是 English，按键提示是中文', async () => {
+    const result = await run({ answersLanguage: true, keys: [[HINT, KEY.ctrlC]] });
+
+    const lines = await screenLines(result.raw);
+    const question = lines.indexOf('? Language / 语言');
+    expect(lines.slice(question - 2, question)).toEqual([expect.stringMatching(/^\s+oxy-tools \S+$/), '']);
+    expect(lines.slice(question + 1, question + 3)).toEqual(['▸ 中文', '  English']);
+    expect(result.output).toMatch(/^\s+↑↓ 移动 · ⏎ 选择$/m);
+    expect(result.exitCode).toBe(130);
+  });
+
+  it.each([
+    ['环境变量说是英文', { LANG: 'en_US.UTF-8' }, 'en-US'],
+    ['环境变量里没有语言设置，系统语言环境不是中文', { LANG: '' }, 'de-DE'],
+  ])('%s：光标停在 English 上，按键提示是英文', async (_label, env, systemLocale) => {
+    const result = await run({ env, systemLocale, answersLanguage: true, keys: [['⏎ select', KEY.ctrlC]] });
+
+    const lines = await screenLines(result.raw);
+    const question = lines.indexOf('? Language / 语言');
+    expect(lines.slice(question + 1, question + 3)).toEqual(['  中文', '▸ English']);
+    expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
+  });
+
+  it('回答后收成一行留在标题区下面，选项和按键提示不再占着画面', async () => {
+    const result = await run({ answersLanguage: true, keys: [[HINT, KEY.enter], [HINT, KEY.ctrlC]] });
+
+    const lines = await screenLines(result.raw);
+    const answered = lines.indexOf('✓ Language / 语言 · 中文');
+    expect(lines.slice(answered - 2, answered)).toEqual([expect.stringMatching(/^\s+oxy-tools \S+$/), '']);
+    expect(lines).not.toContain('? Language / 语言');
+    expect(lines).not.toContain('  English');
+    expect(lines.slice(answered + 1).join('\n')).toMatch(/^\s+AI Agent\s+Claude Code ✓/);
+  });
+
+  it('下移到 English 再回车：收成的一行写着 English，主菜单和它的按键提示是英文', async () => {
+    const result = await run({
+      answersLanguage: true,
+      keys: [
+        [HINT, KEY.down],
+        ['▸ English', KEY.enter],
+        ['⏎ select', KEY.ctrlC],
+      ],
+    });
+
+    const lines = await screenLines(result.raw);
+    expect(lines).toContain('✓ Language / 语言 · English');
+    expect(lines).toContain('? Pick a group');
+    expect(result.output).toMatch(/^\s+↑↓ move · ⏎ select$/m);
+    expect(lines.join('\n')).not.toContain('选择分组');
+  });
+
+  it('选完语言后立刻出错：收成的那一行与出错说明之间空一行', async () => {
+    const result = await run({ catalog: catalogDir({ index: null }), keys: [] });
+
+    const lines = await screenLines(result.raw);
+    const answered = lines.indexOf('✓ Language / 语言 · 中文');
+    expect(answered).toBeGreaterThan(-1);
+    expect(lines.slice(answered + 1, answered + 3)).toEqual(['', expect.stringMatching(/^── 出错：/)]);
+  });
+
+  it('不显示颜色、没有 Unicode 时，语言提问同样不带样式码、符号退成 ASCII，三段字不变', async () => {
+    const result = await run({
+      platform: 'win32',
+      env: { TERM: '', NO_COLOR: '1' },
+      answersLanguage: true,
+      keys: [['回车 选择', KEY.enter], ['回车 选择', KEY.ctrlC]],
+    });
+
+    expect(result.raw).not.toMatch(STYLE_CODE);
+    expect(result.output).toMatch(/^> 中文$/m);
+    expect(result.output).toMatch(/^  English$/m);
+    expect(result.output).toMatch(/\+ Language \/ 语言 - 中文$/m);
+  });
+});
+
 describe('真实的多选画面', () => {
   it('skill 列表是多选：每行前面有勾选框，下方是说明全文和本地化的按键提示', async () => {
     const result = await run({ keys: [[HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });

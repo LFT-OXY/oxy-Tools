@@ -20,7 +20,7 @@ export interface InstallerOptions {
   argv: readonly string[];        // 不含 node 和脚本路径
   env: Environment;               // Readonly<Record<string, string | undefined>>
   platform: NodeJS.Platform;
-  systemLocale: string;           // 如 zh-CN；环境变量里没有语言设置时用它
+  systemLocale: string;           // 如 zh-CN；环境变量里没有语言设置时用它判断系统语言
   stdout: TerminalOutput;         // { write(text), isTTY, rows? }
   stderr: TerminalOutput;
   stdinIsTTY: boolean;
@@ -67,11 +67,19 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 ### 3. Contracts
 
+**启动顺序**
+
+解析启动参数 → 参数有误、`--help`、`--version`、没有交互式终端这四种情况各自处理并退出 → 打大标志 → 没给 `--lang` 就问语言 → 读取目录 → 本机信息 → 主菜单。
+
+**界面语言在一次运行的中途才定下来。** 那四种不问就退出的情况、大标志和语言提问用按系统语言建的呈现层；语言提问回答之后入口按选定的语言重建一个（`createUi({ …, lang, continued: true })`），此后的一切输出——加载提示、本机信息、菜单、提问、出错说明、目录条目的说明——都用它。重建时带上 `continued`，见 [终端输出](./terminal-output.md) 的「分区标题上方的空行」。
+
+语言提问用提问器现有的单选（`ui.languageQuestion()`），不是新的提示种类。选择只留在这次运行的内存里：安装器不为它写任何文件，下一次启动照样问。在它上面按 Ctrl+C 和别的提问一样以 130 退出。
+
 **启动参数**
 
 | 参数 | 行为 |
 |------|------|
-| `--lang zh` / `--lang=en` | 强制界面语言 |
+| `--lang zh` / `--lang=en` | 指定界面语言，启动后不再问；值不是 `zh`、`en` 或没给值时出错，退出状态 2 |
 | `-h`、`--help` | 打印用法，退出状态 0，不需要终端 |
 | `-v`、`--version` | 只打印版本号，退出状态 0，不需要终端 |
 | 其他 | 出错「无法识别的参数」，退出状态 2 |
@@ -84,7 +92,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | `GITHUB_TOKEN` | 非空时，向 GitHub 的接口查询带上它（`Authorization: Bearer`）；下载文件从不带 |
 | `PATH`、`PATHEXT` | 判断宿主的命令在不在，见 [安装 skill](./skill-install.md) |
 | `CLAUDE_CONFIG_DIR`、`CODEX_HOME` | 非空时，看 MCP 配没配过改去这里找宿主的配置文件，见 [安装 MCP](./mcp-install.md)；skill 目录不认它们 |
-| `LC_ALL`、`LC_MESSAGES`、`LANG` | 按这个顺序取第一个非空的判断语言：以 `zh` 开头用中文，否则英文；都为空时看 `systemLocale` |
+| `LC_ALL`、`LC_MESSAGES`、`LANG` | 按这个顺序取第一个非空的判断**系统语言**：以 `zh` 开头是中文，否则英文；都为空时看 `systemLocale`。系统语言不直接是界面语言，它有三个用途：语言提问上光标起始停在哪一项；语言提问的按键提示用哪种语言；不问语言就退出的四种情况（参数有误、`--help`、`--version`、没有交互式终端）输出用哪种语言。给了 `--lang` 时不问语言，前两处不存在；那四种情况的输出用 `--lang` 的 |
 | `NO_COLOR` | 只要存在就不带任何样式，见 [终端输出](./terminal-output.md) |
 | `COLORTERM` | 等于 `truecolor` 或 `24bit` 时大标志画 24 位色的渐变，否则是洋红；只管标志，别的输出不看它。见 [终端输出](./terminal-output.md) 的「上不上色」 |
 | `TERM`、`WT_SESSION` 等 | 判断终端是否支持 Unicode，见 [终端输出](./terminal-output.md) |
@@ -161,13 +169,16 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 `url` 收得这么紧是因为它有两个去处：原样打到终端上让用户复制，和交给系统的打开命令。规则保证里面没有空白、引号、反斜杠、控制字符和不可见的字符（如改变文字方向的 `U+202E`），所以它在终端上不会被折开、看到的就是打开的、在任何系统的命令行上都是一个参数。这条规则是工单 07 的实现者定的，**维护者尚未确认**；要放宽（比如收 `http`）先改这里和 `catalog.ts` 的 `HTTPS_URL`。
 
-其他不能继续的情况：标准输入或标准输出不是终端 →「没有交互式终端」，不打印大标志，不读目录；任何没预料到的异常 →「意外错误」，原因取消息的第一行（为空时用错误的类型名），不打印堆栈。
+其他不能继续的情况：标准输入或标准输出不是终端 →「没有交互式终端」，不打印大标志，不问语言，不读目录；任何没预料到的异常 →「意外错误」，原因取消息的第一行（为空时用错误的类型名），不打印堆栈。
 
 ### 5. Good/Base/Bad Cases
 
 - Good：`index.json` 有 11 条合法 skill，`catalog.json` 三个数组为空 → 主菜单只有 Skill 一个分组和退出。
 - Base：`index.json` 里一条的 `path` 是 `skills/../x` → 这一条被跳过，提示「目录中有 1 个条目格式有误，已跳过」，其余照常。
 - Bad：`catalog.json` 的 `version` 是 2 → 不看它的其余内容，提示升级，以 1 退出。
+- Good（语言）：系统语言是英文，不带 `--lang` 启动 → 大标志之后问 `Language / 语言`，光标在 `English` 上，按键提示是英文；下移到 `中文` 回车后，加载提示起全是中文。
+- Base（语言）：`--lang en --help` → 不问，帮助是英文；`--lang fr` → 不问，出错「无法识别的参数」，退出状态 2，说明用系统语言。
+- Bad（语言）：选完语言后目录读不了 → 出错说明用选定的语言，它的标题与语言提问收成的那一行之间空一行；以 1 退出。
 - Base（应用项目）：`apps` 里一条的 `url` 是 `http://…` → 这一条被跳过并计入提示的数量，其余应用项目照常；全部被跳过时主菜单不出现这个分组。
 
 ### 6. Tests Required
@@ -182,6 +193,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 | 大标志的三档颜色 | `startup.test.ts` 的「大标志的颜色」一组 | 从原始输出里读出每个方块前面生效的前景色码，按它在字形里的列号归拢（`logoColors`）：渐变那一档卡两端、正中和两个四分点的色值，且同一列同色；洋红那一档每个方块都是 `35`、没有 `38;2;`；`NO_COLOR` 与 `COLORTERM` 同时设置时一个样式码都没有。期望的色值是照色标手算的，不从实现里取 |
 | 焦点符号是洋红、输出里没有青色 | `prompts.test.ts` 的「焦点色」一组 | 用真实的交互库（`keys`）：`?`、`▸`、`■`、转动符号前面紧挨着洋红的码；四种提示连同各自出错时多出来的那一行都走一遍，原始输出里没有 `36`、`96`。那个文件强行打开了 Node 的上色，主题漏盖了哪个样式函数，交互库自带的青色就会在这里漏出来 |
 | 按键提示整行在 79 列以内 | `prompts.test.ts` | 用真实的交互库断言整行 |
+| 语言提问：问不问、问什么、光标起始在哪、选了之后用哪种语言 | `startup.test.ts` 的「语言提问」一组、`prompts.test.ts` 的「真实的画面：语言提问」一组 | 给 `answersLanguage: true` 自己应答。问不问看 `output` 里有没有 `Language / 语言`；光标起始在哪用 `accept()` 证明（接受之后的画面是哪种语言），真实的画面上再看 `▸` 在哪一行；收成一行、按键提示的语言用 `keys` |
 | 标题区的摆法：居中、字形、上下各空一行、标志下面没有横线、产品名粗体与版本号暗淡 | `startup.test.ts` 的「启动」一组 | 它是一块固定的字符画，摆法就是它的全部内容。居中量的是左右空白差不超过一列，**不写死补了几格**；字形是各行去掉同样多的缩进后与字形逐行相等——只量整块的边距的话，各行各自居中、字形走样了也照样通过 |
 
 测试架子在 `cli/test/harness.ts`：
@@ -196,6 +208,8 @@ const result = await run({
 result.exitCode; result.output; result.stdout; result.stderr; result.screen; result.commands; result.opened;
 result.home; result.tmp; // 临时的主目录、交给安装器放临时文件的目录
 ```
+
+- **语言提问缺省由架子替用户按回车**，接受光标起始所在的那一项：`answers` 和 `keys` 里都不用写它。光标的起始位置是按系统语言定的，所以靠 `env: { LANG: … }`、`systemLocale` 决定界面语言的测试照旧成立，带 `--lang` 的也一样（那时根本不问）。专门测语言提问的用例给 `answersLanguage: true`：它就和别的提问一样，用掉 `answers` 的第一个应答，或由 `keys` 的脚本来按。用 `keys` 时架子等语言提问画出来才按回车，并且等它收成一行之后才开始认脚本要等的字——语言提问自己的按键提示不算数。
 
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
@@ -288,6 +302,16 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 **Cause**：提问回答之后，交互库把光标挪回去重画，收成的那一行在去掉控制码的文字里紧接在按键提示后面，中间没有换行。
 
 **Fix**：整行断言放在**以 Ctrl+C 结束的那个提问**上（它的按键提示后面没有重画）；已回答的提问只卡行尾（`/✓ 选择分组 · Skill$/m`）。不要靠去掉 `$` 了事——按键提示必须在 79 列以内，整行断言是唯一查得出它超宽的地方。
+
+### 替用户按的键按早了，或按到了别的提问上
+
+**Symptom**：用 `keys` 的测试卡在语言提问上直到超时；或脚本的第一个键落在语言提问上，界面成了另一种语言、后面的键全部错位。
+
+**Cause**：两件事。其一，交互库（`@inquirer/core` 的 `createPrompt`）对真正的可读流会把第一帧推迟一个 `setImmediate` 才画，画完这一帧才开始听按键——在那之前写进假键盘的键被直接丢掉。其二，语言提问的按键提示和主菜单的是同一句（`⏎ 选择`），脚本等的字在语言提问的画面上就已经有了。
+
+**Fix**：都在架子里，测试不用管。假键盘（`cli/test/terminal.ts` 的 `keyboardPrompter`）盯着交互库的输出，等语言提问的最后一个选项画出来，再让出一轮（`setImmediate`）才按回车；架子（`harness.ts`）在语言提问被问出去到收成一行之间不认画面上的字，收成一行时把「认到哪了」推到那一行之后。
+
+**Prevention**：升级交互库后先跑 `prompts.test.ts`：这段靠的是它首帧与听按键的先后，那边一改这里就会卡住或错位。再加一种启动时由架子代答的提问，照语言提问的做法接进这两处，不要在每个测试的 `keys` 前面手写一次回车。
 
 ### 往标准输出写了出错说明
 

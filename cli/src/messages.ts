@@ -405,7 +405,7 @@ const zh: Messages = {
     usageLine: 'npx oxy-tools [选项]',
     options: '选项',
     optionRows: [
-      ['--lang <zh|en>', '界面语言，缺省按系统语言环境判断'],
+      ['--lang <zh|en>', '界面语言；缺省时启动后询问'],
       ['-h, --help', '显示这份帮助'],
       ['-v, --version', '显示版本号'],
     ],
@@ -659,7 +659,7 @@ const en: Messages = {
     usageLine: 'npx oxy-tools [options]',
     options: 'Options',
     optionRows: [
-      ['--lang <zh|en>', 'Interface language; defaults to the system locale'],
+      ['--lang <zh|en>', 'Interface language; asked at startup when omitted'],
       ['-h, --help', 'Show this help'],
       ['-v, --version', 'Show the version number'],
     ],

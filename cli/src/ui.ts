@@ -73,6 +73,12 @@ const ASCII: typeof UNICODE = {
 };
 // 大标志的渐变从左到右依次经过这三个色标：粉、紫、蓝
 const LOGO_STOPS = ['#E255C0', '#8B5CF6', '#3D8FE6'].map((hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)));
+// 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项
+const LANGUAGE_QUESTION = 'Language / 语言';
+const LANGUAGES: readonly { lang: Lang; label: string }[] = [
+  { lang: 'zh', label: '中文' },
+  { lang: 'en', label: 'English' },
+];
 // 转动符号的节奏照搬交互库的默认值
 const SPINNER_INTERVAL = 80;
 const ERASE_LINE = '\r\x1b[2K';
@@ -121,6 +127,11 @@ export interface UiOptions {
   lang: Lang;
   env: Environment;
   platform: NodeJS.Platform;
+  /**
+   * 接在别的输出后面：画面上已经有内容，且不是以空行收尾（语言提问回答之后按选定的语言重建时）。
+   * 缺省画面还是空的
+   */
+  continued?: boolean;
 }
 
 export type Ui = ReturnType<typeof createUi>;
@@ -157,7 +168,7 @@ function hanging(indent: string, lead: string, text: string): string[] {
   );
 }
 
-export function createUi({ out, err, lang, env, platform }: UiOptions) {
+export function createUi({ out, err, lang, env, platform, continued = false }: UiOptions) {
   const t = MESSAGES[lang];
   const unicode = supportsUnicode(env, platform);
   const symbols = unicode ? UNICODE : ASCII;
@@ -166,7 +177,7 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
   const focus = 'magenta';
 
   // 接下来的分区标题上方是否已经有留白：画面还是空的，或刚打出的标题区自己以空行收尾。两个输出流合起来算
-  let spaced = true;
+  let spaced = !continued;
   // 分区标题上方空一行，上面已经有留白时除外
   const gapAbove = (): string[] => (spaced ? [] : ['']);
 
@@ -462,6 +473,17 @@ export function createUi({ out, err, lang, env, platform }: UiOptions) {
       const name = centered(`${paint('bold', 'oxy-tools')} ${dim(version)}`);
       print('', ...art, '', name, '');
       spaced = true;
+    },
+
+    /** 启动时的语言提问：光标起始停在这个呈现层自己的语言上——没给 --lang 时它是按系统语言建的。 */
+    languageQuestion(): SelectQuestion<Lang> {
+      return {
+        message: LANGUAGE_QUESTION,
+        pageSize: pageSize(),
+        theme,
+        default: lang,
+        rows: LANGUAGES.map(({ lang: value, label }) => ({ value, short: label, name: label })),
+      };
     },
 
     /** 读取目录、查询文件列表时的进行中提示，行首的符号转动；done() 把这一行擦掉。 */

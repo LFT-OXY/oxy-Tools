@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { STACK_FRAME, STYLE_CODE, catalogDir, choose, interrupt, pick, run } from './harness.ts';
+import { STACK_FRAME, STYLE_CODE, accept, catalogDir, choose, interrupt, pick, run } from './harness.ts';
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -57,7 +57,7 @@ describe('启动', () => {
   });
 
   it('标志下方空一行是居中的产品名和版本号，再空一行才是别的内容', async () => {
-    const result = await run({ answers: [choose('退出')] });
+    const result = await run({ argv: ['--lang', 'zh'], answers: [choose('退出')] });
 
     const [gap, name = '', gapBelow, next] = titleArea(result.screen, LOGO).below;
     expect([gap, name.trim(), gapBelow]).toEqual(['', `oxy-tools ${version}`, '']);
@@ -93,8 +93,8 @@ describe('启动', () => {
     }
   });
 
-  it('启动后立刻出错：标题区与出错说明之间只隔一行', async () => {
-    const result = await run({ catalog: catalogDir({ index: null }) });
+  it('带 --lang 启动后立刻出错：标题区与出错说明之间只隔一行', async () => {
+    const result = await run({ argv: ['--lang', 'zh'], catalog: catalogDir({ index: null }) });
 
     const lines = result.screen.split('\n');
     const name = lines.findIndex((line) => line.trim() === `oxy-tools ${version}`);
@@ -146,10 +146,127 @@ describe('语言', () => {
     expect(result.output).toContain('选择分组');
   });
 
+  it('LC_MESSAGES 优先于 LANG，LC_ALL 又优先于它', async () => {
+    const chinese = await run({ env: { LC_MESSAGES: 'zh_CN.UTF-8', LANG: 'en_US.UTF-8' }, answers: [choose('退出')] });
+    const english = await run({
+      env: { LC_ALL: 'en_US.UTF-8', LC_MESSAGES: 'zh_CN.UTF-8', LANG: 'zh_CN.UTF-8' },
+      answers: [choose('Exit')],
+    });
+
+    expect(chinese.output).toContain('选择分组');
+    expect(english.output).toContain('Pick a group');
+  });
+
   it('环境变量里没有语言设置时看系统语言环境', async () => {
     const result = await run({ env: { LANG: '' }, systemLocale: 'zh-CN', answers: [choose('退出')] });
 
     expect(result.output).toContain('选择分组');
+  });
+});
+
+describe('语言提问', () => {
+  it('不带 --lang 启动：标题区之后隔一行就是它，是第一问，两项依次是「中文」「English」', async () => {
+    const result = await run({ answersLanguage: true, answers: [choose('中文'), choose('退出')] });
+
+    const lines = result.screen.split('\n');
+    const name = lines.findIndex((line) => line.trim() === `oxy-tools ${version}`);
+    expect(lines.slice(name + 1, name + 5)).toEqual(['', '? Language / 语言', '  中文', '  English']);
+    expect(lines.filter((line) => line.startsWith('? '))[0]).toBe('? Language / 语言');
+  });
+
+  it.each([
+    ['系统语言是中文', { LANG: 'zh_CN.UTF-8' }, '选择分组'],
+    ['系统语言是英文', { LANG: 'en_US.UTF-8' }, 'Pick a group'],
+    ['系统语言是别的', { LANG: 'fr_FR.UTF-8' }, 'Pick a group'],
+  ])('%s：什么都不动直接回车，得到的就是光标起始那一项的界面', async (_label, env, menu) => {
+    const result = await run({ env, answersLanguage: true, answers: [accept(), interrupt()] });
+
+    expect(result.output).toContain(menu);
+  });
+
+  it('系统语言是中文、选了 English：加载提示、本机信息、菜单、条目的说明都是英文', async () => {
+    const result = await run({
+      env: { LANG: 'zh_CN.UTF-8' },
+      answersLanguage: true,
+      answers: [choose('English'), choose('Skills'), pick(), choose('Exit')],
+    });
+
+    const afterQuestion = result.output.slice(result.output.indexOf('English') + 'English'.length);
+    expect(afterQuestion).toContain('Loading catalog');
+    expect(afterQuestion).toMatch(/^\s+Catalog\s+2 skills?$/m);
+    expect(afterQuestion).toContain('Pick a group');
+    expect(afterQuestion).toMatch(/ beta-pack\s+none\s+The second sample skill$/m);
+    expect(afterQuestion).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('系统语言是英文、选了「中文」：之后的画面是中文', async () => {
+    const result = await run({
+      env: { LANG: 'en_US.UTF-8' },
+      answersLanguage: true,
+      answers: [choose('中文'), choose('Skill'), pick(), choose('退出')],
+    });
+
+    expect(result.output).toContain('正在读取目录');
+    expect(result.output).toContain('选择分组');
+    expect(result.output).toMatch(/ beta-pack\s+未装\s+第二个样例 skill$/m);
+    expect(result.output).not.toContain('Pick a group');
+  });
+
+  it('选了与系统语言不同的一项后立刻出错：出错说明也是选定的语言', async () => {
+    const result = await run({
+      env: { LANG: 'zh_CN.UTF-8' },
+      catalog: catalogDir({ index: null }),
+      answersLanguage: true,
+      answers: [choose('English')],
+    });
+
+    expect(result.stderr).toContain('Error: ');
+    expect(result.stderr).not.toContain('出错：');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it.each([
+    ['--lang zh', ['--lang', 'zh'], '退出', '选择分组'],
+    ['--lang en', ['--lang', 'en'], 'Exit', 'Pick a group'],
+    ['--lang=zh', ['--lang=zh'], '退出', '选择分组'],
+    ['--lang=en', ['--lang=en'], 'Exit', 'Pick a group'],
+  ])('带 %s 启动时不问，第一问就是主菜单', async (_label, argv, exit, menu) => {
+    const result = await run({ argv, answersLanguage: true, answers: [choose(exit)] });
+
+    expect(result.output).not.toContain('Language / 语言');
+    expect(result.output.split('\n').filter((line) => line.startsWith('? '))).toEqual([`? ${menu}`]);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it.each([
+    ['--help', { argv: ['--help'] }, '用法', 'Usage'],
+    ['--version', { argv: ['--version'] }, version, version],
+    ['参数无法识别', { argv: ['--frobnicate'] }, '出错：', 'Error: '],
+    ['没有交互式终端', { tty: false }, '出错：', 'Error: '],
+  ])('%s：不问语言，输出按系统语言', async (_label, options, chinese, english) => {
+    const inChinese = await run({ ...options, env: { LANG: 'zh_CN.UTF-8' }, answersLanguage: true });
+    const inEnglish = await run({ ...options, env: { LANG: 'en_US.UTF-8' }, answersLanguage: true });
+
+    expect(inChinese.output).not.toContain('Language / 语言');
+    expect(inEnglish.output).not.toContain('Language / 语言');
+    expect(inChinese.output).toContain(chinese);
+    expect(inEnglish.output).toContain(english);
+  });
+
+  it('在它上面按 Ctrl+C：以 130 退出，没有出错说明和堆栈，也不去读目录', async () => {
+    const result = await run({ answersLanguage: true, answers: [interrupt()] });
+
+    expect(result.exitCode).toBe(130);
+    expect(result.output).not.toContain('出错');
+    expect(result.output).not.toMatch(STACK_FRAME);
+    expect(result.output).not.toContain('正在读取目录');
+  });
+
+  it('选择不落盘：运行之后主目录和临时目录里都没有多出东西', async () => {
+    const result = await run({ answersLanguage: true, answers: [choose('English'), choose('Exit')] });
+
+    expect(readdirSync(result.home)).toEqual([]);
+    expect(readdirSync(result.tmp)).toEqual([]);
   });
 });
 
@@ -171,6 +288,16 @@ describe('启动参数', () => {
 
     expect(result.output.split('\n')[0]).toBe(`oxy-tools ${version}`);
     expect(result.raw.split('\n')[0]).toBe(`\x1b[1moxy-tools\x1b[22m \x1b[2m${version}\x1b[22m`);
+  });
+
+  it.each([
+    ['中文', 'zh', /^\s+--lang <zh\|en>\s+界面语言；缺省时启动后询问$/m],
+    ['英文', 'en', /^\s+--lang <zh\|en>\s+Interface language; asked at startup when omitted$/m],
+  ])('%s的 --help 说明 --lang 缺省时启动后询问', async (_label, lang, row) => {
+    const result = await run({ argv: ['--help', '--lang', lang] });
+
+    expect(result.output).toMatch(row);
+    expect(result.output).not.toMatch(/系统语言环境|system locale/);
   });
 
   it.each([[['--help']], [['--version']], [['--frobnicate']]])('%s 不打印大标志', async (argv) => {

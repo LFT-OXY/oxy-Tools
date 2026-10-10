@@ -15,7 +15,7 @@ import {
   type SelectQuestion,
 } from '../src/prompter.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
-import { keyboardPrompter } from './terminal.ts';
+import { LANGUAGE_QUESTION, keyboardPrompter } from './terminal.ts';
 
 export {
   EMPTY_CATALOG,
@@ -178,6 +178,11 @@ export interface RunOptions {
   /** 按预设应答的提问器：每个提问依次用掉一个 */
   answers?: Answer[];
   /**
+   * 语言提问由谁应答。缺省由架子替用户按回车，接受光标起始所在的那一项，answers 和 keys 里都不用写它；
+   * 传 true 则它和别的提问一样，用掉 answers 的第一个应答，或由 keys 的脚本来按
+   */
+  answersLanguage?: boolean;
+  /**
    * 改用真实的交互库渲染提问，并按脚本发按键：等画面上新出现 waitFor 这段文字，再按下 key。
    * 用来核对提问部分实际打到终端上的东西。
    */
@@ -275,6 +280,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
       lines[0] += ` ${question.theme.style.help(question.theme.style.maskedText)}`;
     }
     record('stdout')(`${lines.join('\n')}\n`);
+    if (question.message === LANGUAGE_QUESTION && !options.answersLanguage) return accept()(question, prompt);
     const answer = answers.shift();
     if (!answer) {
       unanswered = question.message;
@@ -289,12 +295,28 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     password: async (question) => ask('password', question) as string,
   };
 
-  const { keyboard, prompter: interactive } = keyboardPrompter(record('stdout'), ROWS);
+  const { keyboard, prompter: real } = keyboardPrompter(record('stdout'), ROWS, options.answersLanguage);
+  // 画面上到这里为止的字，脚本已经认过了
+  let seen = 0;
+  // 假键盘正替用户应答语言提问。它的按键提示和主菜单的是同一句：等它收成一行，脚本才开始认画面上的字
+  let answeringLanguage = false;
+  const interactive: Prompter = {
+    ...real,
+    select: async (question) => {
+      if (question.message !== LANGUAGE_QUESTION || options.answersLanguage) return real.select(question);
+      answeringLanguage = true;
+      try {
+        return await real.select(question);
+      } finally {
+        seen = plain(textOf()).length;
+        answeringLanguage = false;
+      }
+    },
+  };
   const typing = async (): Promise<void> => {
-    let seen = 0;
     for (const [waitFor, key] of options.keys ?? []) {
       const deadline = Date.now() + 2000;
-      while (!plain(textOf()).slice(seen).includes(waitFor)) {
+      while (answeringLanguage || !plain(textOf()).slice(seen).includes(waitFor)) {
         if (Date.now() > deadline) throw new Error(`画面上一直没有出现「${waitFor}」：\n${plain(textOf()).slice(seen)}`);
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
