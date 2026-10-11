@@ -430,14 +430,14 @@ input[type='checkbox']:checked::after {
   gap: 6px;
   white-space: nowrap;
 }
-/* 不可选：虚线的边、没有底色，名字和说明退后；原因比周围都亮才读得到 */
+/* 不可选：虚线的边、没有底色，名字退一档（和说明同色，不用最淡的：整栏都不可选时要读得清）；
+   原因比周围都亮才读得到 */
 .card.unavailable {
   border-style: dashed;
   background: none;
 }
-.card.unavailable h3,
-.card.unavailable .about {
-  color: var(--faint);
+.card.unavailable h3 {
+  color: var(--secondary);
 }
 .card.unavailable input {
   border-style: dashed;
