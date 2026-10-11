@@ -14,6 +14,7 @@
   ],
   "skillPurposes": {
     "archify": "documents",
+    "atw-run-tickets": "dev-workflow",
     "onetake": "design-media",
     "unlazy": "agent-behavior",
     "shuorenhua": "prompts-writing"

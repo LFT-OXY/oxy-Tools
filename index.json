@@ -11,6 +11,15 @@
       }
     },
     {
+      "name": "atw-run-tickets",
+      "version": "1.0.0",
+      "path": "skills/atw-run-tickets",
+      "description": {
+        "zh": "无人值守跑完 ATW 任务的全部工单：每张工单一个全新的无头 Claude Code 会话执行 /atw-implement，闭链不变，门禁不过即停",
+        "en": "Run every ticket of an ATW task unattended: one fresh headless Claude Code session per ticket runs /atw-implement with the full chain intact, stopping at the first failed gate"
+      }
+    },
+    {
       "name": "explanation",
       "version": "1.0.0",
       "path": "skills/explanation",
