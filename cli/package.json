@@ -25,6 +25,7 @@
     "test": "vitest run",
     "start": "npm run build && node dist/bin.js",
     "preview": "node --experimental-strip-types scripts/preview.ts",
+    "preview:web": "node --experimental-strip-types scripts/preview-web.ts",
     "validate-catalog": "node --experimental-strip-types scripts/validate-catalog.ts",
     "check-upstream": "node --experimental-strip-types scripts/check-upstream.ts"
   },

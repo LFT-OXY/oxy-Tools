@@ -1,27 +1,48 @@
 // 界面预览页（仅供开发）：经安装器入口按预设场景驱动安装器，提问由真实的交互库渲染，
 // 把无头终端里的画面连同样式转成一个离线 HTML 页面，每个画面一格，深色和浅色终端各一份。
 // 生成物在 .preview/ 下，不提交，不随 npm 包发布。
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
-import { CatalogError, githubCatalogSource, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
+import { CatalogError, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller, type CommandRunner } from '../src/installer.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 import { buildWeb } from './build-web.ts';
+import {
+  BOTH_HOSTS,
+  CLAUDE_SKILLS,
+  CODEX_SKILLS,
+  DOCUMENT_MCPS,
+  DOCUMENT_THIRD_PARTY,
+  DOCUMENT_TOOLS,
+  EXCEL_CONFIGURED,
+  LONG_NAME_MCP,
+  MIXED,
+  MIXED_CATALOG,
+  SHOWCASE_APPS,
+  SHOWCASE_PURPOSES,
+  SHOWCASE_SKILLS,
+  THIRD_PARTY_INSTALLED,
+  catalogOf,
+  downloads,
+  installedSkill,
+  keyed,
+  stageWorld,
+  type World,
+} from './preview-samples.ts';
 import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
 
 const ROWS = 60;
 const down = (times: number): string[] => Array<string>(times).fill(KEY.down);
 // 假装粘贴进来的 key：它不该出现在任何一格画面里
 const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
-const BOTH_HOSTS = ['claude', 'codex'];
 // 网页界面的网址每次运行都不同（端口是系统挑的，口令是随机的）：画面上换成这一个，两次生成才逐字节相同
 const SAMPLE_WEB_URL = 'http://127.0.0.1:51234/?token=Jc3kTq0xW8nL2vRb7ZyGf4HsPd6MuA1e';
 const WEB_URL = /http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/g;
 
-interface Scene {
+interface Scene extends World {
   title: string;
   note?: string;
   argv?: string[];
@@ -30,14 +51,6 @@ interface Scene {
   /** 标准输入和标准输出是不是终端，缺省是；标准错误一直接在终端上 */
   tty?: boolean;
   catalog?: CatalogSource;
-  /** 可执行路径上有哪些命令，缺省只有 claude */
-  onPath?: string[];
-  /** 主目录里事先有什么：相对路径 → 文件内容 */
-  home?: Record<string, string>;
-  /** 主目录里事先有的符号链接：链接的相对路径 → 它指向的相对路径 */
-  links?: Record<string, string>;
-  /** 项目目录（主目录下的 work/my-app）里事先有什么：相对路径 → 文件内容 */
-  project?: Record<string, string>;
   /** 假的外部命令执行器，缺省每条命令都成功；预览页从不真的执行命令 */
   commands?: CommandRunner;
   /**
@@ -79,65 +92,6 @@ interface ShellRun {
 }
 
 // ── 样例目录 ──────────────────────────────────────────────────────────────────
-
-const SHOWCASE_SKILLS = [
-  ['archify', '2.16', '生成架构图、流程图、时序图、数据流图，输出可交互的独立 HTML', 'Generate architecture, workflow, sequence and data-flow diagrams as standalone interactive HTML'],
-  ['explanation', '1.0.0', '把任何内容改写到聪明的 12 岁孩子也能看懂', 'Rewrite any content so a smart 12-year-old can follow it'],
-  ['if5', '1.0.0', '像给 5 岁小孩那样解释一个话题，配极简图解', 'Explain a topic as if to a five-year-old, with very simple diagrams'],
-  ['onetake', '1.0.0', '制作 10–60 秒的产品动效短片（体积约 70MB，仅限非商业使用）', 'Make 10–60 s product motion videos (about 70 MB, noncommercial use only)'],
-  ['oxy-learning-hub', '1.0.0', '总结或教学链接、文档、代码和长文本，可生成互动式 HTML 课程', 'Summarize or teach links, documents, code and long text, optionally as interactive HTML lessons'],
-  ['pr', '1.0.0', '撰写 PR（合并请求）描述', 'Write pull request descriptions'],
-  ['wizard', '1.0.0', '生成交互式 bash 向导，带人走完只能由人完成的步骤', 'Generate an interactive bash wizard for steps only a human can perform'],
-  ['writing-for-agents', '1.0.0', '编写 skill、AGENTS.md、CLAUDE.md 等给 AI 读的文档的写作规范', 'Writing guidelines for documents that agents read: skills, AGENTS.md, CLAUDE.md'],
-].map(([name, version, zh, en]) => ({ name, version, path: `skills/${name}`, description: { zh, en } }));
-
-// 假装下载：每个 skill 只有一个 SKILL.md。fails 里的 skill 以给定的原因失败，hangs 里的一直下不完
-function downloads(behaviour: { fails?: Record<string, string>; hangs?: string[] } = {}): CatalogSource['pin'] {
-  return async () => ({
-    commit: 'c2230a119e3cf013df0f699d1f1ecedb86f4126d',
-    async download(path, dest) {
-      const name = path.split('/').pop() ?? '';
-      if (behaviour.hangs?.includes(name)) await new Promise<never>(() => {});
-      const failure = behaviour.fails?.[name];
-      if (failure) throw new Error(failure);
-      writeFileSync(join(dest, 'SKILL.md'), `# ${name}\n`);
-    },
-  });
-}
-
-// 位置照默认的目录来源来写，内容换成样例
-function catalogOf(index: unknown, catalog: unknown = EMPTY_CATALOG, pin = downloads()): CatalogSource {
-  const files: Record<string, unknown> = { 'index.json': index, 'catalog.json': catalog };
-  return { ...githubCatalogSource(), readText: async (file) => JSON.stringify(files[file]), pin };
-}
-
-// 外部项目的场景另带一份用途清单：照仓库里真实的那十个，主菜单才看得出按用途排开的样子
-const SHOWCASE_PURPOSES = [
-  ['dev-workflow', '开发工作流与规范', 'Development workflow & conventions'],
-  ['agent-behavior', 'Agent 行为约束与输出风格', 'Agent behavior & output style'],
-  ['codebase-understanding', '代码库索引与理解', 'Codebase indexing & understanding'],
-  ['context-memory', '上下文、记忆与 Token 优化', 'Context, memory & token optimization'],
-  ['web-search', '联网搜索与文档检索', 'Web search & docs retrieval'],
-  ['browser-automation', '浏览器自动化', 'Browser automation'],
-  ['design-media', 'UI 设计、图像与视频', 'UI design, images & video'],
-  ['documents', '文档处理', 'Document processing'],
-  ['prompts-writing', '提示词与写作', 'Prompts & writing'],
-  ['review-security', '代码审查、评估与安全', 'Code review, evaluation & security'],
-].map(([id, zh, en]) => ({ id, name: { zh, en } }));
-
-// 外部项目的样例：分在四个用途下，其余六个用途没有条目。有一条名字很长，一条的链接比一行长，几条的说明比一行长
-const SHOWCASE_APPS = [
-  ['dify', 'dev-workflow', '开源的 LLM 应用开发平台，自带工作流编排与知识库，用 docker 部署', 'Open-source LLM app development platform with workflow orchestration and a knowledge base, deployed with docker', 'https://github.com/langgenius/dify'],
-  ['n8n', 'dev-workflow', '可自托管的工作流自动化平台，内置 AI 节点', 'Self-hostable workflow automation platform with built-in AI nodes', 'https://github.com/n8n-io/n8n'],
-  ['open-webui', 'dev-workflow', '自托管的大模型对话界面，可接 Ollama 与各家 API', 'Self-hosted chat interface for large models; works with Ollama and vendor APIs', 'https://github.com/open-webui/open-webui'],
-  ['claude-mem', 'context-memory', '自动记录 AI Agent 在会话里做过的事并压缩成摘要，在以后的会话里把相关内容带回来', 'Automatically captures what your AI agent does in a session, compresses it into summaries and brings the relevant context back in later sessions', 'https://github.com/thedotmack/claude-mem'],
-  ['opencode-dynamic-context-pruning', 'context-memory', 'OpenCode 的插件，自动清理和压缩对话上下文来减少 token 用量', 'OpenCode plugin that automatically prunes and compresses conversation context to cut token usage', 'https://github.com/Opencode-DCP/opencode-dynamic-context-pruning'],
-  ['ragflow', 'web-search', '基于深度文档理解的开源 RAG 引擎', 'Open-source RAG engine built on deep document understanding', 'https://github.com/infiniflow/ragflow/blob/main/README_zh.md?plain=1#-%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B'],
-  ['word-formatter-pro', 'documents', '把格式混乱的 Word 文档自动排成符合规范的版式的桌面应用', 'Desktop app that automatically reformats messy Word documents into a standards-compliant layout', 'https://github.com/cwyalpha/Word-Formatter-Pro'],
-  ['stirling-pdf', 'documents', '开源的 PDF 编辑平台，可以当桌面应用用、在浏览器里用或部署到自己的服务器，对 PDF 做编辑、签名、遮盖和转换', 'Open-source PDF editing platform that runs as a desktop app, in the browser or on your own server, for editing, signing, redacting and converting PDFs', 'https://github.com/Stirling-Tools/Stirling-PDF'],
-  ['mineru', 'documents', '把 PDF、Office 文档等复杂文件转成适合大模型读的 Markdown 或 JSON', 'Converts complex documents such as PDFs and Office files into LLM-ready Markdown or JSON', 'https://github.com/opendatalab/MinerU'],
-  ['pdf-inspector', 'documents', '检查、分类 PDF 并提取文本的 Rust 库，能分辨扫描版和文本版，也有 Python 包和命令行', 'Rust library for inspecting, classifying and extracting text from PDFs that tells scanned from text-based files, also available as a Python package and CLI', 'https://github.com/firecrawl/pdf-inspector'],
-].map(([name, purpose, zh, en, url]) => ({ name, description: { zh, en }, url, purpose }));
 
 // MCP 同样是为预览编的样例：两种连接方式都有，其中一条只支持 Codex
 const SHOWCASE_MCPS = [
@@ -200,17 +154,8 @@ const manySkills = catalogOf({ version: 1, skills: MANY_SKILLS });
 const withTools = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: SHOWCASE_TOOLS });
 const withLongCommandTool = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, tools: [LONG_COMMAND_TOOL, ...SHOWCASE_TOOLS] });
 const withMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: SHOWCASE_MCPS });
-// 名字长的 MCP：汇总里它的备注一行放不下
-const LONG_NAME_MCP = {
-  name: 'modelcontextprotocol-server-sequential-thinking',
-  description: { zh: '把复杂问题拆成一步步的思考过程', en: 'Break a complex problem down into a step-by-step thinking process' },
-  url: 'https://example.com/sequential-thinking',
-  purpose: 'web-search',
-  server: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
-};
 const withLongNameMcp = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, mcps: [...SHOWCASE_MCPS, LONG_NAME_MCP] });
 // 带 key 的 MCP：context7 的 key 可选，exa 的必填（它的说明写得长，一行放不下）
-const keyed = (name: string, required: boolean, zh: string, en: string, url: string) => [{ name, required, description: { zh, en }, url }];
 const SHOWCASE_KEYED_MCPS = [
   SHOWCASE_MCPS[0],
   { ...SHOWCASE_MCPS[1], env: keyed('CONTEXT7_API_KEY', false, '提高请求限额，没有也能用', 'Raises the rate limit; works without it', 'https://context7.com/dashboard') },
@@ -228,58 +173,12 @@ const withKeyedMcps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EM
 const withApps = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
 // 目录里没有本仓库的 skill，也没有带推荐标记的条目：主菜单上没有「推荐」
 const withoutRecommended = catalogOf({ version: 1, skills: [] }, { ...EMPTY_CATALOG, purposes: SHOWCASE_PURPOSES, apps: SHOWCASE_APPS });
-// 混合列表的样例：三个 skill 另外归在「文档处理」下、一个归在「UI 设计、图像与视频」下，mineru 带推荐标记
-const MIXED_CATALOG = {
-  ...EMPTY_CATALOG,
-  purposes: SHOWCASE_PURPOSES,
-  apps: SHOWCASE_APPS.map((app) => (app.name === 'mineru' ? { ...app, recommended: true } : app)),
-  skillPurposes: { archify: 'documents', explanation: 'documents', pr: 'documents', onetake: 'design-media' },
-};
 const withMixed = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, MIXED_CATALOG);
 // 三种类型同表的样例：在 withMixed 之上，「文档处理」下多三个 MCP——一个带推荐标记，一个只支持 Claude Code，一个的 key 必填
-const DOCUMENT_MCPS = [
-  { name: 'excel', zh: '创建、读取和修改 Excel 工作簿（需要 uv）', en: 'Create, read and edit Excel workbooks (needs uv)', hosts: ['claude-code'], server: { command: 'uvx', args: ['excel-mcp-server', 'stdio'] } },
-  { name: 'markitdown', zh: '把 PDF、Office 文档、图片等转成 Markdown 交给 AI（需要 uv）', en: 'Convert PDFs, Office files and images to Markdown for the AI (needs uv)', recommended: true, server: { command: 'uvx', args: ['markitdown-mcp'] } },
-  {
-    name: 'mistral-ocr',
-    zh: '识别扫描件和图片里的文字，保留表格与版面，需要 API key',
-    en: 'OCR for scans and images that keeps tables and layout; needs an API key',
-    server: { command: 'npx', args: ['-y', 'mistral-ocr-mcp'] },
-    env: keyed('MISTRAL_API_KEY', true, 'Mistral 的 API 密钥，在控制台的 API Keys 页创建', 'Mistral API key, created on the API Keys page of the console', 'https://console.mistral.ai/api-keys'),
-  },
-].map(({ zh, en, ...mcp }) => ({ ...mcp, description: { zh, en }, url: `https://example.com/${mcp.name}`, purpose: 'documents' }));
 const withThreeKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS });
 // 四种类型同表的样例：再往「文档处理」下加三个工具——一个带推荐标记，一个只支持 Linux，一个场景里已经装着。
 // 第一条的命令里有引号：工具的命令原样写出
-const DOCUMENT_TOOLS = [
-  { name: 'docling', zh: '把 PDF、Office 文档解析成结构化的 Markdown 或 JSON，在本机运行', en: 'Parse PDFs and Office files into structured Markdown or JSON, running locally', recommended: true, install: { default: "pip install 'docling[ocr]'" }, check: { command: 'docling' } },
-  { name: 'officecli', zh: '在命令行里读写 Word、Excel、PPT 文件', en: 'Read and write Word, Excel and PowerPoint files from the command line', install: { default: 'npm install -g officecli', macos: null, windows: null }, check: { command: 'officecli' } },
-  { name: 'pandoc', zh: '在 Markdown、Word、HTML、PDF 等几十种文档格式之间互相转换', en: 'Convert between dozens of document formats such as Markdown, Word, HTML and PDF', install: { default: 'brew install pandoc' }, check: { command: 'pandoc' } },
-].map(({ zh, en, ...tool }) => ({ ...tool, description: { zh, en }, url: `https://example.com/${tool.name}`, purpose: 'documents' }));
 const withFourKinds = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, { ...MIXED_CATALOG, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS });
-// 再加上第三方 Skill 一段：三条都在「文档处理」下，一条含三个 skill。名字和来源取自待录入的清单，说明是为预览写的
-const DOCUMENT_THIRD_PARTY = [
-  { name: 'drawio-skill', source: 'Agents365-ai/drawio-skill', zh: '用 draw.io 画流程图和架构图并导出图片（需要 Python 3）', en: 'Draw flowcharts and architecture diagrams with draw.io and export them as images (needs Python 3)' },
-  { name: 'guizang-ppt-skill', source: 'op7418/guizang-ppt-skill', zh: '生成杂志风格的网页版 PPT（校验脚本需要 Node.js）', en: 'Generate magazine-style web slide decks (the validation script needs Node.js)' },
-  {
-    name: 'paper-craft-skills',
-    source: 'zsyggg/paper-craft-skills',
-    zh: '读论文并做成深度解读、漫画或幻灯片（3 个 skill，其中两个要 AI Agent 能生成图片）',
-    en: 'Read papers and turn them into write-ups, comics or slides (3 skills; two need an AI Agent that can generate images)',
-    skills: [
-      { name: 'paper-analyzer', description: { zh: '把一篇论文读成深度解读文章（需要 Python）', en: 'Turn a paper into an in-depth write-up (needs Python)' } },
-      { name: 'paper-comic', description: { zh: '把论文的要点画成一组漫画（要 AI Agent 能生成图片）', en: 'Draw the key points of a paper as a comic (needs an AI Agent that can generate images)' } },
-      { name: 'paper-deck', description: { zh: '把论文做成一套幻灯片（要 AI Agent 能生成图片）', en: 'Turn a paper into a slide deck (needs an AI Agent that can generate images)' } },
-    ],
-  },
-].map(({ zh, en, skills, ...entry }) => ({
-  ...entry,
-  description: { zh, en },
-  url: `https://github.com/${entry.source}`,
-  purpose: 'documents',
-  // 只含一个 skill 的：那个 skill 和条目同名
-  skills: skills ?? [{ name: entry.name, description: { zh, en } }],
-}));
 const withFiveKinds = catalogOf(
   { version: 1, skills: SHOWCASE_SKILLS },
   { ...MIXED_CATALOG, thirdPartySkills: DOCUMENT_THIRD_PARTY, mcps: DOCUMENT_MCPS, tools: DOCUMENT_TOOLS },
@@ -305,14 +204,6 @@ const offline: CatalogSource = {
   ...sample,
   readText: () => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo'), { code: 'ENOTFOUND' }) })),
 };
-
-// 主目录里一个本工具装的 skill：有安装标记
-function installedSkill(skillsDir: string, name: string, version: string): Record<string, string> {
-  return {
-    [`${skillsDir}/${name}/SKILL.md`]: `# ${name}\n`,
-    [`${skillsDir}/${name}/.oxy-tools.json`]: JSON.stringify({ name, version, commit: null, installedAt: '2026-10-01T08:00:00.000Z' }),
-  };
-}
 
 // Claude Code 的用户级配置里已有这两个 MCP
 const CLAUDE_CONFIGURED = { '.claude.json': JSON.stringify({ mcpServers: { 'chrome-devtools': { command: 'npx' }, linear: { type: 'http' } } }) };
@@ -348,22 +239,6 @@ const installsDocling = (): ShellRun => ({ output: DOCLING_OUTPUT, installs: 'do
 // 打了一半，还没结束
 const doclingStillRunning = (): ShellRun => ({ output: DOCLING_OUTPUT.split('\n').slice(0, 2).join('\n') + '\n', hangs: true });
 
-const CLAUDE_SKILLS = '.claude/skills';
-const CODEX_SKILLS = '.agents/skills';
-// 四种状态都有：已装、版本不同、不是本工具装的（手动放的目录、符号链接）、未装
-const MIXED: Pick<Scene, 'home' | 'links'> = {
-  home: {
-    ...installedSkill(CLAUDE_SKILLS, 'archify', '2.16'),
-    ...installedSkill(CODEX_SKILLS, 'archify', '2.16'),
-    ...installedSkill(CLAUDE_SKILLS, 'explanation', '0.9.0'),
-    ...installedSkill(CODEX_SKILLS, 'explanation', '1.0.0'),
-    ...installedSkill(CLAUDE_SKILLS, 'if5', '1.0.0'),
-    [`${CLAUDE_SKILLS}/pr/SKILL.md`]: '# 自己写的 pr\n',
-    ...installedSkill(CLAUDE_SKILLS, 'writing-for-agents', '1.0.0'),
-    'dotfiles/skills/writing-for-agents/SKILL.md': '# 用链接管理的 skill\n',
-  },
-  links: { [`${CODEX_SKILLS}/writing-for-agents`]: 'dotfiles/skills/writing-for-agents' },
-};
 // 名字长的条目上有备注：一行放不下，备注另起一行
 const LONG_NAME_UNMANAGED = { home: { [`${CLAUDE_SKILLS}/oxy-learning-hub/SKILL.md`]: '# 自己放的\n' } };
 
@@ -457,7 +332,7 @@ const MCP_TWO_HOSTS = { catalog: withMcps, onPath: BOTH_HOSTS, home: { ...CLAUDE
 const THREE_KINDS: Pick<Scene, 'catalog' | 'home' | 'links'> = {
   catalog: withThreeKinds,
   ...MIXED,
-  home: { ...MIXED.home, '.claude.json': JSON.stringify({ mcpServers: { excel: { command: 'uvx' } } }) },
+  home: { ...MIXED.home, ...EXCEL_CONFIGURED },
 };
 // 四种类型同表：主目录照 THREE_KINDS；检测到两个宿主，可执行路径上已经有 pandoc；docling 的安装命令缺省装得上
 const FOUR_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'> = {
@@ -470,12 +345,7 @@ const FOUR_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'>
 const FIVE_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'> = {
   ...FOUR_KINDS,
   catalog: withFiveKinds,
-  home: {
-    ...FOUR_KINDS.home,
-    [`${CLAUDE_SKILLS}/drawio-skill/SKILL.md`]: '# drawio-skill\n',
-    [`${CODEX_SKILLS}/drawio-skill/SKILL.md`]: '# drawio-skill\n',
-    [`${CLAUDE_SKILLS}/paper-analyzer/SKILL.md`]: '# paper-analyzer\n',
-  },
+  home: { ...FOUR_KINDS.home, ...THIRD_PARTY_INSTALLED },
 };
 // withFiveKinds 的「文档处理」里依次是 archify、explanation、pr 三个 skill，drawio-skill、guizang-ppt-skill、paper-craft-skills
 // 三条第三方 Skill，markitdown、excel、mistral-ocr 三个 MCP，docling、officecli、pandoc 三个工具，再是四个外部项目：
@@ -832,24 +702,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
 
   const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage, scene.answersScope);
   const tty = scene.tty ?? true;
-  const bin = scratchDir('bin');
-  for (const command of scene.onPath ?? ['claude']) writeFileSync(join(bin, command), '', { mode: 0o755 });
-  const home = scratchDir('home');
-  for (const [path, content] of Object.entries(scene.home ?? {})) {
-    mkdirSync(dirname(join(home, path)), { recursive: true });
-    writeFileSync(join(home, path), content);
-  }
-  for (const [link, target] of Object.entries(scene.links ?? {})) {
-    mkdirSync(dirname(join(home, link)), { recursive: true });
-    symlinkSync(join(home, target), join(home, link), 'junction');
-  }
-  // 项目目录放在主目录里：画面上写成 ~/work/my-app
-  const project = join(home, 'work', 'my-app');
-  mkdirSync(project, { recursive: true });
-  for (const [path, content] of Object.entries(scene.project ?? {})) {
-    mkdirSync(dirname(join(project, path)), { recursive: true });
-    writeFileSync(join(project, path), content);
-  }
+  const { bin, home, project } = stageWorld(scene, scratchDir);
   // 网页界面开着时不在提问里：收场靠这个信号
   const interrupt = new AbortController();
   const finished = runInstaller({

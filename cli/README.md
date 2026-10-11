@@ -79,6 +79,7 @@ OXY_TOOLS_CATALOG=.. npm start          # 构建后启动，读仓库里本地�
 npm run validate-catalog -- ..          # 校验仓库根的 index.json 和 catalog.json
 npm run check-upstream -- ..            # 核对目录里的第三方 Skill 和作者仓库还对不对得上（要联网）
 npm run preview                         # 生成界面预览页 .preview/index.html
+npm run preview:web                     # 生成网页界面的预览 .preview/web/index.html（要本机装着 Chrome）
 ```
 
 ### 许可证
@@ -158,6 +159,7 @@ OXY_TOOLS_CATALOG=.. npm start          # build, then start against the local ca
 npm run validate-catalog -- ..          # validate index.json and catalog.json at the repo root
 npm run check-upstream -- ..            # check the catalog's third-party skills against their upstream repositories (needs network)
 npm run preview                         # generate the interface preview page .preview/index.html
+npm run preview:web                     # generate the web UI preview .preview/web/index.html (needs Chrome installed)
 ```
 
 ### License
