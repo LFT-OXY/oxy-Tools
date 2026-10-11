@@ -1,14 +1,15 @@
 // 网页界面这一边的流程：起本机的网页、交给浏览器打开、等到用户点「完成」。
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
-import { listingStatus, type Machine } from './availability.ts';
+import { listingStatus, type Machine, type Unavailable } from './availability.ts';
 import type { Catalog, Skill } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import type { LinkOpener } from './installer.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type WebUnavailable } from './messages.ts';
 import { byName } from './listing.ts';
-import { planInstall, type Plan } from './plan.ts';
+import { homeRelative, planInstall, type Plan } from './plan.ts';
 import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
+import { unavailableReason } from './status-text.ts';
 import type { Ui } from './ui.ts';
 import { asksOverwrite, decided, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
 import type { Intent, ViewState } from './web-protocol.ts';
@@ -44,6 +45,9 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
     stage: 'open',
     introSeen: false,
     list: menuOf(catalog, options.lang)[0]?.id,
+    // 起初和终端界面两个提问光标起始的答案一样：检测到的全部、全局
+    hosts: new Set(runtime.hosts.filter((host) => host.detected).map((host) => host.id)),
+    scope: 'global',
     picked: [],
     step: 'browse',
     agreed: new Set(),
@@ -96,18 +100,32 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             // 只换说法：正在看的列表照旧（id 不随语言变）；终端上的呈现层不动
             session.lang = intent.lang;
             break;
+          case 'host': {
+            if (session.step !== 'browse' || !runtime.hosts.some((host) => host.detected && host.id === intent.host)) return false;
+            // 至少留一个：去掉最后一个不照办
+            if (!intent.on && session.hosts.size === 1 && session.hosts.has(intent.host)) return false;
+            if (intent.on) session.hosts.add(intent.host);
+            else session.hosts.delete(intent.host);
+            break;
+          }
+          case 'scope':
+            // 一个宿主都没检测到就没有要装进的地方，也就没有范围可言
+            if (session.step !== 'browse' || !runtime.hosts.some((host) => host.detected)) return false;
+            session.scope = intent.scope;
+            break;
           case 'pick': {
             if (session.step !== 'browse') return false;
             const skill = catalog.skills.find((candidate) => candidate.name === intent.name);
             if (!skill) return false;
             // 不可选的勾不上；去掉总是可以的
-            if (intent.on && !pickable(runtime, skill)) return false;
+            if (intent.on && !pickable(runtime, session, skill)) return false;
             const rest = session.picked.filter((candidate) => candidate !== skill);
             session.picked = intent.on ? [...rest, skill] : rest;
             break;
           }
           case 'review':
-            if (session.step !== 'browse' || session.picked.length === 0) return false;
+            // 已选里一个会装的都没有，和已选为空一样去不了
+            if (session.step !== 'browse' || installable(runtime, session).length === 0) return false;
             session.step = 'summary';
             // 每次进汇总，逐项的覆盖都从「不覆盖」起
             session.agreed.clear();
@@ -180,14 +198,16 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
 
 /**
  * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
- * 勾上了的条目（目录里的那几个对象，照勾选的先后）、挑选走到哪一步、汇总里同意覆盖的那几项、
- * 上一次确认是不是因为对不上而没装、这一批的进度
+ * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、挑选走到哪一步、
+ * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度
  */
 interface Session {
   lang: Lang;
   stage: ViewState['stage'];
   introSeen: boolean;
   list: string | undefined;
+  hosts: Set<string>;
+  scope: Scope;
   picked: Skill[];
   step: 'browse' | 'summary' | 'installing' | 'results';
   agreed: Set<string>;
@@ -195,20 +215,26 @@ interface Session {
   batch?: Batch;
 }
 
-// 还不能改：装进检测到的全部宿主，装到全局
-function targetOf(machine: Machine): { hosts: Host[]; scope: Scope } {
-  return { hosts: machine.hosts.filter((host) => host.detected), scope: 'global' };
+// 这一轮要装进的宿主（照本机信息里的先后）和安装范围
+function targetOf(machine: Machine, session: Session): { hosts: Host[]; scope: Scope } {
+  return { hosts: machine.hosts.filter((host) => host.detected && session.hosts.has(host.id)), scope: session.scope };
 }
 
-// 这个 skill 现在勾不勾得上：可不可选由两套界面共用的那一块定
-function pickable(machine: Machine, skill: Skill): boolean {
-  const { hosts, scope } = targetOf(machine);
-  return listingStatus(machine, { skills: [skill], thirdParty: [], mcps: [], tools: [] }, hosts, scope).skills.every(({ unavailable }) => !unavailable);
+// 这个 skill 在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
+function unavailableOf(machine: Machine, session: Session, skill: Skill): Unavailable | undefined {
+  const { hosts, scope } = targetOf(machine, session);
+  return listingStatus(machine, { skills: [skill], thirdParty: [], mcps: [], tools: [] }, hosts, scope).skills[0]?.unavailable;
 }
+
+// 这个 skill 现在勾不勾得上
+const pickable = (machine: Machine, session: Session, skill: Skill): boolean => unavailableOf(machine, session, skill) === undefined;
+
+// 已选里现在会装的那些：装不了的留在已选里，但不进汇总
+const installable = (machine: Machine, session: Session): Skill[] => session.picked.filter((skill) => pickable(machine, session, skill));
 
 // 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。本仓库的 skill 按名字，和终端界面的先后一样
 function planOf(machine: Machine, session: Session): Plan {
-  const selection = { ...targetOf(machine), skills: byName(session.picked), thirdParty: [], mcps: [], tools: [], filledKeys: new Map() };
+  const selection = { ...targetOf(machine, session), skills: byName(installable(machine, session)), thirdParty: [], mcps: [], tools: [], filledKeys: new Map() };
   return decided(planInstall(machine, selection), session.agreed);
 }
 
@@ -217,7 +243,7 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
   const t = MESSAGES[lang];
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
-  const { hosts, scope } = targetOf(machine);
+  const { hosts, scope } = targetOf(machine, session);
   const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang, new Set(session.picked));
   return {
     lang,
@@ -235,6 +261,7 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
     },
     target: {
       hostsLabel: t.pickHosts,
+      choices: machine.hosts.filter((host) => host.detected).map((host) => ({ id: host.id, name: host.name, on: session.hosts.has(host.id) })),
       hosts: hosts.map((host) => host.name),
       scopeLabel: t.pickScope,
       scopes: [
@@ -242,10 +269,15 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
         { id: 'project', name: t.scopes.project.name },
       ],
       scope,
+      // 目录的写法和终端界面「项目」那一行一样
+      project: { note: t.scopes.project.about, dir: homeRelative(machine, machine.projectDir) },
     },
     menu: menuOf(catalog, lang),
     ...(listing ? { listing } : {}),
-    selected: session.picked.map((skill) => ({ kind: 'skill', name: skill.name, type: t.kinds.skill })),
+    selected: session.picked.map((skill) => {
+      const unavailable = unavailableOf(machine, session, skill);
+      return { kind: 'skill' as const, name: skill.name, type: t.kinds.skill, ...(unavailable ? { unavailable: unavailableReason(t, unavailable) } : {}) };
+    }),
     ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(machine, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
     ...(session.batch ? { run: runView(t, machine.platform, session.batch) } : {}),
   };
@@ -254,11 +286,13 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
 // 页面发来的东西不可信：只认得出形状对的意图。每种意图认得的字段是定死的，多带了别的（命令、路径之类）整个不认
 function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
-  const { type, list, lang, kind, name, on, item, summary } = raw as Record<string, unknown>;
+  const { type, list, lang, kind, name, on, item, summary, host, scope } = raw as Record<string, unknown>;
   const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
   if ((type === 'finish' || type === 'intro-seen' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
   if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
   if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
+  if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };
+  if (type === 'scope' && (scope === 'global' || scope === 'project') && only('scope')) return { type, scope };
   if (type === 'pick' && kind === 'skill' && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) return { type, kind, name, on };
   if (type === 'overwrite' && typeof item === 'string' && typeof on === 'boolean' && only('item', 'on')) return { type, item, on };
   if (type === 'install' && typeof summary === 'string' && only('summary')) return { type, summary };

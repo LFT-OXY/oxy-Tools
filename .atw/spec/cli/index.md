@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层写的都是已经落地的做法：启动、定下用哪个界面（网页界面现在能逛目录、能装本仓库的 skill，第三方 Skill、MCP、工具还装不了，要带着临时开关才进得去）、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
+本层写的都是已经落地的做法：启动、定下用哪个界面（网页界面现在能逛目录、能装本仓库的 skill、能在页面上选装进哪些宿主和装到全局还是项目，第三方 Skill、MCP、工具还装不了，要带着临时开关才进得去）、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
 
 ```
 cli/
@@ -179,7 +179,7 @@ export class Interrupted extends Error {}
 - **汇总里提醒的话**（`PlanNotices` 写成哪几句、什么先后）：终端界面在 `ui.ts` 的 `summaryNotices` 里拼，网页界面在 `web-install.ts` 的 `summaryView` 里拼。现在网页界面只可能有「覆盖即整目录替换」那一条（只有本仓库的 skill 进得了它的计划），所以还没有挪到一处；**工单 09、10 往网页界面的汇总里加别的几条时，把这几句的拼法挪进共用的部分**，不要照着 `ui.ts` 再抄一遍（那里把命令写成一行用的 `commandLine` 也要跟着挪）。
 - **`notices` 里没有「key 以占位符显示」**：那一条说的是终端界面展示的命令，由 `flow.ts` 自己加（`placeholders`）；网页界面的汇总不列命令，没有它。
 
-**网页界面怎么用它们**（`web-view.ts`，工单 04 之后）：左栏的行来自 `recommendedListing` 和 `purposeCounts`；正在看的那张列表先 `listingStatus`（宿主是检测到的全部，安装范围是全局——能改是工单 08），再经 `status-text.ts` 把每个状态写成词和含义、把不可选的种类写成那句话。每算一次画面状态都重新探测一遍。
+**网页界面怎么用它们**（`web-view.ts`，工单 04 之后）：左栏的行来自 `recommendedListing` 和 `purposeCounts`；正在看的那张列表先 `listingStatus`（宿主和安装范围是页面上选的，起初是检测到的全部、全局，记在 `web-ui.ts` 的 `Session` 里——工单 08），再经 `status-text.ts` 把每个状态写成词和含义、把不可选的种类写成那句话。每算一次画面状态都重新探测一遍。
 
 装的那一半（`web-ui.ts`、`web-install.ts`，工单 07 之后）：一个条目勾不勾得上问的是 `listingStatus`（带着不可选原因的勾不上）；汇总是 `planInstall` 的结果写成的，要逐项决定的覆盖（`asksOverwrite` 的那些）没同意的先标上 `declined`，再从这份标过的计划算出汇总的标识；确认时重算一遍，标识对得上才 `runPlan(runtime, plan, progress)`——**网页界面的进度接收方把每一项的结局记进一批的进度，每变一次推一次画面状态**。入口把执行要的东西整理成一份 `Runtime`，两套界面拿到的是同一份（钉住的来源、填过的 key 都在里面）。意料之外的错写成出错说明用的是 `run-plan.ts` 的 `unexpected`，入口的收尾和网页界面的结果用的是同一个。
 

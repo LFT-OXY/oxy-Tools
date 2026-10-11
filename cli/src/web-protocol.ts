@@ -21,7 +21,11 @@ export type Intent =
   /** 从汇总返回修改 */
   | { type: 'revise' }
   /** 装完之后继续挑选 */
-  | { type: 'continue' };
+  | { type: 'continue' }
+  /** 装进（或不装进）一个宿主：host 是画面状态 target.choices 里那一项的 id。至少留一个 */
+  | { type: 'host'; host: string; on: boolean }
+  /** 装到全局还是项目 */
+  | { type: 'scope'; scope: Scope };
 
 /** 现在勾得上的类型 */
 export type PickableKind = 'skill';
@@ -56,12 +60,16 @@ export interface ViewState {
   /** 装进哪些宿主、装到哪里，连同这两样在页面上的名字：和终端界面的提问是同一份文案 */
   target: {
     hostsLabel: string;
-    /** 要装进的宿主的名字 */
+    /** 检测到的宿主，照本机信息里的先后：id 放进 host 意图，on 是这一轮要装进它。只检测到一个时页面不画成选项 */
+    choices: { id: string; name: string; on: boolean }[];
+    /** 要装进的宿主的名字（choices 里 on 的那些）：条目的 statuses 与它一一对应 */
     hosts: string[];
     scopeLabel: string;
     /** 安装范围有哪几种，照显示的先后 */
     scopes: { id: Scope; name: string }[];
     scope: Scope;
+    /** 装到项目是装到哪个目录：note 是终端界面「项目」那一项后面的那句，dir 是目录（主目录里的以 ~ 开头） */
+    project: { note: string; dir: string };
   };
   /** 左栏的行：「推荐」（里面有条目时）在最前，然后是有条目的各个用途，照目录里的先后 */
   menu: MenuRow[];
@@ -139,6 +147,8 @@ export interface SelectedView {
   name: string;
   /** 类型写出来的词 */
   type: string;
+  /** 它在现在所选的宿主和安装范围下装不了的原因（和卡片上的是同一句）：有它这一项不进汇总；改回去就没有了 */
+  unavailable?: string;
 }
 
 /** 汇总：将安装的每一项。里面没有将执行的命令 */

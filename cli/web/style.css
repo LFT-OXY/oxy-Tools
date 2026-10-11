@@ -313,6 +313,16 @@ input[type='checkbox']:checked::after {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* 选了项目时写明是哪个目录：自己占一行，目录是等宽字，长了在任意处断开、从不截断 */
+.title .directory {
+  flex-basis: 100%;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.title .directory code {
+  margin-left: 4px;
+  font-size: 12.5px;
+}
 /* 宿主和安装范围是一整块：放不下就两样一起折到标题的下一行 */
 .target,
 .field {
@@ -540,6 +550,14 @@ input[type='checkbox']:checked::after {
 .picked .number {
   color: var(--ink);
   font-weight: 600;
+}
+/* 改了宿主或安装范围之后装不了的：标题旁写有几项，那几行名字划掉、退一档，下面是原因 */
+.picked h2 .attention {
+  font-size: 12px;
+}
+.picked .stuck .name {
+  color: var(--secondary);
+  font-weight: 400;
 }
 .picked .empty {
   padding: 8px 0;

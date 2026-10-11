@@ -1,7 +1,7 @@
 # 网页界面的契约
 
 > 网页界面的页面与安装器之间说什么（意图、画面状态）、本机的那个网页守哪几道、它什么时候起来什么时候关。页面该长什么样见 [网页界面的设计](./web-ui-design.md)；入口怎么定下用哪个界面、测试架子怎么扮演浏览器，见 [入口与测试](./installer-entry.md)。
-> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 07 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），加上第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选。第三方 Skill、MCP、工具还勾不上（工单 09、10、12）；宿主是检测到的全部，安装范围是全局（工单 08）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
+> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 08 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；加上页面上选装进哪些宿主、装到全局还是项目。第三方 Skill、MCP、工具还勾不上（工单 09、10、12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
 
 ---
 
@@ -26,7 +26,9 @@ export type Intent =
   | { type: 'overwrite'; item: string; on: boolean }  // 汇总里要逐项决定的那一项覆盖不覆盖：item 是那一行的 overwrite.id
   | { type: 'install'; summary: string }              // 确认安装：summary 是页面上那份汇总的标识
   | { type: 'revise' }               // 从汇总返回修改
-  | { type: 'continue' };            // 装完之后继续挑选
+  | { type: 'continue' }             // 装完之后继续挑选
+  | { type: 'host'; host: string; on: boolean }  // 装进（或不装进）一个宿主：host 是 target.choices 里那一项的 id
+  | { type: 'scope'; scope: Scope }; // 装到全局还是项目
 export type PickableKind = 'skill';  // 现在勾得上的类型；后面的工单往里加
 export type Lang = 'zh' | 'en';
 export interface ViewState {
@@ -42,8 +44,11 @@ export interface ViewState {
     skipped?: string;               // 有条目因为格式有误被跳过时的那一句
   };
   target: {                         // 装进哪些宿主、装到哪里，连同这两样在页面上的名字（和终端界面的提问同一份文案）
-    hostsLabel: string; hosts: string[];                          // hosts 是要装进的宿主的名字
+    hostsLabel: string;
+    choices: { id: string; name: string; on: boolean }[];         // 检测到的宿主，照本机信息里的先后；id 放进 host 意图，on 是这一轮要装进它
+    hosts: string[];                                              // 要装进的宿主的名字（choices 里 on 的那些）：条目的 statuses 与它一一对应
     scopeLabel: string; scopes: { id: Scope; name: string }[]; scope: Scope; // scopes 是安装范围有哪几种，照显示的先后
+    project: { note: string; dir: string };                       // 装到项目是装到哪个目录：note 是终端界面「项目」那一项后面的那句，dir 是目录（主目录里的以 ~ 开头）
   };
   menu: MenuRow[];                  // 左栏的行：「推荐」（里面有条目时）在最前，然后是有条目的各个用途
   listing?: ListingView;            // 正在看的那张列表；目录里一个条目都没有时没有
@@ -70,7 +75,7 @@ export interface StatusView { host?: string; text: string; tone: Tone; rest?: st
 export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
 export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
-export interface SelectedView { kind: PickableKind; name: string; type: string } // type 是类型写出来的词（Skill）
+export interface SelectedView { kind: PickableKind; name: string; type: string; unavailable?: string } // type 是类型写出来的词（Skill）；unavailable 是它在现在所选的宿主和范围下装不了的原因，有它这一项不进汇总
 export interface SummaryView {
   id: string;                       // 这份汇总的标识：确认安装时带回
   title: string;                    // 「将安装 N 项」，N 是条目数
@@ -162,6 +167,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 |----------------|----------------------|
 | 栏名（用途、本机、目录、注意、已选） | 版式上固定的 |
 | 只装进一个宿主时的那一句「装进 <宿主>」 | 终端界面里没有这句话（只检测到一个宿主时那边不问）；宿主的名字来自画面状态 |
+| 想把最后一个宿主也去掉时的那一句「至少留一个」、已选标题旁的「其中 N 项现在装不了」 | 终端界面里没有：那边一个都不勾是回主菜单，已选也没有「装不了」这回事 |
 | 条目数的写法（「21 项」） | 数来自画面状态，「项」是版式上的 |
 | 按钮（去汇总、完成、继续挑选）、已选为空时的那一句、已选里去掉一项的那个 × 的名字 | 版式上固定的；终端界面里没有这几样 |
 | 汇总标题下面的那一句、「覆盖它」和没勾时的后果、收到新的一份汇总时的那一句 | 终端界面里覆盖是确认之后一个个问的，没有这几句 |
@@ -181,6 +187,17 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - **终端上的语言不跟着变**：呈现层是启动时按系统语言或 `--lang` 建的，页面上换语言不重建它，终端上也不因此多打任何东西。
 - `language` 是切换语言的控件要的字：`label` 是终端界面语言提问的那一句（`Language / 语言`，不随语言变），`options` 是它的两项（`中文`、`English`），照显示的先后。页面不另写这几个字。
 - 意图 `lang`：`lang` 必须是 `zh` 或 `en`，否则不照办（400），语言不变。
+
+**宿主与安装范围**（工单 08）
+
+- 两样都在安装器这边（`Session.hosts`、`Session.scope`），起初是**检测到的全部宿主、全局**——和终端界面两个提问光标起始的答案一样。刷新、再开一个标签页看到的是同一份；换语言不动它们。
+- `target.choices` 是检测到的宿主，照本机信息里的先后，各带 `id`、名字和这一轮要不要装进它；`target.hosts` 是其中要装进的那些的名字，条目的 `statuses` 与它一一对应。**只检测到一个宿主时**页面不画成选项，写一句「装进 <宿主>」；**一个都没检测到时** `choices` 是空的，页面上没有这两样。
+- 意图 `host`：`host` 是 `choices` 里某一项的 `id`，`on` 是装进还是不装进。**至少留一个**：去掉最后一个的意图不照办（400，什么都不变）——页面上那时写一句说明；只检测到一个宿主时因此没有可改的。`id` 不是检测到的宿主的不照办。
+- 意图 `scope`：`scope` 是 `global` 或 `project`；一个宿主都没检测到时不照办（没有要装进的地方，也就没有范围可言——和终端界面一样）。
+- `target.project` 是装到项目是装到哪个目录：`note` 是终端界面「项目」那一项后面的那句（`scopes.project.about`，「只对当前目录生效：」），`dir` 是运行安装器时所在的目录，写成和终端界面那一行同一种样子（`homeRelative`：主目录里的以 `~` 开头，别处的是全路径）；终端界面放不下时从前面截，网页界面不截、在任意处断开。它一直在画面状态里，页面在选了项目时显示。
+- **改了之后状态马上重查**：画面状态本来就是每次现算的，条目的 `statuses` 只有所选宿主的那几段，skill 的目录按新的范围看（`skillsDirOf`）；汇总、位置、覆盖的另问都跟着（装到项目时位置写成相对项目目录的路径，主目录下的全局目录不读也不写——规矩在 [安装 skill](./skill-install.md)）。
+- **已选不因此被去掉**：`selected` 里每一项照旧；在现在所选的宿主和范围下**装不了的**带着 `unavailable`（原因，和卡片上的是同一句，`unavailableReason`），**不进汇总**（算计划时只给可选的那些），改回去之后它没有了 `unavailable`、照常会装。已选里一个会装的都没有时 `review` 不照办（400），和已选为空一样。现在勾得上的只有本仓库的 skill，它只在一个宿主都没有时装不了，而宿主至少留一个——所以这一条要到第三方 Skill 和 MCP 勾得上（工单 09、10：「需要别的 AI Agent」「只能装到全局」）才有东西落进去。
+- 这两种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时都是 400——**一批里只有一组宿主、一个安装范围**，汇总和执行用的是确认那一刻的选择。
 
 **勾选与已选**（工单 07；现在只有本仓库的 skill 勾得上）
 
@@ -253,7 +270,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 
 - 条目带着 `unavailable` 就是不可选，值是那句原因（需要 AI Agent、需要别的 AI Agent、只能装到全局、不支持 macOS）：哪些不可选、为什么，由 `availability.ts` 定，写成哪句话由 `status-text.ts` 的 `unavailableReason` 定。一个宿主都没检测到时 `target.hosts` 是空的，skill、第三方 Skill、MCP 的 `statuses` 也是空的，每个组件都带「需要 AI Agent」。
 - `listing.apps` 是外部项目，和组件分开：只有名字、完整的说明、链接和「推荐」的标记，**没有状态、没有可不可选**——页面上它们没有勾选框。链接是目录读取时验过的 `https` 网址；页面把它画成普通的链接，在新标签页打开，带 `rel="noopener noreferrer"`。列表里没有外部项目时没有这一块。
-- `target` 是装进哪些宿主、装到哪里。**现在是定死的**：检测到的全部宿主、全局；页面上只显示，不能改（工单 08）。`hostsLabel`、`scopeLabel` 和 `scopes` 里的名字是终端界面那两个提问的文案（`pickHosts`、`pickScope`、`scopes.*.name`）。
+- `target` 是装进哪些宿主、装到哪里，页面上能改，见下面「宿主与安装范围」。`hostsLabel`、`scopeLabel` 和 `scopes` 里的名字是终端界面那两个提问的文案（`pickHosts`、`pickScope`、`scopes.*.name`）。
 - 一个宿主都没检测到时 `machine.noHosts` 是终端界面本机信息里的那一句（「没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览」，目录里没有外部项目时没有后半句）；检测到了任何一个就没有这个字段。
 - 意图 `open`：`list` 必须是 `menu` 里某一行的 `id`，否则不照办（400）；照办之后把 `listing` 换成那一张，推给所有页面。
 
@@ -323,8 +340,9 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 | 意图 `open` 的 `list` 不是字符串，或不在 `menu` 里（包括目录里有、但下面没有条目的用途） | 400，正文空；正在看的列表不变 |
 | 意图 `pick` 的条目不在目录里、类型现在勾不上、条目不可选 | 400，已选不变 |
 | **任何一种意图里多带了它不该有的东西**（`command`、`path`、`args` 之类）：每种意图认得的字段是定死的，多一个就整个不照办 | 400，什么都不变 |
-| 意图 `review` 而已选为空；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
-| 意图不合这一步：浏览时的 `overwrite`、`install`、`revise`、`continue`；汇总或安装中的 `pick`、`review`；正在装时的 `finish`、`continue` | 400，什么都不变 |
+| 意图 `review` 而已选为空，或已选里一个会装的都没有；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
+| 意图 `host` 的 `host` 不是检测到的宿主的 `id`；`on: false` 而它是最后一个要装进的；`scope` 的 `scope` 不是 `global`、`project`；一个宿主都没检测到时的 `host`、`scope` | 400，什么都不变 |
+| 意图不合这一步：浏览时的 `overwrite`、`install`、`revise`、`continue`；汇总或安装中的 `pick`、`review`、`host`、`scope`；正在装时的 `finish`、`continue` | 400，什么都不变 |
 | 意图 `install` 带的标识不是现在这一份的 | 204；不装，推来的 `summary` 带着 `renewed: true` |
 | `/api/intent` 的正文超过 64 KB | 413，正文空；意图没有被执行 |
 | 不认识的路径 | 404 |
@@ -348,6 +366,10 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - Good：中文的页面正看着「文档处理」，发 `{"type":"lang","lang":"en"}` → 204，推来的画面状态 `lang` 是 `en`，`listing.id` 没变，左栏那一行叫 `Documents`，状态的词是 `installed`，原因是 `needs another AI Agent`；刷新拿到的还是英文；终端上没有多出一行。
 - Bad：`{"type":"lang","lang":"fr"}` → 400，语言不变。
 - Base：只检测到 Claude Code，目录里有一个只支持 Codex 的 MCP → 它在列表里，带 `unavailable: "需要别的 AI Agent"`，`statuses` 是 `[{ host: "Claude Code", text: "不支持", tone: "faint" }]`。
+- Good：两个宿主都检测到，发 `{"type":"host","host":"codex","on":false}` → 204，`target.hosts` 是 `["Claude Code"]`，每张卡片只剩 Claude Code 那一段状态；勾了 `alpha` 去装，只有 `~/.claude/skills/alpha`，`~/.agents` 不存在。
+- Bad：只剩 Claude Code 时再发 `{"type":"host","host":"claude-code","on":false}` → 400，`target.hosts` 不变。
+- Good：发 `{"type":"scope","scope":"project"}` → 204，`target.scope` 是 `project`；全局装过的 `alpha` 这时写「未装」；汇总里位置是 `.claude/skills/alpha`；装完 `<项目目录>/.claude/skills/alpha` 里有东西，主目录里每个文件和装之前一字不差。
+- Base：只检测到一个宿主，`choices` 只有一项、`on: true`；页面上写「装进 Claude Code」，没有勾选框。一个都没检测到时 `choices` 是空的，`host`、`scope` 都是 400。
 - Good：在「推荐」里勾 `alpha`，换到它的用途下再勾 `beta-pack` → `selected` 是这两个，照勾选的先后；`review` → `summary.title` 是「将安装 2 项」；`install` 带回 `summary.id` → 推来的 `run.rows` 从「等待」走到「已安装 1.0.0」，最后 `done`、合计「2 成功」；主目录里的东西和终端界面装出来的一样。`continue` → `selected` 是空的，两张卡片的状态是「已装」。
 - Base：`~/.claude/skills/alpha` 是用户自己放的 → 汇总里那一行带 `overwrite: { agreed: false }`；不动它就 `install` → `alpha` 那一行「跳过 未同意覆盖，保持原样」，目录原样；发了 `overwrite` 再装就整目录替换。
 - Bad：看着汇总的时候另一个终端往 `~/.claude/skills/alpha` 放了东西，页面拿着原来的标识 `install` → 什么都没装，推来的是新的汇总（那一行成了「覆盖」、要逐项决定），带着 `renewed`。
@@ -403,6 +425,16 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - 展示的和执行的是同一份：旧标识的确认不装；汇总之后状态变了不装、推来新的一份带 `renewed`，拿新的标识再确认才装。
 - 一项失败其余照常，退出状态 0，结果里有「下一步」那一段（全都装上时没有）；向 GitHub 查询失败：出错说明的标题、原因、下一步，一个都没装，安装器还开着、能接着挑。
 - 不合这一步的意图都是 400。
+
+选宿主、选安装范围的在 `cli/test/web-target.test.ts`，同样经主接缝：
+
+- 起初是检测到的全部宿主、全局；`choices` 的 `id`、名字、先后；只检测到一个时 `choices` 只有一项；一个都没有时是空的。
+- 两个宿主只选一个：`target.hosts` 和每张卡片的 `statuses` 只剩它；装的东西只进它的目录，另一个宿主的目录不存在。
+- 去掉最后一个宿主不照办（400），`target.hosts` 不变；不是检测到的宿主的 `id` 不照办；一个都没检测到时 `host`、`scope` 都不照办。
+- 装到项目：`target.project` 的那句话和目录（架子的项目目录不在主目录里，是全路径）；全局装过的在项目里写「未装」；汇总里位置是相对项目目录的路径；装完落在项目目录下各宿主项目范围的 skill 目录里，主目录里每个文件的内容和装之前相同；改回全局之后状态是全局的。
+- 换语言后这两个选择不变；刷新后还是改过的。
+- 汇总开着的时候 `host`、`scope` 都是 400。
+- 「变得装不了的留在已选里、不进汇总、改回去恢复」要等勾得上的类型里有会因为宿主或范围而装不了的（工单 09、10），在那两张工单里补。
 
 **经入口的测试断不到的**（页面只把画面状态画出来）：三栏的版式、开场动画怎么演、键盘与焦点、链接是不是在新标签页打开——这些在真实的浏览器里看：版式、开场的定格和键盘焦点在网页界面的预览里各有一格（`npm run preview:web`，见 [网页界面的设计](./web-ui-design.md) 的「网页界面的预览」），其余的手动核对。
 
@@ -523,4 +555,8 @@ if (type === 'pick' && … && only('kind', 'name', 'on')) return { type, kind, n
 | 进行中那一行的词照终端界面（本仓库的 skill 是「正在下载」），不是设计规范表里笼统的「正在安装」 | 说了什么由安装器定，两套界面一个说法；「等待」是网页界面多出来的词，放在文案里（`waiting`） |
 | 已选照勾选的先后，汇总和执行照名字 | 已选是用户自己的清单，新勾的落在最后才找得到；执行的先后要和终端界面一样 |
 | 「推荐」的标记随条目来（`mark`），不是一个布尔值 | 那个词是文案里的（中文「推荐」、英文「pick」），和终端界面同一份；页面不另写一遍 |
+| 选宿主是一个一个地勾（意图 `host` 带一个 `id` 和 `on`），不是一次发整组（工单 08） | 和 `pick` 同一个样子：页面上是勾选框，一次点一个；两个标签页各改一个也不会互相覆盖。「至少留一个」因此是「去掉最后一个不照办」 |
+| 意图里宿主用 `id`（`claude-code`、`codex`），不用显示的名字 | 名字是给人看的，以后可能改；`id` 是目录里指代宿主的那个词，两套界面都认 |
+| 变得装不了的已选不进汇总，由算画面状态时按现在的宿主和范围过滤（工单 08） | 规格要它留在已选里但不算进将安装的项；算计划的只收会装的，汇总的标识因此也跟着宿主和范围走——改了再确认旧的那份就对不上，不装 |
+| 装到项目时的目录一直在画面状态里（`target.project`），页面只在选了项目时显示 | 页面不另算目录；终端界面那一行的写法（`homeRelative`）两边同一份 |
 | 状态带着 `tone`（含义），不带颜色 | 颜色是页面的事，含义是安装器的事；终端界面拿同一个 `tone` 去上样式码 |

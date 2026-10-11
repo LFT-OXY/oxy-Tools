@@ -50,8 +50,15 @@ export function Browse({ state, send, rising, covered }: { state: ViewState; sen
               <div class="title">
                 <h1>{current.name}</h1>
                 <span class="faint">{t.items(current.count)}</span>
+                {/* 选了项目时写明是哪个目录：那句话和目录的写法都随画面状态来 */}
+                {state.target.scope === 'project' && state.target.choices.length > 0 && (
+                  <span class="directory">
+                    {state.target.project.note}
+                    <code>{state.target.project.dir}</code>
+                  </span>
+                )}
               </div>
-              <Target state={state} t={t} />
+              <Target state={state} t={t} send={send} />
             </header>
             <Components listing={listing} showsHosts={state.target.hosts.length > 1} send={send} />
             {listing.apps && <Apps {...listing.apps} />}
@@ -121,16 +128,23 @@ function Language({ state, send }: { state: ViewState; send: (intent: Intent) =>
   );
 }
 
-/** 中间一栏顶上的「装进哪些 AI Agent」和「装到哪里」。现在只显示，不能改；一个宿主都没检测到时没有这一块 */
-function Target({ state, t }: { state: ViewState; t: Text }) {
-  const { hosts, hostsLabel, scope, scopes, scopeLabel } = state.target;
-  if (hosts.length === 0) return null;
-  const [only] = hosts;
+/**
+ * 中间一栏顶上的「装进哪些 AI Agent」和「装到哪里」。改了只告诉安装器，勾没勾上、选了哪个照画面状态画；
+ * 只检测到一个宿主时没有可改的；一个宿主都没检测到时没有这一块
+ */
+function Target({ state, t, send }: { state: ViewState; t: Text; send: (intent: Intent) => void }) {
+  const { choices, hosts, hostsLabel, scope, scopes, scopeLabel } = state.target;
+  // 想把最后一个宿主也去掉：安装器不照办，这里说一句；宿主变了这句就收掉
+  const [lastOne, setLastOne] = useState(false);
+  const chosen = hosts.join('\n');
+  useEffect(() => setLastOne(false), [chosen]);
+  if (choices.length === 0) return null;
+  const [only] = choices;
   return (
     <div class="target">
-      {hosts.length === 1 && only !== undefined ? (
+      {choices.length === 1 && only !== undefined ? (
         <p class="field">
-          <span class="label">{t.installIntoOnly(only)}</span>
+          <span class="label">{t.installIntoOnly(only.name)}</span>
           {state.machine.hosts
             .filter((host) => !host.detected)
             .map((host) => (
@@ -144,12 +158,25 @@ function Target({ state, t }: { state: ViewState; t: Text }) {
           <span class="label" id="target-hosts">
             {hostsLabel}
           </span>
-          {hosts.map((host) => (
-            <label class="option" key={host}>
-              <input type="checkbox" checked disabled />
-              {host}
+          {choices.map((choice) => (
+            <label class="option" key={choice.id}>
+              <input
+                type="checkbox"
+                checked={choice.on}
+                onChange={(event) => {
+                  event.currentTarget.checked = choice.on;
+                  if (choice.on && hosts.length === 1) setLastOne(true);
+                  send({ type: 'host', host: choice.id, on: !choice.on });
+                }}
+              />
+              {choice.name}
             </label>
           ))}
+          {lastOne && (
+            <span class="attention" role="status">
+              {t.atLeastOne}
+            </span>
+          )}
         </div>
       )}
       <div class="field" role="radiogroup" aria-labelledby="target-scope">
@@ -159,7 +186,7 @@ function Target({ state, t }: { state: ViewState; t: Text }) {
         <div class="segments">
           {scopes.map(({ id, name }) => (
             <label key={id}>
-              <input type="radio" name="scope" checked={scope === id} disabled />
+              <input type="radio" name="scope" checked={scope === id} onChange={() => send({ type: 'scope', scope: id })} />
               <span>{name}</span>
             </label>
           ))}
@@ -274,25 +301,30 @@ function Apps({ title, note, entries }: { title: string; note: string; entries: 
   );
 }
 
-/** 右栏：已选了哪些、一共几个，能在这里直接去掉某一个；「去汇总」和「完成」固定在底部。「完成」让安装器退出 */
+/**
+ * 右栏：已选了哪些、一共几个，能在这里直接去掉某一个；「去汇总」和「完成」固定在底部。「完成」让安装器退出。
+ * 改了宿主或安装范围之后装不了的留在这里：名字划掉，下面写原因；一个会装的都没有时去不了汇总
+ */
 function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text; send: (intent: Intent) => void }) {
   const [finishing, setFinishing] = useState(false);
+  const stuck = selected.filter((entry) => entry.unavailable !== undefined).length;
   return (
     <aside class="tray" aria-label={t.selected}>
       <div class="picked">
         <h2>
           {t.selected}
           <span class="number">{selected.length}</span>
+          {stuck > 0 && <span class="attention">{t.nowUnavailable(stuck)}</span>}
         </h2>
         {selected.length === 0 ? (
           <p class="empty">{t.nothingSelected}</p>
         ) : (
           <ul>
             {selected.map((entry) => (
-              <li key={`${entry.kind} ${entry.name}`}>
+              <li key={`${entry.kind} ${entry.name}`} class={entry.unavailable === undefined ? undefined : 'stuck'}>
                 <p>
-                  <span class="name">{entry.name}</span>
-                  <small>{entry.type}</small>
+                  <span class="name">{entry.unavailable === undefined ? entry.name : <s>{entry.name}</s>}</span>
+                  {entry.unavailable === undefined ? <small>{entry.type}</small> : <small class="attention">{entry.unavailable}</small>}
                 </p>
                 <button type="button" class="remove" aria-label={t.remove(entry.name)} onClick={() => send({ type: 'pick', kind: entry.kind, name: entry.name, on: false })}>
                   ×
@@ -303,7 +335,7 @@ function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text;
         )}
       </div>
       <footer>
-        <button type="button" class="primary" disabled={selected.length === 0} onClick={() => send({ type: 'review' })}>
+        <button type="button" class="primary" disabled={selected.length === stuck} onClick={() => send({ type: 'review' })}>
           {t.toSummary} →
         </button>
         <button

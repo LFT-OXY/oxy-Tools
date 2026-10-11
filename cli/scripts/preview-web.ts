@@ -167,6 +167,18 @@ const outdated: Drive = async (page) => {
   await page.send({ type: 'install', summary: 'an-earlier-summary' });
   await page.until((state) => state.summary?.renewed === true);
 };
+/** 不装进（或装进）一个宿主 */
+const choosingHost =
+  (id: string, on: boolean): Drive =>
+  async (page) => {
+    await page.send({ type: 'host', host: id, on });
+    await page.until((state) => state.target.choices.some((choice) => choice.id === id && choice.on === on));
+  };
+/** 装到项目 */
+const toProject: Drive = async (page) => {
+  await page.send({ type: 'scope', scope: 'project' });
+  await page.until((state) => state.target.scope === 'project');
+};
 // 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
 const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
 const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
@@ -217,6 +229,17 @@ const scenes: Scene[] = [
   },
   { title: '浏览 · 只检测到 Codex', note: 'excel 只支持 Claude Code：不可选，原因是「需要别的 AI Agent」', ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   {
+    title: '浏览 · 两个宿主只选一个',
+    note: '去掉了 Codex：顶上那一条里它的勾空着，每张卡片只剩 Claude Code 的状态、不写宿主的名字',
+    drive: inOrder(crowded, choosingHost('codex', false)),
+  },
+  {
+    title: '浏览 · 装到项目',
+    note: '选了「项目」：标题下面写明只对哪个目录生效（主目录里的以 ~ 开头）；全局装过的在项目里都是「未装」',
+    drive: inOrder(crowded, toProject),
+  },
+  { title: '浏览 · 装到项目 · 1024×768', note: '宿主和安装范围两样一起折到标题的下一行，目录那一行在它们上面', drive: inOrder(crowded, toProject), viewport: NARROW },
+  {
     title: '浏览 · 一个宿主都没有',
     note: '顶上那一条不写宿主、没有安装范围；组件都是不可选的画法，原因是「需要 AI Agent」；左栏的本机信息多一行「注意」',
     ...NO_HOSTS,
@@ -239,6 +262,11 @@ const scenes: Scene[] = [
   },
   { title: '汇总 · 1024×768', note: '面板给底下留 280px；位置放不下就在任意处断开，没有横向滚动条', drive: summarized, viewport: NARROW },
   { title: '汇总 · 全是新装', note: '没有要逐项决定的事，也没有提醒：只有各项和底部的两个按钮', drive: inOrder(picking('onetake', 'wizard'), reviewing) },
+  {
+    title: '汇总 · 装到项目',
+    note: '位置写成相对项目目录的路径（.claude/skills/…、.agents/skills/…）；全局装过的这里都是新装',
+    drive: inOrder(crowded, toProject, MIXED_PICKS, reviewing),
+  },
   {
     title: '汇总 · 新的一份',
     note: '确认的时候带回的标识对不上（机器上的状态变了，或覆盖的决定改过）：没有装，顶上一条写明这是新的一份、要再确认',
@@ -283,6 +311,14 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 只检测到 Codex', ...EN, ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   { title: '英文 · 浏览 · 用途下只有外部项目', ...EN, drive: appsOnly },
   { title: '英文 · 浏览 · 已选了几个 · 1024×768', ...EN, drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
+  {
+    title: '英文 · 浏览 · 两个宿主只选一个 · 装到项目 · 1024×768',
+    note: '最挤的一格：Install into which AI Agents 和 Install where 各占一行，目录那一行在上面',
+    ...EN,
+    drive: inOrder(crowded, choosingHost('claude-code', false), toProject),
+    viewport: NARROW,
+  },
+  { title: '英文 · 汇总 · 装到项目', ...EN, drive: inOrder(crowded, toProject, MIXED_PICKS, reviewing) },
   { title: '英文 · 汇总 · 有要逐项决定的覆盖', ...EN, drive: inOrder(summarized, agreeing(1)) },
   { title: '英文 · 汇总 · 新的一份 · 1024×768', ...EN, drive: inOrder(summarized, outdated), viewport: NARROW },
   { title: '英文 · 安装中', ...EN, catalog: neverFinishes, drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))) },

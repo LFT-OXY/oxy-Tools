@@ -205,6 +205,10 @@ describe('网页界面：条目的状态', () => {
     // 这两样在页面上的名字和终端界面的提问是同一份文案
     expect(state.target).toEqual({
       hostsLabel: '装进哪些 AI Agent',
+      choices: [
+        { id: 'claude-code', name: 'Claude Code', on: true },
+        { id: 'codex', name: 'Codex', on: true },
+      ],
       hosts: ['Claude Code', 'Codex'],
       scopeLabel: '装到哪里',
       scopes: [
@@ -212,6 +216,7 @@ describe('网页界面：条目的状态', () => {
         { id: 'project', name: '项目' },
       ],
       scope: 'global',
+      project: { note: '只对当前目录生效：', dir: expect.any(String) },
     });
     expect(entry(state, 'alpha').statuses).toEqual([
       { host: 'Claude Code', text: '已装', tone: 'ready', rest: '1.0.0' },
