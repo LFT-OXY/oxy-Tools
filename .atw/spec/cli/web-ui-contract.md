@@ -1,7 +1,7 @@
 # 网页界面的契约
 
 > 网页界面的页面与安装器之间说什么（意图、画面状态）、本机的那个网页守哪几道、它什么时候起来什么时候关。页面该长什么样见 [网页界面的设计](./web-ui-design.md)；入口怎么定下用哪个界面、测试架子怎么扮演浏览器，见 [入口与测试](./installer-entry.md)。
-> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 08 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；加上页面上选装进哪些宿主、装到全局还是项目。第三方 Skill、MCP、工具还勾不上（工单 09、10、12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
+> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 09 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；页面上选装进哪些宿主、装到全局还是项目；第三方 Skill 和本仓库的 skill 一起勾、一起确认、一起装（含多个 skill 的当场挑其中哪几个）。MCP、工具还勾不上（工单 10、12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
 
 ---
 
@@ -22,6 +22,7 @@ export type Intent =
   | { type: 'intro-seen' }           // 页面开始播开场动画了（或决定不播）：这次运行里不再播
   | { type: 'lang'; lang: Lang }     // 换语言：安装器按新的语言重发画面状态；终端上的语言不变
   | { type: 'pick'; kind: PickableKind; name: string; on: boolean } // 勾上或去掉一个条目：kind、name 是画面状态里那个条目的
+  | { type: 'choose'; entry: string; skill: string; on: boolean }   // 含多个 skill 的第三方 Skill：要（或不要）其中的一个 skill。entry 是勾上了的那个条目的名字，skill 是它 skills 里某一项的名字
   | { type: 'review' }               // 要汇总
   | { type: 'overwrite'; item: string; on: boolean }  // 汇总里要逐项决定的那一项覆盖不覆盖：item 是那一行的 overwrite.id
   | { type: 'install'; summary: string }              // 确认安装：summary 是页面上那份汇总的标识
@@ -29,7 +30,7 @@ export type Intent =
   | { type: 'continue' }             // 装完之后继续挑选
   | { type: 'host'; host: string; on: boolean }  // 装进（或不装进）一个宿主：host 是 target.choices 里那一项的 id
   | { type: 'scope'; scope: Scope }; // 装到全局还是项目
-export type PickableKind = 'skill';  // 现在勾得上的类型；后面的工单往里加
+export type PickableKind = 'skill' | 'thirdParty';  // 现在勾得上的类型；MCP 到工单 10、工具到工单 12 往里加
 export type Lang = 'zh' | 'en';
 export interface ViewState {
   lang: Lang;                       // 页面现在的语言：起初是系统语言或 --lang 的，之后是页面上换过的
@@ -70,12 +71,22 @@ export interface ComponentView {
   statuses: StatusView[];           // 每个要装进的宿主一段（与 target.hosts 一一对应）；工具只有一段，没有 host
   unavailable?: string;             // 不可选的原因；有它就勾不上
   picked?: true;                    // 已经勾上了
+  skills?: SkillChoicesView;        // 含多个 skill 的第三方 Skill 才有：里面的各个 skill，页面在勾上之后画成清单让用户挑
+}
+export interface SkillChoicesView {
+  lead: string;                     // 清单上面那一句：终端界面那一问的话（「paper-kit 里有 3 个 skill，选择要装的」）
+  entries: { name: string; about: string; statuses: StatusView[]; chosen?: true }[]; // 每个 skill：名字、完整的说明、每个要装进的宿主一段状态（未装、已装、不支持）、挑了没有
 }
 export interface StatusView { host?: string; text: string; tone: Tone; rest?: string } // rest：词后面不上色的一段（版本、装了几个）
 export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
 export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
-export interface SelectedView { kind: PickableKind; name: string; type: string; unavailable?: string } // type 是类型写出来的词（Skill）；unavailable 是它在现在所选的宿主和范围下装不了的原因，有它这一项不进汇总
+export interface SelectedView {
+  kind: PickableKind; name: string;
+  type: string;                     // 类型写出来的词（Skill、第三方 Skill）
+  detail?: string;                  // 含多个 skill 的第三方 Skill 挑了几个：「3 个 skill 里挑了 2 个」
+  unavailable?: string;             // 这一项现在不进汇总的原因：在现在所选的宿主和范围下装不了（和卡片上的是同一句），或含多个 skill 而一个都没挑（「一个 skill 都没挑，这一条不装」）
+}
 export interface SummaryView {
   id: string;                       // 这份汇总的标识：确认安装时带回
   title: string;                    // 「将安装 N 项」，N 是条目数
@@ -84,13 +95,14 @@ export interface SummaryView {
   revise: string; install: string;  // 两个按钮上的字：终端界面那一问里的「返回修改」「开始安装」
   renewed?: true;                   // 上一次确认没有照办（状态变了，或带的是旧标识）：这是新的一份，要再确认
 }
-export interface SummaryEntryView { name: string; type: string; version: string; rows: SummaryRowView[] } // version 是要装的版本；rows 每个宿主一行
+export interface SummaryEntryView { name: string; type: string; version?: string; rows: SummaryRowView[] } // version 是要装的版本，第三方 Skill 没有（装的是作者当时的最新版）；rows 每个宿主一行，第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行
 export interface SummaryRowView {
+  skill?: string;                   // 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组
   host: string;
   action: string;                   // 新装、覆盖
   overwrites?: true;                // 这一行会覆盖已有的东西
   location: string;                 // 给用户看的位置
-  note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装
+  note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装、已有同名目录
   overwrite?: { id: string; agreed: boolean }; // 要逐项决定覆盖不覆盖的才有；缺省没同意
 }
 export interface RunView {
@@ -105,8 +117,8 @@ export interface RunView {
 export interface RunRowView {
   name: string; host: string;
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
-  text: string;                     // 等待、正在下载、已安装、失败、跳过
-  rest?: string;                    // 词后面的话：版本、原因
+  text: string;                     // 等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、已安装、失败、跳过
+  rest?: string;                    // 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局（「安装命令退出状态 1」）
 }
 export interface TotalView { count: number; word: string }
 export interface FailureView {      // 出错说明，和终端界面是同一份话、同一个结构
@@ -199,11 +211,22 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - **已选不因此被去掉**：`selected` 里每一项照旧；在现在所选的宿主和范围下**装不了的**带着 `unavailable`（原因，和卡片上的是同一句，`unavailableReason`），**不进汇总**（算计划时只给可选的那些），改回去之后它没有了 `unavailable`、照常会装。已选里一个会装的都没有时 `review` 不照办（400），和已选为空一样。现在勾得上的只有本仓库的 skill，它只在一个宿主都没有时装不了，而宿主至少留一个——所以这一条要到第三方 Skill 和 MCP 勾得上（工单 09、10：「需要别的 AI Agent」「只能装到全局」）才有东西落进去。
 - 这两种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时都是 400——**一批里只有一组宿主、一个安装范围**，汇总和执行用的是确认那一刻的选择。
 
-**勾选与已选**（工单 07；现在只有本仓库的 skill 勾得上）
+**第三方 Skill**（工单 09）
+
+- 勾得上的类型多了 `thirdParty`：`pick` 的 `kind` 是它、`name` 是条目的名字。可不可选仍由 `availability.ts` 定：一个宿主都没选时「需要 AI Agent」，所选的宿主一个都不支持这个条目时「需要别的 AI Agent」；只支持其中一部分时可选，只装进支持的那些。卡片上的 `statuses` 每个所选的宿主一段，词和终端界面同一张表（未装、已装、已装 2/3、不支持）。
+- **含多个 skill 的条目**在画面状态里带着 `skills`：`lead` 是终端界面那一问的话（`pickSourcedSkills`），`entries` 每个 skill 一项——名字、完整的说明、每个所选宿主一段状态（这个 skill 自己的：未装、已装；条目不支持那个宿主时是不支持）、挑了没有。它一直在画面状态里，页面在条目勾上之后才画成清单。只含一个的没有 `skills`，勾上就是装那一个。
+- 挑是意图 `choose`：`entry` 是**勾上了的**、含多个 skill 的条目，`skill` 是它 `skills` 里的名字，`on` 是要还是不要。条目没勾上、只含一个 skill、名字对不上，都不照办（400）。**起初一个都没挑**（和终端界面那一问起始一个都不勾一样）；挑的结果记在 `Session.chosen` 里，换一张列表、返回修改、去掉再勾上都还在；装完点「继续挑选」时清空。
+- 已选里第三方 Skill 一项（`type` 是「第三方 Skill」）。含多个 skill 的带 `detail`（「3 个 skill 里挑了 2 个」，文案 `chosenSkills`）；**一个都没挑的**带 `unavailable`，话是「一个 skill 都没挑，这一条不装」（文案 `noSkillChosen`）——它和「装不了」走同一条路：不进汇总，已选里一个会装的都没有时 `review` 不照办。宿主改到一个都不支持它时 `unavailable` 是「需要别的 AI Agent」，改回去就没有了（工单 08 留下的那一条机制，现在对本仓库的 skill 和第三方 Skill 都管）。
+- 汇总里每个要装的第三方 Skill 条目一段（`type` 是「第三方 Skill」，**没有 `version`**），条目照名字排在本仓库的 skill 之后；段里每个要装的 skill（照条目里的先后）在每个支持它的所选宿主下一行，行带 `skill`，页面把 skill 相同的相邻几行归成一小组、写出 skill 的名字。目标位置已有东西的操作是「覆盖」，`note` 是「已有同名目录」（文案 `existingDir`，不带终端界面的「另行确认」：决定就在这一行下面），并带 `overwrite`（`id` 是 `thirdParty:<条目>:<skill>:<宿主 id>`），缺省不覆盖；没同意的那一项不执行命令，结果里是「跳过 未同意覆盖，保持原样」。`title` 的 N 数的是条目（和终端界面一样，一个都没挑的不算）。`notices` 多一条「第三方 Skill 装的是作者当时的最新版，维护者没有逐版检查」（`thirdPartyNotice`），排在覆盖的提醒之后——和终端界面同一个先后。
+- **画面状态里仍然没有命令**：汇总、已选、进度、结果都没有 `npx`、`skills@1`、`--agent` 这些。执行的命令和终端界面装同样的东西时逐条相同（每个 skill、每个宿主一条，带关遥测的环境变量，不经 shell；装到项目时不带 `--global`、在项目目录下运行）——规矩在 [安装 skill](./skill-install.md)。
+- 执行在本仓库的 skill 之后（共用的「执行」定的）。`run.rows` 里第三方 Skill 的行 `name` 是 skill 的名字；进行中的词是「正在安装」（`installingOne`，终端界面进行中那一行的词）；成功与否看复核：装上了是「已安装」，命令没有正常结束时 `rest` 是命令的结局（「安装命令退出状态 1」，`thirdPartyResult` 那句去掉开头的分号）；没装上是「失败」加原因（「安装命令已结束，但目标位置没有 SKILL.md」「安装命令没能运行（ENOENT）」）。向 GitHub 查询失败时它们照常装（不经那次查询），本仓库的 skill 不在行里。
+- `summary.id` 把第三方 Skill 的各项和它们的覆盖决定也算进去：机器上多出了同名目录、或改了挑的 skill 再拿旧标识确认，都不装。
+
+**勾选与已选**（工单 07；现在本仓库的 skill 和第三方 Skill 勾得上）
 
 - 勾选是意图 `pick`，**状态在安装器这边**：`kind`、`name` 是画面状态里那个条目的类型和名字，`on` 是勾上还是去掉。勾上的记在 `Session` 里，与正在看哪张列表无关——换一张列表看，之前勾的还在；一个条目同时在「推荐」和它的用途下，两处是同一个条目，一处勾了另一处的 `picked` 也是 `true`。
 - `selected` 是已选，**照勾选的先后**：每项带 `kind`、`name`（去掉它时原样放进 `pick`）和类型写出来的词（文案里的 `kinds`）。已选了几个，页面数它的长度。
-- **勾不上的不照办**（400，已选不变）：名字不在目录里；`kind` 不是现在勾得上的（`PickableKind`）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
+- **勾不上的不照办**（400，已选不变）：名字不在它那一类的目录里；`kind` 不是现在勾得上的（`PickableKind`）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
 - 换语言不动勾选。
 - 这几种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时 `pick` 和 `review` 都是 400——页面上那时盖着面板，本来也点不到。
 
@@ -339,8 +362,9 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 | `/api/intent` 的正文不是 JSON、不是认得的意图 | 400，正文空 |
 | 意图 `open` 的 `list` 不是字符串，或不在 `menu` 里（包括目录里有、但下面没有条目的用途） | 400，正文空；正在看的列表不变 |
 | 意图 `pick` 的条目不在目录里、类型现在勾不上、条目不可选 | 400，已选不变 |
+| 意图 `choose` 的 `entry` 不是勾上了的第三方 Skill、只含一个 skill、`skill` 不在它里面；浏览之外的 `choose` | 400，挑的不变 |
 | **任何一种意图里多带了它不该有的东西**（`command`、`path`、`args` 之类）：每种意图认得的字段是定死的，多一个就整个不照办 | 400，什么都不变 |
-| 意图 `review` 而已选为空，或已选里一个会装的都没有；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
+| 意图 `review` 而已选为空，或已选里一个会装的都没有（装不了的、含多个 skill 而一个都没挑的）；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
 | 意图 `host` 的 `host` 不是检测到的宿主的 `id`；`on: false` 而它是最后一个要装进的；`scope` 的 `scope` 不是 `global`、`project`；一个宿主都没检测到时的 `host`、`scope` | 400，什么都不变 |
 | 意图不合这一步：浏览时的 `overwrite`、`install`、`revise`、`continue`；汇总或安装中的 `pick`、`review`、`host`、`scope`；正在装时的 `finish`、`continue` | 400，什么都不变 |
 | 意图 `install` 带的标识不是现在这一份的 | 204；不装，推来的 `summary` 带着 `renewed: true` |
@@ -374,6 +398,11 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - Base：`~/.claude/skills/alpha` 是用户自己放的 → 汇总里那一行带 `overwrite: { agreed: false }`；不动它就 `install` → `alpha` 那一行「跳过 未同意覆盖，保持原样」，目录原样；发了 `overwrite` 再装就整目录替换。
 - Bad：看着汇总的时候另一个终端往 `~/.claude/skills/alpha` 放了东西，页面拿着原来的标识 `install` → 什么都没装，推来的是新的汇总（那一行成了「覆盖」、要逐项决定），带着 `renewed`。
 - Bad：`{"type":"pick","kind":"skill","name":"alpha","on":true,"command":"rm -rf ~"}` → 400，`alpha` 没有勾上。
+- Good：两个宿主，勾只含一个 skill 的 `solo-notes` → 已选里「第三方 Skill」；汇总一段、没有版本，两行（Claude Code、Codex 各一行，`skill` 是 `note-taker`），提醒里有「作者当时的最新版」那句；确认后记录到的命令正好是终端界面装它时的那两条，结果两行「已安装」。画面状态的 JSON 里从头到尾没有 `npx`。
+- Base：勾含三个 skill 的 `paper-kit` → 卡片带 `skills`（三项，都没挑），已选里带「一个 skill 都没挑，这一条不装」，只勾了它时 `review` 是 400；`choose` 两个 → `detail` 是「3 个 skill 里挑了 2 个」，汇总里两小组、每组两行，四条命令。
+- Base：`paper-kit` 的 `hosts` 是 `["codex"]`，两个宿主都选 → 卡片上 Claude Code「不支持」、Codex「未装」，汇总和命令只有 Codex 的；去掉 Codex → 已选里它带「需要别的 AI Agent」，不进汇总；再勾回 Codex 就恢复。只检测到 Claude Code 时它不可选，`pick` 是 400。
+- Base：`~/.claude/skills/note-taker` 已经在 → 汇总里那一行「覆盖」、备注「已有同名目录」、带 `overwrite`；不动就装 → 「跳过 未同意覆盖，保持原样」，没有命令；勾了「覆盖它」再装 → 命令执行了。
+- Bad：命令以 0 退出而目标位置没有 `SKILL.md` → 那一行「失败 安装命令已结束，但目标位置没有 SKILL.md」，别的照常，退出状态 0。
 - Base：链接打开器拒绝 → 终端上一行「注意」，接着是语言提问和主菜单；那个网址已经连不上。
 - Bad：别的网站的页面向 `http://127.0.0.1:<端口>/api/intent` 发 `{"type":"finish"}`，带着它自己的 `Origin` → 403，安装器还开着。
 - Bad：`curl http://127.0.0.1:<端口>/api/events`（不带口令）→ 403，正文是空的，里面没有宿主的名字。
@@ -435,6 +464,17 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - 换语言后这两个选择不变；刷新后还是改过的。
 - 汇总开着的时候 `host`、`scope` 都是 400。
 - 「变得装不了的留在已选里、不进汇总、改回去恢复」要等勾得上的类型里有会因为宿主或范围而装不了的（工单 09、10），在那两张工单里补。
+
+装第三方 Skill 的在 `cli/test/web-third-party.test.ts`，同样经主接缝：
+
+- 只含一个 skill 的正常路径：已选里的类型、汇总的段与行（没有版本、`skill`）、提醒、结果；记录到的命令与用终端界面装同样的东西时逐条相同（同一份目录和主目录，终端界面那一跑用预设应答走到装完）；画面状态的 JSON 里没有 `npx`、`skills@1`、`--agent`。
+- 含多个的：卡片的 `skills`（那一句、每个 skill 的说明和状态、挑了没有）；挑两个 → `detail`、汇总两小组、命令每个 skill 每个宿主一条；一个都不挑 → 已选里那句、只勾了它时去不了汇总、和别的一起时它不进汇总；挑的结果在换用途、返回修改、去掉再勾上之后还在，点「继续挑选」之后清空；`choose` 的几种不照办（没勾上、只含一个、名字对不上、多带了字段）。
+- 宿主：条目只支持 Codex 而两个都选 → 只装进 Codex；去掉 Codex → 已选里「需要别的 AI Agent」、不进汇总、`review` 被拒；勾回恢复；只检测到 Claude Code 时不可选、`pick` 400。
+- 已有同名目录：缺省不覆盖（没有命令、目录原样、结果是跳过）；同意后覆盖（命令执行）。
+- 命令结束了但没装上 → 失败行的原因；没能运行（ENOENT）→ 那句；装上了而命令非零退出 → 「已安装」加「安装命令退出状态 1」。
+- 混在一批里：本仓库的 skill 的行在前、第三方 Skill 的在后，只有第三方 Skill 的命令；向 GitHub 查询失败时第三方 Skill 照常装。
+- 装到项目：命令不带 `--global`、`cwd` 是项目目录，位置是相对路径，复核按项目目录。
+- 换语言后勾选和挑的都不变，`detail`、`unavailable`、`lead` 换成新的语言。
 
 **经入口的测试断不到的**（页面只把画面状态画出来）：三栏的版式、开场动画怎么演、键盘与焦点、链接是不是在新标签页打开——这些在真实的浏览器里看：版式、开场的定格和键盘焦点在网页界面的预览里各有一格（`npm run preview:web`，见 [网页界面的设计](./web-ui-design.md) 的「网页界面的预览」），其余的手动核对。
 
@@ -560,3 +600,8 @@ if (type === 'pick' && … && only('kind', 'name', 'on')) return { type, kind, n
 | 变得装不了的已选不进汇总，由算画面状态时按现在的宿主和范围过滤（工单 08） | 规格要它留在已选里但不算进将安装的项；算计划的只收会装的，汇总的标识因此也跟着宿主和范围走——改了再确认旧的那份就对不上，不装 |
 | 装到项目时的目录一直在画面状态里（`target.project`），页面只在选了项目时显示 | 页面不另算目录；终端界面那一行的写法（`homeRelative`）两边同一份 |
 | 状态带着 `tone`（含义），不带颜色 | 颜色是页面的事，含义是安装器的事；终端界面拿同一个 `tone` 去上样式码 |
+| 挑第三方 Skill 里的 skill 是一个一个地挑（意图 `choose` 带一个 skill 的名字和 `on`），不是一次发整组（工单 09） | 和 `pick`、`host` 同一个样子：页面上是勾选框，一次点一个 |
+| 挑的结果记在条目上，去掉条目也留着，再勾上时还在；装完点「继续挑选」才清空（工单 09） | 终端界面「返回修改」再问时上次勾的也还在；清空的时机和已选一致 |
+| 一个 skill 都没挑的第三方 Skill 走「不进汇总」那条路（已选里带 `unavailable`，话是「一个 skill 都没挑，这一条不装」）（工单 09） | 规格只说「一个都不挑就是不装它，页面上看得出」。和装不了的用同一个机制，页面上同一种画法，「去汇总」的可点与否也同一条判断 |
+| 第三方 Skill 的条目跨用途时按名字排（工单 09） | 和本仓库的 skill 一样；终端界面的列表里「带推荐的在前」只在一张列表内有意义 |
+| 第三方 Skill 装上了而命令没有正常结束时，`rest` 是 `thirdPartyResult` 那句去掉开头的分号（工单 09） | 那句话在终端界面是接在「已安装」后面的，带着分号；网页界面的词和后面的话分成两段，分号多余。文案一改这处要跟着看 |

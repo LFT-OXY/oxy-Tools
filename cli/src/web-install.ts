@@ -1,19 +1,26 @@
 // 网页界面怎么装：把两套界面共用的「算计划」「执行」接到画面状态上——计划写成汇总，执行的进度记成一行行的结局。
 // 说法是和终端界面同一份文案；将执行的命令不进画面状态。
 import { createHash } from 'node:crypto';
+import type { ThirdPartyResult } from './install-third-party.ts';
 import type { Failure, Messages } from './messages.ts';
-import type { InstallTarget, Plan, SkillJob } from './plan.ts';
+import { noticeTexts } from './notice-text.ts';
+import type { InstallTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget } from './plan.ts';
 import type { InstallOutcome, Progress } from './run-plan.ts';
 import { versionChange } from './status-text.ts';
 import type { FailureView, RunRowView, RunView, SummaryEntryView, SummaryRowView, SummaryView } from './web-protocol.ts';
 import { ARROW } from './web-view.ts';
 
-// 汇总里要逐项决定覆盖不覆盖的那一项的标识：页面原样带回
+// 汇总里要逐项决定覆盖不覆盖的那一项的标识：页面原样带回。第三方 Skill 的带着条目和 skill 的名字
 const overwriteId = (job: SkillJob): string => `skill:${job.skill.name}:${job.host.id}`;
+const replaceId = (job: ThirdPartyJob): string => `thirdParty:${job.target.entry}:${job.skill}:${job.host.id}`;
 
 /** 要逐项决定的覆盖里，用户没同意的那些标成不装：agreed 是同意了的那几项的标识 */
 export function decided(plan: Plan, agreed: ReadonlySet<string>): Plan {
-  return { ...plan, jobs: plan.jobs.map((job) => ({ ...job, declined: job.asksOverwrite && !agreed.has(overwriteId(job)) })) };
+  return {
+    ...plan,
+    jobs: plan.jobs.map((job) => ({ ...job, declined: job.asksOverwrite && !agreed.has(overwriteId(job)) })),
+    thirdPartyJobs: plan.thirdPartyJobs.map((job) => ({ ...job, declined: job.asksOverwrite && !agreed.has(replaceId(job)) })),
+  };
 }
 
 /**
@@ -64,30 +71,51 @@ export function summaryView(t: Messages, plan: Plan): SummaryView {
     if (last?.name === target.name) last.rows.push(row);
     else entries.push({ name: target.name, type: t.kinds.skill, version: target.version, rows: [row] });
   }
+  // 第三方 Skill 一个条目一段，没有版本（装的是作者当时的最新版）；段里每个要装的 skill 在每个宿主下一行，行带着 skill 的名字
+  for (const job of plan.thirdPartyJobs) {
+    const { target } = job;
+    const row: SummaryRowView = {
+      skill: target.name,
+      host: target.host,
+      action: target.exists ? t.actions.overwrite : t.actions.fresh,
+      ...(target.exists ? { overwrites: true as const, note: t.existingDir, overwrite: { id: replaceId(job), agreed: !job.declined } } : {}),
+      location: target.location,
+    };
+    const last = entries.at(-1);
+    if (last?.type === t.kinds.thirdParty && last.name === target.entry) last.rows.push(row);
+    else entries.push({ name: target.entry, type: t.kinds.thirdParty, rows: [row] });
+  }
   return {
     id: summaryId(plan),
     title: t.installSummary(entries.length),
     entries,
-    // 和终端界面汇总后面的提醒是同一份话；别的几条等它们说的那几类组件进了网页界面再加
-    notices: plan.notices.overwrites ? [t.replaceNotice] : [],
+    // 和终端界面汇总后面的提醒是同一份话、同一个先后；网页界面不展示命令，没有「key 以占位符显示」那一条
+    notices: noticeTexts(t, plan.notices),
     revise: t.revise,
     install: t.startInstall,
   };
 }
 
 /** 汇总里有没有这个标识的逐项决定 */
-export const asksOverwrite = (plan: Plan, item: string): boolean => plan.jobs.some((job) => job.asksOverwrite && overwriteId(job) === item);
+export const asksOverwrite = (plan: Plan, item: string): boolean =>
+  plan.jobs.some((job) => job.asksOverwrite && overwriteId(job) === item) || plan.thirdPartyJobs.some((job) => job.asksOverwrite && replaceId(job) === item);
 
+/** 一行的结局：本仓库的 skill 带版本或问题，第三方 Skill 带复核与命令的结局 */
 type RowState =
   | { state: 'waiting' }
   | { state: 'running' }
   | { state: 'succeeded'; version: string }
+  | { state: 'succeeded'; result: ThirdPartyResult }
   | { state: 'failed'; outcome: Extract<InstallOutcome, { ok: false }> }
+  | { state: 'failed'; result: ThirdPartyResult }
   | { state: 'skipped' };
+
+/** 一批里的一项：本仓库的 skill 或第三方 Skill 里的一个 skill */
+type RowTarget = InstallTarget | ThirdPartyTarget;
 
 /** 一批的进度：每一项走到哪了。画面状态从它现算 */
 export interface Batch {
-  rows: { target: InstallTarget; now: RowState }[];
+  rows: { target: RowTarget; now: RowState }[];
   /** 正在向 GitHub 查询 */
   loading: boolean;
   /** 这一批里出的错 */
@@ -100,8 +128,12 @@ export interface Batch {
  * 起初每一项都在等待
  */
 export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; progress: Progress } {
-  const batch: Batch = { rows: plan.jobs.map((job) => ({ target: job.target, now: { state: 'waiting' } })), loading: false, done: false };
-  const set = (target: InstallTarget, now: RowState): void => {
+  const batch: Batch = {
+    rows: [...plan.jobs, ...plan.thirdPartyJobs].map((job) => ({ target: job.target, now: { state: 'waiting' as const } })),
+    loading: false,
+    done: false,
+  };
+  const set = (target: RowTarget, now: RowState): void => {
     const row = batch.rows.find((candidate) => candidate.target === target);
     if (row) row.now = now;
     changed();
@@ -123,8 +155,8 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
       batch.rows = [];
       changed();
     },
-    installation: (skills) => {
-      batch.rows = skills.map((target) => ({ target, now: { state: 'waiting' } }));
+    installation: (skills, thirdParty) => {
+      batch.rows = [...skills, ...thirdParty].map((target) => ({ target, now: { state: 'waiting' as const } }));
       changed();
       return {
         skill: {
@@ -137,8 +169,15 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
           },
           skip: (target) => set(target, { state: 'skipped' }),
         },
-        // 第三方 Skill、MCP、工具还进不了网页界面的计划
-        thirdParty: { begin: () => () => {}, skip: () => {} },
+        thirdParty: {
+          begin: (target) => {
+            set(target, { state: 'running' });
+            // 成功与否看复核，不看命令的退出状态
+            return (result) => set(target, result.installed ? { state: 'succeeded', result } : { state: 'failed', result });
+          },
+          skip: (target) => set(target, { state: 'skipped' }),
+        },
+        // MCP、工具还进不了网页界面的计划
         mcp: { begin: () => () => {}, skip: () => {} },
         tool: { begin: () => () => {} },
         finish: () => {},
@@ -158,17 +197,28 @@ export function settleBatch(batch: Batch, failure?: Failure): void {
 
 /** 把一批的进度写成画面状态里的那一块。每一行的词和终端界面的结果行是同一份 */
 export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): RunView {
+  // 第三方 Skill 结果词后面接着说的命令的结局：终端界面是接在「已安装」后面的，开头带着分号；网页界面另成一段，去掉它
+  const ending = (result: ThirdPartyResult): { rest?: string } => {
+    const text = t.thirdPartyResult(result).replace(/^[;；]\s*/, '');
+    return text === '' ? {} : { rest: text };
+  };
   const row = ({ target, now }: Batch['rows'][number]): RunRowView => {
     const lead = { name: target.name, host: target.host, state: now.state };
     switch (now.state) {
       case 'waiting':
         return { ...lead, text: t.waiting };
       case 'running':
-        return { ...lead, text: t.downloading };
+        // 进行中的词照终端界面：本仓库的 skill 是在下载，第三方 Skill 是在装
+        return { ...lead, text: 'entry' in target ? t.installingOne : t.downloading };
       case 'succeeded':
-        return { ...lead, text: t.installed, rest: target.status.kind === 'other-version' ? versionChange(target.status.version, now.version, ARROW) : now.version };
+        if ('result' in now) return { ...lead, text: t.installed, ...ending(now.result) };
+        return {
+          ...lead,
+          text: t.installed,
+          rest: 'status' in target && target.status.kind === 'other-version' ? versionChange(target.status.version, now.version, ARROW) : now.version,
+        };
       case 'failed':
-        return { ...lead, text: t.failed, rest: t.installProblem(now.outcome.problem) };
+        return { ...lead, text: t.failed, rest: 'result' in now ? t.thirdPartyResult(now.result) : t.installProblem(now.outcome.problem) };
       case 'skipped':
         return { ...lead, text: t.skippedResult, rest: t.overwriteDeclined };
     }

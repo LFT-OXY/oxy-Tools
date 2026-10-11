@@ -484,6 +484,57 @@ input[type='checkbox']:checked::after {
   font-weight: 600;
 }
 
+/* 含多个 skill 的第三方 Skill 勾上之后占一整行，说明下面是挑 skill 的清单：那一句，然后三栏（窄时两栏），
+   每个 skill 一个小勾选框、名字、说明和它自己的状态 */
+.card.wide {
+  grid-column: 1 / -1;
+}
+.choices {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+.choices .lead {
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.choices ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.choices li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+.choices li.chosen {
+  border-color: var(--ink);
+}
+.choices label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.choices .name {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.choices .about {
+  font-size: 12px;
+}
+.choices .statuses {
+  padding-top: 4px;
+  font-size: 11.5px;
+}
+
 /* 外部项目：不是卡片，没有勾选框——两栏的列表，项与项之间一条线 */
 .apps ul {
   display: grid;
@@ -618,6 +669,9 @@ input[type='checkbox']:checked::after {
   .picked {
     padding: 14px 12px 6px;
   }
+  .choices ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .tray footer {
     padding: 10px 12px 14px;
   }
@@ -730,6 +784,18 @@ progress::-moz-progress-bar {
   align-items: baseline;
   gap: 2px 8px;
   margin-bottom: 6px;
+}
+/* 第三方 Skill 里每个要装的 skill 一小组：skill 的名字，下面是它在各个宿主下的行 */
+.entry .group + .group {
+  margin-top: 6px;
+}
+.entry h4 {
+  margin: 10px 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.entry .group:first-of-type h4 {
+  margin-top: 4px;
 }
 .entry li {
   display: grid;

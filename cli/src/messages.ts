@@ -146,6 +146,12 @@ export interface Messages {
   unmanagedNote: string;
   /** 汇总里第三方 Skill 覆盖项的备注：目标位置已有同名目录 */
   existingNote: string;
+  /** 同上，网页界面用的那句：决定就在那一行下面，不说「另行确认」 */
+  existingDir: string;
+  /** 网页界面的已选里，含多个 skill 的第三方 Skill 挑了几个 */
+  chosenSkills: (chosen: number, total: number) => string;
+  /** 网页界面的已选里，含多个 skill 的第三方 Skill 一个都没挑：这一条不装 */
+  noSkillChosen: string;
   /** 汇总那个分区的标题：count 是要装的组件条目数 */
   installSummary: (count: number) => string;
   /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
@@ -313,6 +319,9 @@ const zh: Messages = {
   reinstallNote: (version) => `重装 ${version}`,
   unmanagedNote: '非本工具安装，另行确认',
   existingNote: '已有同名目录，另行确认',
+  existingDir: '已有同名目录',
+  chosenSkills: (chosen, total) => `${total} 个 skill 里挑了 ${chosen} 个`,
+  noSkillChosen: '一个 skill 都没挑，这一条不装',
   installSummary: (count) => `将安装 ${count} 项`,
   mcpConfiguredNote: '已配置，先移除再添加',
   mcpUnknownNote: '状态未知，先尝试移除同名配置',
@@ -592,6 +601,9 @@ const en: Messages = {
   reinstallNote: (version) => `reinstall ${version}`,
   unmanagedNote: 'unmanaged; asked separately',
   existingNote: 'already there; asked separately',
+  existingDir: 'already there',
+  chosenSkills: (chosen, total) => `${chosen} of ${total} skills chosen`,
+  noSkillChosen: 'no skill chosen; this entry is not installed',
   installSummary: (count) => `Install ${count} ${count === 1 ? 'item' : 'items'}`,
   mcpConfiguredNote: 'configured; removed, then added',
   mcpUnknownNote: 'status unknown; removal tried first',

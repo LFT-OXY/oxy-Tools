@@ -109,6 +109,11 @@ const worstWith = (pin: CatalogSource['pin']): CatalogSource => catalogOf({ vers
 const neverFinishes = worstWith(downloads({ hangs: ['onetake'] }));
 const oneFails = worstWith(downloads({ fails: { explanation: 'HTTP 503' } }));
 const queryLimited = worstWith(() => Promise.reject(new CatalogError({ kind: 'rate-limited', authenticated: false, minutes: 37 })));
+// drawio-skill 只支持 Codex：去掉 Codex 之后它在已选里就装不了
+const codexOnlyDrawio = catalogOf(
+  { version: 1, skills: SHOWCASE_SKILLS },
+  { ...WORST_CATALOG, thirdPartySkills: DOCUMENT_THIRD_PARTY.map((entry) => (entry.name === 'drawio-skill' ? { ...entry, hosts: ['codex'] } : entry)) },
+);
 const withBrokenEntry = catalogOf({ version: 1, skills: [...SHOWCASE_SKILLS, { name: 'broken', path: '../elsewhere' }] }, WORST_CATALOG);
 const emptyCatalog = catalogOf({ version: 1, skills: [] });
 
@@ -138,6 +143,20 @@ const picking =
   async (page) => {
     for (const name of names) await page.send({ type: 'pick', kind: 'skill', name, on: true });
     await page.until((state) => state.selected.length === names.length);
+  };
+/** 勾上这几个第三方 Skill */
+const pickingThirdParty =
+  (...names: string[]): Drive =>
+  async (page) => {
+    for (const name of names) await page.send({ type: 'pick', kind: 'thirdParty', name, on: true });
+    await page.until((state) => names.every((name) => state.selected.some((entry) => entry.name === name)));
+  };
+/** 含多个 skill 的第三方 Skill 里挑这几个 */
+const choosing =
+  (entry: string, ...skills: string[]): Drive =>
+  async (page) => {
+    for (const skill of skills) await page.send({ type: 'choose', entry, skill, on: true });
+    await page.until((state) => state.selected.some((candidate) => candidate.name === entry && candidate.detail !== undefined && candidate.detail.includes(String(skills.length))));
   };
 /** 去汇总 */
 const reviewing: Drive = async (page) => {
@@ -182,6 +201,11 @@ const toProject: Drive = async (page) => {
 // 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
 const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
 const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
+// 两条第三方 Skill：只含一个 skill 的 drawio-skill（两个宿主下都装过了）和含三个的 paper-craft-skills，挑其中两个
+// （paper-analyzer 在 Claude Code 下装过了），外加一个本仓库的 skill
+// 先勾本仓库的那一个：picking 等的是「已选里正好这几个」
+const THIRD_PARTY_PICKS = inOrder(picking('wizard'), pickingThirdParty('drawio-skill', 'paper-craft-skills'), choosing('paper-craft-skills', 'paper-analyzer', 'paper-comic'));
+const thirdPartySummarized = inOrder(crowded, THIRD_PARTY_PICKS, reviewing);
 
 const scenes: Scene[] = [
   { title: '开场动画 · 敲命令', note: '第 0.6 秒：黑底上 $ npx oxy-tools 一个字一个字敲出来，行尾是光标。浅色下开场也是黑底白字', intro: 600 },
@@ -256,6 +280,25 @@ const scenes: Scene[] = [
   },
   { title: '浏览 · 已选了几个 · 1024×768', note: '右栏收窄：已选的数量和「去汇总」仍在屏幕上，不用滚动去找', drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
   {
+    title: '浏览 · 有第三方 Skill · 挑其中的 skill',
+    note: '「第三方 Skill」分区的小标题后面写着内容直接来自作者。paper-craft-skills 含三个 skill：勾上之后卡片占一整行，说明下面是那一句和三个 skill 的清单（名字、说明、各自在每个宿主下的状态），挑了两个；右栏里写着「3 个 skill 里挑了 2 个」。drawio-skill 只含一个，勾上就是装它',
+    drive: inOrder(crowded, THIRD_PARTY_PICKS),
+    reveal: 'paper-craft-skills',
+  },
+  {
+    title: '浏览 · 有第三方 Skill · 一个 skill 都没挑',
+    note: '刚勾上含多个 skill 的条目、还没挑：清单里一个都没勾，右栏里那一项名字划掉、写着「一个 skill 都没挑，这一条不装」，标题旁写着这次不会装一项',
+    drive: inOrder(crowded, pickingThirdParty('paper-craft-skills')),
+    reveal: 'paper-craft-skills',
+  },
+  {
+    title: '浏览 · 已选里有现在装不了的',
+    note: 'drawio-skill 只支持 Codex，勾上之后去掉了 Codex：卡片成了不可选的画法，原因是「需要别的 AI Agent」；它留在右栏里，名字划掉、下面是同一句原因；只剩它一个会装的都没有，「去汇总」点不了',
+    catalog: codexOnlyDrawio,
+    drive: inOrder(crowded, pickingThirdParty('drawio-skill'), choosingHost('codex', false)),
+    reveal: 'drawio-skill',
+  },
+  {
     title: '汇总 · 有要逐项决定的覆盖',
     note: '每个条目一段，段里每个宿主一行：宿主、操作（覆盖是留意色粗体）、位置和备注。pr 在 Claude Code 下、writing-for-agents 在 Codex 下不是本工具装的：那一行下面是留意底色的一条「覆盖它」，缺省没勾，写着没勾会怎样；这里勾上了第二个。没有将执行的命令',
     drive: inOrder(summarized, agreeing(1)),
@@ -267,6 +310,12 @@ const scenes: Scene[] = [
     note: '位置写成相对项目目录的路径（.claude/skills/…、.agents/skills/…）；全局装过的这里都是新装',
     drive: inOrder(crowded, toProject, MIXED_PICKS, reviewing),
   },
+  {
+    title: '汇总 · 有第三方 Skill',
+    note: '第三方 Skill 一段没有版本；paper-craft-skills 里每个要装的 skill 一小组、每组每个宿主一行，位置整条看得到。drawio-skill 和 paper-analyzer 的目标位置已有同名目录：操作是覆盖、备注「已有同名目录」、那一行下面有「覆盖它」。「注意」里多一条作者最新版的提醒。没有将执行的命令',
+    drive: thirdPartySummarized,
+  },
+  { title: '汇总 · 有第三方 Skill · 1024×768', note: '位置放不下就在任意处断开，没有横向滚动条', drive: thirdPartySummarized, viewport: NARROW },
   {
     title: '汇总 · 新的一份',
     note: '确认的时候带回的标识对不上（机器上的状态变了，或覆盖的决定改过）：没有装，顶上一条写明这是新的一份、要再确认',
@@ -320,6 +369,8 @@ const scenes: Scene[] = [
   },
   { title: '英文 · 汇总 · 装到项目', ...EN, drive: inOrder(crowded, toProject, MIXED_PICKS, reviewing) },
   { title: '英文 · 汇总 · 有要逐项决定的覆盖', ...EN, drive: inOrder(summarized, agreeing(1)) },
+  { title: '英文 · 浏览 · 有第三方 Skill · 挑其中的 skill', ...EN, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills' },
+  { title: '英文 · 汇总 · 有第三方 Skill · 1024×768', ...EN, drive: thirdPartySummarized, viewport: NARROW },
   { title: '英文 · 汇总 · 新的一份 · 1024×768', ...EN, drive: inOrder(summarized, outdated), viewport: NARROW },
   { title: '英文 · 安装中', ...EN, catalog: neverFinishes, drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))) },
   { title: '英文 · 结果 · 有没装上的、有跳过的', ...EN, catalog: oneFails, drive: inOrder(summarized, finished) },
@@ -357,12 +408,16 @@ const frozenAt = (ms: number): string => `(() => {
     animation.currentTime = ${ms};
   }
 })()`;
-/** 把名字是它的那张卡片滚到窗口中间 */
-const revealed = (name: string): string => `(() => {
+/**
+ * 把名字是它的那张卡片滚到窗口中间。先等两帧：页面刚画出来时「换了一张列表就回到顶部」那个效果还没跑，
+ * 紧接着滚会被它拨回去
+ */
+const revealed = (name: string): string => `new Promise((resolve, reject) => requestAnimationFrame(() => requestAnimationFrame(() => {
   const card = [...document.querySelectorAll('.card')].find((candidate) => candidate.querySelector('h3')?.textContent === ${JSON.stringify(name)});
-  if (!card) throw new Error(${JSON.stringify(`列表里没有名字是 ${name} 的卡片`)});
+  if (!card) return reject(new Error(${JSON.stringify(`列表里没有名字是 ${name} 的卡片`)}));
   card.scrollIntoView({ block: 'center' });
-})()`;
+  resolve(true);
+})))`;
 // 中间一栏的内容有多高：窗口拉到这么高，整张列表就都在屏幕上
 const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
 

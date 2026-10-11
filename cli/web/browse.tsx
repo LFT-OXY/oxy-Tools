@@ -1,7 +1,7 @@
 // 逛目录的画面：三栏——左边「推荐」和各个用途，中间当前这张列表里的条目，右边已选。
 // 画什么都来自画面状态；这里只定怎么排。勾选只告诉安装器，勾没勾上照画面状态画。
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppView, ComponentView, Intent, ListingView, SectionView, StatusView, ViewState } from '../src/web-protocol.ts';
+import type { AppView, ComponentView, Intent, ListingView, PickableKind, SectionView, SkillChoicesView, StatusView, ViewState } from '../src/web-protocol.ts';
 import { Logo } from './logo.tsx';
 import { TEXT } from './text.tsx';
 
@@ -239,17 +239,19 @@ function Card({
 }) {
   const unavailable = entry.unavailable !== undefined;
   const picked = entry.picked === true;
-  // 现在勾得上的只有本仓库的 skill；别的类型的勾选框先是点不了的。
+  // 现在勾得上的是本仓库的 skill 和第三方 Skill；MCP、工具的勾选框先是点不了的。
   // 点了只告诉安装器，勾选框自己先不变：勾没勾上等画面状态来了才算
-  const toggle =
-    kind === 'skill' && !unavailable
-      ? (event: { currentTarget: HTMLInputElement }): void => {
-          event.currentTarget.checked = picked;
-          send({ type: 'pick', kind, name: entry.name, on: !picked });
-        }
-      : undefined;
+  const pickable = (kind === 'skill' || kind === 'thirdParty') && !unavailable ? (kind as PickableKind) : undefined;
+  const toggle = pickable
+    ? (event: { currentTarget: HTMLInputElement }): void => {
+        event.currentTarget.checked = picked;
+        send({ type: 'pick', kind: pickable, name: entry.name, on: !picked });
+      }
+    : undefined;
+  // 含多个 skill 的第三方 Skill 勾上之后占一整行，底下是挑 skill 的清单
+  const choosing = picked && entry.skills !== undefined;
   return (
-    <li class={`card${unavailable ? ' unavailable' : ''}${picked ? ' selected' : ''}`} style={{ '--i': order }}>
+    <li class={`card${unavailable ? ' unavailable' : ''}${picked ? ' selected' : ''}${choosing ? ' wide' : ''}`} style={{ '--i': order }}>
       {/* 名字和勾选框是同一个标签：点名字也勾得上 */}
       <label class="head">
         <h3>{entry.name}</h3>
@@ -261,9 +263,48 @@ function Card({
         </p>
       )}
       <p class="about">{entry.about}</p>
+      {choosing && entry.skills && <SkillChoices entry={entry.name} skills={entry.skills} showsHosts={showsHosts} send={send} />}
       {/* 不可选的原因写在状态的位置，直接看得到 */}
       <p class="statuses">{unavailable ? <strong class="reason">{entry.unavailable}</strong> : entry.statuses.map((status) => <Status key={status.host ?? ''} status={status} showsHost={showsHosts} />)}</p>
     </li>
+  );
+}
+
+/**
+ * 含多个 skill 的第三方 Skill 里挑要装的：那一句，然后每个 skill 一项——勾选框、名字、说明、它自己的状态。
+ * 挑了只告诉安装器，勾没勾上等画面状态来了才算
+ */
+function SkillChoices({ entry, skills, showsHosts, send }: { entry: string; skills: SkillChoicesView; showsHosts: boolean; send: (intent: Intent) => void }) {
+  return (
+    <div class="choices" role="group" aria-label={skills.lead}>
+      <p class="lead">{skills.lead}</p>
+      <ul>
+        {skills.entries.map((skill) => {
+          const chosen = skill.chosen === true;
+          return (
+            <li key={skill.name} class={chosen ? 'chosen' : undefined}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={chosen}
+                  onChange={(event) => {
+                    event.currentTarget.checked = chosen;
+                    send({ type: 'choose', entry, skill: skill.name, on: !chosen });
+                  }}
+                />
+                <span class="name mono">{skill.name}</span>
+              </label>
+              <p class="about">{skill.about}</p>
+              <p class="statuses">
+                {skill.statuses.map((status) => (
+                  <Status key={status.host ?? ''} status={status} showsHost={showsHosts} />
+                ))}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -303,7 +344,8 @@ function Apps({ title, note, entries }: { title: string; note: string; entries: 
 
 /**
  * 右栏：已选了哪些、一共几个，能在这里直接去掉某一个；「去汇总」和「完成」固定在底部。「完成」让安装器退出。
- * 改了宿主或安装范围之后装不了的留在这里：名字划掉，下面写原因；一个会装的都没有时去不了汇总
+ * 这一轮不会装的（改了宿主或安装范围之后装不了的、一个 skill 都没挑的）留在这里：名字划掉，下面写原因；
+ * 一个会装的都没有时去不了汇总
  */
 function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text; send: (intent: Intent) => void }) {
   const [finishing, setFinishing] = useState(false);
@@ -324,7 +366,14 @@ function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text;
               <li key={`${entry.kind} ${entry.name}`} class={entry.unavailable === undefined ? undefined : 'stuck'}>
                 <p>
                   <span class="name">{entry.unavailable === undefined ? entry.name : <s>{entry.name}</s>}</span>
-                  {entry.unavailable === undefined ? <small>{entry.type}</small> : <small class="attention">{entry.unavailable}</small>}
+                  {entry.unavailable === undefined ? (
+                    <small>
+                      {entry.type}
+                      {entry.detail !== undefined && <> · {entry.detail}</>}
+                    </small>
+                  ) : (
+                    <small class="attention">{entry.unavailable}</small>
+                  )}
                 </p>
                 <button type="button" class="remove" aria-label={t.remove(entry.name)} onClick={() => send({ type: 'pick', kind: entry.kind, name: entry.name, on: false })}>
                   ×

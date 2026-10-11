@@ -1,7 +1,7 @@
 // 盖在浏览上面的面板：汇总，和确认之后的进度与结果。画什么都来自画面状态；这里只定怎么排。
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { FailureView, Intent, RunRowView, RunView, SummaryView, ViewState } from '../src/web-protocol.ts';
+import type { FailureView, Intent, RunRowView, RunView, SummaryRowView, SummaryView, ViewState } from '../src/web-protocol.ts';
 import { TEXT } from './text.tsx';
 
 type Text = (typeof TEXT)[ViewState['lang']];
@@ -23,6 +23,17 @@ function Panel({ label, head, foot, escaped, children }: { label: string; head: 
       </div>
     </div>
   );
+}
+
+/** 把一段里的行按 skill 归组：第三方 Skill 的行带着 skill 的名字，相邻的同名几行成一小组；本仓库的 skill 的行没有名字，整段一组 */
+function grouped(rows: SummaryRowView[]): { skill?: string; rows: SummaryRowView[] }[] {
+  const groups: { skill?: string; rows: SummaryRowView[] }[] = [];
+  for (const row of rows) {
+    const last = groups.at(-1);
+    if (last && last.skill === row.skill) last.rows.push(row);
+    else groups.push({ ...(row.skill === undefined ? {} : { skill: row.skill }), rows: [row] });
+  }
+  return groups;
 }
 
 /** 汇总：将安装的每一项——装进哪个宿主、装到哪、是新装还是覆盖；要逐项决定的覆盖就在那一行下面。不列将执行的命令 */
@@ -58,23 +69,27 @@ export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; s
         <section class="entry" key={entry.name}>
           <h3>
             <span class="mono">{entry.name}</span>
-            <small>
-              {entry.type} · {entry.version}
-            </small>
+            <small>{entry.version === undefined ? entry.type : `${entry.type} · ${entry.version}`}</small>
           </h3>
-          <ul>
-            {entry.rows.map((row) => (
-              <li key={row.host}>
-                <span class="quiet">{row.host}</span>
-                <span class={row.overwrites ? 'attention' : undefined}>{row.action}</span>
-                <span class="where">
-                  <span class="mono">{row.location}</span>
-                  {row.note !== undefined && <small>{row.note}</small>}
-                </span>
-                {row.overwrite && <Decide overwrite={row.overwrite} t={t} send={send} />}
-              </li>
-            ))}
-          </ul>
+          {grouped(entry.rows).map((group, _, groups) => (
+            <div class="group" key={group.skill ?? ''}>
+              {/* 第三方 Skill 里每个要装的 skill 一小组，写出它的名字；只有一组、名字又和条目相同时不重复写 */}
+              {group.skill !== undefined && !(groups.length === 1 && group.skill === entry.name) && <h4 class="mono">{group.skill}</h4>}
+              <ul>
+                {group.rows.map((row) => (
+                  <li key={row.host}>
+                    <span class="quiet">{row.host}</span>
+                    <span class={row.overwrites ? 'attention' : undefined}>{row.action}</span>
+                    <span class="where">
+                      <span class="mono">{row.location}</span>
+                      {row.note !== undefined && <small>{row.note}</small>}
+                    </span>
+                    {row.overwrite && <Decide overwrite={row.overwrite} t={t} send={send} />}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </section>
       ))}
       {summary.notices.length > 0 && (

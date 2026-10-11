@@ -2,10 +2,10 @@
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
 import { listingStatus, type Machine, type Unavailable } from './availability.ts';
-import type { Catalog, Skill } from './catalog.ts';
+import type { Catalog, Skill, SourcedSkill, ThirdPartySkill } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import type { LinkOpener } from './installer.ts';
-import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type WebUnavailable } from './messages.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type Messages, type WebUnavailable } from './messages.ts';
 import { byName } from './listing.ts';
 import { homeRelative, planInstall, type Plan } from './plan.ts';
 import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
@@ -49,6 +49,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
     hosts: new Set(runtime.hosts.filter((host) => host.detected).map((host) => host.id)),
     scope: 'global',
     picked: [],
+    chosen: new Map(),
     step: 'browse',
     agreed: new Set(),
     renewed: false,
@@ -115,12 +116,25 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
           case 'pick': {
             if (session.step !== 'browse') return false;
-            const skill = catalog.skills.find((candidate) => candidate.name === intent.name);
-            if (!skill) return false;
+            // 名字只在各自的类型里唯一
+            const entry = (intent.kind === 'skill' ? catalog.skills : catalog.thirdPartySkills).find((candidate) => candidate.name === intent.name);
+            if (!entry) return false;
             // 不可选的勾不上；去掉总是可以的
-            if (intent.on && !pickable(runtime, session, skill)) return false;
-            const rest = session.picked.filter((candidate) => candidate !== skill);
-            session.picked = intent.on ? [...rest, skill] : rest;
+            if (intent.on && !pickable(runtime, session, entry)) return false;
+            const rest = session.picked.filter((candidate) => candidate !== entry);
+            session.picked = intent.on ? [...rest, entry] : rest;
+            break;
+          }
+          case 'choose': {
+            if (session.step !== 'browse') return false;
+            // 只认勾上了的、含多个 skill 的第三方 Skill 里的 skill
+            const entry = session.picked.find((candidate): candidate is ThirdPartySkill => isThirdParty(candidate) && candidate.name === intent.entry);
+            const skill = entry && entry.skills.length > 1 ? entry.skills.find((candidate) => candidate.name === intent.skill) : undefined;
+            if (!entry || !skill) return false;
+            const wanted = session.chosen.get(entry) ?? new Set<SourcedSkill>();
+            session.chosen.set(entry, wanted);
+            if (intent.on) wanted.add(skill);
+            else wanted.delete(skill);
             break;
           }
           case 'review':
@@ -154,6 +168,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             if (session.step !== 'results') return false;
             session.step = 'browse';
             session.picked = [];
+            session.chosen.clear();
             delete session.batch;
             break;
         }
@@ -196,9 +211,14 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   }
 }
 
+/** 现在勾得上的条目 */
+type Pickable = Skill | ThirdPartySkill;
+const isThirdParty = (entry: Pickable): entry is ThirdPartySkill => 'source' in entry;
+
 /**
  * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
- * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、挑选走到哪一步、
+ * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、
+ * 含多个 skill 的第三方 Skill 里挑了哪几个（去掉条目也留着，再勾上时还在）、挑选走到哪一步、
  * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度
  */
 interface Session {
@@ -208,7 +228,8 @@ interface Session {
   list: string | undefined;
   hosts: Set<string>;
   scope: Scope;
-  picked: Skill[];
+  picked: Pickable[];
+  chosen: Map<ThirdPartySkill, Set<SourcedSkill>>;
   step: 'browse' | 'summary' | 'installing' | 'results';
   agreed: Set<string>;
   renewed: boolean;
@@ -220,21 +241,44 @@ function targetOf(machine: Machine, session: Session): { hosts: Host[]; scope: S
   return { hosts: machine.hosts.filter((host) => host.detected && session.hosts.has(host.id)), scope: session.scope };
 }
 
-// 这个 skill 在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
-function unavailableOf(machine: Machine, session: Session, skill: Skill): Unavailable | undefined {
+// 这个条目在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
+function unavailableOf(machine: Machine, session: Session, entry: Pickable): Unavailable | undefined {
   const { hosts, scope } = targetOf(machine, session);
-  return listingStatus(machine, { skills: [skill], thirdParty: [], mcps: [], tools: [] }, hosts, scope).skills[0]?.unavailable;
+  const status = listingStatus(machine, { skills: isThirdParty(entry) ? [] : [entry], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: [], tools: [] }, hosts, scope);
+  return (isThirdParty(entry) ? status.thirdParty[0] : status.skills[0])?.unavailable;
 }
 
-// 这个 skill 现在勾不勾得上
-const pickable = (machine: Machine, session: Session, skill: Skill): boolean => unavailableOf(machine, session, skill) === undefined;
+// 这个条目现在勾不勾得上
+const pickable = (machine: Machine, session: Session, entry: Pickable): boolean => unavailableOf(machine, session, entry) === undefined;
 
-// 已选里现在会装的那些：装不了的留在已选里，但不进汇总
-const installable = (machine: Machine, session: Session): Skill[] => session.picked.filter((skill) => pickable(machine, session, skill));
+// 含多个 skill 的第三方 Skill 要装其中哪几个：只含一个的就是那一个
+const wantedOf = (session: Session, entry: ThirdPartySkill): SourcedSkill[] =>
+  entry.skills.length > 1 ? entry.skills.filter((skill) => session.chosen.get(entry)?.has(skill)) : entry.skills;
 
-// 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。本仓库的 skill 按名字，和终端界面的先后一样
+/** 已选里这一项现在不进汇总的原因：装不了，或含多个 skill 而一个都没挑 */
+type Idle = { kind: 'unavailable'; unavailable: Unavailable } | { kind: 'none-chosen' };
+function idleOf(machine: Machine, session: Session, entry: Pickable): Idle | undefined {
+  const unavailable = unavailableOf(machine, session, entry);
+  if (unavailable) return { kind: 'unavailable', unavailable };
+  return isThirdParty(entry) && wantedOf(session, entry).length === 0 ? { kind: 'none-chosen' } : undefined;
+}
+const idleReason = (t: Messages, idle: Idle): string => (idle.kind === 'unavailable' ? unavailableReason(t, idle.unavailable) : t.noSkillChosen);
+
+// 已选里现在会装的那些：装不了的、一个 skill 都没挑的留在已选里，但不进汇总
+const installable = (machine: Machine, session: Session): Pickable[] => session.picked.filter((entry) => idleOf(machine, session, entry) === undefined);
+
+// 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。
+// 本仓库的 skill 和第三方 Skill 的条目各按名字，和终端界面的先后一样
 function planOf(machine: Machine, session: Session): Plan {
-  const selection = { ...targetOf(machine, session), skills: byName(installable(machine, session)), thirdParty: [], mcps: [], tools: [], filledKeys: new Map() };
+  const picked = installable(machine, session);
+  const selection = {
+    ...targetOf(machine, session),
+    skills: byName(picked.filter((entry): entry is Skill => !isThirdParty(entry))),
+    thirdParty: byName(picked.filter(isThirdParty)).map((entry) => ({ entry, wanted: wantedOf(session, entry) })),
+    mcps: [],
+    tools: [],
+    filledKeys: new Map(),
+  };
   return decided(planInstall(machine, selection), session.agreed);
 }
 
@@ -244,7 +288,7 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
   const { hosts, scope } = targetOf(machine, session);
-  const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang, new Set(session.picked));
+  const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
   return {
     lang,
     // 和终端界面的语言提问是同一份字
@@ -274,9 +318,17 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
     },
     menu: menuOf(catalog, lang),
     ...(listing ? { listing } : {}),
-    selected: session.picked.map((skill) => {
-      const unavailable = unavailableOf(machine, session, skill);
-      return { kind: 'skill' as const, name: skill.name, type: t.kinds.skill, ...(unavailable ? { unavailable: unavailableReason(t, unavailable) } : {}) };
+    selected: session.picked.map((entry) => {
+      const idle = idleOf(machine, session, entry);
+      // 含多个 skill 的第三方 Skill 写明挑了几个；不进汇总时只写原因
+      const detail = isThirdParty(entry) && entry.skills.length > 1 && !idle ? t.chosenSkills(wantedOf(session, entry).length, entry.skills.length) : undefined;
+      return {
+        kind: isThirdParty(entry) ? ('thirdParty' as const) : ('skill' as const),
+        name: entry.name,
+        type: isThirdParty(entry) ? t.kinds.thirdParty : t.kinds.skill,
+        ...(detail === undefined ? {} : { detail }),
+        ...(idle ? { unavailable: idleReason(t, idle) } : {}),
+      };
     }),
     ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(machine, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
     ...(session.batch ? { run: runView(t, machine.platform, session.batch) } : {}),
@@ -286,14 +338,17 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
 // 页面发来的东西不可信：只认得出形状对的意图。每种意图认得的字段是定死的，多带了别的（命令、路径之类）整个不认
 function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
-  const { type, list, lang, kind, name, on, item, summary, host, scope } = raw as Record<string, unknown>;
+  const { type, list, lang, kind, name, on, item, summary, host, scope, entry, skill } = raw as Record<string, unknown>;
   const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
   if ((type === 'finish' || type === 'intro-seen' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
   if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
   if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
   if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };
   if (type === 'scope' && (scope === 'global' || scope === 'project') && only('scope')) return { type, scope };
-  if (type === 'pick' && kind === 'skill' && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) return { type, kind, name, on };
+  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
+    return { type, kind, name, on };
+  }
+  if (type === 'choose' && typeof entry === 'string' && typeof skill === 'string' && typeof on === 'boolean' && only('entry', 'skill', 'on')) return { type, entry, skill, on };
   if (type === 'overwrite' && typeof item === 'string' && typeof on === 'boolean' && only('item', 'on')) return { type, item, on };
   if (type === 'install' && typeof summary === 'string' && only('summary')) return { type, summary };
   return undefined;

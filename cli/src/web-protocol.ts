@@ -12,6 +12,8 @@ export type Intent =
   | { type: 'lang'; lang: Lang }
   /** 勾上或去掉一个条目：kind 和 name 是画面状态里那个条目的 */
   | { type: 'pick'; kind: PickableKind; name: string; on: boolean }
+  /** 含多个 skill 的第三方 Skill：要（或不要）其中的一个 skill。entry 是勾上了的那个条目的名字，skill 是它 skills 里某一项的名字 */
+  | { type: 'choose'; entry: string; skill: string; on: boolean }
   /** 要汇总 */
   | { type: 'review' }
   /** 汇总里要逐项决定的那一项覆盖不覆盖：item 是那一行的 overwrite.id */
@@ -28,7 +30,7 @@ export type Intent =
   | { type: 'scope'; scope: Scope };
 
 /** 现在勾得上的类型 */
-export type PickableKind = 'skill';
+export type PickableKind = 'skill' | 'thirdParty';
 
 export type Lang = 'zh' | 'en';
 
@@ -121,6 +123,24 @@ export interface ComponentView {
   unavailable?: string;
   /** 已经勾上了 */
   picked?: true;
+  /** 含多个 skill 的第三方 Skill 才有：里面的各个 skill，页面在勾上之后画成清单让用户挑 */
+  skills?: SkillChoicesView;
+}
+
+export interface SkillChoicesView {
+  /** 清单上面那一句：终端界面那一问的话 */
+  lead: string;
+  entries: SkillChoiceView[];
+}
+
+export interface SkillChoiceView {
+  name: string;
+  /** 完整的说明 */
+  about: string;
+  /** 这个 skill 自己在每个要装进的宿主下的状态，与 target.hosts 一一对应 */
+  statuses: StatusView[];
+  /** 挑了 */
+  chosen?: true;
 }
 
 /** 状态的含义：就绪、留意、退后（未装这一类）、不上色 */
@@ -147,7 +167,12 @@ export interface SelectedView {
   name: string;
   /** 类型写出来的词 */
   type: string;
-  /** 它在现在所选的宿主和安装范围下装不了的原因（和卡片上的是同一句）：有它这一项不进汇总；改回去就没有了 */
+  /** 含多个 skill 的第三方 Skill 挑了几个 */
+  detail?: string;
+  /**
+   * 这一项现在不进汇总的原因：在现在所选的宿主和安装范围下装不了（和卡片上的是同一句），或含多个 skill 而一个都没挑。
+   * 改回去、挑了就没有了
+   */
   unavailable?: string;
 }
 
@@ -171,13 +196,15 @@ export interface SummaryEntryView {
   name: string;
   /** 类型写出来的词 */
   type: string;
-  /** 要装的版本 */
-  version: string;
-  /** 每个宿主一行 */
+  /** 要装的版本；第三方 Skill 没有（装的是作者当时的最新版） */
+  version?: string;
+  /** 每个宿主一行；第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行 */
   rows: SummaryRowView[];
 }
 
 export interface SummaryRowView {
+  /** 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组 */
+  skill?: string;
   host: string;
   /** 操作：新装、覆盖 */
   action: string;
@@ -211,9 +238,9 @@ export interface RunRowView {
   name: string;
   host: string;
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
-  /** 这一行的词：等待、正在下载、已安装、失败、跳过 */
+  /** 这一行的词：等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、已安装、失败、跳过 */
   text: string;
-  /** 词后面的话：版本、原因 */
+  /** 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局 */
   rest?: string;
 }
 

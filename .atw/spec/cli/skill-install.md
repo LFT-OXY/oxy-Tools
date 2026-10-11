@@ -456,7 +456,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 
 ### 6. Tests Required
 
-都经 `runInstaller`，在 `cli/test/third-party.test.ts`（装到全局）和 `cli/test/scope.test.ts` 的「把第三方 Skill 装到项目」一组（命令不带 `--global`、在项目目录下运行、复核和同名目录的另问按项目目录）；条目校验的说法在 `validate-catalog.test.ts`，真实的清单画面在 `prompts.test.ts`。
+都经 `runInstaller`，在 `cli/test/third-party.test.ts`（装到全局）和 `cli/test/scope.test.ts` 的「把第三方 Skill 装到项目」一组（命令不带 `--global`、在项目目录下运行、复核和同名目录的另问按项目目录）；网页界面那一边在 `cli/test/web-third-party.test.ts`（记录到的命令与终端界面逐条相同，见 [网页界面的契约](./web-ui-contract.md)）；条目校验的说法在 `validate-catalog.test.ts`，真实的清单画面在 `prompts.test.ts`。
 
 - 假的执行器不会真的装东西：让 `commandResult` 在「执行」那条命令时往第三个参数给的 `home` 里写出 `<skill 目录>/<名字>/SKILL.md`（模拟装上了），或什么都不写（模拟没装上）。
 - 记录到的命令在 `result.commands` 里多两样：不经 shell 的带着 `env`（额外的环境变量，没有就没有这个键），整行交给 shell 的仍是 `shell: true`。**期望值写成字面的命令**。
