@@ -1,6 +1,6 @@
 # 安装 skill
 
-> 宿主探测（`cli/src/hosts.ts`）、状态探测（`cli/src/skill-status.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）四段的契约，以及流程（`cli/src/flow.ts`）怎么决定装进哪些宿主、哪些要先问过才覆盖。目前有 Claude Code 和 Codex 两个宿主。
+> 宿主探测（`cli/src/hosts.ts`）、状态探测（`cli/src/skill-status.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）四段的契约，以及终端界面的流程（`cli/src/flow.ts`）怎么决定装进哪些宿主、两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）怎么定状态、哪些要先问过才覆盖、怎么逐项去装。目前有 Claude Code 和 Codex 两个宿主。
 
 ---
 
@@ -109,7 +109,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - 标记里的 `version` 会打到终端上，所以和目录里的文字守同一条规矩（`catalog.ts` 的 `isText`）；不合规矩的标记当作没有标记——宁可多问一次要不要覆盖。
 - **每次要显示就现探测**：每进一次 skill 列表探测一轮（装完回到列表就是新的状态），勾完之后给汇总再探测一次。不把上一轮的结果记下来复用。
 
-**覆盖与单独确认（`flow.ts`）**
+**覆盖与单独确认（要不要另问由 `plan.ts` 定：每一项的 `asksOverwrite`；终端界面怎么问在 `flow.ts`）**
 
 | 状态 | 汇总里的操作 | 备注 | 选了「开始安装」之后 |
 |------|--------------|------|----------------------|
@@ -272,15 +272,15 @@ if (lstatSync(target).isSymbolicLink()) return { kind: 'unmanaged' };
 const entries = catalog.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
 ```
 
-上面这一段是加安装范围之前的写法，目录写死成了全局的。现在状态、位置、安装、复核、同名目录的另问**都从同一个按安装范围定的目录来**（`flow.ts` 的 `planEntries`）：
+上面这一段是加安装范围之前的写法，目录写死成了全局的。现在状态、位置、安装、复核、同名目录的另问**都从同一个按安装范围定的目录来**（`availability.ts` 的 `skillsDirOf`，列表的状态和 `plan.ts` 算计划都用它）：
 
 ```ts
 // 错：选了项目，状态却看的是全局——列表写「已装」，汇总说「覆盖」，装的却是项目里一个空位置
 skillStatus(skill, host.skillsDir);
 
-// 对：一处定目录，后面每一步都用它；一项安装把它带在自己身上（Job.skillsDir），执行时不再回头找宿主要
-const skillsDirOf = (host: Host): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
-skillStatus(skill, skillsDirOf(host));
+// 对：一处定目录，后面每一步都用它；一项安装把它带在自己身上（SkillJob.skillsDir），执行时不再回头找宿主要
+export const skillsDirOf = (host: Host, scope: Scope): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
+skillStatus(skill, skillsDirOf(host, scope));
 ```
 
 ```ts
@@ -415,7 +415,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 
 命令结束后 `<skillsDir>/<名字>/SKILL.md` 在才算装上，不看退出状态；`installThirdPartySkill` 不抛错。各种结局的结果行见下面的出错矩阵。
 
-**流程里的位置（`flow.ts`）**
+**流程里的位置（先后在 `listing.ts` 和 `plan.ts`，终端界面的提问在 `flow.ts`）**
 
 - 混合列表里第三方 Skill 自成一段，排在本仓库的 skill 之后、MCP 之前；段内带推荐的在前，其余按名字。
 - 列表确认之后、问 key 之前，**每个勾选的、含多个 skill 的条目各问一次**要其中哪几个（多选，起始一个都不勾）；只含一个的不问。清单里一个都不勾就确认：这一条不装，其余勾选的照常。汇总里选「返回修改」再走到这一问时，上次勾的还在。

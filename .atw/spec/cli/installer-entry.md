@@ -39,7 +39,7 @@ export interface InstallerOptions {
 
 入口不直接碰 `process`：参数、环境变量、平台、输出流都从 `options` 来。`cli/src/bin.ts` 负责把真实的东西接上去，除此之外不放逻辑。
 
-`interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。
+`interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。执行一批安装的途中被这个信号打断时，`run-plan.ts` 抛的是它自己的 `Interrupted`（它不认识提问器）；入口把两种都当作以 130 退出。
 
 `runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 和第三方 Skill 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`；不经 shell 的那种可以用第三个参数的 `env` 另外带上几个变量、用 `cwd` 指定在哪个目录下运行（安装第三方 Skill 用：装到项目时要在项目目录下运行，见 [安装 skill](./skill-install.md)）。
 

@@ -213,11 +213,11 @@ export interface ConfirmQuestion {
 
 | 项 | 约定 |
 |----|------|
-| 当前目录 | `directory` 是流程交进来的、给用户看的写法：项目目录在主目录里时把主目录写成 `~`（`~/work/my-app`），不在主目录里时照原样写全（`flow.ts` 的 `homeRelative`）。呈现层把它暗淡地接在「项目」那句说明的后面，只是告知，不为它另设确认 |
+| 当前目录 | `directory` 是流程交进来的、给用户看的写法：项目目录在主目录里时把主目录写成 `~`（`~/work/my-app`），不在主目录里时照原样写全（`plan.ts` 的 `homeRelative`，汇总里的位置也用它）。呈现层把它暗淡地接在「项目」那句说明的后面，只是告知，不为它另设确认 |
 | 放不下时 | 这一行（光标的两格、名字一栏、说明、目录）超过 79 列就**从前面截**目录，以省略号开头、留住末尾的几级——认得出是哪个目录靠的是最后几级，`truncate` 截的是末尾，这里不用它。目录以外的部分不截 |
 | 不显示颜色、没有 Unicode | 只按现有的规则退：目录不再暗淡；省略号是 `symbols.ellipsis`（`...`） |
 
-汇总和覆盖前另问里的位置不归这里管：流程按安装范围把它写好再交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。**呈现层不知道安装范围**：MCP 在项目范围下的不同都由流程折进交给它的东西里——状态里的 `global-only`（这个宿主的 MCP 只能装到全局；栏里和 `unsupported` 写同一个词「不支持」）、`mcpColumnNotices` 的 `globalOnly`（列表上方的那一行）、`summaryNotices` 的 `plaintextKeys` 和 `approvals`（汇总下方的两行）。一行 MCP 各栏全是 `unsupported` / `global-only` 时不可选：有 `global-only` 的原因是 `mcpGlobalOnly`（「只能装到全局」），否则是「需要别的 AI Agent」；一个宿主都没检测到的原因排在它们前面。
+汇总和覆盖前另问里的位置不归这里管：算计划的（`plan.ts`）按安装范围把它写好，流程原样交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。**呈现层不知道安装范围**：MCP 在项目范围下的不同都由流程折进交给它的东西里——状态里的 `global-only`（这个宿主的 MCP 只能装到全局；栏里和 `unsupported` 写同一个词「不支持」）、`mcpColumnNotices` 的 `globalOnly`（列表上方的那一行）、`summaryNotices` 的 `plaintextKeys` 和 `approvals`（汇总下方的两行）。一行 MCP 各栏全是 `unsupported` / `global-only` 时不可选：有 `global-only` 的原因是 `mcpGlobalOnly`（「只能装到全局」），否则是「需要别的 AI Agent」；一个宿主都没检测到的原因排在它们前面。**哪一行不可选、是哪一种原因，不由呈现层判断**：`availability.ts` 的 `listingStatus` 给每一行带上 `unavailable`（一个种类，`Unavailable`），呈现层只把它写成那句话。
 
 ---
 
@@ -297,7 +297,7 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 进入「推荐」或一个用途之后的那张多选列表是 `ui.mixedPicker({ hosts, skills, thirdParty, mcps, tools, apps, checked, marksRecommended })`：按类型分段、段首有标题、列表下方多一行「类型」。里面有本仓库的 skill、第三方 Skill、MCP、工具、外部项目五段。提问的值是目录里的条目本身（`Skill | ThirdPartySkill | Mcp | Tool | App`）：流程拿勾选的结果去各自的清单里认（`listing.skills.filter((skill) => picked.includes(skill))`），不另包一层带类型的对象。
 
-`hosts` 是所选的宿主，`skills`、`thirdParty`、`mcps` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的时状态只有一栏**（表头「状态」），skill、第三方 Skill 和 MCP 都不可选——一个宿主都没检测到，或这张列表里根本没有它们（只有工具和外部项目时不问宿主）。工具不看 `hosts`：它的状态和不可选的原因（`ToolUnavailable`，含一个宿主都没检测到的那一种）由流程算好交进来。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
+`hosts` 是所选的宿主，`skills`、`thirdParty`、`mcps` 里每一条的 `statuses` 与它一一对应；**`hosts` 是空的时状态只有一栏**（表头「状态」），skill、第三方 Skill 和 MCP 都不可选——一个宿主都没检测到，或这张列表里根本没有它们（只有工具和外部项目时不问宿主）。工具不看 `hosts`。每一行的状态和不可选的原因（`unavailable`，种类是 `availability.ts` 的 `Unavailable`）都由流程从 `listingStatus` 拿来原样交进来：`ui.mixedPicker({ hosts, ...status, … })`；呈现层自己不从 `statuses` 推断哪一行不可选。`marksRecommended` 说要不要把带推荐的行标出来：用途的列表里标，「推荐」那张列表里每一行都是，不标。
 
 **第三方 Skill 的清单**是 `ui.thirdPartyPicker({ entry, hosts, statuses, checked })`：混合列表确认之后，含多个 skill 的条目各问一次要其中哪几个，提问的值是条目里的 `SourcedSkill`。栏和混合列表一样（名称、每个所选的宿主一栏状态、说明），没有分段，也没有「类型」一行。它和别的多选只差两处，都在这个提问自己的主题里盖掉：按键提示里「确认」后面的括号——交互库传进来的动作名 `submit` 换成 `submitOrSkip` 再交给共用的 `keysHelpTip`（`messages.ts` 的 `keys` 里两个都有：「不选则返回」和「不选则不装这一条」）；一个都不勾时收成的那一行写 `t.notInstalling` 而不是「返回」。**别的多选要改括号里的话照这个做，不要另写一份按键提示**：那一行的宽度是算着写的，英文加没有 Unicode 时一列余量都没有，新写的括号不能比 `none = back` 长。
 

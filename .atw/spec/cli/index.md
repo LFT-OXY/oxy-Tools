@@ -29,7 +29,11 @@ cli/
 │   ├── install-tool.ts   # 安装工具：按系统选命令，执行后用条目声明的检查方式复核
 │   ├── tool-status.ts    # 状态探测：一个工具装没装，只照检查方式看一眼
 │   ├── run-command.ts    # 外部命令执行器的正式实现：不经 shell 的，和整行交给 shell 的
-│   ├── flow.ts           # 交互流程：问什么、显示什么
+│   ├── listing.ts        # 两套界面共用：「推荐」和各个用途的列表里有什么、怎么排
+│   ├── availability.ts   # 两套界面共用：列表里每个条目在所选宿主和安装范围下的状态、可不可选与原因
+│   ├── plan.ts           # 两套界面共用：算计划——把勾选算成要装的每一项
+│   ├── run-plan.ts       # 两套界面共用：执行——照计划逐项去装，把进度报给接收方
+│   ├── flow.ts           # 终端界面的交互流程：逐步问什么、显示什么；算和装都经上面四块
 │   ├── ui.ts             # 呈现层：一切终端输出的样式
 │   ├── messages.ts       # 中英文案
 │   ├── prompter.ts       # 提问器的接口
@@ -65,7 +69,7 @@ cli/
 
 ## 入口与两个测试接缝
 
-安装器对外只有一个入口 `runInstaller(options)`，内部分五块（目录、宿主适配、安装、状态探测、交互流程），全部经入口被测到。入口接受**五样可替换的外部依赖**，正式运行时由 `bin.ts` 接上真实的实现，测试时全部替换：
+安装器对外只有一个入口 `runInstaller(options)`，内部分六块（目录、宿主适配、安装、状态探测、两套界面共用的部分、交互流程），全部经入口被测到。入口接受**五样可替换的外部依赖**，正式运行时由 `bin.ts` 接上真实的实现，测试时全部替换：
 
 | 依赖 | `options` 里的名字 | 正式实现 | 测试里 |
 |------|--------------------|----------|--------|
@@ -85,6 +89,75 @@ cli/
 | 辅助接缝 | 目录校验命令、上游核对命令 | `npm run validate-catalog -- <目录>`：测试把它当子进程跑，只断言标准输出、标准错误和退出状态；维护者和 CI 用同一条命令检查仓库里真实的目录数据。`npm run check-upstream -- <目录>` 是同一种跑法，测试里让它对着本地的假仓库目录，联网的那一段手动核对。见 [目录校验与 CI](./catalog-validation.md) |
 
 界面预览页也经主接缝驱动安装器，但它不是测试：观感由它加视觉评审把关，见 [界面设计](./ui-design.md)。
+
+---
+
+## 两套界面共用的部分
+
+安装器有两套界面：终端界面（已有的）和网页界面（任务 `10-11-installer-web-ui`，还没有实现）。**装什么、怎么装只写一遍**：下面四块不依赖提问器和呈现层——不提问、不往终端上打东西——两套界面都经它们走。界面自己只管在哪里挑、在哪里看。
+
+| 模块 | 管什么 | 给它什么 | 它给出什么 |
+|------|--------|----------|------------|
+| `listing.ts` | 列表里有什么、怎么排 | 目录（和一个用途） | `recommendedListing`、`purposeListing`：一张列表里的条目，按类型分好、排好先后；`purposeCounts`：有条目的用途连同条目数，一行都没有的用途不在里面 |
+| `availability.ts` | 每个条目的状态、可不可选与原因 | 本机的事实（`Machine`）、一张列表、所选的宿主、安装范围 | `listingStatus`：每个组件在每个所选宿主下的状态；不可选的另带原因 `Unavailable`（一个宿主都没有、需要别的宿主、只能装到全局、不支持当前系统）。原因是一个种类，写成哪句话由界面照文案定 |
+| `plan.ts` | 算计划 | 本机的事实、所选的宿主、安装范围、勾选（含第三方 Skill 里挑了哪几个 skill）、填过的 key 的**变量名** | `planInstall`：要装的每一项——每个组件在每个宿主下一项，连同位置、状态、将执行的命令、要不要另问覆盖（`asksOverwrite`）、缺哪个必填的 key（`missingVariable`），以及汇总要提醒的事（`notices`） |
+| `run-plan.ts` | 执行 | 计划、进度的接收方（`Progress`），和执行要的外部依赖（目录来源、外部命令执行器、临时目录、中断信号、填过的 key） | `runPlan`：照本仓库的 skill、第三方 Skill、MCP、工具的先后逐项去装，每一项的开始、结局、跳过都报给接收方 |
+
+要守的几条：
+
+- **这四块不引用 `prompter.ts`、`ui.ts`**，连类型也不引用。两套界面都要的类型（一项安装的目标、结局、运行环境的 `Environment`）放在这四块或它们下面的模块里，呈现层反过来引用。
+- **状态都是现探测的**：`listingStatus` 和 `planInstall` 每调一次都重新看一遍目标目录和宿主的配置，不记上一次的结果。界面要新的状态就再调一次。
+- **算计划时不装，执行时不问**：`planInstall` 不执行任何命令、不下载；`runPlan` 不提问。用户没同意覆盖的那些项，由界面在执行之前标成 `declined`，执行时跳过。
+- **key 的值不进计划、不进进度的报告**：`planInstall` 只收变量名（哪个 MCP 填过哪几个）；值留在内存里（`Session.keys`），只由 `runPlan` 交给安装动作。见 [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」。
+- **勾了却装不了的不进计划**：所选的宿主都不支持的条目、装不到所选范围的 MCP、装不了的工具，即使在勾选里也不产生要装的项（终端界面里它们本来就勾不上；网页界面里它们会留在已选里）。
+- **执行被 Ctrl+C 打断时抛 `Interrupted`**（`run-plan.ts`），入口把它和 `PromptAborted` 一样当作以 130 退出；`run-plan.ts` 因此不必认识提问器。
+- **不为这四块单独写测试**：它们经入口被测到，和别的内部模块一样。
+
+签名（只列两套界面要对上的那些；字段的说明在源码的注释里）：
+
+```ts
+// cli/src/availability.ts
+export interface Machine { hosts: readonly Host[]; env: Environment; platform: NodeJS.Platform; homeDir: string; projectDir: string } // hosts 是认识的全部宿主
+export type Unavailable = { kind: 'no-host' } | { kind: 'hosts' } | { kind: 'global-only' } | { kind: 'os'; os: ToolOs };
+export function listingStatus(machine: Machine, listing: Pick<Listing, 'skills' | 'thirdParty' | 'mcps' | 'tools'>, hosts: readonly Host[], scope: Scope): ListingStatus;
+// ListingStatus 的每一行：{ skill | entry | mcp, statuses（与 hosts 一一对应）, unavailable? }；工具是 { tool, status, unavailable? }
+
+// cli/src/plan.ts
+export interface Selection {
+  hosts: readonly Host[]; scope: Scope;                                              // 这一批要装进的宿主、安装范围
+  skills: readonly Skill[]; mcps: readonly Mcp[]; tools: readonly Tool[];            // 各类照给的先后装
+  thirdParty: readonly { entry: ThirdPartySkill; wanted: readonly SourcedSkill[] }[]; // wanted 一个都没有就是这一条不装
+  filledKeys: ReadonlyMap<string, ReadonlySet<string>>;                              // MCP 的名字 → 填过的变量名，没有值
+}
+export interface Plan { jobs: SkillJob[]; thirdPartyJobs: ThirdPartyJob[]; mcpJobs: McpJob[]; toolJobs: ToolJob[]; notices: PlanNotices }
+export function planInstall(machine: Machine, selection: Selection): Plan;
+export function homeRelative(machine: Pick<Machine, 'homeDir'>, path: string): string; // 给用户看的路径：主目录写成 ~
+
+// cli/src/run-plan.ts
+export interface Runtime extends Machine { source; tempDir; githubToken; interrupt; runCommand; pinned?; keys } // 入口交进来的外部依赖，加这次运行里记着的东西
+export interface Progress { loading(what: 'skillFiles'): { done(): void }; failure(failure: Failure): void; installation(skills, thirdParty, mcps, tools): { skill, thirdParty, mcp, tool, finish } }
+export async function runPlan(runtime: Runtime, plan: Plan, report: Progress): Promise<void>;
+export class Interrupted extends Error {}
+```
+
+| 情形 | 共用的部分怎么办 |
+|------|------------------|
+| 所选的宿主是空的 | `listingStatus`：skill、第三方 Skill、MCP 每一行都是 `no-host`（它排在别的原因前面）；`planInstall`：这三类没有任何一项 |
+| 勾了的工具装不了（没有检测到宿主、系统不支持、要的宿主不在） | 不进 `toolJobs` |
+| MCP 必填的 key 不在 `filledKeys` 里 | 它在每个装得了的宿主下各有一项 `steps` 为空、带 `missingVariable` 的；`notices.missingKeys` 里说一次；执行时 `skip` |
+| `SkillJob` / `ThirdPartyJob` 带着 `declined` | 执行时 `skip`，不下载、不执行命令；本仓库的 skill 全都 `declined` 时不向 GitHub 查询 |
+| 向 GitHub 查询失败 | `report.failure(…)` 一次；这一批本仓库的 skill 不装、也不在 `installation` 里，其余照常 |
+| 一项装不上（`SkillInstallError`、`McpInstallError`，或复核没过） | 把结局交给接收方，接着装下一项；`runPlan` 不因此抛错 |
+| 执行途中 `interrupt` 触发 | 抛 `Interrupted`，入口以 130 退出 |
+
+留给后面的工单、现在**还不在共用部分里**的（网页界面要用到时挪过来，不要在页面那边另写一遍）：
+
+- **不可选的原因写成哪句话**：现在是 `ui.ts` 里的 `unavailableReason`（种类 → `messages.ts` 的那几句）。网页界面要同一套说法时，把这张对应表挪到两边都够得着的地方。
+- **列表上方关于 MCP 那几栏的说明**（哪些宿主只能装到全局、哪些宿主的配置读不到）：现在由 `flow.ts` 从 `listingStatus` 的结果里数出来。
+- **一批跨几张列表时各类的先后**：`Selection` 照给的先后装，终端界面给的是列表里的先后（一批只来自一张列表）。跨用途的一批照什么排，由做它的那张工单定，写回这里。
+- **`notices` 里没有「key 以占位符显示」**：那一条说的是终端界面展示的命令，由 `flow.ts` 自己加（`placeholders`）；网页界面的汇总不列命令，没有它。
+
+**终端界面怎么用它们**（`flow.ts`）：主菜单的行来自 `recommendedListing` 和 `purposeCounts`；进入一张列表后，每一轮先 `listingStatus` 再画混合列表，勾完之后问第三方 Skill 里要哪几个、问 key，然后 `planInstall`，照计划画汇总、将执行的命令和提醒，确认后逐项另问覆盖（`asksOverwrite` 的那些），最后 `runPlan(session, plan, session.ui)`——**终端界面的进度接收方就是呈现层**。外部项目不在计划里：终端界面勾了它们，装完之后自己列出说明与链接。
 
 ---
 
@@ -109,6 +182,7 @@ cli/
 - [ ] 要加或改任何画面的样子（颜色、符号、状态的词、间距、横线）→ [界面设计](./ui-design.md)：先改那份文档，再改实现，然后生成界面预览页对照
 - [ ] 要加或改网页界面的样子（颜色、字号、间距、部件、版式、开场动画）→ [网页界面的设计](./web-ui-design.md)：先改那份文档，再改实现；彩色只有说状态的那三种，不用紫色，汇总里不列将执行的命令
 - [ ] 要往终端上打任何东西 → [终端输出](./terminal-output.md)：只能经呈现层
+- [ ] 要动列表里有什么、怎么排，条目的状态与可不可选，勾选怎么算成要装的各项，或执行的先后与一项失败之后怎么办 → 上面「两套界面共用的部分」：改在那四块里，不在 `flow.ts` 里另写一遍；它们不提问、不往终端上打东西
 - [ ] 要动下载、落盘、宿主探测、状态探测、覆盖前问不问、安装范围（装到全局还是项目、各落在哪个目录），加一个宿主，或加一种装不上的原因 → [安装 skill](./skill-install.md)
 - [ ] 要加一种提问 → [终端输出](./terminal-output.md) 的「是否题」「隐藏输入」：先读交互库的源码，主题要盖全，按键提示和出错的句子要本地化
 - [ ] 要碰用户输入的 key（问、记、传、报错）→ [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」：值只进内存、命令参数和宿主的配置，不进呈现层、不进错误的原因、不进任何文件
@@ -133,7 +207,7 @@ cli/
 | `npm run typecheck` | 类型检查（`src`、`test`、`scripts`），无输出即通过 |
 | `npm test` | 全部测试（vitest），只扫 `cli/test/` |
 | `npm run build` | 构建到 `dist/`（不提交） |
-| `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍 |
+| `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍。**不许改画面的重构**（搬代码、拆模块）拿它当凭据：动手之前先生成一份另存，改完再生成一份，两份应当逐字节相同——预览页经入口把每个画面都走一遍，测试没断言到的字也在里面 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
 | `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
 | `npm run check-upstream -- ..` | 把目录里登记的第三方 Skill 和作者在 GitHub 上的仓库对一遍：仓库还在不在、归档或改名没有、里面的 skill 多了少了。要联网，不进 CI；录入或改动第三方 Skill 之后跑，设上 `GITHUB_TOKEN` 免得被限流 |

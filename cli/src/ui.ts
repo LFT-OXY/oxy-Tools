@@ -1,15 +1,16 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool, ToolOs } from './catalog.ts';
-import type { Command, Host, Scope } from './hosts.ts';
-import type { McpInstallProblem } from './install-mcp.ts';
-import type { SkillInstallProblem } from './install-skill.ts';
+import type { Unavailable } from './availability.ts';
+import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
+import type { Command, Environment, Host, Scope } from './hosts.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
-import type { InstallableMcpStatus, McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type KeyOutcome, type Lang, type ToolEvidence } from './messages.ts';
+import type { McpStatus } from './mcp-status.ts';
+import { MESSAGES, type Failure, type KeyOutcome, type Lang } from './messages.ts';
+import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import type { InstallOutcome, McpOutcome } from './run-plan.ts';
 import type { SkillStatus } from './skill-status.ts';
 import type { ThirdPartyStatus } from './third-party-status.ts';
 import type { ToolStatus } from './tool-status.ts';
@@ -95,49 +96,6 @@ const REASON_MARK = '\u200b';
 
 export type MenuChoice = 'recommended' | Purpose | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
-export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
-
-/** 一项安装：哪个条目、装进哪个宿主、装到哪（给用户看的路径）、要装的版本、那里现在的状态 */
-export interface InstallTarget {
-  name: string;
-  host: string;
-  location: string;
-  version: string;
-  status: SkillStatus;
-}
-
-/**
- * 一项第三方 Skill 安装：哪个 skill（entry 是它所属条目的名字）、装进哪个宿主、装到哪（给用户看的路径）、
- * 那里现在是不是已经有东西
- */
-export interface ThirdPartyTarget {
-  entry: string;
-  name: string;
-  host: string;
-  location: string;
-  exists: boolean;
-}
-
-/** 一项 MCP 安装：哪个条目、装进哪个宿主、它在那里现在的状态 */
-export interface McpTarget {
-  name: string;
-  host: string;
-  status: InstallableMcpStatus;
-}
-
-export type McpOutcome = { ok: true } | { ok: false; problem: McpInstallProblem };
-
-/** 工具不可选的原因：一个宿主都没检测到，条目把当前系统标为不支持，或它要的宿主一个都没检测到 */
-export type ToolUnavailable = { kind: 'no-host' } | { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
-
-/** 一项工具安装：哪个条目、要执行的那一行命令、装完之后查什么 */
-export interface ToolTarget {
-  name: string;
-  command: string;
-  evidence: ToolEvidence;
-}
-
-export type Environment = Readonly<Record<string, string | undefined>>;
 
 export interface UiOptions {
   out: TerminalOutput;
@@ -418,11 +376,21 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     }
   };
 
-  // 所选的宿主一个都装不了这个 MCP 时它不可选：有哪个只是装不到所选的范围，原因就写只能装到全局——换成全局就装得了
-  const mcpUnavailable = (statuses: readonly McpStatus[]): { unavailable?: string } => {
-    if (!statuses.every((status) => status === 'unsupported' || status === 'global-only')) return {};
-    return { unavailable: statuses.includes('global-only') ? t.mcpGlobalOnly : t.unsupportedByHosts };
+  // 不可选的原因写成的那句话
+  const unavailableReason = (unavailable: Unavailable): string => {
+    switch (unavailable.kind) {
+      case 'no-host':
+        return t.needsHost;
+      case 'hosts':
+        return t.unsupportedByHosts;
+      case 'global-only':
+        return t.mcpGlobalOnly;
+      case 'os':
+        return t.unsupportedOs(unavailable.os);
+    }
   };
+  const reasonOf = (unavailable: Unavailable | undefined): { unavailable?: string } =>
+    unavailable ? { unavailable: unavailableReason(unavailable) } : {};
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
   // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里。below 是列表下方另外多占的行数
@@ -663,8 +631,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /**
      * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、第三方
      * Skill、MCP、工具），前三样每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；工具只有一个状态，与宿主无关，
-     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏，前三样都不可选：一个宿主都没检测到，或
-     * 列表里根本没有它们。所选的宿主一个都不支持的第三方 Skill 和 MCP、装不了的工具同样不可选；原因都写在状态的位置。
+     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏。带着 unavailable 的行不可选，原因写在
+     * 状态的位置：哪些行不可选、为什么，由调用方照共用的规矩给。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
@@ -679,10 +647,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       marksRecommended,
     }: {
       hosts: readonly Host[];
-      skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
-      thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[] }[];
-      mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
-      tools: readonly { tool: Tool; status: ToolStatus; unavailable?: ToolUnavailable }[];
+      skills: readonly { skill: Skill; statuses: readonly SkillStatus[]; unavailable?: Unavailable }[];
+      thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[]; unavailable?: Unavailable }[];
+      mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[]; unavailable?: Unavailable }[];
+      tools: readonly { tool: Tool; status: ToolStatus; unavailable?: Unavailable }[];
       apps: readonly App[];
       checked: readonly (Skill | ThirdPartySkill | Mcp | Tool | App)[];
       marksRecommended: boolean;
@@ -691,8 +659,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
       const hostless = hosts.length === 0;
-      const toolReason = (unavailable: ToolUnavailable): string =>
-        unavailable.kind === 'no-host' ? t.needsHost : unavailable.kind === 'os' ? t.unsupportedOs(unavailable.os) : t.unsupportedByHosts;
       // 组件各段的行：cells 是各栏状态，比状态栏少时后面空着；unavailable 是这一行不可选的原因，写在状态的位置、
       // 占满各个状态栏，这时不看 cells
       const sections: {
@@ -705,37 +671,37 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           ...t.sections.skill,
           kind: t.kinds.skill,
           // 本仓库的 skill 都是推荐的
-          rows: skills.map(({ skill, statuses }) => ({
+          rows: skills.map(({ skill, statuses, unavailable }) => ({
             value: skill,
             name: skill.name,
             about: skill.description[lang],
             recommended: true,
             cells: statuses.map((status) => statusCell(status, skill.version)),
-            ...(hostless ? { unavailable: t.needsHost } : {}),
+            ...reasonOf(unavailable),
           })),
         },
         {
           ...t.sections.thirdParty,
           kind: t.kinds.thirdParty,
-          rows: thirdParty.map(({ entry, statuses }) => ({
+          rows: thirdParty.map(({ entry, statuses, unavailable }) => ({
             value: entry,
             name: entry.name,
             about: entry.description[lang],
             recommended: entry.recommended,
             cells: statuses.map(thirdPartyCell),
-            ...(hostless ? { unavailable: t.needsHost } : statuses.every((status) => status === 'unsupported') ? { unavailable: t.unsupportedByHosts } : {}),
+            ...reasonOf(unavailable),
           })),
         },
         {
           ...t.sections.mcp,
           kind: t.kinds.mcp,
-          rows: mcps.map(({ mcp, statuses }) => ({
+          rows: mcps.map(({ mcp, statuses, unavailable }) => ({
             value: mcp,
             name: mcp.name,
             about: mcp.description[lang],
             recommended: mcp.recommended,
             cells: statuses.map(mcpStatusCell),
-            ...(hostless ? { unavailable: t.needsHost } : mcpUnavailable(statuses)),
+            ...reasonOf(unavailable),
           })),
         },
         {
@@ -747,7 +713,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             about: tool.description[lang],
             recommended: tool.recommended,
             cells: [status === 'installed' ? paint('green', t.toolStatus.installed) : dim(t.toolStatus.none)],
-            ...(unavailable ? { unavailable: toolReason(unavailable) } : {}),
+            ...reasonOf(unavailable),
           })),
         },
       ].filter((section) => section.rows.length > 0);
@@ -1152,15 +1118,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       approvals,
       missingKeys,
       logins,
-    }: {
-      overwrites: boolean;
-      thirdParty: boolean;
-      placeholders: boolean;
-      plaintextKeys: { variables: readonly string[]; files: readonly string[] };
-      approvals: readonly { host: string; file: string; command: string }[];
-      missingKeys: readonly { mcp: string; variable: string }[];
-      logins: readonly { host: string; login: Command }[];
-    }): void {
+    }: PlanNotices & { placeholders: boolean }): void {
       const notices = [
         ...(overwrites ? [t.replaceNotice] : []),
         ...(thirdParty ? [t.thirdPartyNotice] : []),

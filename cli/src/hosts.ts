@@ -4,7 +4,9 @@ import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { isRecord, type Mcp } from './catalog.ts';
-import type { Environment } from './ui.ts';
+
+/** 环境变量：入口收到的那一份，不直接读 process.env */
+export type Environment = Readonly<Record<string, string | undefined>>;
 
 /** 安装范围：全局，或项目（运行安装器时所在的目录）。工具没有安装范围 */
 export type Scope = 'global' | 'project';

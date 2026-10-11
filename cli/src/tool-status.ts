@@ -2,8 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Tool } from './catalog.ts';
-import { isOnPath } from './hosts.ts';
-import type { Environment } from './ui.ts';
+import { isOnPath, type Environment } from './hosts.ts';
 
 export type ToolStatus = 'none' | 'installed';
 

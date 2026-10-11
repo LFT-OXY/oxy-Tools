@@ -1,10 +1,11 @@
 // 安装器入口，也是测试的主接缝：外部依赖全部由调用方传入，正式运行时用真实实现，测试时全部替换。
 import { CatalogError, loadCatalog, localCatalogSource, type CatalogSource } from './catalog.ts';
 import { mainMenu } from './flow.ts';
-import { detectHosts } from './hosts.ts';
+import { detectHosts, type Environment } from './hosts.ts';
 import type { Failure, Lang } from './messages.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
-import { createUi, type Environment, type TerminalOutput } from './ui.ts';
+import { Interrupted } from './run-plan.ts';
+import { createUi, type TerminalOutput } from './ui.ts';
 import { VERSION } from './version.ts';
 
 /** 外部命令跑完的结果 */
@@ -128,7 +129,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     });
     return 0;
   } catch (error) {
-    if (error instanceof PromptAborted) return EXIT_INTERRUPTED;
+    if (error instanceof PromptAborted || error instanceof Interrupted) return EXIT_INTERRUPTED;
     if (error instanceof CatalogError) {
       ui.failure(error.failure);
       return EXIT_FAILURE;

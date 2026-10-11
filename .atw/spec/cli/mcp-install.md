@@ -1,6 +1,6 @@
 # 安装 MCP
 
-> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。带 API key 的 MCP（条目里的 `env`）也在这里。
+> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）和终端界面的流程（`cli/src/flow.ts`）怎么把它们串起来。带 API key 的 MCP（条目里的 `env`）也在这里。
 
 ---
 
@@ -77,10 +77,16 @@ export interface McpInstallProblem {
 }
 export class McpInstallError extends Error { readonly problem: McpInstallProblem }
 
-// cli/src/flow.ts
-interface Session {
+// cli/src/run-plan.ts —— 执行要的东西；终端界面的 Session（flow.ts）在它上面加目录、呈现层和提问器
+interface Runtime {
   // …
   keys: Map<string, Map<string, string>>; // 这次运行里填过的 key：MCP 的名字 → 变量名 → 值。只在内存里
+}
+
+// cli/src/plan.ts —— 算计划只收变量名
+interface Selection {
+  // …
+  filledKeys: ReadonlyMap<string, ReadonlySet<string>>; // MCP 的名字 → 填过的变量名；值不到这里来
 }
 
 // cli/src/installer.ts
@@ -91,7 +97,7 @@ export type CommandRunner = (command: string, args: readonly string[], options?:
 export function systemCommandRunner(): CommandRunner;
 ```
 
-`installMcp` 失败时**只**抛 `McpInstallError`——执行器当场抛出（没返回承诺）的也算在内。`mcpSteps` 先算出来、交给汇总展示，之后执行的就是这同一份——“看到的就是执行的”靠的是不重算。带 key 的命令也一样：`steps` 里 key 的位置是一个 `KeyArgument`（只有变量名），展示时写成占位符，执行时由 `installMcp` 从 `keys` 里取值代入，**值不进 `steps`，也不进呈现层**。
+`installMcp` 失败时**只**抛 `McpInstallError`——执行器当场抛出（没返回承诺）的也算在内。`mcpSteps` 在算计划时（`planInstall`）算出来、交给汇总展示，之后 `runPlan` 执行的就是这同一份——“看到的就是执行的”靠的是不重算。带 key 的命令也一样：`steps` 里 key 的位置是一个 `KeyArgument`（只有变量名），展示时写成占位符，执行时由 `installMcp` 从 `keys` 里取值代入，**值不进 `steps`，也不进呈现层**。
 
 ### 3. Contracts
 
@@ -204,7 +210,7 @@ export function systemCommandRunner(): CommandRunner;
   - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。
 - 规格里「Codex 只对受信任的项目读这份配置」那一行随 Codex 不支持而没有做；哪天给 Codex 补上 `projectMcp`，这一行要一起补（那条事实已经实测过，在试通记录里）。
 
-**在混合列表里（`flow.ts` 的 `planEntries`、`runJobs`）**
+**在混合列表里（终端界面的提问在 `flow.ts` 的 `planEntries`；算成要装的各项在 `plan.ts` 的 `planInstall`，执行在 `run-plan.ts` 的 `runPlan`）**
 
 MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张混合列表里勾选（任务 `10-10-catalog-purpose-categories` 工单 07 起），一起确认、一起装。上面每一条规矩原样带进来，合在一起之后多出来的只有这几条：
 
@@ -214,7 +220,7 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 - 确认的提问是「开始安装吗」（开始安装、返回修改、取消），不再是「执行这些命令吗」。
 - 带推荐标记的 MCP 同时出现在「推荐」和它的用途下。
 
-**带 key 的 MCP（`flow.ts` 的 `askKeys`）**
+**带 key 的 MCP（终端界面怎么问在 `flow.ts` 的 `askKeys`；带哪些变量、缺哪个由 `plan.ts` 照填过的变量名定）**
 
 勾选之后、汇总之前，对每个勾上的、带 `env` 的 MCP 逐个变量问（画面见 [终端输出](./terminal-output.md) 的「隐藏输入」）：
 
@@ -227,7 +233,7 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 | 勾上的组件全都因此被跳过（这一轮没有 skill 要装，也没有别的 MCP 要装） | 没有要确认的东西：**不显示汇总、不问开始不开始**，直接进结果分区，然后是勾选的外部项目，再回主菜单 |
 
 - key 按 MCP 问，不按宿主问：两个宿主都选了也只问一次。
-- 值只有三个去处：`Session.keys`（内存）、`installMcp` 拼出来的参数、宿主自己的配置。**安装器不把它写进任何文件，不打到终端上**——呈现层的函数只收变量名和结局（`'entered' | 'blank' | 'reused'`），从不收值。
+- 值只有三个去处：`Session.keys`（内存）、`installMcp` 拼出来的参数、宿主自己的配置。**算计划的拿不到值**：流程交给 `planInstall` 的只有每个 MCP 填过的变量名（`filledKeys`），计划和进度的报告里都没有值；值到执行时才由 `runPlan` 从 `keys` 里取出来交给 `installMcp`。**安装器不把它写进任何文件，不打到终端上**——呈现层的函数只收变量名和结局（`'entered' | 'blank' | 'reused'`），从不收值。
 - key 作为命令行参数传给宿主，命令运行的那一瞬间本机别的进程看得到（`ps`）。这是规格定的做法（「key 只作为参数传给宿主的添加命令」），不是疏漏。
 
 **外部命令执行器（`systemCommandRunner`）**
@@ -477,7 +483,7 @@ detail: errorCode(error), // string | undefined
 
 **Symptom**：照 `catalog.json` 里的顺序预设 key 的应答，值填到了别的 MCP 上；或断言「第一条是 X」不通过。
 
-**Cause**：混合列表里 MCP 一段带推荐的在前、其余按名字（`flow.ts` 的 `recommendedFirst`），问 key、汇总、命令、结果都照这个先后。旧入口照的是目录文件。
+**Cause**：混合列表里 MCP 一段带推荐的在前、其余按名字（`listing.ts` 的 `recommendedFirst`），问 key、汇总、命令、结果都照这个先后。旧入口照的是目录文件。
 
 **Fix**：按名字排好再写应答；断言命令属于哪个 MCP 时带上它的名字，不靠位置。
 

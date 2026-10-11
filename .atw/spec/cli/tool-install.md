@@ -1,6 +1,6 @@
 # 安装工具
 
-> 目录里的工具条目（`cli/src/catalog.ts`）、状态探测（`cli/src/tool-status.ts`）、安装动作（`cli/src/install-tool.ts`）、外部命令执行器的 shell 模式（`cli/src/run-command.ts`）四段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。
+> 目录里的工具条目（`cli/src/catalog.ts`）、状态探测（`cli/src/tool-status.ts`）、安装动作（`cli/src/install-tool.ts`）、外部命令执行器的 shell 模式（`cli/src/run-command.ts`）四段的契约，以及两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）和终端界面的流程（`cli/src/flow.ts`）怎么把它们串起来。
 
 ---
 
@@ -41,12 +41,16 @@ export async function installTool(command: string, runCommand: CommandRunner, ch
 export interface CommandOptions { shell: true }
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 
-// cli/src/ui.ts
-export type ToolUnavailable = { kind: 'no-host' } | { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
+// cli/src/availability.ts —— 两套界面共用，见总览的「两套界面共用的部分」
+export type Unavailable = { kind: 'no-host' } | { kind: 'hosts' } | { kind: 'global-only' } | { kind: 'os'; os: ToolOs }; // 工具用得到的是 no-host、os、hosts 三种
+export function toolUnavailable(machine: Machine, tool: Tool): Unavailable | undefined; // 先看有没有宿主，再看系统，再看它要的宿主
+
+// cli/src/plan.ts
 export interface ToolTarget { name: string; command: string; evidence: ToolEvidence } // evidence：{ command } | { path: 给用户看的路径 }
+export interface ToolJob { tool: Tool; target: ToolTarget; status: ToolStatus }       // 计划里的一项：装不了的工具即使在勾选里也没有这一项
 ```
 
-`installCommand` 先算出来、交给汇总展示，之后 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
+`installCommand` 在算计划时（`planInstall`）算出来、交给汇总展示，之后 `runPlan` 里 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
 
 ### 3. Contracts
 
@@ -111,7 +115,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 工具不装进宿主：`hosts` 只决定可不可选，看的是**检测到的**宿主，不是这一轮选的那几个；状态只有一个，与选了哪些宿主无关。但它仍是组件——一个宿主都没检测到时和别的组件一样不可选。
 
-**流程**（`flow.ts`：工具没有自己的入口，和别的类型一起走混合列表，见 [入口与测试](./installer-entry.md) 的「主菜单与流程」）
+**流程**（终端界面的在 `flow.ts`，可不可选在 `availability.ts`，算和装在 `plan.ts`、`run-plan.ts`：工具没有自己的入口，和别的类型一起走混合列表，见 [入口与测试](./installer-entry.md) 的「主菜单与流程」）
 
 1. 混合列表里工具自成一段，排在 MCP 之后。**这张列表里只有工具和外部项目时不问装进哪些宿主**：没有要装进宿主的东西。
 2. 汇总「将安装 N 项」里工具是最后一张小表，只有条目和操作两栏，操作写「执行安装命令」。
@@ -219,13 +223,14 @@ const unavailable = hosts.length === 0 ? { kind: 'no-host' } : tool.hosts && !ho
 #### Correct
 
 ```ts
-// 可不可选看检测到的宿主（detected），和这一轮选了哪些无关
-const unavailable = detected.length === 0 ? { kind: 'no-host' } : 'unsupported' in command ? { kind: 'os', os: command.unsupported } : …;
+// availability.ts：可不可选看检测到的宿主（detected），和这一轮选了哪些无关
+if (detected.length === 0) return { kind: 'no-host' };
+if ('unsupported' in command) return { kind: 'os', os: command.unsupported };
 
-// 先算出要执行的那一行，展示的和执行的是同一个字符串；成败看复核
-const plan = installCommand(tool, session.platform);
-ui.commandList([...mcpCommands, ...toolJobs.map((job) => job.target.command)]);
-settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
+// plan.ts 先算出要执行的那一行，flow.ts 展示的和 run-plan.ts 执行的是同一个字符串；成败看复核
+const command = installCommand(tool, machine.platform);
+ui.commandList([...commands, ...toolJobs.map((job) => job.target.command)]);
+settle(await installTool(target.command, runtime.runCommand, () => toolStatus(tool, runtime) === 'installed'));
 ```
 
 ---
