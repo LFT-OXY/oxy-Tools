@@ -1,10 +1,11 @@
 // 网页界面怎么装：把两套界面共用的「算计划」「执行」接到画面状态上——计划写成汇总，执行的进度记成一行行的结局。
 // 说法是和终端界面同一份文案；将执行的命令不进画面状态。
 import { createHash } from 'node:crypto';
+import type { McpInstallProblem } from './install-mcp.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { Failure, Messages } from './messages.ts';
 import { noticeTexts } from './notice-text.ts';
-import type { InstallTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget } from './plan.ts';
+import type { InstallTarget, McpTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget } from './plan.ts';
 import type { InstallOutcome, Progress } from './run-plan.ts';
 import { versionChange } from './status-text.ts';
 import type { FailureView, RunRowView, RunView, SummaryEntryView, SummaryRowView, SummaryView } from './web-protocol.ts';
@@ -85,6 +86,22 @@ export function summaryView(t: Messages, plan: Plan): SummaryView {
     if (last?.type === t.kinds.thirdParty && last.name === target.entry) last.rows.push(row);
     else entries.push({ name: target.entry, type: t.kinds.thirdParty, rows: [row] });
   }
+  // MCP 一个条目一段，没有版本；段里每个装得了它的所选宿主一行，行没有位置。必填的 key 没填的不在里面
+  const mcpAction = { none: t.actions.fresh, configured: t.actions.overwrite, unknown: t.actions.unknown };
+  const mcpNote = { none: undefined, configured: t.mcpConfiguredNote, unknown: t.mcpUnknownNote };
+  for (const { target, missingVariable } of plan.mcpJobs) {
+    if (missingVariable !== undefined) continue;
+    const text = mcpNote[target.status];
+    const row: SummaryRowView = {
+      host: target.host,
+      action: mcpAction[target.status],
+      ...(target.status === 'configured' ? { overwrites: true as const } : {}),
+      ...(text === undefined ? {} : { note: text }),
+    };
+    const last = entries.at(-1);
+    if (last?.type === t.kinds.mcp && last.name === target.name) last.rows.push(row);
+    else entries.push({ name: target.name, type: t.kinds.mcp, rows: [row] });
+  }
   return {
     id: summaryId(plan),
     title: t.installSummary(entries.length),
@@ -100,22 +117,27 @@ export function summaryView(t: Messages, plan: Plan): SummaryView {
 export const asksOverwrite = (plan: Plan, item: string): boolean =>
   plan.jobs.some((job) => job.asksOverwrite && overwriteId(job) === item) || plan.thirdPartyJobs.some((job) => job.asksOverwrite && replaceId(job) === item);
 
-/** 一行的结局：本仓库的 skill 带版本或问题，第三方 Skill 带复核与命令的结局 */
+/**
+ * 一行的结局：本仓库的 skill 带版本或问题，第三方 Skill 带复核与命令的结局，MCP 没成时带问题；
+ * 跳过的缺省是没同意覆盖，MCP 是必填的 key 没填（missing 是那个变量的名字）
+ */
 type RowState =
   | { state: 'waiting' }
   | { state: 'running' }
   | { state: 'succeeded'; version: string }
   | { state: 'succeeded'; result: ThirdPartyResult }
+  | { state: 'succeeded' }
   | { state: 'failed'; outcome: Extract<InstallOutcome, { ok: false }> }
   | { state: 'failed'; result: ThirdPartyResult }
-  | { state: 'skipped' };
+  | { state: 'failed'; problem: McpInstallProblem }
+  | { state: 'skipped'; missing?: string };
 
-/** 一批里的一项：本仓库的 skill 或第三方 Skill 里的一个 skill */
-type RowTarget = InstallTarget | ThirdPartyTarget;
+/** 一批里的一项：本仓库的 skill、第三方 Skill 里的一个 skill，或一个 MCP，各在一个宿主下 */
+type Row = { now: RowState } & ({ kind: 'skill'; target: InstallTarget } | { kind: 'thirdParty'; target: ThirdPartyTarget } | { kind: 'mcp'; target: McpTarget });
 
 /** 一批的进度：每一项走到哪了。画面状态从它现算 */
 export interface Batch {
-  rows: { target: RowTarget; now: RowState }[];
+  rows: Row[];
   /** 正在向 GitHub 查询 */
   loading: boolean;
   /** 这一批里出的错 */
@@ -128,12 +150,14 @@ export interface Batch {
  * 起初每一项都在等待
  */
 export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; progress: Progress } {
-  const batch: Batch = {
-    rows: [...plan.jobs, ...plan.thirdPartyJobs].map((job) => ({ target: job.target, now: { state: 'waiting' as const } })),
-    loading: false,
-    done: false,
-  };
-  const set = (target: RowTarget, now: RowState): void => {
+  const waiting = (skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[]): Row[] => [
+    ...skills.map((target) => ({ kind: 'skill' as const, target, now: { state: 'waiting' as const } })),
+    ...thirdParty.map((target) => ({ kind: 'thirdParty' as const, target, now: { state: 'waiting' as const } })),
+    ...mcps.map((target) => ({ kind: 'mcp' as const, target, now: { state: 'waiting' as const } })),
+  ];
+  const targets = <Job extends { target: unknown }>(jobs: readonly Job[]): Job['target'][] => jobs.map((job) => job.target);
+  const batch: Batch = { rows: waiting(targets(plan.jobs), targets(plan.thirdPartyJobs), targets(plan.mcpJobs)), loading: false, done: false };
+  const set = (target: Row['target'], now: RowState): void => {
     const row = batch.rows.find((candidate) => candidate.target === target);
     if (row) row.now = now;
     changed();
@@ -155,8 +179,8 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
       batch.rows = [];
       changed();
     },
-    installation: (skills, thirdParty) => {
-      batch.rows = [...skills, ...thirdParty].map((target) => ({ target, now: { state: 'waiting' as const } }));
+    installation: (skills, thirdParty, mcps) => {
+      batch.rows = waiting(skills, thirdParty, mcps);
       changed();
       return {
         skill: {
@@ -177,8 +201,17 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
           },
           skip: (target) => set(target, { state: 'skipped' }),
         },
-        // MCP、工具还进不了网页界面的计划
-        mcp: { begin: () => () => {}, skip: () => {} },
+        mcp: {
+          begin: (target) => {
+            set(target, { state: 'running' });
+            // 不给结局是这一项被打断了
+            return (outcome) => {
+              if (outcome) set(target, outcome.ok ? { state: 'succeeded' } : { state: 'failed', problem: outcome.problem });
+            };
+          },
+          skip: (target, missing) => set(target, { state: 'skipped', missing }),
+        },
+        // 工具还进不了网页界面的计划
         tool: { begin: () => () => {} },
         finish: () => {},
       };
@@ -202,28 +235,34 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
     const text = t.thirdPartyResult(result).replace(/^[;；]\s*/, '');
     return text === '' ? {} : { rest: text };
   };
-  const row = ({ target, now }: Batch['rows'][number]): RunRowView => {
+  // 进行中的词照终端界面：本仓库的 skill 是在下载，第三方 Skill 是在装，MCP 是在配置
+  const running = { skill: t.downloading, thirdParty: t.installingOne, mcp: t.configuring };
+  const row = ({ kind, target, now }: Row): RunRowView => {
     const lead = { name: target.name, host: target.host, state: now.state };
     switch (now.state) {
       case 'waiting':
         return { ...lead, text: t.waiting };
       case 'running':
-        // 进行中的词照终端界面：本仓库的 skill 是在下载，第三方 Skill 是在装
-        return { ...lead, text: 'entry' in target ? t.installingOne : t.downloading };
+        return { ...lead, text: running[kind] };
       case 'succeeded':
         if ('result' in now) return { ...lead, text: t.installed, ...ending(now.result) };
+        // MCP 成了就是「已配置」，后面没有话
+        if (!('version' in now)) return { ...lead, text: t.mcpStatus.configured };
         return {
           ...lead,
           text: t.installed,
-          rest: 'status' in target && target.status.kind === 'other-version' ? versionChange(target.status.version, now.version, ARROW) : now.version,
+          rest: kind === 'skill' && target.status.kind === 'other-version' ? versionChange(target.status.version, now.version, ARROW) : now.version,
         };
       case 'failed':
-        return { ...lead, text: t.failed, rest: 'result' in now ? t.thirdPartyResult(now.result) : t.installProblem(now.outcome.problem) };
+        return { ...lead, text: t.failed, rest: 'problem' in now ? t.mcpInstallProblem(now.problem) : 'result' in now ? t.thirdPartyResult(now.result) : t.installProblem(now.outcome.problem) };
       case 'skipped':
-        return { ...lead, text: t.skippedResult, rest: t.overwriteDeclined };
+        return { ...lead, text: t.skippedResult, rest: now.missing === undefined ? t.overwriteDeclined : t.keyMissing(now.missing) };
     }
   };
   const count = (state: RowState['state']): number => batch.rows.filter(({ now }) => now.state === state).length;
+  // 有没装上的才有「下一步」：skill 没装上是原有的东西没动；MCP 另说一句，它先移除再添加，不能这样保证
+  const failed = batch.rows.filter(({ now }) => now.state === 'failed');
+  const next = [...(failed.some(({ kind }) => kind !== 'mcp') ? [t.afterFailures] : []), ...(failed.some(({ kind }) => kind === 'mcp') ? [t.afterMcpFailures] : [])];
   return {
     title: batch.done ? t.results : t.installing,
     done: batch.done,
@@ -238,7 +277,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
             failed: { count: count('failed'), word: t.totalWords.failed },
             skipped: { count: count('skipped'), word: t.totalWords.skipped },
           },
-          ...(count('failed') > 0 ? { next: { label: t.nextKey, lines: [t.afterFailures] } } : {}),
+          ...(next.length > 0 ? { next: { label: t.nextKey, lines: next } } : {}),
         }
       : {}),
   };

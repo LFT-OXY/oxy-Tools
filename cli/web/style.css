@@ -403,6 +403,11 @@ input[type='checkbox']:checked::after {
   font-weight: 400;
 }
 
+/* 一区上方的提醒（MCP 那一区）：话用前景色，不用最淡的 */
+.list .notice {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
 /* 条目的卡片：两张一排，同一排一样高，状态那一行沉在底部 */
 .cards {
   display: grid;
@@ -741,6 +746,110 @@ input[type='checkbox']:checked::after {
 .panel h3 {
   font-size: 13px;
   font-weight: 600;
+}
+/* 填 key 的对话框：和面板同样的上中下三段，画成居中的一块，圆角 12px */
+.scrim.centered {
+  align-items: center;
+  justify-content: center;
+}
+.panel.dialog {
+  width: min(680px, 100vw - 48px);
+  max-height: calc(100vh - 80px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dialog > .body {
+  padding-bottom: 8px;
+}
+/* 每个要 key 的 MCP 一段：名字，后面最淡的小字是它所在的用途 */
+.keyed {
+  display: grid;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.keyed:last-child {
+  border-bottom: 0;
+}
+.keyed h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 14px;
+}
+.variable {
+  display: grid;
+  gap: 6px;
+}
+.variable .name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+/* 申请的链接自己占一行：说明长短不一，链接都从行首起 */
+.variable .apply {
+  color: var(--secondary);
+}
+.variable a {
+  color: var(--ink);
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+/* 网址的末尾和箭头不拆开：箭头不单独掉到下一行 */
+.variable .tail {
+  white-space: nowrap;
+}
+/* 下划线只在网址下面，不延到箭头 */
+.variable .arrow {
+  display: inline-block;
+  margin-left: 4px;
+}
+.variable input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+/* 输入的内容画成圆点。不认这条样式的浏览器里它是真正的密码框（keys.tsx） */
+.variable input.secret {
+  -webkit-text-security: disc;
+}
+.variable input::placeholder {
+  color: var(--secondary);
+}
+/* 不填会怎样：可选的是最淡的一句，必填的是留意色粗体 */
+.consequence {
+  color: var(--faint);
+  font-size: 12px;
+}
+.consequence.required {
+  color: var(--attention);
+  font-weight: 600;
+}
+/* 填过的：一行「已填」，右边是「换一个」。不显示值，也看不出长度 */
+.filled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+/* 写成一行字的按钮 */
+button.text {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 /* 进度条：6px 高，前景色 */
 progress {

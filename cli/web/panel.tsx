@@ -1,4 +1,4 @@
-// 盖在浏览上面的面板：汇总，和确认之后的进度与结果。画什么都来自画面状态；这里只定怎么排。
+// 盖在浏览上面的面板：汇总，和确认之后的进度与结果；填 key 的对话框也用它的上中下三段。画什么都来自画面状态；这里只定怎么排。
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { FailureView, Intent, RunRowView, RunView, SummaryRowView, SummaryView, ViewState } from '../src/web-protocol.ts';
@@ -9,14 +9,36 @@ type Send = (intent: Intent) => void;
 
 /**
  * 从右边出来的面板，底下压暗。打开时焦点落到它上面；内容各自滚动，底部的按钮不动。
- * escaped 是按了 Esc 时做什么：不给就不理
+ * escaped 是按了 Esc 时做什么：不给就不理。dialog 是画成居中的对话框（填 key），不贴着右边
  */
-function Panel({ label, head, foot, escaped, children }: { label: string; head: ComponentChildren; foot: ComponentChildren; escaped?: () => void; children: ComponentChildren }) {
+export function Panel({
+  label,
+  head,
+  foot,
+  escaped,
+  dialog,
+  children,
+}: {
+  label: string;
+  head: ComponentChildren;
+  foot: ComponentChildren;
+  escaped?: () => void;
+  dialog?: true;
+  children: ComponentChildren;
+}) {
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => panel.current?.focus(), []);
   return (
-    <div class="scrim">
-      <div class="panel" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={panel} onKeyDown={(event) => event.key === 'Escape' && escaped?.()}>
+    <div class={dialog ? 'scrim centered' : 'scrim'}>
+      <div
+        class={dialog ? 'panel dialog' : 'panel'}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        tabIndex={-1}
+        ref={panel}
+        onKeyDown={(event) => event.key === 'Escape' && escaped?.()}
+      >
         <header>{head}</header>
         <div class="body">{children}</div>
         <footer>{foot}</footer>
@@ -36,7 +58,7 @@ function grouped(rows: SummaryRowView[]): { skill?: string; rows: SummaryRowView
   return groups;
 }
 
-/** 汇总：将安装的每一项——装进哪个宿主、装到哪、是新装还是覆盖；要逐项决定的覆盖就在那一行下面。不列将执行的命令 */
+/** 汇总：将安装的每一项——装进哪个宿主、装到哪（MCP 没有）、是新装还是覆盖；要逐项决定的覆盖就在那一行下面。不列将执行的命令 */
 export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; send: Send }) {
   const revise = (): void => send({ type: 'revise' });
   return (
@@ -66,7 +88,7 @@ export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; s
         </p>
       )}
       {summary.entries.map((entry) => (
-        <section class="entry" key={entry.name}>
+        <section class="entry" key={`${entry.type} ${entry.name}`}>
           <h3>
             <span class="mono">{entry.name}</span>
             <small>{entry.version === undefined ? entry.type : `${entry.type} · ${entry.version}`}</small>
@@ -80,8 +102,9 @@ export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; s
                   <li key={row.host}>
                     <span class="quiet">{row.host}</span>
                     <span class={row.overwrites ? 'attention' : undefined}>{row.action}</span>
+                    {/* MCP 的行没有位置，只有备注 */}
                     <span class="where">
-                      <span class="mono">{row.location}</span>
+                      {row.location !== undefined && <span class="mono">{row.location}</span>}
                       {row.note !== undefined && <small>{row.note}</small>}
                     </span>
                     {row.overwrite && <Decide overwrite={row.overwrite} t={t} send={send} />}

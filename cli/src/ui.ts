@@ -8,7 +8,7 @@ import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebUnavailable } from './messages.ts';
-import { commandLine, noticeTexts } from './notice-text.ts';
+import { commandLine, mcpColumnNoticeTexts, noticeTexts } from './notice-text.ts';
 import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
@@ -882,11 +882,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
      */
     mcpColumnNotices({ globalOnly, unreadable }: { globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
-      const names = (hosts: readonly Host[]): string => hosts.map((host) => host.name).join(t.listSeparator);
-      const notices = [
-        ...(globalOnly.length > 0 ? [t.mcpGlobalOnlyNotice(names(globalOnly))] : []),
-        ...(unreadable.length > 0 ? [t.mcpConfigUnreadable(names(unreadable))] : []),
-      ];
+      const notices = mcpColumnNoticeTexts(t, { globalOnly, unreadable });
       if (notices.length > 0) print(...gapAbove(), ...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 

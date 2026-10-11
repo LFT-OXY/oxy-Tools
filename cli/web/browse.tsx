@@ -1,7 +1,7 @@
 // 逛目录的画面：三栏——左边「推荐」和各个用途，中间当前这张列表里的条目，右边已选。
 // 画什么都来自画面状态；这里只定怎么排。勾选只告诉安装器，勾没勾上照画面状态画。
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppView, ComponentView, Intent, ListingView, PickableKind, SectionView, SkillChoicesView, StatusView, ViewState } from '../src/web-protocol.ts';
+import type { AppView, ComponentView, Intent, ListingView, SectionView, SkillChoicesView, StatusView, ViewState } from '../src/web-protocol.ts';
 import { Logo } from './logo.tsx';
 import { TEXT } from './text.tsx';
 
@@ -60,7 +60,7 @@ export function Browse({ state, send, rising, covered }: { state: ViewState; sen
               </div>
               <Target state={state} t={t} send={send} />
             </header>
-            <Components listing={listing} showsHosts={state.target.hosts.length > 1} send={send} />
+            <Components listing={listing} showsHosts={state.target.hosts.length > 1} t={t} send={send} />
             {listing.apps && <Apps {...listing.apps} />}
           </>
         ) : (
@@ -98,15 +98,17 @@ function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
           <span key={count}>{count}</span>
         ))}
       </p>
-      {[machine.noHosts, machine.skipped].map(
-        (notice) =>
-          notice !== undefined && (
-            <p class="notice" key={notice}>
-              <strong class="attention">{t.notice}</strong> {notice}
-            </p>
-          ),
-      )}
+      {[machine.noHosts, machine.skipped].map((notice) => notice !== undefined && <Notice key={notice} t={t} notice={notice} />)}
     </section>
+  );
+}
+
+/** 一条提醒：行首是留意色粗体的「注意」，话用前景色 */
+function Notice({ t, notice }: { t: Text; notice: string }) {
+  return (
+    <p class="notice">
+      <strong class="attention">{t.notice}</strong> {notice}
+    </p>
   );
 }
 
@@ -196,7 +198,7 @@ function Target({ state, t, send }: { state: ViewState; t: Text; send: (intent: 
   );
 }
 
-function Components({ listing, showsHosts, send }: { listing: ListingView; showsHosts: boolean; send: (intent: Intent) => void }) {
+function Components({ listing, showsHosts, t, send }: { listing: ListingView; showsHosts: boolean; t: Text; send: (intent: Intent) => void }) {
   // 卡片浮上来的先后跨着分区数
   let order = 0;
   return (
@@ -204,6 +206,10 @@ function Components({ listing, showsHosts, send }: { listing: ListingView; shows
       {listing.sections.map((section) => (
         <section key={section.kind}>
           <SectionTitle title={section.title} note={section.note} />
+          {/* MCP 那一区上方的提醒：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了 */}
+          {section.notices?.map((notice) => (
+            <Notice key={notice} t={t} notice={notice} />
+          ))}
           <ul class="cards">
             {section.entries.map((entry) => (
               <Card key={entry.name} kind={section.kind} entry={entry} showsHosts={showsHosts} order={Math.min(order++, STAGGERED - 1)} send={send} />
@@ -239,9 +245,9 @@ function Card({
 }) {
   const unavailable = entry.unavailable !== undefined;
   const picked = entry.picked === true;
-  // 现在勾得上的是本仓库的 skill 和第三方 Skill；MCP、工具的勾选框先是点不了的。
+  // 现在勾得上的是本仓库的 skill、第三方 Skill 和 MCP；工具的勾选框先是点不了的。
   // 点了只告诉安装器，勾选框自己先不变：勾没勾上等画面状态来了才算
-  const pickable = (kind === 'skill' || kind === 'thirdParty') && !unavailable ? (kind as PickableKind) : undefined;
+  const pickable = kind !== 'tool' && !unavailable ? kind : undefined;
   const toggle = pickable
     ? (event: { currentTarget: HTMLInputElement }): void => {
         event.currentTarget.checked = picked;
@@ -257,9 +263,10 @@ function Card({
         <h3>{entry.name}</h3>
         <input type="checkbox" checked={picked} disabled={!toggle} onChange={toggle} />
       </label>
-      {entry.mark !== undefined && (
+      {(entry.mark ?? entry.key) !== undefined && (
         <p class="tags">
-          <span class="tag solid">{entry.mark}</span>
+          {entry.mark !== undefined && <span class="tag solid">{entry.mark}</span>}
+          {entry.key !== undefined && <span class="tag">{entry.key}</span>}
         </p>
       )}
       <p class="about">{entry.about}</p>
@@ -370,6 +377,12 @@ function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text;
                     <small>
                       {entry.type}
                       {entry.detail !== undefined && <> · {entry.detail}</>}
+                      {entry.key && (
+                        <>
+                          {' · '}
+                          <span class={entry.key.tone}>{entry.key.text}</span>
+                        </>
+                      )}
                     </small>
                   ) : (
                     <small class="attention">{entry.unavailable}</small>

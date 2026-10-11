@@ -1,10 +1,11 @@
 // 把目录和本机的现状写成画面状态里的那几块：左栏的行、正在看的那张列表。
 // 列表里有什么、怎么排、每条的状态与可不可选，都经两套界面共用的那几块；说法是和终端界面同一份文案。
-import { listingStatus, type Machine, type Unavailable } from './availability.ts';
-import type { Catalog, SourcedSkill, ThirdPartySkill } from './catalog.ts';
+import { listingStatus, mcpColumnHosts, type Machine, type Unavailable } from './availability.ts';
+import type { Catalog, Mcp, SourcedSkill, ThirdPartySkill } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import { purposeCounts, purposeListing, recommendedListing, sizeOf, type Listing } from './listing.ts';
 import { MESSAGES, type Lang } from './messages.ts';
+import { mcpColumnNoticeTexts } from './notice-text.ts';
 import { mcpStatusText, skillStatusText, thirdPartyStatusText, toolStatusText, unavailableReason, type StatusText } from './status-text.ts';
 import type { ThirdPartyStatus } from './third-party-status.ts';
 import type { ComponentView, ListingView, MenuRow, SectionView, SkillChoicesView, StatusView } from './web-protocol.ts';
@@ -82,6 +83,11 @@ export function listingView(
           },
         }
       : {};
+  // MCP 那一区上方的提醒：和终端界面列表上方那两行是同一份话
+  const mcpNotices = mcpColumnNoticeTexts(t, mcpColumnHosts(hosts, status.mcps));
+  // 要 key 的 MCP 的标记：说的是条目，不随填没填变
+  const keyTag = ({ env }: Mcp): { key?: string } =>
+    env.length === 0 ? {} : { key: env.some((variable) => variable.required) ? t.keyTags.required : t.keyTags.optional };
   const sections: SectionView[] = [
     {
       kind: 'skill' as const,
@@ -102,7 +108,11 @@ export function listingView(
     {
       kind: 'mcp' as const,
       ...t.sections.mcp,
-      entries: status.mcps.map(({ mcp, statuses, unavailable }) => component(mcp, mcp.recommended, perHost(statuses.map((one) => mcpStatusText(t, one))), unavailable)),
+      ...(mcpNotices.length > 0 ? { notices: mcpNotices } : {}),
+      entries: status.mcps.map(({ mcp, statuses, unavailable }) => ({
+        ...component(mcp, mcp.recommended, perHost(statuses.map((one) => mcpStatusText(t, one))), unavailable),
+        ...keyTag(mcp),
+      })),
     },
     {
       kind: 'tool' as const,

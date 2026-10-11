@@ -3,6 +3,8 @@ import type { Command } from './hosts.ts';
 import type { Messages } from './messages.ts';
 import type { PlanNotices } from './plan.ts';
 
+type Named = { name: string };
+
 // 展示时不加引号也不会被 shell 另作解释的参数
 const PLAIN_ARGUMENT = /^[A-Za-z0-9@%+=:,./_~-]+$/;
 
@@ -17,6 +19,18 @@ export function commandLine({ command, args }: Command, placeholder: (text: stri
       return PLAIN_ARGUMENT.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
     })
     .join(' ');
+}
+
+/**
+ * 列表里 MCP 那几栏的说明，各一句，照这个先后：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，
+ * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时是空的
+ */
+export function mcpColumnNoticeTexts(t: Messages, { globalOnly, unreadable }: { globalOnly: readonly Named[]; unreadable: readonly Named[] }): string[] {
+  const names = (hosts: readonly Named[]): string => hosts.map((host) => host.name).join(t.listSeparator);
+  return [
+    ...(globalOnly.length > 0 ? [t.mcpGlobalOnlyNotice(names(globalOnly))] : []),
+    ...(unreadable.length > 0 ? [t.mcpConfigUnreadable(names(unreadable))] : []),
+  ];
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   THIRD_PARTY_INSTALLED,
   catalogOf,
   downloads,
+  keyed,
   stageWorld,
   type World,
 } from './preview-samples.ts';
@@ -67,6 +68,13 @@ interface Scene extends World {
   tabs?: number;
   /** 页面画出来之后把名字是它的那张卡片滚到窗口中间 */
   reveal?: string;
+  /**
+   * 页面画出来之后，在填 key 的对话框里焦点所在的那个输入框里打进假装的 key：看输入框不显示内容。
+   * 拍完再让它失去焦点、等这一行换成「已填」，然后才查假装的 key 有没有留在页面上
+   */
+  typing?: true;
+  /** 外部命令的结局：缺省是没能运行（预览不执行命令）；succeed 是假装它们都正常结束了——同样什么都不执行 */
+  commands?: 'succeed';
   /** 窗口多大，缺省 1280×800 */
   viewport?: Viewport;
   /** 窗口拉到列表那么高：一张比窗口高的列表从头到尾都在这一格里 */
@@ -114,6 +122,35 @@ const codexOnlyDrawio = catalogOf(
   { version: 1, skills: SHOWCASE_SKILLS },
   { ...WORST_CATALOG, thirdPartySkills: DOCUMENT_THIRD_PARTY.map((entry) => (entry.name === 'drawio-skill' ? { ...entry, hosts: ['codex'] } : entry)) },
 );
+// 带 key 的场景另加两个 MCP：一个要两个必填的、一个可选的 key，一个是远程地址的（Codex 添加它时可能当场登录）
+const KEYED_CATALOG = {
+  ...WORST_CATALOG,
+  mcps: [
+    ...WORST_CATALOG.mcps,
+    {
+      name: 'grok-search',
+      description: { zh: '联网搜索、抓取网页并梳理站点，需要 API key', en: 'Web search, page fetching and site mapping; needs API keys' },
+      url: 'https://example.com/grok-search',
+      purpose: CROWDED,
+      server: { command: 'npx', args: ['-y', 'grok-search-mcp'] },
+      env: [
+        ...keyed('GROK_API_URL', true, 'Grok 接口的地址，要是 OpenAI 兼容格式，如 https://你的服务地址/v1', 'Address of the Grok endpoint in OpenAI-compatible form, such as https://your-host/v1', 'https://github.com/GuDaStudio/GrokSearch#readme'),
+        ...keyed('GROK_API_KEY', true, 'Grok 接口的密钥', 'Key for the Grok endpoint', 'https://github.com/GuDaStudio/GrokSearch#readme'),
+        ...keyed('TAVILY_API_KEY', false, 'Tavily 的 API key；不填的话抓取网页和梳理站点这两个工具用不了', 'Tavily API key; without it the page-fetching and site-mapping tools do not work', 'https://www.tavily.com/'),
+      ],
+    },
+    {
+      name: 'notion',
+      description: { zh: '读写 Notion 里的页面和数据库（远程地址，首次使用要登录）', en: 'Read and write Notion pages and databases (remote server; sign-in on first use)' },
+      url: 'https://example.com/notion',
+      purpose: CROWDED,
+      server: { url: 'https://mcp.example.com/notion' },
+    },
+  ],
+};
+const withKeyed = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, KEYED_CATALOG);
+// 假装填进去的 key。它不许出现在生成物的任何地方：每一格拍完脚本自己查一遍，最后再查整份 HTML
+const FAKE_KEY = 'sk-preview-7Qm2-not-a-real-key';
 const withBrokenEntry = catalogOf({ version: 1, skills: [...SHOWCASE_SKILLS, { name: 'broken', path: '../elsewhere' }] }, WORST_CATALOG);
 const emptyCatalog = catalogOf({ version: 1, skills: [] });
 
@@ -144,13 +181,16 @@ const picking =
     for (const name of names) await page.send({ type: 'pick', kind: 'skill', name, on: true });
     await page.until((state) => state.selected.length === names.length);
   };
-/** 勾上这几个第三方 Skill */
-const pickingThirdParty =
+/** 勾上这一类里的这几个条目 */
+const pickingOf =
+  (kind: 'thirdParty' | 'mcp') =>
   (...names: string[]): Drive =>
   async (page) => {
-    for (const name of names) await page.send({ type: 'pick', kind: 'thirdParty', name, on: true });
+    for (const name of names) await page.send({ type: 'pick', kind, name, on: true });
     await page.until((state) => names.every((name) => state.selected.some((entry) => entry.name === name)));
   };
+const pickingThirdParty = pickingOf('thirdParty');
+const pickingMcp = pickingOf('mcp');
 /** 含多个 skill 的第三方 Skill 里挑这几个 */
 const choosing =
   (entry: string, ...skills: string[]): Drive =>
@@ -197,6 +237,31 @@ const choosingHost =
 const toProject: Drive = async (page) => {
   await page.send({ type: 'scope', scope: 'project' });
   await page.until((state) => state.target.scope === 'project');
+};
+/** 点「去汇总」，已选里有要 key 的 MCP：先到填 key */
+const toKeys: Drive = async (page) => {
+  await page.send({ type: 'review' });
+  await page.until((state) => state.keys !== undefined);
+};
+/** 在填 key 里给这个 MCP 的这几个变量填上假装的值 */
+const filling =
+  (mcp: string, ...variables: string[]): Drive =>
+  async (page) => {
+    for (const variable of variables) await page.send({ type: 'key', mcp, variable, value: FAKE_KEY });
+    await page.until((state) => state.keys?.entries.find((entry) => entry.mcp === mcp)?.variables.every((variable) => !variables.includes(variable.name) || variable.filled !== undefined) ?? false);
+  };
+/** 从填 key（或汇总）回到浏览 */
+const backToBrowse: Drive = async (page) => {
+  await page.send({ type: 'revise' });
+  await page.until((state) => state.keys === undefined && state.summary === undefined);
+};
+// 两个要 key 的 MCP：mistral-ocr 的必填 key 没填；grok-search 两个必填的填了，可选的那个没填
+const KEYS_FILLED = inOrder(crowded, pickingMcp('mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'));
+// 带 key 的 MCP 装到项目：markitdown 在项目里配过，mistral-ocr 的必填 key 没填
+const KEYED_TO_PROJECT = {
+  catalog: withKeyed,
+  project: { '.mcp.json': JSON.stringify({ mcpServers: { markitdown: { command: 'uvx' } } }) },
+  drive: inOrder(crowded, toProject, picking('wizard'), pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing),
 };
 // 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
 const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
@@ -299,6 +364,74 @@ const scenes: Scene[] = [
     reveal: 'drawio-skill',
   },
   {
+    title: '浏览 · 有要 key 的 MCP',
+    note: 'MCP 勾得上了。要 key 的卡片上有线框的标记：有必填的是「要填 key」。右栏里 mistral-ocr 写着留意色的「要填 key」，grok-search 的必填项填过了，是就绪色的「key 已填」',
+    catalog: withKeyed,
+    drive: inOrder(KEYS_FILLED, backToBrowse),
+    reveal: 'grok-search',
+  },
+  {
+    title: '填 key · 没填、已填、必填的没填',
+    note: '点了「去汇总」：已选里有要 key 的 MCP，先到这个对话框。每个 MCP 一段、每个变量写明必填还是可选、是做什么用的、去哪申请。mistral-ocr 的必填项没填：输入框下面是留意色的后果；grok-search 填过的两个只写「已填」和「换一个」，看不出值和长度；可选的那个没填，下面是最淡的一句',
+    catalog: withKeyed,
+    drive: KEYS_FILLED,
+  },
+  { title: '填 key · 1024×768', note: '对话框收窄，网址在任意处断开，箭头不单独掉到下一行；「好了」看得见', catalog: withKeyed, drive: KEYS_FILLED, viewport: NARROW },
+  {
+    title: '填 key · 正在输入、可选的没填',
+    note: '只勾了 grok-search：第一个必填项填过了；第二个正在输入——输入框里只有圆点，看不到打进去的字；可选的那个没填，下面是最淡的一句「留空则不设置这个变量」',
+    catalog: withKeyed,
+    drive: inOrder(crowded, pickingMcp('grok-search'), toKeys, filling('grok-search', 'GROK_API_URL')),
+    typing: true,
+  },
+  {
+    title: '浏览 · 装到项目 · MCP 那一区的提醒',
+    note: '选了「项目」：MCP 那一区上方一行「注意」写明 Codex 的 MCP 只能装到全局，卡片上 Codex 那一段是「不支持」；仍然勾得上，只装进 Claude Code',
+    catalog: withKeyed,
+    drive: inOrder(crowded, toProject, pickingMcp('markitdown')),
+    reveal: 'markitdown',
+  },
+  {
+    title: '浏览 · 读不到 Codex 的配置',
+    note: 'Codex 的配置写坏了：MCP 那一区上方一行「注意」，卡片上 Codex 那一段是不上色的「未知」',
+    catalog: withKeyed,
+    home: { ...LIVED_IN.home, '.codex/config.toml': '[mcp_servers\n写坏了' },
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  {
+    title: '浏览 · 已选里有现在装不了的 · MCP',
+    note: '只检测到 Codex：全局时勾上了 markitdown，再改成「项目」——Codex 的 MCP 只能装到全局。卡片成了不可选的画法，它留在右栏里，名字划掉、下面是同一句原因；只剩它，「去汇总」点不了',
+    ...CODEX_ONLY,
+    catalog: withKeyed,
+    drive: inOrder(crowded, pickingMcp('markitdown'), toProject),
+    reveal: 'markitdown',
+  },
+  {
+    title: '汇总 · 带 key 的 MCP、装到项目',
+    note: 'MCP 一段没有版本、行里没有位置：只有宿主和操作，已配置的写「覆盖」和备注。没有将执行的命令。「注意」里：key 会以明文写进 .mcp.json（说变量名和文件，不说值）、Claude Code 要批准之后才启用、mistral-ocr 缺必填的 key 这次不装',
+    ...KEYED_TO_PROJECT,
+  },
+  {
+    title: '汇总 · 各种提醒',
+    note: '全局、两个宿主：有会覆盖的、有第三方 Skill、mistral-ocr 缺必填的 key、远程地址的 notion 装进 Codex 时可能当场打开浏览器登录——四条提醒，和终端界面是同一份话；excel 在 Claude Code 里配过，是「覆盖」',
+    catalog: withKeyed,
+    drive: inOrder(crowded, picking('archify'), pickingThirdParty('guizang-ppt-skill'), pickingMcp('excel', 'notion', 'mistral-ocr'), toKeys, reviewing),
+  },
+  {
+    title: '结果 · 有 MCP',
+    note: 'MCP 装上了是就绪色的「已配置」，后面没有话；mistral-ocr 缺必填的 key，每个宿主一行「跳过」和原因',
+    catalog: withKeyed,
+    commands: 'succeed',
+    drive: inOrder(crowded, picking('wizard'), pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished),
+  },
+  {
+    title: '结果 · MCP 的命令没能运行',
+    note: '添加命令没能起来：失败色的 ✗ 和粗体的「失败」，原因里只有哪一步，没有命令、没有 key',
+    catalog: withKeyed,
+    drive: inOrder(crowded, pickingMcp('markitdown', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished),
+  },
+  {
     title: '汇总 · 有要逐项决定的覆盖',
     note: '每个条目一段，段里每个宿主一行：宿主、操作（覆盖是留意色粗体）、位置和备注。pr 在 Claude Code 下、writing-for-agents 在 Codex 下不是本工具装的：那一行下面是留意底色的一条「覆盖它」，缺省没勾，写着没勾会怎样；这里勾上了第二个。没有将执行的命令',
     drive: inOrder(summarized, agreeing(1)),
@@ -375,6 +508,8 @@ const scenes: Scene[] = [
   { title: '英文 · 安装中', ...EN, catalog: neverFinishes, drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))) },
   { title: '英文 · 结果 · 有没装上的、有跳过的', ...EN, catalog: oneFails, drive: inOrder(summarized, finished) },
   { title: '英文 · 结果 · 向 GitHub 查询失败', ...EN, catalog: queryLimited, drive: inOrder(summarized, finished) },
+  { title: '英文 · 填 key', note: '英文的词长：必填的后果那一句折成两行也读得通', ...EN, catalog: withKeyed, drive: KEYS_FILLED },
+  { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 1024×768', note: 'overwrite 和备注在窄的面板里放得下', ...EN, ...KEYED_TO_PROJECT, viewport: NARROW },
   { title: '英文 · 结束 · 已完成', ...EN, ending: 'finished' },
   { title: '英文 · 结束 · 安装器已退出', ...EN, ending: 'exited' },
   { title: '英文 · 结束 · 口令不对', ...EN, ending: 'denied' },
@@ -418,6 +553,31 @@ const revealed = (name: string): string => `new Promise((resolve, reject) => req
   card.scrollIntoView({ block: 'center' });
   resolve(true);
 })))`;
+// 像用户那样往有焦点的输入框里打进假装的 key：打进去的每个字都在输入框里，页面上看到的应当只有圆点
+const TYPE_FAKE_KEY = `(() => {
+  document.execCommand('insertText', false, ${JSON.stringify(FAKE_KEY)});
+  if (document.activeElement.value !== ${JSON.stringify(FAKE_KEY)}) throw new Error('假装的 key 没有打进输入框');
+})()`;
+// 离开正在输入的那个输入框（浏览器这时把内容交给页面，页面发给安装器并清空），等「已填」的行多出一行
+const LEAVE_AND_SETTLE = `new Promise((resolve, reject) => {
+  const before = document.querySelectorAll('.dialog .filled').length;
+  document.activeElement.blur();
+  const deadline = Date.now() + ${APPEAR_MS};
+  const look = () => {
+    if (document.querySelectorAll('.dialog .filled').length > before) resolve(true);
+    else if (Date.now() > deadline) reject(new Error('打进去的 key 发出去之后，这一行一直没有换成「已填」'));
+    else setTimeout(look, 10);
+  };
+  look();
+})`;
+/** 假装填的 key 出现在了不该出现的地方：生成物不留 */
+class KeyLeaked extends Error {
+  constructor(where: string) {
+    super(`假装填的 key 出现在了${where}`);
+  }
+}
+// 页面的整份 HTML，连同每个输入框里现在的值（值不在 HTML 里）
+const MARKUP_AND_VALUES = `document.documentElement.outerHTML + '\\n' + [...document.querySelectorAll('input, textarea')].map((field) => field.value).join('\\n')`;
 // 中间一栏的内容有多高：窗口拉到这么高，整张列表就都在屏幕上
 const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
 
@@ -467,7 +627,7 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     webDir: builtWeb,
     interrupt: interrupt.signal,
     // 预览从不真的执行命令，也不真的打开浏览器：链接打开器只记下网页界面的网址
-    runCommand: () => Promise.reject(new Error('网页界面的预览不执行命令')),
+    runCommand: () => (scene.commands === 'succeed' ? Promise.resolve({ exitCode: 0 }) : Promise.reject(new Error('网页界面的预览不执行命令'))),
     prompter: noQuestions,
     openLink: async (url) => opened(url),
   });
@@ -505,6 +665,10 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     if (scene.ending === 'exited') interrupt.abort();
     if (scene.ending) await tab.evaluate(appears('.ended'));
     for (let pressed = 0; pressed < (scene.tabs ?? 0); pressed++) await tab.press('Tab');
+    if (scene.typing) {
+      await tab.evaluate(appears('.dialog input:focus'));
+      await tab.evaluate(TYPE_FAKE_KEY);
+    }
     if (scene.whole) {
       height = await tab.evaluate<number>(LIST_HEIGHT);
       await tab.viewport(width, height);
@@ -522,6 +686,11 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
       writeFileSync(join(target, file), await tab.screenshot());
       files.push(file);
     }
+    // 打进输入框的那个值发出去：离开输入框，等这一行换成「已填」
+    if (scene.typing) await tab.evaluate(LEAVE_AND_SETTLE);
+    // 假装填的 key 一处都不许有：页面的 HTML、每个输入框里的值、这一路从安装器收到的全部东西
+    const everything = [await tab.evaluate<string>(MARKUP_AND_VALUES), page.received()].join('\n');
+    if (everything.includes(FAKE_KEY)) throw new KeyLeaked('页面或安装器的答复里');
     return { scene, prefix, viewport: { width, height }, files, text: await tab.evaluate<string>('document.body.innerText') };
   } finally {
     for (const cleanup of cleanups.reverse()) await Promise.resolve().then(cleanup).catch(() => undefined);
@@ -606,10 +775,14 @@ try {
     try {
       frames.push(await shoot(chrome, scene, builtWeb, String(index + 1).padStart(2, '0')));
     } catch (error) {
+      // 假装的 key 漏了：已经拍下的图一张都不留
+      if (error instanceof KeyLeaked) rmSync(target, { recursive: true, force: true });
       throw new Error(`「${scene.title}」没有拍成：${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
-  writeFileSync(join(target, 'index.html'), preview(frames, chrome.product));
+  const html = preview(frames, chrome.product);
+  if (html.includes(FAKE_KEY)) throw new KeyLeaked('生成的预览页里');
+  writeFileSync(join(target, 'index.html'), html);
   console.log(`${frames.length} 格 → ${join(target, 'index.html')}`);
 } finally {
   await chrome?.close();

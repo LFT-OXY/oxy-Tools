@@ -2,7 +2,7 @@
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
 import { listingStatus, type Machine, type Unavailable } from './availability.ts';
-import type { Catalog, Skill, SourcedSkill, ThirdPartySkill } from './catalog.ts';
+import type { Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import type { LinkOpener } from './installer.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type Messages, type WebUnavailable } from './messages.ts';
@@ -12,7 +12,7 @@ import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
 import { unavailableReason } from './status-text.ts';
 import type { Ui } from './ui.ts';
 import { asksOverwrite, decided, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
-import type { Intent, ViewState } from './web-protocol.ts';
+import type { Intent, PickableKind, ViewState } from './web-protocol.ts';
 import { startWebServer, type WebServer } from './web-server.ts';
 import { listingView, menuOf } from './web-view.ts';
 
@@ -117,7 +117,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
           case 'pick': {
             if (session.step !== 'browse') return false;
             // 名字只在各自的类型里唯一
-            const entry = (intent.kind === 'skill' ? catalog.skills : catalog.thirdPartySkills).find((candidate) => candidate.name === intent.name);
+            const entry = PICKABLE[intent.kind](catalog).find((candidate) => candidate.name === intent.name);
             if (!entry) return false;
             // 不可选的勾不上；去掉总是可以的
             if (intent.on && !pickable(runtime, session, entry)) return false;
@@ -138,12 +138,29 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
           }
           case 'review':
-            // 已选里一个会装的都没有，和已选为空一样去不了
-            if (session.step !== 'browse' || installable(runtime, session).length === 0) return false;
-            session.step = 'summary';
+            if (session.step === 'browse') {
+              // 已选里一个会装的都没有，和已选为空一样去不了
+              if (installable(runtime, session).length === 0) return false;
+              // 有要 key 的 MCP 就先填 key：和终端界面同一个先后
+              session.step = keyed(runtime, session).length > 0 ? 'keys' : 'summary';
+            } else if (session.step === 'keys') {
+              // 必填的没填只是那个 MCP 不装，汇总照去
+              session.step = 'summary';
+            } else return false;
             // 每次进汇总，逐项的覆盖都从「不覆盖」起
             session.agreed.clear();
             break;
+          case 'key': {
+            if (session.step !== 'keys') return false;
+            // 只认填 key 这一步里列着的 MCP 和它的变量；粘贴进来的常带着首尾的空白
+            const mcp = keyed(runtime, session).find((candidate) => candidate.name === intent.mcp);
+            const value = intent.value.trim();
+            if (!mcp?.env.some((variable) => variable.name === intent.variable) || value === '') return false;
+            const known = runtime.keys.get(mcp.name) ?? new Map<string, string>();
+            runtime.keys.set(mcp.name, known);
+            known.set(intent.variable, value);
+            break;
+          }
           case 'overwrite':
             if (session.step !== 'summary' || !asksOverwrite(planOf(runtime, session), intent.item)) return false;
             if (intent.on) session.agreed.add(intent.item);
@@ -160,7 +177,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
           }
           case 'revise':
-            if (session.step !== 'summary') return false;
+            if (session.step !== 'summary' && session.step !== 'keys') return false;
             session.step = 'browse';
             session.renewed = false;
             break;
@@ -212,14 +229,24 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
 }
 
 /** 现在勾得上的条目 */
-type Pickable = Skill | ThirdPartySkill;
+type Pickable = Skill | ThirdPartySkill | Mcp;
 const isThirdParty = (entry: Pickable): entry is ThirdPartySkill => 'source' in entry;
+const isMcp = (entry: Pickable): entry is Mcp => 'server' in entry;
+const isSkill = (entry: Pickable): entry is Skill => !isThirdParty(entry) && !isMcp(entry);
+const kindOf = (entry: Pickable): PickableKind => (isThirdParty(entry) ? 'thirdParty' : isMcp(entry) ? 'mcp' : 'skill');
+// 每种勾得上的类型在目录里的那一类条目
+const PICKABLE: Record<PickableKind, (catalog: Catalog) => readonly Pickable[]> = {
+  skill: (catalog) => catalog.skills,
+  thirdParty: (catalog) => catalog.thirdPartySkills,
+  mcp: (catalog) => catalog.mcps,
+};
 
 /**
  * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
  * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、
  * 含多个 skill 的第三方 Skill 里挑了哪几个（去掉条目也留着，再勾上时还在）、挑选走到哪一步、
- * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度
+ * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度。
+ * 填过的 key 不在这里：它们记在两套界面共用的 Runtime.keys 里
  */
 interface Session {
   lang: Lang;
@@ -230,7 +257,7 @@ interface Session {
   scope: Scope;
   picked: Pickable[];
   chosen: Map<ThirdPartySkill, Set<SourcedSkill>>;
-  step: 'browse' | 'summary' | 'installing' | 'results';
+  step: 'browse' | 'keys' | 'summary' | 'installing' | 'results';
   agreed: Set<string>;
   renewed: boolean;
   batch?: Batch;
@@ -244,8 +271,9 @@ function targetOf(machine: Machine, session: Session): { hosts: Host[]; scope: S
 // 这个条目在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
 function unavailableOf(machine: Machine, session: Session, entry: Pickable): Unavailable | undefined {
   const { hosts, scope } = targetOf(machine, session);
-  const status = listingStatus(machine, { skills: isThirdParty(entry) ? [] : [entry], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: [], tools: [] }, hosts, scope);
-  return (isThirdParty(entry) ? status.thirdParty[0] : status.skills[0])?.unavailable;
+  const only = { skills: isSkill(entry) ? [entry] : [], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: isMcp(entry) ? [entry] : [], tools: [] };
+  const status = listingStatus(machine, only, hosts, scope);
+  return (status.skills[0] ?? status.thirdParty[0] ?? status.mcps[0])?.unavailable;
 }
 
 // 这个条目现在勾不勾得上
@@ -267,28 +295,31 @@ const idleReason = (t: Messages, idle: Idle): string => (idle.kind === 'unavaila
 // 已选里现在会装的那些：装不了的、一个 skill 都没挑的留在已选里，但不进汇总
 const installable = (machine: Machine, session: Session): Pickable[] => session.picked.filter((entry) => idleOf(machine, session, entry) === undefined);
 
+// 已选里会装的、要 key 的 MCP，照勾选的先后：填 key 那一步里每个一段
+const keyed = (machine: Machine, session: Session): Mcp[] => installable(machine, session).filter((entry): entry is Mcp => isMcp(entry) && entry.env.length > 0);
+
 // 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。
-// 本仓库的 skill 和第三方 Skill 的条目各按名字，和终端界面的先后一样
-function planOf(machine: Machine, session: Session): Plan {
-  const picked = installable(machine, session);
+// 各类的条目各按名字，和终端界面的先后一样；交给算计划的只有填过的 key 的变量名
+function planOf(runtime: Runtime, session: Session): Plan {
+  const picked = installable(runtime, session);
   const selection = {
-    ...targetOf(machine, session),
-    skills: byName(picked.filter((entry): entry is Skill => !isThirdParty(entry))),
+    ...targetOf(runtime, session),
+    skills: byName(picked.filter(isSkill)),
     thirdParty: byName(picked.filter(isThirdParty)).map((entry) => ({ entry, wanted: wantedOf(session, entry) })),
-    mcps: [],
+    mcps: byName(picked.filter(isMcp)),
     tools: [],
-    filledKeys: new Map(),
+    filledKeys: new Map([...runtime.keys].map(([mcp, known]) => [mcp, new Set(known.keys())])),
   };
-  return decided(planInstall(machine, selection), session.agreed);
+  return decided(planInstall(runtime, selection), session.agreed);
 }
 
-function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, session: Session): ViewState {
+function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Session): ViewState {
   const { lang } = session;
   const t = MESSAGES[lang];
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
-  const { hosts, scope } = targetOf(machine, session);
-  const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
+  const { hosts, scope } = targetOf(runtime, session);
+  const listing = session.list === undefined ? undefined : listingView(runtime, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
   return {
     lang,
     // 和终端界面的语言提问是同一份字
@@ -297,15 +328,15 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
     version,
     introSeen: session.introSeen,
     machine: {
-      hosts: machine.hosts.map((host) => ({ name: host.name, detected: host.detected, ...(host.detected ? {} : { status: t.notDetected }) })),
+      hosts: runtime.hosts.map((host) => ({ name: host.name, detected: host.detected, ...(host.detected ? {} : { status: t.notDetected }) })),
       catalog: perKind.length > 0 ? perKind : [t.noEntries],
       // 和终端界面的本机信息是同一句
-      ...(hosts.length === 0 ? { noHosts: t.noHosts(machine.hosts.map((host) => host.name), counts.apps > 0) } : {}),
+      ...(hosts.length === 0 ? { noHosts: t.noHosts(runtime.hosts.map((host) => host.name), counts.apps > 0) } : {}),
       ...(skipped > 0 ? { skipped: t.skipped(skipped) } : {}),
     },
     target: {
       hostsLabel: t.pickHosts,
-      choices: machine.hosts.filter((host) => host.detected).map((host) => ({ id: host.id, name: host.name, on: session.hosts.has(host.id) })),
+      choices: runtime.hosts.filter((host) => host.detected).map((host) => ({ id: host.id, name: host.name, on: session.hosts.has(host.id) })),
       hosts: hosts.map((host) => host.name),
       scopeLabel: t.pickScope,
       scopes: [
@@ -314,41 +345,75 @@ function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, se
       ],
       scope,
       // 目录的写法和终端界面「项目」那一行一样
-      project: { note: t.scopes.project.about, dir: homeRelative(machine, machine.projectDir) },
+      project: { note: t.scopes.project.about, dir: homeRelative(runtime, runtime.projectDir) },
     },
     menu: menuOf(catalog, lang),
     ...(listing ? { listing } : {}),
     selected: session.picked.map((entry) => {
-      const idle = idleOf(machine, session, entry);
+      const idle = idleOf(runtime, session, entry);
+      // 要 key 的 MCP：必填的还有没填的要去填；填过了哪个就写已填。不进汇总时只写原因
+      const filled = runtime.keys.get(entry.name);
+      const key =
+        !isMcp(entry) || idle
+          ? undefined
+          : entry.env.some((variable) => variable.required && !filled?.has(variable.name))
+            ? { text: t.keyStates.missing, tone: 'attention' as const }
+            : entry.env.some((variable) => filled?.has(variable.name))
+              ? { text: t.keyStates.filled, tone: 'ready' as const }
+              : undefined;
       // 含多个 skill 的第三方 Skill 写明挑了几个；不进汇总时只写原因
       const detail = isThirdParty(entry) && entry.skills.length > 1 && !idle ? t.chosenSkills(wantedOf(session, entry).length, entry.skills.length) : undefined;
       return {
-        kind: isThirdParty(entry) ? ('thirdParty' as const) : ('skill' as const),
+        kind: kindOf(entry),
         name: entry.name,
-        type: isThirdParty(entry) ? t.kinds.thirdParty : t.kinds.skill,
+        type: t.kinds[kindOf(entry)],
         ...(detail === undefined ? {} : { detail }),
+        ...(key ? { key } : {}),
         ...(idle ? { unavailable: idleReason(t, idle) } : {}),
       };
     }),
-    ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(machine, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
-    ...(session.batch ? { run: runView(t, machine.platform, session.batch) } : {}),
+    // 只有填了没有：值和它的长度都不到画面状态里来
+    ...(session.step === 'keys'
+      ? {
+          keys: {
+            entries: keyed(runtime, session).map((mcp) => ({
+              mcp: mcp.name,
+              purpose: catalog.purposes.find((purpose) => purpose.id === mcp.purpose)?.name[lang] ?? '',
+              variables: mcp.env.map((variable) => ({
+                name: variable.name,
+                required: variable.required,
+                need: variable.required ? t.keyNeeds.required : t.keyNeeds.optional,
+                about: variable.description[lang],
+                url: variable.url,
+                ...(runtime.keys.get(mcp.name)?.has(variable.name) ? { filled: t.keyFilled } : {}),
+                blank: t.keyBlank(mcp.name, variable.required),
+              })),
+            })),
+          },
+        }
+      : {}),
+    ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(runtime, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
+    ...(session.batch ? { run: runView(t, runtime.platform, session.batch) } : {}),
   };
 }
 
 // 页面发来的东西不可信：只认得出形状对的意图。每种意图认得的字段是定死的，多带了别的（命令、路径之类）整个不认
 function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
-  const { type, list, lang, kind, name, on, item, summary, host, scope, entry, skill } = raw as Record<string, unknown>;
+  const { type, list, lang, kind, name, on, item, summary, host, scope, entry, skill, mcp, variable, value } = raw as Record<string, unknown>;
   const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
   if ((type === 'finish' || type === 'intro-seen' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
   if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
   if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
   if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };
   if (type === 'scope' && (scope === 'global' || scope === 'project') && only('scope')) return { type, scope };
-  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
+  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty' || kind === 'mcp') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
     return { type, kind, name, on };
   }
   if (type === 'choose' && typeof entry === 'string' && typeof skill === 'string' && typeof on === 'boolean' && only('entry', 'skill', 'on')) return { type, entry, skill, on };
+  if (type === 'key' && typeof mcp === 'string' && typeof variable === 'string' && typeof value === 'string' && only('mcp', 'variable', 'value')) {
+    return { type, mcp, variable, value };
+  }
   if (type === 'overwrite' && typeof item === 'string' && typeof on === 'boolean' && only('item', 'on')) return { type, item, on };
   if (type === 'install' && typeof summary === 'string' && only('summary')) return { type, summary };
   return undefined;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Intent, ViewState } from '../src/web-protocol.ts';
 import { Browse } from './browse.tsx';
 import { Intro } from './intro.tsx';
+import { Keys } from './keys.tsx';
 import { Run, Summary } from './panel.tsx';
 import { TEXT, type Lang } from './text.tsx';
 
@@ -36,13 +37,19 @@ async function listen(receive: (state: ViewState) => void): Promise<'denied' | '
   }
 }
 
+// 意图一个接一个地发，上一个答复回来才发下一个：到安装器那边的先后和点的先后一样（填完 key 紧接着点「好了」）
+let sending: Promise<unknown> = Promise.resolve();
 function send(intent: Intent): void {
-  void fetch('/api/intent', {
-    method: 'POST',
-    headers: { ...withToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(intent),
+  sending = sending
+    .then(() =>
+      fetch('/api/intent', {
+        method: 'POST',
+        headers: { ...withToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify(intent),
+      }),
+    )
     // 发不出去不用管：安装器不在了的话，长连接那边会发现
-  }).catch(() => undefined);
+    .catch(() => undefined);
 }
 
 function App() {
@@ -95,10 +102,11 @@ function App() {
   if (screen.kind === 'denied') return <Ended mark="✗" tone="failed" {...t.denied} />;
   if (screen.kind === 'exited') return <Ended mark="–" tone="quiet" {...t.exited} />;
   if (screen.state.stage === 'finished') return <Ended mark="✓" tone="ready" {...t.finished} />;
-  const { summary, run } = screen.state;
+  const { keys, summary, run } = screen.state;
   return (
     <>
-      <Browse state={screen.state} send={send} rising={intro.rising} covered={Boolean(summary ?? run)} />
+      <Browse state={screen.state} send={send} rising={intro.rising} covered={Boolean(keys ?? summary ?? run)} />
+      {keys && <Keys keys={keys} t={t} send={send} />}
       {summary && <Summary summary={summary} t={t} send={send} />}
       {run && <Run run={run} t={t} send={send} />}
       {intro.playing && <Intro version={screen.state.version} ended={introEnded} skipped={introSkipped} />}

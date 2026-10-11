@@ -1,6 +1,6 @@
 // 页面自己的文字：只有版式上固定的那些——栏名、按钮、空状态的话、还没连上时的那一句、
 // 几种结束画面的标题和说明（没有画面状态时也得说得出来），和终端界面里没有的那几句（汇总里逐项决定覆盖的、
-// 安装中的提醒）。状态的词、原因、标记、数量、提醒、汇总与结果里每一行的话、结果里的下一步都随画面状态从安装器来
+// 安装中的提醒、填 key 的对话框里的）。状态的词、原因、标记、数量、提醒、汇总与结果里每一行的话、结果里的下一步都随画面状态从安装器来
 import type { ViewState } from '../src/web-protocol.ts';
 
 export type Lang = ViewState['lang'];
@@ -30,6 +30,13 @@ export const TEXT = {
     overwriteIt: '覆盖它',
     overwriteOff: '没勾：这一项跳过，保持原样',
     progress: (settled: number, total: number) => `${settled} / ${total}`,
+    keysTitle: '填 key',
+    keysLead: 'key 只留在这次运行的内存里，交给安装命令；不显示、不保存、不进网址。',
+    getOne: '去申请',
+    pasteKey: '粘贴 key，输入不显示',
+    change: '换一个',
+    keysDone: '好了',
+    close: '关闭',
     keepTerminal: '装完之前请不要关掉终端。',
     finished: { title: '已完成', body: <>安装器已退出，可以关掉这一页了。</> },
     exited: { title: '安装器已退出', body: <>这一页已经失效，可以关掉了。要继续的话，在终端里重新运行 {COMMAND}。</> },
@@ -56,6 +63,13 @@ export const TEXT = {
     overwriteIt: 'Overwrite it',
     overwriteOff: 'Unchecked: this item is skipped and left as it is',
     progress: (settled: number, total: number) => `${settled} / ${total}`,
+    keysTitle: 'Keys',
+    keysLead: 'Keys stay in memory for this run and go to the install command only; never shown, saved or put in a URL.',
+    getOne: 'Get one',
+    pasteKey: 'Paste the key; your input is hidden',
+    change: 'Change',
+    keysDone: 'Continue',
+    close: 'Close',
     keepTerminal: 'Keep your terminal open until this finishes.',
     finished: { title: 'All done', body: <>The installer has quit. You can close this page.</> },
     exited: { title: 'The installer has quit', body: <>This page no longer works and can be closed. To continue, run {COMMAND} again in your terminal.</> },

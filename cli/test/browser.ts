@@ -33,6 +33,8 @@ export interface Page {
   closed: Promise<void>;
   /** 不经页面直接发一个请求：用来扮演别的网站、别的机器 */
   request(path: string, options?: PageRequest): Promise<PageResponse>;
+  /** 这一页到现在为止从安装器收到的全部东西：每个答复的状态、头和正文，长连接上每一份画面状态的原文。用来整份去搜不该出现的字 */
+  received(): string;
 }
 
 const PATIENCE_MS = 2000;
@@ -43,6 +45,7 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
   const token = searchParams.get('token') ?? '';
   const connection = { host: hostname, port, agent: false as const };
   const streams: ClientRequest[] = [];
+  const transcript: string[] = [];
   let latest: ViewState | undefined;
   const waiters: { predicate: (state: ViewState) => boolean; resolve: (state: ViewState) => void }[] = [];
   const receive = (state: ViewState): void => {
@@ -58,7 +61,11 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
       const outgoing = request({ ...connection, path, method, headers }, (response) => {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
-        response.on('end', () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString() }));
+        response.on('end', () => {
+          const answer = { status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString() };
+          transcript.push(JSON.stringify(answer));
+          resolve(answer);
+        });
         response.on('error', reject);
       });
       outgoing.on('error', reject);
@@ -78,7 +85,9 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
         if (response.statusCode !== 200) refused(new Error(`长连接被拒绝：${response.statusCode}`));
         let buffer = '';
         response.setEncoding('utf8');
+        transcript.push(JSON.stringify({ status: response.statusCode, headers: response.headers }));
         response.on('data', (chunk: string) => {
+          transcript.push(chunk);
           buffer += chunk;
           const events = buffer.split('\n\n');
           buffer = events.pop() ?? '';
@@ -125,6 +134,7 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
     reload: () => listen().first,
     closed: main.closed,
     request: send,
+    received: () => transcript.join('\n'),
     dispose: () => {
       for (const stream of streams) stream.destroy();
     },

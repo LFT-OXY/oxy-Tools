@@ -1,7 +1,7 @@
 # 网页界面的契约
 
 > 网页界面的页面与安装器之间说什么（意图、画面状态）、本机的那个网页守哪几道、它什么时候起来什么时候关。页面该长什么样见 [网页界面的设计](./web-ui-design.md)；入口怎么定下用哪个界面、测试架子怎么扮演浏览器，见 [入口与测试](./installer-entry.md)。
-> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 09 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；页面上选装进哪些宿主、装到全局还是项目；第三方 Skill 和本仓库的 skill 一起勾、一起确认、一起装（含多个 skill 的当场挑其中哪几个）。MCP、工具还勾不上（工单 10、12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
+> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 10 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；页面上选装进哪些宿主、装到全局还是项目；第三方 Skill 和本仓库的 skill 一起勾、一起确认、一起装（含多个 skill 的当场挑其中哪几个）；MCP 也一起勾、一起装，要 key 的在页面上填。工具还勾不上（工单 12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
 
 ---
 
@@ -23,14 +23,15 @@ export type Intent =
   | { type: 'lang'; lang: Lang }     // 换语言：安装器按新的语言重发画面状态；终端上的语言不变
   | { type: 'pick'; kind: PickableKind; name: string; on: boolean } // 勾上或去掉一个条目：kind、name 是画面状态里那个条目的
   | { type: 'choose'; entry: string; skill: string; on: boolean }   // 含多个 skill 的第三方 Skill：要（或不要）其中的一个 skill。entry 是勾上了的那个条目的名字，skill 是它 skills 里某一项的名字
-  | { type: 'review' }               // 要汇总
+  | { type: 'review' }               // 要汇总：已选里有要 key 的 MCP 时先到填 key，在填 key 上再发一次才是汇总
+  | { type: 'key'; mcp: string; variable: string; value: string } // 填（或换）一个 key：mcp、variable 是画面状态 keys 里的；value 是值，只走这一个请求的正文
   | { type: 'overwrite'; item: string; on: boolean }  // 汇总里要逐项决定的那一项覆盖不覆盖：item 是那一行的 overwrite.id
   | { type: 'install'; summary: string }              // 确认安装：summary 是页面上那份汇总的标识
-  | { type: 'revise' }               // 从汇总返回修改
+  | { type: 'revise' }               // 从汇总（或填 key）返回修改
   | { type: 'continue' }             // 装完之后继续挑选
   | { type: 'host'; host: string; on: boolean }  // 装进（或不装进）一个宿主：host 是 target.choices 里那一项的 id
   | { type: 'scope'; scope: Scope }; // 装到全局还是项目
-export type PickableKind = 'skill' | 'thirdParty';  // 现在勾得上的类型；MCP 到工单 10、工具到工单 12 往里加
+export type PickableKind = 'skill' | 'thirdParty' | 'mcp';  // 现在勾得上的类型；工具到工单 12 往里加
 export type Lang = 'zh' | 'en';
 export interface ViewState {
   lang: Lang;                       // 页面现在的语言：起初是系统语言或 --lang 的，之后是页面上换过的
@@ -54,6 +55,7 @@ export interface ViewState {
   menu: MenuRow[];                  // 左栏的行：「推荐」（里面有条目时）在最前，然后是有条目的各个用途
   listing?: ListingView;            // 正在看的那张列表；目录里一个条目都没有时没有
   selected: SelectedView[];         // 已选的条目，照勾选的先后
+  keys?: KeysView;                  // 填 key：要了汇总、已选里有要 key 的 MCP 时先到这里。里面只有「填了没有」，没有值
   summary?: SummaryView;            // 汇总：要了汇总、还没确认安装时有
   run?: RunView;                    // 这一批的进度与结果：确认安装之后有，点了「继续挑选」之后没有
 }
@@ -63,11 +65,12 @@ export interface ListingView {
   sections: SectionView[];          // 组件按类型分开：Skill、第三方 Skill、MCP、工具；没有条目的类型不在里面
   apps?: { title: string; note: string; entries: AppView[] }; // 外部项目另成一处；没有就没有这一块
 }
-export interface SectionView { kind: 'skill' | 'thirdParty' | 'mcp' | 'tool'; title: string; note?: string; entries: ComponentView[] }
+export interface SectionView { kind: 'skill' | 'thirdParty' | 'mcp' | 'tool'; title: string; note?: string; notices?: string[]; entries: ComponentView[] } // notices 只有 MCP 那一区有：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了
 export interface ComponentView {
   name: string;
   about: string;                    // 完整的说明，不截断
   mark?: string;                    // 「推荐」的标记，要标时是那个词；「推荐」那张列表里每一条都是，不标
+  key?: string;                     // 要 key 的 MCP 才有的标记：有必填的变量是「要填 key」，只有可选的是「可选的 key」
   statuses: StatusView[];           // 每个要装进的宿主一段（与 target.hosts 一一对应）；工具只有一段，没有 host
   unavailable?: string;             // 不可选的原因；有它就勾不上
   picked?: true;                    // 已经勾上了
@@ -83,9 +86,21 @@ export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
 export interface SelectedView {
   kind: PickableKind; name: string;
-  type: string;                     // 类型写出来的词（Skill、第三方 Skill）
+  type: string;                     // 类型写出来的词（Skill、第三方 Skill、MCP）
   detail?: string;                  // 含多个 skill 的第三方 Skill 挑了几个：「3 个 skill 里挑了 2 个」
+  key?: { text: string; tone: Tone }; // 要 key 的 MCP：必填的还有没填的是「要填 key」（留意），填过了是「key 已填」（就绪）；只有可选的、一个都没填时没有
   unavailable?: string;             // 这一项现在不进汇总的原因：在现在所选的宿主和范围下装不了（和卡片上的是同一句），或含多个 skill 而一个都没挑（「一个 skill 都没挑，这一条不装」）
+}
+export interface KeysView { entries: KeyEntryView[] }  // 已选里每个会装的、要 key 的 MCP 一段，照勾选的先后
+export interface KeyEntryView { mcp: string; purpose: string; variables: KeyVariableView[] } // mcp 是名字（放进 key 意图），purpose 是它所在的用途的名字
+export interface KeyVariableView {
+  name: string;                     // 变量名：放进 key 意图
+  required: boolean;
+  need: string;                     // 「必填」或「可选」
+  about: string;                    // 这个变量是做什么用的
+  url: string;                      // 去哪申请
+  filled?: string;                  // 这次运行里填过了才有，是那个词「已填」。画面状态里没有值，也没有它的长度
+  blank: string;                    // 不填会怎样：必填的是「不填就不装 <MCP>，其余照常装」，可选的是「留空则不设置这个变量」
 }
 export interface SummaryView {
   id: string;                       // 这份汇总的标识：确认安装时带回
@@ -95,14 +110,14 @@ export interface SummaryView {
   revise: string; install: string;  // 两个按钮上的字：终端界面那一问里的「返回修改」「开始安装」
   renewed?: true;                   // 上一次确认没有照办（状态变了，或带的是旧标识）：这是新的一份，要再确认
 }
-export interface SummaryEntryView { name: string; type: string; version?: string; rows: SummaryRowView[] } // version 是要装的版本，第三方 Skill 没有（装的是作者当时的最新版）；rows 每个宿主一行，第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行
+export interface SummaryEntryView { name: string; type: string; version?: string; rows: SummaryRowView[] } // version 是要装的版本，第三方 Skill 和 MCP 没有；rows 每个宿主一行，第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行
 export interface SummaryRowView {
   skill?: string;                   // 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组
   host: string;
-  action: string;                   // 新装、覆盖
+  action: string;                   // 新装、覆盖；MCP 的状态未知时是添加
   overwrites?: true;                // 这一行会覆盖已有的东西
-  location: string;                 // 给用户看的位置
-  note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装、已有同名目录
+  location?: string;                // 给用户看的位置；MCP 的行没有（和终端界面 MCP 的小表一样没有「位置」）
+  note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装、已有同名目录、已配置先移除再添加、状态未知先尝试移除同名配置
   overwrite?: { id: string; agreed: boolean }; // 要逐项决定覆盖不覆盖的才有；缺省没同意
 }
 export interface RunView {
@@ -117,8 +132,8 @@ export interface RunView {
 export interface RunRowView {
   name: string; host: string;
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
-  text: string;                     // 等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、已安装、失败、跳过
-  rest?: string;                    // 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局（「安装命令退出状态 1」）
+  text: string;                     // 等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、正在配置（MCP）、已安装、已配置（MCP）、失败、跳过
+  rest?: string;                    // 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局（「安装命令退出状态 1」）；MCP 装上了没有
 }
 export interface TotalView { count: number; word: string }
 export interface FailureView {      // 出错说明，和终端界面是同一份话、同一个结构
@@ -139,6 +154,10 @@ export function startWebServer(options: {
 // cli/src/web-view.ts —— 把目录和本机的现状写成画面状态里的 menu 和 listing：用的是两套界面共用的那几块和同一份文案
 export function menuOf(catalog: Catalog, lang: Lang): MenuRow[];
 export function listingView(machine: Machine, catalog: Catalog, id: string, hosts: readonly Host[], scope: Scope, lang: Lang): ListingView | undefined; // id 不在 menu 里时没有；条目的状态现探测
+
+// cli/src/availability.ts、cli/src/notice-text.ts —— 列表里 MCP 那几栏的说明，两套界面共用：前一个数出是哪几个宿主，后一个写成那两句
+export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps']): { globalOnly: Host[]; unreadable: Host[] };
+export function mcpColumnNoticeTexts(t: Messages, hosts: { globalOnly: readonly { name: string }[]; unreadable: readonly { name: string }[] }): string[];
 
 // cli/src/status-text.ts —— 状态和不可选的原因写成哪个词、是什么含义。两套界面共用：终端界面照含义上样式码，网页界面原样放进画面状态
 export interface StatusText { text: string; tone: Tone; rest?: string }
@@ -171,7 +190,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 
 **算画面状态、办意图的时候不许抛。** 它们是在本机网页的请求处理函数里被调用的（`web-server.ts` 的 `state()`、`intent()`），那里没有接住的错会让整个安装器退出。现在靠的是底下的探测各自把「读不了」当成一种状态（配置读不了是「未知」，目录不在是「未装」）；后面的工单往这两条路上加会失败的事（算计划、下载、执行）时，失败要变成画面状态里的出错说明，不能往外抛。
 
-安装器记着的只有会变的那几样（`web-ui.ts` 的 `Session`）：走到哪一步、开场动画播过没有、正在看哪张列表、勾了哪些条目、汇总里同意覆盖的是哪几项、这一批的进度。**画面状态每次都从它们现算**（新连上一个页面时算一次，每个意图之后、进度每变一次算一次再推给所有页面），不存上一份——条目的状态因此总是现探测的：页面开着的时候机器上装了什么、配了什么，刷新就看得到；**汇总也是现算的**，不存上一份。
+安装器记着的只有会变的那几样（`web-ui.ts` 的 `Session`）：走到哪一步、开场动画播过没有、正在看哪张列表、勾了哪些条目、汇总里同意覆盖的是哪几项、这一批的进度；填过的 key 记在两套界面共用的 `Runtime.keys` 里。**画面状态每次都从它们现算**（新连上一个页面时算一次，每个意图之后、进度每变一次算一次再推给所有页面），不存上一份——条目的状态因此总是现探测的：页面开着的时候机器上装了什么、配了什么，刷新就看得到；**汇总也是现算的**，不存上一份。
 
 **说了什么由安装器定，怎么排由页面定。** 状态的词、数量的写法、提醒，用的是和终端界面同一份中英文案（`messages.ts`），随画面状态发给页面；页面自己的文字只有版式上固定的那些，都在 `cli/web/text.tsx` 的 `TEXT` 里，中英各一份：
 
@@ -183,18 +202,19 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 | 条目数的写法（「21 项」） | 数来自画面状态，「项」是版式上的 |
 | 按钮（去汇总、完成、继续挑选）、已选为空时的那一句、已选里去掉一项的那个 × 的名字 | 版式上固定的；终端界面里没有这几样 |
 | 汇总标题下面的那一句、「覆盖它」和没勾时的后果、收到新的一份汇总时的那一句 | 终端界面里覆盖是确认之后一个个问的，没有这几句 |
+| 填 key 的标题和它下面的那一句、输入框里的提示、「去申请」「换一个」「好了」和关掉它的那个 × 的名字 | 版式上固定的；终端界面是一问一答，没有这个对话框 |
 | 安装中底部的那一句提醒、「7 / 17」的写法 | 终端界面里没有 |
 | 还没连上时的「正在连接安装器…」 | 这时还没有画面状态 |
 | 三种结束画面的标题和说明（已完成、安装器已退出、口令不对） | 后两种没有画面状态可依；「已完成」和它们是同一种画面，放在一处 |
 
-**随画面状态来、页面不许自己写的**：用途和「推荐」的名字、分区的标题和它后面的那句话（「第三方 Skill　内容直接来自作者」「外部项目　只给链接，不安装」）、条目的名字与说明、「推荐」的标记、状态的词、不可选的原因、本机信息里的数量和提醒、「装进哪些 AI Agent」「装到哪里」和各个安装范围的名字；已选里类型的词；汇总的标题、操作、位置、备注、提醒和「返回修改」「开始安装」；进度与结果里每一行的词和原因、「正在安装」「结果」、合计的三个词、有没装上的时候「下一步」那一段、出错说明的全部。**终端界面的文案里已经有的话，页面一律不另写一遍**——另写的那一份迟早和原来的对不上（工单 04 的审查里就对不上过：页面写的是 Install into，终端界面是 Install into which AI Agents）。
+**随画面状态来、页面不许自己写的**：用途和「推荐」的名字、分区的标题和它后面的那句话（「第三方 Skill　内容直接来自作者」「外部项目　只给链接，不安装」）、条目的名字与说明、「推荐」的标记、状态的词、不可选的原因、本机信息里的数量和提醒、「装进哪些 AI Agent」「装到哪里」和各个安装范围的名字；已选里类型的词和「要填 key」「key 已填」；卡片上「要填 key」「可选的 key」的标记；MCP 那一区的提醒；填 key 里每个变量的名字、说明、网址、「必填」「可选」、「已填」和不填会怎样的那一句；汇总的标题、操作、位置、备注、提醒和「返回修改」「开始安装」；进度与结果里每一行的词和原因、「正在安装」「结果」、合计的三个词、有没装上的时候「下一步」那一段、出错说明的全部。**终端界面的文案里已经有的话，页面一律不另写一遍**——另写的那一份迟早和原来的对不上（工单 04 的审查里就对不上过：页面写的是 Install into，终端界面是 Install into which AI Agents）。
 
 没有画面状态时页面照浏览器的语言说（`navigator.language` 以 `zh` 开头是中文）；收到过画面状态就一直跟它的 `lang`。**经入口的测试断不到页面自己的这些字**，它们靠截图核对。
 
 **页面上换语言**（工单 06）
 
 - 页面起始的语言是系统语言，给了 `--lang` 就是它（和终端界面定语言的办法一样，见 [入口与测试](./installer-entry.md)）。页面上有中文 / English 的切换；它是意图 `lang`，安装器记下新的语言之后**按它重发整份画面状态**：状态的词、不可选的原因、用途与「推荐」的名字、分区的标题、条目的说明、本机信息里的数量和提醒、「装进哪些 AI Agent」「装到哪里」——凡是随画面状态来的都是新的语言，用的仍是和终端界面同一份中英文案（`messages.ts`）；页面自己的那些固定文字（`TEXT`）同时跟着 `lang` 换。
-- **换语言只换说法，不换状态**：正在看哪张列表（`listing.id`）、开场动画播过没有、走到哪一步都不变；后面的工单加进来的勾选、宿主、安装范围、填过的 key 也都不变（各自在自己的工单里补一条断言）。`menu` 里各行的 `id` 不随语言变，页面上原来的那一行还是当前项。
+- **换语言只换说法，不换状态**：正在看哪张列表（`listing.id`）、开场动画播过没有、走到哪一步都不变；勾选、宿主、安装范围、填过的 key 也都不变（各自的测试里有一条断言）。`menu` 里各行的 `id` 不随语言变，页面上原来的那一行还是当前项。
 - 语言记在安装器这边（`Session.lang`）：刷新、再开一个标签页看到的都是换过之后的语言。
 - **终端上的语言不跟着变**：呈现层是启动时按系统语言或 `--lang` 建的，页面上换语言不重建它，终端上也不因此多打任何东西。
 - `language` 是切换语言的控件要的字：`label` 是终端界面语言提问的那一句（`Language / 语言`，不随语言变），`options` 是它的两项（`中文`、`English`），照显示的先后。页面不另写这几个字。
@@ -208,8 +228,8 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - 意图 `scope`：`scope` 是 `global` 或 `project`；一个宿主都没检测到时不照办（没有要装进的地方，也就没有范围可言——和终端界面一样）。
 - `target.project` 是装到项目是装到哪个目录：`note` 是终端界面「项目」那一项后面的那句（`scopes.project.about`，「只对当前目录生效：」），`dir` 是运行安装器时所在的目录，写成和终端界面那一行同一种样子（`homeRelative`：主目录里的以 `~` 开头，别处的是全路径）；终端界面放不下时从前面截，网页界面不截、在任意处断开。它一直在画面状态里，页面在选了项目时显示。
 - **改了之后状态马上重查**：画面状态本来就是每次现算的，条目的 `statuses` 只有所选宿主的那几段，skill 的目录按新的范围看（`skillsDirOf`）；汇总、位置、覆盖的另问都跟着（装到项目时位置写成相对项目目录的路径，主目录下的全局目录不读也不写——规矩在 [安装 skill](./skill-install.md)）。
-- **已选不因此被去掉**：`selected` 里每一项照旧；在现在所选的宿主和范围下**装不了的**带着 `unavailable`（原因，和卡片上的是同一句，`unavailableReason`），**不进汇总**（算计划时只给可选的那些），改回去之后它没有了 `unavailable`、照常会装。已选里一个会装的都没有时 `review` 不照办（400），和已选为空一样。现在勾得上的只有本仓库的 skill，它只在一个宿主都没有时装不了，而宿主至少留一个——所以这一条要到第三方 Skill 和 MCP 勾得上（工单 09、10：「需要别的 AI Agent」「只能装到全局」）才有东西落进去。
-- 这两种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时都是 400——**一批里只有一组宿主、一个安装范围**，汇总和执行用的是确认那一刻的选择。
+- **已选不因此被去掉**：`selected` 里每一项照旧；在现在所选的宿主和范围下**装不了的**带着 `unavailable`（原因，和卡片上的是同一句，`unavailableReason`），**不进汇总**（算计划时只给可选的那些），改回去之后它没有了 `unavailable`、照常会装。已选里一个会装的都没有时 `review` 不照办（400），和已选为空一样。落进这一条的是第三方 Skill 和 MCP 的「需要别的 AI Agent」、MCP 的「只能装到全局」（工单 09、10）；本仓库的 skill 只在一个宿主都没有时装不了，而宿主至少留一个。
+- 这两种意图只在浏览的时候照办：填 key、汇总开着、正在装、结果还没收掉时都是 400——**一批里只有一组宿主、一个安装范围**，汇总和执行用的是确认那一刻的选择。
 
 **第三方 Skill**（工单 09）
 
@@ -222,17 +242,43 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - 执行在本仓库的 skill 之后（共用的「执行」定的）。`run.rows` 里第三方 Skill 的行 `name` 是 skill 的名字；进行中的词是「正在安装」（`installingOne`，终端界面进行中那一行的词）；成功与否看复核：装上了是「已安装」，命令没有正常结束时 `rest` 是命令的结局（「安装命令退出状态 1」，`thirdPartyResult` 那句去掉开头的分号）；没装上是「失败」加原因（「安装命令已结束，但目标位置没有 SKILL.md」「安装命令没能运行（ENOENT）」）。向 GitHub 查询失败时它们照常装（不经那次查询），本仓库的 skill 不在行里。
 - `summary.id` 把第三方 Skill 的各项和它们的覆盖决定也算进去：机器上多出了同名目录、或改了挑的 skill 再拿旧标识确认，都不装。
 
-**勾选与已选**（工单 07；现在本仓库的 skill 和第三方 Skill 勾得上）
+**MCP 与填 key**（工单 10）
+
+- 勾得上的类型多了 `mcp`：`pick` 的 `kind` 是它、`name` 是条目的名字。可不可选仍由 `availability.ts` 定：所选的宿主一个都不支持它是「需要别的 AI Agent」；选了项目、而所选的宿主里支持它的都只能把 MCP 装到全局是「只能装到全局」；只有一部分装不了的仍可选，只装进装得了的那些。卡片上的 `statuses` 每个所选的宿主一段，词和终端界面同一张表（未配置、已配置、未知、不支持），看的是所选安装范围下的那一份配置——规矩在 [安装 MCP](./mcp-install.md)。
+- **MCP 那一区的 `notices`** 是终端界面列表上方那两行「注意」的话（`mcpGlobalOnlyNotice`、`mcpConfigUnreadable`），先后也一样，两套界面经同一处算出来（`availability.ts` 的 `mcpColumnHosts`、`notice-text.ts` 的 `mcpColumnNoticeTexts`）：选了项目而哪个宿主的 MCP 只能装到全局（这张列表里至少有一个条目本身支持它）；哪个宿主的配置读不了。都没有时没有这个字段。
+- 要 key 的 MCP 卡片上带 `key`：有必填的变量是「要填 key」，只有可选的是「可选的 key」（文案 `keyTags`）。它说的是这个条目，不随填没填变。
+- 已选里 MCP 一项（`type` 是「MCP」）。要 key 的带 `key`：必填的还有没填的是「要填 key」（`tone` 是 `attention`），都填了、或填了哪个可选的是「key 已填」（`ready`）；只有可选的而一个都没填时没有。装不了的（改了宿主或范围之后）带 `unavailable`、不进汇总，和别的类型走同一条路（`web-ui.ts` 的 `idleOf`）。**必填的 key 没填不算装不了**：它留在会装的那一边，才到得了填 key。
+- **填 key 是汇总前面的一步**（`Session.step` 的 `keys`）：浏览时发 `review`，已选里会装的条目中有要 key 的 MCP（`env` 不是空的），就先到这一步，画面状态里多出 `keys`；一个都没有就直接是汇总。在这一步再发 `review` 才是汇总（**总是照办**：必填的没填只是那个 MCP 不装）；`revise` 回到浏览。和终端界面同一个先后：勾选、填 key、汇总。
+- `keys.entries` 每个会装的、要 key 的 MCP 一段，照勾选的先后：名字、它所在的用途的名字、每个变量——变量名、必填还是可选（`required` 和写出来的词 `need`）、说明、申请的网址、不填会怎样（`blank`：必填的是「不填就不装 <MCP>，其余照常装」，可选的是「留空则不设置这个变量」），和**填了没有**（`filled`：填过了是那个词「已填」，没填没有这个字段）。
+- 意图 `key`：`mcp`、`variable` 是 `keys` 里的那一段和它的变量，`value` 是值。**只在填 key 这一步照办**；`mcp` 不在 `keys` 里、`variable` 不是它的变量、`value` 去掉首尾空白之后是空的，都不照办（400，什么都不变）。照办就是把去掉首尾空白的值记进 `Runtime.keys[MCP][变量]`（和终端界面记的是同一处），已经填过的换成新的——页面上的「换一个」就是再发一次。
+- **值只有这一条路进来，哪里都不出去**：它在这一个请求的正文里，答复是没有正文的 204；之后的每一份画面状态里只有 `filled`，没有值、没有长度；它不进网址、不进任何答复（400、403 的正文也是空的）、不打到终端上、不写任何文件。算计划的拿到的只有填过的变量名（`filledKeys`），值到执行那一刻才由 `runPlan` 取出来交给 `installMcp`——规矩在 [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」。
+- **填过的在这次运行里一直在**：返回修改、换语言、去掉条目再勾上、装完点「继续挑选」都不清空——下一批再到填 key 时写着「已填」，可以换一个，不用再填。留空的没有记，下次还是没填。
+- 必填的没填：那个 MCP 不装——汇总里没有它的段，`title` 的 N 不算它，`notices` 里有「<MCP> 缺少必填的 <变量>，这次不安装」；确认之后结果里每个宿主一行「跳过 未填写必填的 <变量>」，计入合计的跳过。已选的全是这样的时汇总是「将安装 0 项」加那几条提醒，确认之后直接是结果——和终端界面那时「不显示汇总、直接进结果」是同一个结局，只多一次确认。可选的没填就不带那个变量，照常装。
+- 汇总里每个要装的 MCP 一段（`type` 是「MCP」，**没有 `version`**），照名字排在第三方 Skill 之后；段里每个装得了它的所选宿主一行，**行没有 `location`**。词和终端界面汇总里 MCP 的小表是同一份：
+
+  | 它在那个宿主下的状态 | `action` | `overwrites` | `note` |
+  |----------------------|----------|--------------|--------|
+  | 未配置 | 新装 | — | — |
+  | 已配置 | 覆盖 | `true` | 已配置，先移除再添加 |
+  | 未知 | 添加 | — | 状态未知，先尝试移除同名配置 |
+
+  MCP 没有要逐项决定的覆盖（没有「是不是本工具装的」这回事），已配置的再装一次就是覆盖；`notices.overwrites` 那句「整目录替换」说的是 skill，不因为 MCP 出现。
+- `notices` 里 MCP 的那几条和终端界面是同一份话、同一个先后，**没有「key 以占位符显示」**（它说的是命令里的占位符）：key 会以明文写进项目里的哪个文件（说变量名和文件，不说值）、哪个宿主要另行批准才启用、哪个 MCP 因为缺 key 不装、哪个宿主会当场打开浏览器登录。最后一条里有事后补登录要敲的那条命令（`codex mcp login <名称>`）：它是给用户照着敲的，不是将执行的命令。
+- **画面状态里仍然没有将执行的命令**：没有 `mcp add`、`mcp remove`、`--scope`、`--env`、`--transport`，也没有 MCP 的启动命令和网址（`server`）。执行的命令和终端界面装同样的东西时逐条相同（已配置的先移除再添加、状态未知的先尝试移除、装到项目时带 `--scope project` 并在项目目录下运行）。
+- 执行在第三方 Skill 之后（共用的「执行」定的）。`run.rows` 里 MCP 每个宿主一行：进行中是「正在配置」（`configuring`），成了是「已配置」（`mcpStatus.configured`，没有 `rest`），没成是「失败」加原因（`mcpInstallProblem`：「添加命令退出状态 1」「移除命令退出状态 3；未执行添加」「添加命令没能运行（ENOENT）」——原因里只有哪一步、退出状态或错误码，**没有 key 的值**），缺 key 的是「跳过 未填写必填的 <变量>」。有没配置上的 MCP 时 `run.next` 里是 `afterMcpFailures` 那一句，见「安装与结果」。
+- `summary.id` 把 MCP 的各项（条目、宿主、状态、缺哪个变量）也算进去：看汇总的时候宿主的配置变了再拿旧标识确认，不装。
+
+**勾选与已选**（工单 07；现在本仓库的 skill、第三方 Skill 和 MCP 勾得上）
 
 - 勾选是意图 `pick`，**状态在安装器这边**：`kind`、`name` 是画面状态里那个条目的类型和名字，`on` 是勾上还是去掉。勾上的记在 `Session` 里，与正在看哪张列表无关——换一张列表看，之前勾的还在；一个条目同时在「推荐」和它的用途下，两处是同一个条目，一处勾了另一处的 `picked` 也是 `true`。
 - `selected` 是已选，**照勾选的先后**：每项带 `kind`、`name`（去掉它时原样放进 `pick`）和类型写出来的词（文案里的 `kinds`）。已选了几个，页面数它的长度。
 - **勾不上的不照办**（400，已选不变）：名字不在它那一类的目录里；`kind` 不是现在勾得上的（`PickableKind`）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
 - 换语言不动勾选。
-- 这几种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时 `pick` 和 `review` 都是 400——页面上那时盖着面板，本来也点不到。
+- 这几种意图只在浏览的时候照办：填 key、汇总开着、正在装、结果还没收掉时 `pick` 都是 400，`review` 只在浏览和填 key 时照办——页面上那时盖着对话框或面板，本来也点不到。
 
 **汇总**（工单 07）
 
-- 意图 `review`：已选为空时不照办（400）；照办之后画面状态里多出 `summary`，并且**逐项的覆盖决定清空**（每次进汇总都从「不覆盖」起）。
+- 意图 `review`：已选为空时不照办（400）；照办之后画面状态里多出 `summary`（已选里有要 key 的 MCP 时先是 `keys`，见「MCP 与填 key」），并且**逐项的覆盖决定清空**（每次进汇总都从「不覆盖」起）。
 - `summary` 经两套界面共用的「算计划」得出（`plan.ts` 的 `planInstall`），每次算画面状态时现算。`entries` 每个要装的条目一段，照执行的先后（本仓库的 skill 按名字），带着类型的词和**要装的版本**（清单里的那个）；段里每个宿主一行：宿主、操作、位置，和备注。词和终端界面的汇总是同一份：
 
   | 那里现在的状态 | `action` | `overwrites` | `note` | `overwrite` |
@@ -269,7 +315,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
   | `failed` | 失败 | 原因（「来源里没有 SKILL.md，目标目录未改动」这一类） |
   | `skipped` | 跳过 | 未同意覆盖，保持原样 |
 
-- 一项失败不影响其余；单项失败不改变退出状态。装完之后**有没装上的**，`run.next` 是「下一步」和它下面的话（终端界面的结果行只有原因，没有这一段：这句话是网页界面多出来的，放在文案里——`afterFailures`——随画面状态来，经入口的测试断得到）。
+- 一项失败不影响其余；单项失败不改变退出状态。装完之后**有没装上的**，`run.next` 是「下一步」和它下面的话（终端界面的结果行只有原因，没有这一段：这句话是网页界面多出来的，放在文案里——`afterFailures`——随画面状态来，经入口的测试断得到）。**没配置上的是 MCP 时另说一句**（`afterMcpFailures`，工单 10）：`afterFailures` 说的是「没装上的各项没有改动原有的东西」，这对 skill 成立，对 MCP 不成立——已配置的是先移除再添加，添加失败时原先的那份已经不在了（那一行的原因里写着「此前已执行移除」）。两种都有就两句都有，skill 的在前。
 - **向 GitHub 查询**：要下载本仓库的 skill 时先查钉住的来源，查询期间 `run.loading` 是「正在查询 skill 的文件列表」。查询失败时 `run.failure` 是出错说明（标题、原因、下一步，和终端界面同一份话），**本仓库的 skill 一个都不装、不在 `rows` 里**，安装器不退出。全都没同意覆盖时不查询。
 - 全部结束后 `run.done` 是 `true`、`title` 换成「结果」，多出 `totals`：合计的名字和成功、失败、跳过三个数，各带自己的词。
 - 意图 `continue`（只在装完之后照办）：回到浏览，**已选清空**，`run` 没有了；状态本来就是每次现探测的，刚装上的已经是「已装」。
@@ -365,8 +411,9 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 | 意图 `choose` 的 `entry` 不是勾上了的第三方 Skill、只含一个 skill、`skill` 不在它里面；浏览之外的 `choose` | 400，挑的不变 |
 | **任何一种意图里多带了它不该有的东西**（`command`、`path`、`args` 之类）：每种意图认得的字段是定死的，多一个就整个不照办 | 400，什么都不变 |
 | 意图 `review` 而已选为空，或已选里一个会装的都没有（装不了的、含多个 skill 而一个都没挑的）；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
+| 意图 `key` 的 `mcp` 不在 `keys` 里（没勾上的、不要 key 的、现在装不了的）、`variable` 不是它的变量、`value` 不是字符串或去掉首尾空白之后是空的；填 key 之外的 `key` | 400，正文空，填过的不变；值不在答复里 |
 | 意图 `host` 的 `host` 不是检测到的宿主的 `id`；`on: false` 而它是最后一个要装进的；`scope` 的 `scope` 不是 `global`、`project`；一个宿主都没检测到时的 `host`、`scope` | 400，什么都不变 |
-| 意图不合这一步：浏览时的 `overwrite`、`install`、`revise`、`continue`；汇总或安装中的 `pick`、`review`、`host`、`scope`；正在装时的 `finish`、`continue` | 400，什么都不变 |
+| 意图不合这一步：浏览时的 `key`、`overwrite`、`install`、`revise`、`continue`；填 key 时的 `pick`、`choose`、`host`、`scope`、`overwrite`、`install`、`continue`；汇总或安装中的 `pick`、`review`、`key`、`host`、`scope`；正在装时的 `finish`、`continue` | 400，什么都不变 |
 | 意图 `install` 带的标识不是现在这一份的 | 204；不装，推来的 `summary` 带着 `renewed: true` |
 | `/api/intent` 的正文超过 64 KB | 413，正文空；意图没有被执行 |
 | 不认识的路径 | 404 |
@@ -403,6 +450,11 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - Base：`paper-kit` 的 `hosts` 是 `["codex"]`，两个宿主都选 → 卡片上 Claude Code「不支持」、Codex「未装」，汇总和命令只有 Codex 的；去掉 Codex → 已选里它带「需要别的 AI Agent」，不进汇总；再勾回 Codex 就恢复。只检测到 Claude Code 时它不可选，`pick` 是 400。
 - Base：`~/.claude/skills/note-taker` 已经在 → 汇总里那一行「覆盖」、备注「已有同名目录」、带 `overwrite`；不动就装 → 「跳过 未同意覆盖，保持原样」，没有命令；勾了「覆盖它」再装 → 命令执行了。
 - Bad：命令以 0 退出而目标位置没有 `SKILL.md` → 那一行「失败 安装命令已结束，但目标位置没有 SKILL.md」，别的照常，退出状态 0。
+- Good：勾带必填 key 的 `search-keyed`，`review` → 画面状态里是 `keys`（一段、一个变量「必填」、没有 `filled`）；`key` 带着值 → 那个变量 `filled: "已填"`；再 `review` → 汇总一段 MCP、一行「新装」；确认后记录到的命令是 `claude mcp add --scope user search-keyed -e SEARCH_API_KEY=<值> -- npx -y @example/search-mcp`，结果「已配置」。从头到尾收到的每一份画面状态、每一个答复、终端上的字、交给链接打开器的网址里都搜不到那个值。
+- Base：`search-keyed` 的 key 留空就 `review` → 汇总是「将安装 0 项」，提醒「search-keyed 缺少必填的 SEARCH_API_KEY，这次不安装」；和别的一起勾时别的照常，结果里它「跳过 未填写必填的 SEARCH_API_KEY」。
+- Base：装完点「继续挑选」，再勾 `search-keyed`、`review` → `keys` 里那个变量已经是「已填」；直接 `review` 去汇总就装得了。再发一次 `key` 就是换一个：命令里是新的值。
+- Base：两个宿主、选了项目 → MCP 那一区有一条「Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令」，卡片上 Codex「不支持」，只装进 Claude Code：命令带 `--scope project`、在项目目录下运行，提醒里有明文写入和要批准的两条。只选 Codex 时卡片不可选，原因「只能装到全局」；全局时勾上再改成项目 → 它留在已选里带着这句原因、不进汇总，改回全局恢复。
+- Bad：浏览时发 `{"type":"key",…}`、给没勾上的 MCP 填、`value` 是空白 → 都是 400，正文是空的。
 - Base：链接打开器拒绝 → 终端上一行「注意」，接着是语言提问和主菜单；那个网址已经连不上。
 - Bad：别的网站的页面向 `http://127.0.0.1:<端口>/api/intent` 发 `{"type":"finish"}`，带着它自己的 `Origin` → 403，安装器还开着。
 - Bad：`curl http://127.0.0.1:<端口>/api/events`（不带口令）→ 403，正文是空的，里面没有宿主的名字。
@@ -476,6 +528,19 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
 - 装到项目：命令不带 `--global`、`cwd` 是项目目录，位置是相对路径，复核按项目目录。
 - 换语言后勾选和挑的都不变，`detail`、`unavailable`、`lead` 换成新的语言。
 
+装 MCP、填 key 的在 `cli/test/web-mcp.test.ts`，同样经主接缝：
+
+- 本地进程的、远程地址的、带 key 的各一条正常路径：已选里的类型、汇总的段与行（没有版本、没有位置）、结果「已配置」；记录到的命令是**字面值**；带 key 的再和终端界面装同样的东西时记录到的命令逐条比一遍。
+- 状态：每个所选宿主一段（未配置、已配置、未知、不支持）；配置读不了时 MCP 那一区的提醒；已配置的先移除再添加、汇总里是「覆盖」和备注；状态未知的先尝试移除、汇总里是「添加」和备注。
+- 填 key：`review` 先到 `keys`（每个变量的说明、必填还是可选、申请的网址、不填会怎样）；不要 key 的直接是汇总；填了之后只有「已填」；必填的没填（汇总不算它、提醒、结果里是跳过、其余照常）；可选的没填（照常装、命令里不带那个变量）；装完继续挑选的第二批不用再填；换一个（命令里是新的值）；`key` 的几种不照办。
+- 装到项目：Codex 那一栏「不支持」和那一区的提醒、只装进 Claude Code、命令带 `--scope project` 且 `cwd` 是项目目录；只有 Codex 时不可选与原因；勾上之后才变得装不了的留在已选里、不进汇总、`review` 被拒、改回去恢复。
+- 提醒每种一条：明文写入（有变量名和文件名）、要批准、缺 key、当场登录。
+- 命令非零退出、没能运行：失败行的原因；别的照常，退出状态 0。添加失败而移除已经成功：原因里的「此前已执行移除」，「下一步」是 MCP 的那一句、不说原有的东西没动；skill 和 MCP 都有没装上的时两句都有。
+- 执行在第三方 Skill 之后。
+- **填的值不出现**：架子记下这一页收到的全部东西（每一份画面状态的原文、每个答复的头和正文——`page.received()`），连同终端上的全部输出、交给链接打开器的网址、主目录、项目目录和临时目录里的每个文件，整份去搜，一处都没有——成功、命令非零退出、命令起不来而错误消息里带着整条命令、填的时候被拒绝（400）各一条。
+- 换语言后填过的 key 还在，`keys` 里的话换成新的语言。
+- 画面状态的 JSON 里没有 `mcp add`、`--scope`、`--env`、`--transport`，也没有条目的启动命令。
+
 **经入口的测试断不到的**（页面只把画面状态画出来）：三栏的版式、开场动画怎么演、键盘与焦点、链接是不是在新标签页打开——这些在真实的浏览器里看：版式、开场的定格和键盘焦点在网页界面的预览里各有一格（`npm run preview:web`，见 [网页界面的设计](./web-ui-design.md) 的「网页界面的预览」），其余的手动核对。
 
 ### 7. Wrong vs Correct
@@ -519,6 +584,19 @@ summary: { entries, commands: plan.thirdPartyJobs.map((job) => job.command) }
 
 // 页面自己写结果里的话：经入口的测试断不到，也不随安装器的文案走
 <p>{t.afterFailures}</p>                  // TEXT 里的
+
+// 把 key 的「样子」放进画面状态：圆点的个数就是值的长度
+variables: [{ name, masked: '•'.repeat(value.length) }]
+
+// 把 key 放进网址或答复：网址会进浏览器的历史，答复会被别的标签页看到
+fetch(`/api/key?variable=${name}&value=${value}`, { headers: withToken });
+answer(response, 400, {}, Buffer.from(`unknown variable for ${value}`));
+
+// 用密码框收 key：浏览器把它当登录密码，填完会问要不要保存，存进去的可能同步到账号
+<input type="password" autocomplete="off" />
+
+// 意图同时发：填 key 的那一个可能落在「去汇总」后面，那时已经不在填 key 这一步，值被拒收
+void fetch('/api/intent', { method: 'POST', body: JSON.stringify(intent) });
 ```
 
 #### Correct
@@ -556,6 +634,19 @@ if (type === 'pick' && … && only('kind', 'name', 'on')) return { type, kind, n
 
 // 结果里的话随画面状态来；页面只画
 {run.next && run.next.lines.map((line) => <p key={line}>{line}</p>)}
+
+// key 只有填了没有：值记进 Runtime.keys，画面状态里是那个词
+known.set(intent.variable, value);                                                    // web-ui.ts，意图 key
+...(runtime.keys.get(mcp.name)?.has(variable.name) ? { filled: t.keyFilled } : {}),   // 算画面状态
+
+// 值只在请求的正文里；照办答没有正文的 204，不照办的 400 正文也是空的
+send({ type: 'key', mcp, variable: variable.name, value });
+
+// 画成圆点的文字框，发出去就清空；浏览器不认那条样式时才用密码框
+<input class="secret" {...FIELD} autocomplete="off" spellcheck={false} onChange={…} />  // keys.tsx
+
+// 意图一个接一个地发，上一个答复回来才发下一个
+sending = sending.then(() => fetch('/api/intent', { … })).catch(() => undefined);      // main.tsx
 ```
 
 ---
@@ -604,4 +695,11 @@ if (type === 'pick' && … && only('kind', 'name', 'on')) return { type, kind, n
 | 挑的结果记在条目上，去掉条目也留着，再勾上时还在；装完点「继续挑选」才清空（工单 09） | 终端界面「返回修改」再问时上次勾的也还在；清空的时机和已选一致 |
 | 一个 skill 都没挑的第三方 Skill 走「不进汇总」那条路（已选里带 `unavailable`，话是「一个 skill 都没挑，这一条不装」）（工单 09） | 规格只说「一个都不挑就是不装它，页面上看得出」。和装不了的用同一个机制，页面上同一种画法，「去汇总」的可点与否也同一条判断 |
 | 第三方 Skill 的条目跨用途时按名字排（工单 09） | 和本仓库的 skill 一样；终端界面的列表里「带推荐的在前」只在一张列表内有意义 |
+| 填 key 是 `review` 路上的一步，不另设入口（工单 10） | 规格只说「勾了要 key 的 MCP 之后在页面上填」「填 key 是盖在页面上的对话框」，没有说它什么时候出来。照终端界面的先后（勾选、填 key、汇总）：每一批去汇总时只要有要 key 的 MCP 就先经过它，填过的写着「已填」、点一下就过去。代价是都填过了也多点一下；好处是只有一条路，「换一个」也在这条路上 |
+| 一个 `key` 意图填一个变量，页面在输入框的内容变了（失去焦点、按回车）时就发（工单 10） | 和 `pick`、`choose`、`host` 同一个样子；填了没有因此总是照画面状态画。页面的意图是一个接一个发的（上一个答复回来才发下一个，`main.tsx` 的 `send`），填完紧接着点「好了」不会抢到前面去。代价：哪一个请求一直不回，后面的意图都等着——本机的网页对每个意图都是当场答复，安装器不在了请求当场失败，所以没有另设期限 |
+| 空的值不照办，没有「清掉一个填过的 key」的意图（工单 10） | 规格只说填过的可以换一个。终端界面里填过的在这次运行结束前也改不了；要清掉就退出重来 |
+| 必填的 key 没填不算「装不了」，全是这样的时汇总是「将安装 0 项」（工单 10） | 它得留在会装的那一边才到得了填 key；填 key 之后去汇总总是照办，页面不用自己判断点得点不得。结局和终端界面一样：结果里是跳过 |
+| MCP 的行没有位置（工单 10） | 终端界面 MCP 的小表也没有「位置」一栏；宿主的适配里只有项目范围的那份配置有文件名，装到项目时写进了哪个文件由「要批准」那条提醒交代 |
+| 卡片上「要填 key」的标记不随填没填变，已选里的才变（工单 10） | 卡片说的是条目，已选说的是这一批；设计规范里卡片只有这两种标记 |
+| 输入框是普通的文字框（`type="text"`），输入的内容靠样式画成圆点（`-webkit-text-security: disc`）；浏览器不认这条样式时（页面用 `CSS.supports` 问）退回真正的密码框。`autocomplete="off"`、`autocapitalize="off"`、`autocorrect="off"`、`spellcheck="false"`，不放在 `<form>` 里、没有 `name`，另带三家密码管理器的「别管这个框」标记（`data-1p-ignore`、`data-lpignore`、`data-bwignore`）（工单 10，审查之后改的） | 规格要两样：不显示内容，不让浏览器记住。第一版是密码框，审查指出它只做到一半——浏览器把密码框的内容当登录密码，填完会问要不要保存，点了保存 key 就进了浏览器的密码库（还可能同步到账号）。普通的文字框浏览器不当它是密码，不问；关掉自动填、拼写检查，是因为文字框缺省有这些，而拼写检查可能把内容发出去。值在发给安装器的那一刻就从输入框里清掉。**代价**：读屏软件会把打进去的字念出来（密码框不会）；圆点靠的是一条带前缀的样式，Chrome、Edge、Safari 和 Firefox 111 以上都认，实测只在 Chrome 上做过。维护者没有就这个取舍表过态 |
 | 第三方 Skill 装上了而命令没有正常结束时，`rest` 是 `thirdPartyResult` 那句去掉开头的分号（工单 09） | 那句话在终端界面是接在「已安装」后面的，带着分号；网页界面的词和后面的话分成两段，分号多余。文案一改这处要跟着看 |

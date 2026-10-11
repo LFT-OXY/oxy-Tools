@@ -152,6 +152,15 @@ export interface Messages {
   chosenSkills: (chosen: number, total: number) => string;
   /** 网页界面的已选里，含多个 skill 的第三方 Skill 一个都没挑：这一条不装 */
   noSkillChosen: string;
+  /** 网页界面里要 key 的 MCP 卡片上的标记：有必填的变量、只有可选的 */
+  keyTags: { required: string; optional: string };
+  /** 网页界面的已选里要 key 的 MCP：必填的还有没填的、填过了 */
+  keyStates: { missing: string; filled: string };
+  /** 网页界面填 key 时每个变量的那几个词：必填还是可选、这次运行里填过了 */
+  keyNeeds: { required: string; optional: string };
+  keyFilled: string;
+  /** 网页界面填 key 时一个变量不填会怎样：必填的是不装这个 MCP，可选的是不设置这个变量 */
+  keyBlank: (mcp: string, required: boolean) => string;
   /** 汇总那个分区的标题：count 是要装的组件条目数 */
   installSummary: (count: number) => string;
   /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
@@ -204,6 +213,8 @@ export interface Messages {
   waiting: string;
   /** 网页界面的结果里，有没装上的时候「下一步」下面的那一句；终端界面的结果只有原因，没有这一段 */
   afterFailures: string;
+  /** 同上，没配置上的是 MCP 时的那一句：不说原有的东西没动——已配置的是先移除再添加，添加失败时原先的那份已经不在了 */
+  afterMcpFailures: string;
   downloading: string;
   configuring: string;
   /** 第三方 Skill 进行中的那一行 */
@@ -322,6 +333,11 @@ const zh: Messages = {
   existingDir: '已有同名目录',
   chosenSkills: (chosen, total) => `${total} 个 skill 里挑了 ${chosen} 个`,
   noSkillChosen: '一个 skill 都没挑，这一条不装',
+  keyTags: { required: '要填 key', optional: '可选的 key' },
+  keyStates: { missing: '要填 key', filled: 'key 已填' },
+  keyNeeds: { required: '必填', optional: '可选' },
+  keyFilled: '已填',
+  keyBlank: (mcp, required) => (required ? `不填就不装 ${mcp}，其余照常装` : '留空则不设置这个变量'),
   installSummary: (count) => `将安装 ${count} 项`,
   mcpConfiguredNote: '已配置，先移除再添加',
   mcpUnknownNote: '状态未知，先尝试移除同名配置',
@@ -358,6 +374,7 @@ const zh: Messages = {
   results: '结果',
   waiting: '等待',
   afterFailures: '没装上的各项没有改动原有的东西。排除原因后点「继续挑选」，重新勾选再装一次。',
+  afterMcpFailures: '没配置上的 MCP：排除原因后点「继续挑选」，重新勾选再装一次。原因里写着「此前已执行移除」的，原先的那份配置已经不在了。',
   downloading: '正在下载',
   configuring: '正在配置',
   installingOne: '正在安装',
@@ -604,6 +621,11 @@ const en: Messages = {
   existingDir: 'already there',
   chosenSkills: (chosen, total) => `${chosen} of ${total} skills chosen`,
   noSkillChosen: 'no skill chosen; this entry is not installed',
+  keyTags: { required: 'needs a key', optional: 'optional key' },
+  keyStates: { missing: 'needs a key', filled: 'key entered' },
+  keyNeeds: { required: 'required', optional: 'optional' },
+  keyFilled: 'entered',
+  keyBlank: (mcp, required) => (required ? `Leave it empty and ${mcp} is skipped; the rest still installs` : 'Leave it empty to leave this variable unset'),
   installSummary: (count) => `Install ${count} ${count === 1 ? 'item' : 'items'}`,
   mcpConfiguredNote: 'configured; removed, then added',
   mcpUnknownNote: 'status unknown; removal tried first',
@@ -641,6 +663,8 @@ const en: Messages = {
   results: 'Results',
   waiting: 'waiting',
   afterFailures: 'Items that failed left what was there untouched. Fix the cause, choose “Pick more”, then select and install them again.',
+  afterMcpFailures:
+    'MCP servers that failed: fix the cause, choose “Pick more”, then select and install them again. Where the reason says the remove command had already run, the earlier configuration is gone.',
   downloading: 'downloading',
   configuring: 'configuring',
   installingOne: 'installing',

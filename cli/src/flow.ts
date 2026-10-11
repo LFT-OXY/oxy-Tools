@@ -1,10 +1,9 @@
 // 终端界面的交互流程：主菜单、「推荐」与各个用途的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层；
 // 列表里有什么、条目的状态、要装的各项和怎么装，都经两套界面共用的那几块。
-import { listingStatus } from './availability.ts';
+import { listingStatus, mcpColumnHosts } from './availability.ts';
 import type { App, Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import { purposeCounts, purposeListing, recommendedListing, sizeOf, type Listing } from './listing.ts';
-import type { McpStatus } from './mcp-status.ts';
 import { homeRelative, planInstall, type Plan, type SkillJob, type ThirdPartyJob } from './plan.ts';
 import type { Prompter } from './prompter.ts';
 import { runPlan, type Runtime } from './run-plan.ts';
@@ -84,8 +83,7 @@ async function planEntries(
   for (;;) {
     // 状态每次进列表都现探测
     const status = listingStatus(session, listing, hosts, scope);
-    const withStatus = (wanted: McpStatus): Host[] => hosts.filter((_, column) => status.mcps.some(({ statuses }) => statuses[column] === wanted));
-    ui.mcpColumnNotices({ globalOnly: withStatus('global-only'), unreadable: withStatus('unknown') });
+    ui.mcpColumnNotices(mcpColumnHosts(hosts, status.mcps));
     picked = await prompter.checkbox(ui.mixedPicker({ hosts, ...status, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }));
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));

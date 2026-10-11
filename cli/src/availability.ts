@@ -33,6 +33,15 @@ export interface ListingStatus {
   tools: { tool: Tool; status: ToolStatus; unavailable?: Unavailable }[];
 }
 
+/**
+ * 列表里 MCP 那几栏要另作说明的宿主：globalOnly 是选了项目范围而 MCP 只能装到全局的（列表里至少有一个条目本身支持它），
+ * unreadable 是配置读不到的。mcps 是 listingStatus 给出的那一段，与 hosts 一一对应
+ */
+export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps']): { globalOnly: Host[]; unreadable: Host[] } {
+  const withStatus = (wanted: McpStatus): Host[] => hosts.filter((_, column) => mcps.some(({ statuses }) => statuses[column] === wanted));
+  return { globalOnly: withStatus('global-only'), unreadable: withStatus('unknown') };
+}
+
 /** 这个宿主按安装范围定的那个 skill 目录：状态、位置、安装、复核都从它来 */
 export const skillsDirOf = (host: Host, scope: Scope): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
 
