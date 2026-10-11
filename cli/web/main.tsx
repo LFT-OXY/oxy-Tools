@@ -1,43 +1,13 @@
 // 网页界面的页面：把安装器发来的画面状态画出来，把操作变成意图。状态都在安装器那边，这里什么都不存。
-// 工单 03 的骨架：本机信息和「完成」，样子从简；照设计规范画是工单 04。
 import { render, type ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Intent, ViewState } from '../src/web-protocol.ts';
+import { Browse } from './browse.tsx';
+import { Intro } from './intro.tsx';
+import { TEXT, type Lang } from './text.tsx';
 
-type Lang = ViewState['lang'];
 /** connecting 是还没收到画面状态；denied 是口令不对；exited 是连接断了、重连不上 */
 type Screen = { kind: 'connecting' } | { kind: 'live'; state: ViewState } | { kind: 'denied' } | { kind: 'exited' };
-
-// 让用户回终端重新运行的那条命令
-const COMMAND = <code>npx oxy-tools</code>;
-// 页面自己的文字只有版式上固定的这些：栏名、按钮和它旁边的那一句、还没连上时的那一句、几种结束画面的标题和说明
-// （没有画面状态时也得说得出来）。状态的词、数量、提醒都随画面状态从安装器来
-const TEXT = {
-  zh: {
-    connecting: '正在连接安装器…',
-    machine: '本机',
-    agents: 'AI Agent',
-    catalog: '目录',
-    notice: '注意',
-    finish: '完成',
-    finishHint: '点「完成」后安装器退出，终端回到提示符。',
-    finished: { title: '已完成', body: <>安装器已退出，可以关掉这一页了。</> },
-    exited: { title: '安装器已退出', body: <>这一页已经失效，可以关掉了。要继续的话，在终端里重新运行 {COMMAND}。</> },
-    denied: { title: '口令不对', body: <>这个网址里的口令不对。请回到终端，用那里写着的网址重新打开。</> },
-  },
-  en: {
-    connecting: 'Connecting to the installer…',
-    machine: 'This machine',
-    agents: 'AI Agent',
-    catalog: 'Catalog',
-    notice: 'Notice',
-    finish: 'Done',
-    finishHint: 'Done quits the installer and hands your terminal back.',
-    finished: { title: 'All done', body: <>The installer has quit. You can close this page.</> },
-    exited: { title: 'The installer has quit', body: <>This page no longer works and can be closed. To continue, run {COMMAND} again in your terminal.</> },
-    denied: { title: 'Wrong token', body: <>The token in this address is wrong. Go back to your terminal and open the address shown there.</> },
-  },
-};
 
 // 口令在交给浏览器的网址里；它只放进请求头，不进任何别的网址
 const token = new URLSearchParams(location.search).get('token') ?? '';
@@ -65,8 +35,8 @@ async function listen(receive: (state: ViewState) => void): Promise<'denied' | '
   }
 }
 
-function send(intent: Intent): Promise<unknown> {
-  return fetch('/api/intent', {
+function send(intent: Intent): void {
+  void fetch('/api/intent', {
     method: 'POST',
     headers: { ...withToken, 'Content-Type': 'application/json' },
     body: JSON.stringify(intent),
@@ -78,6 +48,9 @@ function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'connecting' });
   // 还没有画面状态时（口令不对、一直连不上）先照浏览器的语言说
   const [lang, setLang] = useState<Lang>(navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+  // 开场动画播到哪了：playing 时它盖在页面上；rising 是底下的卡片还带着依次浮上来的动作
+  const [intro, setIntro] = useState<{ playing: boolean; rising: boolean }>({ playing: false, rising: false });
+  const listed = screen.kind === 'live' ? screen.state.listing?.id : undefined;
 
   useEffect(() => {
     void (async () => {
@@ -85,6 +58,12 @@ function App() {
       let failures = 0;
       for (;;) {
         const end = await listen((state) => {
+          // 这次运行里第一次打开：播开场，并告诉安装器播过了——刷新、重连、再开一个标签页都不重播。
+          // 系统开了「减少动态效果」时不播，页面直接出现
+          if (!last && !state.introSeen) {
+            if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setIntro({ playing: true, rising: true });
+            send({ type: 'intro-seen' });
+          }
           last = state;
           failures = 0;
           setLang(state.lang);
@@ -101,81 +80,47 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
   }, [lang]);
+  // 淡出完了只收掉盖着的那一层，卡片接着浮完；用户跳过的话两样一起收，所有东西直接到位
+  const introEnded = useCallback(() => setIntro((now) => ({ ...now, playing: false })), []);
+  const introSkipped = useCallback(() => setIntro({ playing: false, rising: false }), []);
+  // 换了一张列表：新出现的卡片不再做浮上来的动作
+  useEffect(() => {
+    if (listed === undefined) return;
+    return () => setIntro((now) => ({ ...now, rising: false }));
+  }, [listed]);
 
   const t = TEXT[lang];
-  if (screen.kind === 'connecting') return <p class="quiet">{t.connecting}</p>;
+  if (screen.kind === 'connecting') return <Solo><p class="quiet connecting">{t.connecting}</p></Solo>;
   if (screen.kind === 'denied') return <Ended mark="✗" tone="failed" {...t.denied} />;
   if (screen.kind === 'exited') return <Ended mark="–" tone="quiet" {...t.exited} />;
   if (screen.state.stage === 'finished') return <Ended mark="✓" tone="ready" {...t.finished} />;
-  return <Machine state={screen.state} lang={lang} />;
+  return (
+    <>
+      <Browse state={screen.state} send={send} rising={intro.rising} />
+      {intro.playing && <Intro version={screen.state.version} ended={introEnded} skipped={introSkipped} />}
+    </>
+  );
+}
+
+/** 一栏、居中的版式：还没连上时的那一句和几种结束画面 */
+function Solo({ children }: { children: ComponentChildren }) {
+  return <div class="solo">{children}</div>;
 }
 
 /** 结束的几种画面：一句说明，上面没有还能点的操作。 */
 function Ended({ mark, tone, title, body }: { mark: string; tone: 'ready' | 'failed' | 'quiet'; title: string; body: ComponentChildren }) {
   return (
-    <section class="ended">
-      <h1>
-        <span class={`mark ${tone}`} aria-hidden="true">
-          {mark}
-        </span>
-        {title}
-      </h1>
-      <p>{body}</p>
-    </section>
-  );
-}
-
-function Machine({ state, lang }: { state: ViewState; lang: Lang }) {
-  const t = TEXT[lang];
-  const [finishing, setFinishing] = useState(false);
-  return (
-    <>
-      <header>
-        <span class="product">oxy-tools</span>
-        <span class="version">{state.version}</span>
-      </header>
-      <section>
-        <h2>{t.machine}</h2>
-        <dl>
-          <dt>{t.agents}</dt>
-          <dd class="hosts">
-            {state.machine.hosts.map((host) => (
-              <span class="host" key={host.name}>
-                {host.name}
-                {host.detected ? (
-                  <span class="mark ready" aria-hidden="true">
-                    ✓
-                  </span>
-                ) : (
-                  <span class="faint">{host.status}</span>
-                )}
-              </span>
-            ))}
-          </dd>
-          <dt>{t.catalog}</dt>
-          <dd>{state.machine.catalog.join(' · ')}</dd>
-          {state.machine.skipped && (
-            <>
-              <dt class="attention">{t.notice}</dt>
-              <dd>{state.machine.skipped}</dd>
-            </>
-          )}
-        </dl>
+    <Solo>
+      <section class="ended">
+        <h1>
+          <span class={`mark ${tone}`} aria-hidden="true">
+            {mark}
+          </span>
+          {title}
+        </h1>
+        <p>{body}</p>
       </section>
-      <footer>
-        <button
-          type="button"
-          disabled={finishing}
-          onClick={() => {
-            setFinishing(true);
-            void send({ type: 'finish' });
-          }}
-        >
-          {t.finish}
-        </button>
-        <p class="quiet">{t.finishHint}</p>
-      </footer>
-    </>
+    </Solo>
   );
 }
 

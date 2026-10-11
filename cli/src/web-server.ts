@@ -34,6 +34,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/app.css': { file: 'app.css', type: 'text/css; charset=utf-8' },
+  '/favicon.svg': { file: 'favicon.svg', type: 'image/svg+xml' },
 };
 // 每个答复都带：不许缓存，只许加载和连接页面自己的来源，不留空闲的连接
 const COMMON_HEADERS = {

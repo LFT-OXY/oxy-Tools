@@ -12,6 +12,15 @@ import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarge
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
 import type { SkillStatus } from './skill-status.ts';
+import {
+  mcpStatusText,
+  skillStatusText,
+  thirdPartyStatusText,
+  toolStatusText,
+  unavailableReason,
+  versionChange as versionChangeText,
+  type StatusText,
+} from './status-text.ts';
 import type { ThirdPartyStatus } from './third-party-status.ts';
 import type { ToolStatus } from './tool-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
@@ -337,60 +346,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     keywords: { yes: 'y', no: 'n', error: () => t.answerYesOrNo },
   };
 
-  // 状态一律用词表达，不显示颜色时文字一字不变。listed 是清单里的版本
-  const versionChange = (status: { version: string }, listed: string): string =>
-    `${status.version} ${symbols.arrow} ${listed}`;
-  const statusCell = (status: SkillStatus, listed: string): string => {
-    switch (status.kind) {
-      case 'none':
-        return dim(t.skillStatus.none);
-      case 'installed':
-        return `${paint('green', t.skillStatus.installed)} ${status.version}`;
-      case 'other-version':
-        return paint(attention, versionChange(status, listed));
-      case 'unmanaged':
-        return paint(attention, t.skillStatus.unmanaged);
-    }
+  // listed 是清单里的版本
+  const versionChange = (status: { version: string }, listed: string): string => versionChangeText(status.version, listed, symbols.arrow);
+  // 状态一律用词表达，不显示颜色时文字一字不变。词和含义来自两套界面共用的那张表，这里只照含义上样式
+  const statusCell = ({ text, tone, rest }: StatusText): string => {
+    const word = tone === 'ready' ? paint('green', text) : tone === 'attention' ? paint(attention, text) : tone === 'faint' ? dim(text) : text;
+    return rest === undefined ? word : `${word} ${rest}`;
   };
+  const skillCell = (status: SkillStatus, listed: string): string => statusCell(skillStatusText(t, status, listed, symbols.arrow));
+  const thirdPartyCell = (status: ThirdPartyStatus): string => statusCell(thirdPartyStatusText(t, status));
 
-  // 条目的一栏：只含一个 skill 的写未装、已装，含多个的装了几个就写「已装 几个/共几个」
-  const thirdPartyCell = (status: ThirdPartyStatus): string => {
-    if (status === 'unsupported') return dim(t.mcpStatus.unsupported);
-    const installed = status.filter(Boolean).length;
-    if (installed === 0) return dim(t.skillStatus.none);
-    return `${paint('green', t.skillStatus.installed)}${status.length > 1 ? ` ${installed}/${status.length}` : ''}`;
-  };
-
-  const mcpStatusCell = (status: McpStatus): string => {
-    switch (status) {
-      case 'none':
-        return dim(t.mcpStatus.none);
-      case 'configured':
-        return paint('green', t.mcpStatus.configured);
-      case 'unknown':
-        return t.mcpStatus.unknown;
-      // 条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围：栏里是同一个词
-      case 'unsupported':
-      case 'global-only':
-        return dim(t.mcpStatus.unsupported);
-    }
-  };
-
-  // 不可选的原因写成的那句话
-  const unavailableReason = (unavailable: Unavailable): string => {
-    switch (unavailable.kind) {
-      case 'no-host':
-        return t.needsHost;
-      case 'hosts':
-        return t.unsupportedByHosts;
-      case 'global-only':
-        return t.mcpGlobalOnly;
-      case 'os':
-        return t.unsupportedOs(unavailable.os);
-    }
-  };
   const reasonOf = (unavailable: Unavailable | undefined): { unavailable?: string } =>
-    unavailable ? { unavailable: unavailableReason(unavailable) } : {};
+    unavailable ? { unavailable: unavailableReason(t, unavailable) } : {};
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
   // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里。below 是列表下方另外多占的行数
@@ -696,7 +663,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             name: skill.name,
             about: skill.description[lang],
             recommended: true,
-            cells: statuses.map((status) => statusCell(status, skill.version)),
+            cells: statuses.map((status) => skillCell(status, skill.version)),
             ...reasonOf(unavailable),
           })),
         },
@@ -720,7 +687,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             name: mcp.name,
             about: mcp.description[lang],
             recommended: mcp.recommended,
-            cells: statuses.map(mcpStatusCell),
+            cells: statuses.map((status) => statusCell(mcpStatusText(t, status))),
             ...reasonOf(unavailable),
           })),
         },
@@ -732,7 +699,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             name: tool.name,
             about: tool.description[lang],
             recommended: tool.recommended,
-            cells: [status === 'installed' ? paint('green', t.toolStatus.installed) : dim(t.toolStatus.none)],
+            cells: [statusCell(toolStatusText(t, status))],
             ...reasonOf(unavailable),
           })),
         },

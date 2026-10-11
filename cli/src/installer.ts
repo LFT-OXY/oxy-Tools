@@ -1,4 +1,5 @@
 // 安装器入口，也是测试的主接缝：外部依赖全部由调用方传入，正式运行时用真实实现，测试时全部替换。
+import type { Machine } from './availability.ts';
 import { CatalogError, loadCatalog, localCatalogSource, type CatalogSource } from './catalog.ts';
 import { mainMenu } from './flow.ts';
 import { detectHosts, type Environment } from './hosts.ts';
@@ -117,13 +118,14 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       apps: catalog.apps.length,
     };
     ui.catalogSummary({ hosts, ...counts, skipped: catalog.skipped.length });
+    const machine: Machine = { hosts, env, platform: options.platform, homeDir: options.homeDir, projectDir: options.projectDir };
     if (web) {
       const outcome = await runWebUi({
         lang: startingLang,
         version: VERSION,
-        hosts,
+        catalog,
+        machine,
         counts,
-        skipped: catalog.skipped.length,
         webDir: options.webDir,
         ui,
         openLink: options.openLink,
@@ -135,13 +137,9 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       await askLanguage();
     }
     await mainMenu({
+      ...machine,
       catalog,
       source,
-      hosts,
-      env,
-      platform: options.platform,
-      homeDir: options.homeDir,
-      projectDir: options.projectDir,
       tempDir: options.tempDir,
       githubToken: env['GITHUB_TOKEN'] || undefined,
       interrupt: options.interrupt,

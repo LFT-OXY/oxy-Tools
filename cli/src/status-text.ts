@@ -1,0 +1,75 @@
+// 状态和不可选的原因写成哪个词、是什么含义。两套界面共用：终端界面照含义上样式码，网页界面随画面状态发给页面。
+import type { Unavailable } from './availability.ts';
+import type { McpStatus } from './mcp-status.ts';
+import type { Messages } from './messages.ts';
+import type { SkillStatus } from './skill-status.ts';
+import type { ThirdPartyStatus } from './third-party-status.ts';
+import type { ToolStatus } from './tool-status.ts';
+
+/** 状态的含义：就绪、留意、退后（未装这一类）、不上色 */
+export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
+
+export interface StatusText {
+  text: string;
+  tone: Tone;
+  /** 词后面不上色的那一段：版本、装了几个 */
+  rest?: string;
+}
+
+/** 版本不同时的写法：已装的版本、箭头、清单里的版本 */
+export const versionChange = (installed: string, listed: string, arrow: string): string => `${installed} ${arrow} ${listed}`;
+
+/** listed 是清单里的版本；版本不同时不用词，直接写两个版本号，中间是 arrow */
+export function skillStatusText(t: Messages, status: SkillStatus, listed: string, arrow: string): StatusText {
+  switch (status.kind) {
+    case 'none':
+      return { text: t.skillStatus.none, tone: 'faint' };
+    case 'installed':
+      return { text: t.skillStatus.installed, tone: 'ready', rest: status.version };
+    case 'other-version':
+      return { text: versionChange(status.version, listed, arrow), tone: 'attention' };
+    case 'unmanaged':
+      return { text: t.skillStatus.unmanaged, tone: 'attention' };
+  }
+}
+
+/** 只含一个 skill 的写未装、已装，含多个的装了几个就写「已装 几个/共几个」 */
+export function thirdPartyStatusText(t: Messages, status: ThirdPartyStatus): StatusText {
+  if (status === 'unsupported') return { text: t.mcpStatus.unsupported, tone: 'faint' };
+  const installed = status.filter(Boolean).length;
+  if (installed === 0) return { text: t.skillStatus.none, tone: 'faint' };
+  return { text: t.skillStatus.installed, tone: 'ready', ...(status.length > 1 ? { rest: `${installed}/${status.length}` } : {}) };
+}
+
+export function mcpStatusText(t: Messages, status: McpStatus): StatusText {
+  switch (status) {
+    case 'none':
+      return { text: t.mcpStatus.none, tone: 'faint' };
+    case 'configured':
+      return { text: t.mcpStatus.configured, tone: 'ready' };
+    case 'unknown':
+      return { text: t.mcpStatus.unknown, tone: 'plain' };
+    // 条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围：是同一个词
+    case 'unsupported':
+    case 'global-only':
+      return { text: t.mcpStatus.unsupported, tone: 'faint' };
+  }
+}
+
+export function toolStatusText(t: Messages, status: ToolStatus): StatusText {
+  return status === 'installed' ? { text: t.toolStatus.installed, tone: 'ready' } : { text: t.toolStatus.none, tone: 'faint' };
+}
+
+/** 不可选的原因写成的那句话 */
+export function unavailableReason(t: Messages, unavailable: Unavailable): string {
+  switch (unavailable.kind) {
+    case 'no-host':
+      return t.needsHost;
+    case 'hosts':
+      return t.unsupportedByHosts;
+    case 'global-only':
+      return t.mcpGlobalOnly;
+    case 'os':
+      return t.unsupportedOs(unavailable.os);
+  }
+}
