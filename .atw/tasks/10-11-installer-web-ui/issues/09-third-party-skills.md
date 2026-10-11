@@ -4,7 +4,7 @@
 
 **Blocked by:** 08
 **Status:** ready-for-agent
-**Impl:** doing
+**Impl:** done
 
 - [x] 先改规范：网页界面的契约补上挑第三方 Skill 里的 skill 的意图、汇总里第三方 Skill 各项的画面状态。
 - [x] 状态每个所选宿主一个（未装、已装、已装几个 / 共几个、不支持），写法不变；所选的宿主一个都不支持时不可选，原因是「需要别的 AI Agent」。
