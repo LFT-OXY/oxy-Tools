@@ -39,6 +39,7 @@ export function Browse({ state, send, rising }: { state: ViewState; send: (inten
           ))}
         </ul>
         <Machine machine={state.machine} t={t} />
+        <Language state={state} send={send} />
       </nav>
 
       {/* 这一栏自己滚动：能用键盘聚焦，方向键才滚得动 */}
@@ -99,6 +100,24 @@ function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
           ),
       )}
     </section>
+  );
+}
+
+/**
+ * 左栏最下面的切换语言：两格的分段控件，名字和两项随画面状态来。
+ * 换了只告诉安装器，由它按新的语言重发画面状态；哪一格是当前的也照画面状态画
+ */
+function Language({ state, send }: { state: ViewState; send: (intent: Intent) => void }) {
+  const { label, options } = state.language;
+  return (
+    <div class="language segments" role="radiogroup" aria-label={label}>
+      {options.map(({ id, name }) => (
+        <label key={id} lang={id === 'zh' ? 'zh-CN' : 'en'}>
+          <input type="radio" name="lang" checked={state.lang === id} onChange={() => send({ type: 'lang', lang: id })} />
+          <span>{name}</span>
+        </label>
+      ))}
+    </div>
   );
 }
 

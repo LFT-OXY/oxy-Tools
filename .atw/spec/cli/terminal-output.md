@@ -18,7 +18,7 @@ ui.installSummary({ skills, mcps, tools });
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
 
-文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。例外有两处：语言提问的三段字（`Language / 语言`、`中文`、`English`）不随界面语言变，是 `ui.ts` 里的常量；网页界面的页面自己那几句版式上固定的字（栏名、按钮、结束画面的说明）在 `cli/web/main.tsx` 里，因为它们在页面连不上安装器时也得说得出来——哪些算、为什么，见 [网页界面的契约](./web-ui-contract.md)。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另外的类型（skill 是 `SkillInstallProblem`，MCP 是 `McpInstallProblem`），文案在 `installProblem`、`mcpInstallProblem`。
+文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。例外有两处：语言提问的三段字（`Language / 语言`、`中文`、`English`）不随界面语言变，是 `messages.ts` 里的常量 `LANGUAGE_QUESTION`、`LANGUAGES`（终端界面的语言提问和网页界面上切换语言的控件共用这一份）；网页界面的页面自己那几句版式上固定的字（栏名、按钮、结束画面的说明）在 `cli/web/text.tsx` 里，因为它们在页面连不上安装器时也得说得出来——哪些算、为什么，见 [网页界面的契约](./web-ui-contract.md)。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另外的类型（skill 是 `SkillInstallProblem`，MCP 是 `McpInstallProblem`），文案在 `installProblem`、`mcpInstallProblem`。
 
 括号里的技术原因只放错误码和 `HTTP 503` 这类不需要翻译的东西。**别的模块里不写给用户看的句子**：要说一句话，就给联合类型加一种情况，在 `messages.ts` 里写中英两份。外部命令自己打出来的话同样不转述（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）。
 

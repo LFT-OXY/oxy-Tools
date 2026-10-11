@@ -7,14 +7,21 @@ export type Intent =
   /** 换一张列表看：list 是画面状态的 menu 里某一行的 id */
   | { type: 'open'; list: string }
   /** 页面开始播开场动画了（或决定不播）：这次运行里不再播 */
-  | { type: 'intro-seen' };
+  | { type: 'intro-seen' }
+  /** 换语言：安装器按新的语言重发画面状态，别的都不变；终端上的语言不跟着变 */
+  | { type: 'lang'; lang: Lang };
+
+export type Lang = 'zh' | 'en';
 
 /** 安装范围：装到全局，还是装到项目 */
 export type Scope = 'global' | 'project';
 
 /** 安装器发给页面的整份画面状态：页面连上时发一次，之后每次变化再发一整份 */
 export interface ViewState {
-  lang: 'zh' | 'en';
+  /** 页面现在的语言：起初是系统语言或 --lang 的，之后是页面上换过的 */
+  lang: Lang;
+  /** 切换语言的控件：它的名字和各项是终端界面语言提问的那一份文案，不随语言变 */
+  language: { label: string; options: { id: Lang; name: string }[] };
   /** open 是开着；finished 是用户点了「完成」，安装器随后退出 */
   stage: 'open' | 'finished';
   version: string;

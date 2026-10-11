@@ -145,6 +145,15 @@ const scenes: Scene[] = [
   },
   { title: '浏览 · 条目最多的用途 · 1024×768', note: '左栏、右栏收窄，卡片仍是两张一排；没有横向滚动条，「去汇总」看得见', drive: crowded, viewport: NARROW },
   {
+    title: '切换语言 · 页面上换成了英文',
+    note: '中文起的安装器，页面上点了 English：左栏最下面的分段控件停在 English 上；仍是「文档处理」这张列表，凡是随画面状态来的字都成了英文，页面自己的固定文字也换了；浏览器的语言仍是中文',
+    drive: async (page) => {
+      await crowded(page);
+      await page.send({ type: 'lang', lang: 'en' });
+      await page.until((state) => state.lang === 'en');
+    },
+  },
+  {
     title: '浏览 · 有不可选的条目',
     note: 'officecli 不支持这个系统：虚线的边、虚线的勾选框，原因直接写在状态的位置，不靠鼠标悬停；名字和说明退一档，不用最淡的文字',
     drive: crowded,

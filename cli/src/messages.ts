@@ -21,6 +21,14 @@ export type ToolEvidence = { command: string } | { path: string };
 /** 进入网页界面之后才知道它用不了的原因：本机的网页起不来、浏览器打不开 */
 export type WebUnavailable = 'server' | 'browser';
 
+// 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项。
+// 终端界面的语言提问和网页界面上切换语言的控件用的是同一份
+export const LANGUAGE_QUESTION = 'Language / 语言';
+export const LANGUAGES: readonly { lang: Lang; label: string }[] = [
+  { lang: 'zh', label: '中文' },
+  { lang: 'en', label: 'English' },
+];
+
 /** 一个 key 问完之后的结局：填了、留空了、这次运行里早先填过所以没再问 */
 export type KeyOutcome = 'entered' | 'blank' | 'reused';
 

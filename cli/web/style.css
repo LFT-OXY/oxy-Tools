@@ -255,6 +255,11 @@ input[type='checkbox']:checked::after {
 .machine .notice {
   color: var(--ink);
 }
+/* 切换语言：本机信息下面的一个分段控件，靠左，不撑满这一栏 */
+.language {
+  align-self: flex-start;
+  margin: 14px 8px 0;
+}
 
 .list {
   padding: 0 24px 40px;

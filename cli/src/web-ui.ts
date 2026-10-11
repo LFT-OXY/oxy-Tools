@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import type { Machine } from './availability.ts';
 import type { Catalog } from './catalog.ts';
 import type { LinkOpener } from './installer.ts';
-import { MESSAGES, type Lang, type WebUnavailable } from './messages.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type WebUnavailable } from './messages.ts';
 import { Interrupted } from './run-plan.ts';
 import type { Ui } from './ui.ts';
 import type { Intent, ViewState } from './web-protocol.ts';
@@ -34,7 +34,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   // 口令 24 个随机字节，写出来 32 个字符：整条网址在终端上写得下一行
   const token = randomBytes(24).toString('base64url');
   // 网页界面的状态都在这里；画面状态每次从它现算，条目的状态因此总是现探测的
-  const session: Session = { stage: 'open', introSeen: false, list: menuOf(options.catalog, options.lang)[0]?.id };
+  const session: Session = { lang: options.lang, stage: 'open', introSeen: false, list: menuOf(options.catalog, options.lang)[0]?.id };
   let finish = (): void => {};
   const finished = new Promise<void>((resolve) => (finish = resolve));
 
@@ -53,11 +53,15 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
           case 'open':
             // 只认左栏里有的那几行
-            if (!menuOf(options.catalog, options.lang).some((row) => row.id === intent.list)) return false;
+            if (!menuOf(options.catalog, session.lang).some((row) => row.id === intent.list)) return false;
             session.list = intent.list;
             break;
           case 'intro-seen':
             session.introSeen = true;
+            break;
+          case 'lang':
+            // 只换说法：正在看的列表照旧（id 不随语言变）；终端上的呈现层不动
+            session.lang = intent.lang;
             break;
         }
         server.push(viewOf(options, session));
@@ -99,14 +103,16 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   }
 }
 
-/** 页面上会变的那几样：走到哪一步、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有） */
+/** 页面上会变的那几样：页面的语言、走到哪一步、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有） */
 interface Session {
+  lang: Lang;
   stage: ViewState['stage'];
   introSeen: boolean;
   list: string | undefined;
 }
 
-function viewOf({ lang, version, catalog, machine, counts }: WebUiOptions, session: Session): ViewState {
+function viewOf({ version, catalog, machine, counts }: WebUiOptions, session: Session): ViewState {
+  const { lang } = session;
   const t = MESSAGES[lang];
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
@@ -116,6 +122,8 @@ function viewOf({ lang, version, catalog, machine, counts }: WebUiOptions, sessi
   const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang);
   return {
     lang,
+    // 和终端界面的语言提问是同一份字
+    language: { label: LANGUAGE_QUESTION, options: LANGUAGES.map(({ lang: id, label }) => ({ id, name: label })) },
     stage: session.stage,
     version,
     introSeen: session.introSeen,
@@ -144,8 +152,9 @@ function viewOf({ lang, version, catalog, machine, counts }: WebUiOptions, sessi
 // 页面发来的东西不可信：只认得出形状对的意图
 function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
-  const { type, list } = raw as { type?: unknown; list?: unknown };
+  const { type, list, lang } = raw as { type?: unknown; list?: unknown; lang?: unknown };
   if (type === 'finish' || type === 'intro-seen') return { type };
   if (type === 'open' && typeof list === 'string') return { type, list };
+  if (type === 'lang' && (lang === 'zh' || lang === 'en')) return { type, lang };
   return undefined;
 }

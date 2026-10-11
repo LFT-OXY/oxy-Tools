@@ -7,7 +7,7 @@ import type { Command, Environment, Host, Scope } from './hosts.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type KeyOutcome, type Lang, type WebUnavailable } from './messages.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebUnavailable } from './messages.ts';
 import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
@@ -91,12 +91,6 @@ const ASCII: typeof UNICODE = {
 };
 // 大标志的渐变从左到右依次经过这三个色标：粉、紫、蓝
 const LOGO_STOPS = ['#E255C0', '#8B5CF6', '#3D8FE6'].map((hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)));
-// 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项
-const LANGUAGE_QUESTION = 'Language / 语言';
-const LANGUAGES: readonly { lang: Lang; label: string }[] = [
-  { lang: 'zh', label: '中文' },
-  { lang: 'en', label: 'English' },
-];
 // 转动符号的节奏照搬交互库的默认值
 const SPINNER_INTERVAL = 80;
 const ERASE_LINE = '\r\x1b[2K';
