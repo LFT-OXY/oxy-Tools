@@ -5,7 +5,7 @@ import { mainMenu } from './flow.ts';
 import { detectHosts, type Environment } from './hosts.ts';
 import type { Failure, Lang } from './messages.ts';
 import { PromptAborted, type Prompter } from './prompter.ts';
-import { Interrupted } from './run-plan.ts';
+import { Interrupted, unexpected, type Runtime } from './run-plan.ts';
 import { createUi, type TerminalOutput } from './ui.ts';
 import { VERSION } from './version.ts';
 import { runWebUi } from './web-ui.ts';
@@ -119,35 +119,24 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     };
     ui.catalogSummary({ hosts, ...counts, skipped: catalog.skipped.length });
     const machine: Machine = { hosts, env, platform: options.platform, homeDir: options.homeDir, projectDir: options.projectDir };
+    // 执行要的东西，两套界面交给「执行」的是同一份
+    const runtime: Runtime = {
+      ...machine,
+      source,
+      tempDir: options.tempDir,
+      githubToken: env['GITHUB_TOKEN'] || undefined,
+      interrupt: options.interrupt,
+      runCommand: options.runCommand,
+      keys: new Map(),
+    };
     if (web) {
-      const outcome = await runWebUi({
-        lang: startingLang,
-        version: VERSION,
-        catalog,
-        machine,
-        counts,
-        webDir: options.webDir,
-        ui,
-        openLink: options.openLink,
-        interrupt: options.interrupt,
-      });
+      const outcome = await runWebUi({ lang: startingLang, version: VERSION, catalog, runtime, counts, webDir: options.webDir, ui, openLink: options.openLink });
       if (outcome === 'finished') return 0;
       // 进来之后才知道网页界面用不了：说明一句原因，从语言提问接着走终端界面。目录不重读
       ui.webUnavailable(outcome.unavailable);
       await askLanguage();
     }
-    await mainMenu({
-      ...machine,
-      catalog,
-      source,
-      tempDir: options.tempDir,
-      githubToken: env['GITHUB_TOKEN'] || undefined,
-      interrupt: options.interrupt,
-      ui,
-      prompter: options.prompter,
-      runCommand: options.runCommand,
-      keys: new Map(),
-    });
+    await mainMenu({ ...runtime, catalog, ui, prompter: options.prompter });
     return 0;
   } catch (error) {
     if (error instanceof PromptAborted || error instanceof Interrupted) return EXIT_INTERRUPTED;
@@ -155,9 +144,7 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       ui.failure(error.failure);
       return EXIT_FAILURE;
     }
-    // 只取消息的第一行：后面可能跟着堆栈；消息为空时退而用错误的类型名
-    const message = error instanceof Error ? error.message.split('\n')[0] || error.name : String(error);
-    ui.failure({ kind: 'unexpected', detail: message });
+    ui.failure(unexpected(error));
     return EXIT_FAILURE;
   }
 }

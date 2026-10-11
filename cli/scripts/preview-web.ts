@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CatalogSource } from '../src/catalog.ts';
+import { CatalogError, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller } from '../src/installer.ts';
 import type { Prompter } from '../src/prompter.ts';
 import { openPage, type Page } from '../test/browser.ts';
@@ -24,6 +24,7 @@ import {
   SHOWCASE_SKILLS,
   THIRD_PARTY_INSTALLED,
   catalogOf,
+  downloads,
   stageWorld,
   type World,
 } from './preview-samples.ts';
@@ -103,6 +104,11 @@ const WORST_CATALOG = {
   apps: MIXED_CATALOG.apps.map((app) => (LONGEST.includes(app.name ?? '') ? { ...app, purpose: CROWDED } : app)),
 };
 const worst = catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, WORST_CATALOG);
+// 同一份目录，下载的时候各有各的遭遇：onetake 一直下不完；explanation 下到一半断了；向 GitHub 的查询被限流
+const worstWith = (pin: CatalogSource['pin']): CatalogSource => catalogOf({ version: 1, skills: SHOWCASE_SKILLS }, WORST_CATALOG, pin);
+const neverFinishes = worstWith(downloads({ hangs: ['onetake'] }));
+const oneFails = worstWith(downloads({ fails: { explanation: 'HTTP 503' } }));
+const queryLimited = worstWith(() => Promise.reject(new CatalogError({ kind: 'rate-limited', authenticated: false, minutes: 37 })));
 const withBrokenEntry = catalogOf({ version: 1, skills: [...SHOWCASE_SKILLS, { name: 'broken', path: '../elsewhere' }] }, WORST_CATALOG);
 const emptyCatalog = catalogOf({ version: 1, skills: [] });
 
@@ -120,6 +126,50 @@ const toPurpose =
 const crowded = toPurpose(CROWDED);
 const appsOnly = toPurpose('dev-workflow');
 const EN = { lang: 'en' as const };
+/** 一步接一步地驱动 */
+const inOrder =
+  (...drives: Drive[]): Drive =>
+  async (page) => {
+    for (const drive of drives) await drive(page);
+  };
+/** 勾上这几个本仓库的 skill */
+const picking =
+  (...names: string[]): Drive =>
+  async (page) => {
+    for (const name of names) await page.send({ type: 'pick', kind: 'skill', name, on: true });
+    await page.until((state) => state.selected.length === names.length);
+  };
+/** 去汇总 */
+const reviewing: Drive = async (page) => {
+  await page.send({ type: 'review' });
+  await page.until((state) => state.summary !== undefined);
+};
+/** 汇总里第几个要逐项决定的覆盖，勾上「覆盖它」 */
+const agreeing =
+  (nth: number): Drive =>
+  async (page) => {
+    const asked = (page.state().summary?.entries ?? []).flatMap((entry) => entry.rows.flatMap((row) => (row.overwrite ? [row.overwrite.id] : [])));
+    const item = asked[nth];
+    if (item === undefined) throw new Error(`汇总里没有第 ${nth + 1} 个要逐项决定的覆盖`);
+    await page.send({ type: 'overwrite', item, on: true });
+    await page.until((state) => state.summary?.entries.some((entry) => entry.rows.some((row) => row.overwrite?.id === item && row.overwrite.agreed)) ?? false);
+  };
+/** 确认安装，等到这一批走到 reached 说的那一步 */
+const installing =
+  (reached: (run: NonNullable<ReturnType<Page['state']>['run']>) => boolean): Drive =>
+  async (page) => {
+    await page.send({ type: 'install', summary: page.state().summary?.id ?? '' });
+    await page.until((state) => state.run !== undefined && reached(state.run));
+  };
+const finished = installing((run) => run.done);
+/** 拿着早先那份汇总的标识去确认：不装，推来的是新的一份 */
+const outdated: Drive = async (page) => {
+  await page.send({ type: 'install', summary: 'an-earlier-summary' });
+  await page.until((state) => state.summary?.renewed === true);
+};
+// 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
+const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
+const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
 
 const scenes: Scene[] = [
   { title: '开场动画 · 敲命令', note: '第 0.6 秒：黑底上 $ npx oxy-tools 一个字一个字敲出来，行尾是光标。浅色下开场也是黑底白字', intro: 600 },
@@ -176,6 +226,43 @@ const scenes: Scene[] = [
   { title: '浏览 · 用途下只有外部项目 · 一个宿主都没有', note: '外部项目不靠宿主，照常看得到、点得开', ...NO_HOSTS, drive: appsOnly },
   { title: '浏览 · 有条目被跳过', note: '目录里有一条写坏的条目：左栏的本机信息多一行「注意」', catalog: withBrokenEntry },
   { title: '浏览 · 目录是空的', note: '左栏没有用途，中间一栏只有那一句', catalog: emptyCatalog },
+  {
+    title: '浏览 · 已选了几个',
+    note: '勾上的卡片是前景色的边、抬一档的底色、实心的勾；右栏列出已选的五个（照勾选的先后，每个能当场去掉）和数量，其中一个在别的用途下；「去汇总」点得了，和数量一起一直在屏幕上',
+    drive: inOrder(crowded, MIXED_PICKS),
+  },
+  { title: '浏览 · 已选了几个 · 1024×768', note: '右栏收窄：已选的数量和「去汇总」仍在屏幕上，不用滚动去找', drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
+  {
+    title: '汇总 · 有要逐项决定的覆盖',
+    note: '每个条目一段，段里每个宿主一行：宿主、操作（覆盖是留意色粗体）、位置和备注。pr 在 Claude Code 下、writing-for-agents 在 Codex 下不是本工具装的：那一行下面是留意底色的一条「覆盖它」，缺省没勾，写着没勾会怎样；这里勾上了第二个。没有将执行的命令',
+    drive: inOrder(summarized, agreeing(1)),
+  },
+  { title: '汇总 · 1024×768', note: '面板给底下留 280px；位置放不下就在任意处断开，没有横向滚动条', drive: summarized, viewport: NARROW },
+  { title: '汇总 · 全是新装', note: '没有要逐项决定的事，也没有提醒：只有各项和底部的两个按钮', drive: inOrder(picking('onetake', 'wizard'), reviewing) },
+  {
+    title: '汇总 · 新的一份',
+    note: '确认的时候带回的标识对不上（机器上的状态变了，或覆盖的决定改过）：没有装，顶上一条写明这是新的一份、要再确认',
+    drive: inOrder(summarized, outdated),
+  },
+  {
+    title: '安装中',
+    note: '标题旁边是装完了几项、一共几项，下面一条进度条。装好了的是就绪色的 ✓；onetake 正在下载（转动的小圆环），后面的在等待，名字不加粗。底部一句提醒，「完成」点不了',
+    catalog: neverFinishes,
+    drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))),
+  },
+  { title: '结果 · 全部装好', note: '三格合计，下面每一项一行；原先是别的版本的写两个版本。底部「继续挑选」和「完成」', drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
+  {
+    title: '结果 · 有没装上的、有跳过的',
+    note: 'explanation 下载中断：失败色的 ✗ 和粗体的「失败」，后面是原因；合计里失败的数字是失败色；最下面一段「下一步」。没同意覆盖的两项是跳过',
+    catalog: oneFails,
+    drive: inOrder(summarized, finished),
+  },
+  {
+    title: '结果 · 向 GitHub 查询失败',
+    note: '出错说明在合计和各行之间：失败色粗体的标题，「原因」「下一步」各一段，话和终端界面是同一份。本仓库的 skill 一个都没装，不在行里',
+    catalog: queryLimited,
+    drive: inOrder(summarized, finished),
+  },
   { title: '键盘焦点', note: '按了三下 Tab：焦点是一圈 2px 的前景色描边，离元素 2px，深浅色下都看得见', tabs: 3 },
   { title: '结束 · 已完成', note: '点了「完成」：一个标题、一句说明，没有任何控件；彩色只落在行首的符号上', ending: 'finished' },
   { title: '结束 · 安装器已退出', note: '终端上按了 Ctrl+C，页面重连几次连不上', ending: 'exited' },
@@ -195,6 +282,12 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 一个宿主都没有', ...EN, ...NO_HOSTS, drive: crowded },
   { title: '英文 · 浏览 · 只检测到 Codex', ...EN, ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   { title: '英文 · 浏览 · 用途下只有外部项目', ...EN, drive: appsOnly },
+  { title: '英文 · 浏览 · 已选了几个 · 1024×768', ...EN, drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
+  { title: '英文 · 汇总 · 有要逐项决定的覆盖', ...EN, drive: inOrder(summarized, agreeing(1)) },
+  { title: '英文 · 汇总 · 新的一份 · 1024×768', ...EN, drive: inOrder(summarized, outdated), viewport: NARROW },
+  { title: '英文 · 安装中', ...EN, catalog: neverFinishes, drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))) },
+  { title: '英文 · 结果 · 有没装上的、有跳过的', ...EN, catalog: oneFails, drive: inOrder(summarized, finished) },
+  { title: '英文 · 结果 · 向 GitHub 查询失败', ...EN, catalog: queryLimited, drive: inOrder(summarized, finished) },
   { title: '英文 · 结束 · 已完成', ...EN, ending: 'finished' },
   { title: '英文 · 结束 · 安装器已退出', ...EN, ending: 'exited' },
   { title: '英文 · 结束 · 口令不对', ...EN, ending: 'denied' },

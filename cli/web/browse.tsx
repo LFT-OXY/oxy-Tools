@@ -1,7 +1,7 @@
 // 逛目录的画面：三栏——左边「推荐」和各个用途，中间当前这张列表里的条目，右边已选。
-// 画什么都来自画面状态；这里只定怎么排。还不能勾选：勾选框和「去汇总」先是点不了的。
+// 画什么都来自画面状态；这里只定怎么排。勾选只告诉安装器，勾没勾上照画面状态画。
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { AppView, ComponentView, Intent, ListingView, StatusView, ViewState } from '../src/web-protocol.ts';
+import type { AppView, ComponentView, Intent, ListingView, SectionView, StatusView, ViewState } from '../src/web-protocol.ts';
 import { Logo } from './logo.tsx';
 import { TEXT } from './text.tsx';
 
@@ -9,8 +9,8 @@ type Text = (typeof TEXT)[ViewState['lang']];
 // 开场之后卡片依次浮上来，最多错开这么多张
 const STAGGERED = 9;
 
-/** rising：开场动画正在播，底下的卡片等它退场时依次浮上来 */
-export function Browse({ state, send, rising }: { state: ViewState; send: (intent: Intent) => void; rising: boolean }) {
+/** rising：开场动画正在播，底下的卡片等它退场时依次浮上来；covered：上面盖着面板，这里的东西点不到、也聚焦不到 */
+export function Browse({ state, send, rising, covered }: { state: ViewState; send: (intent: Intent) => void; rising: boolean; covered: boolean }) {
   const t = TEXT[state.lang];
   const { listing } = state;
   const current = state.menu.find((row) => row.id === listing?.id);
@@ -21,7 +21,7 @@ export function Browse({ state, send, rising }: { state: ViewState; send: (inten
   }, [listing?.id]);
 
   return (
-    <div class="shell">
+    <div class="shell" inert={covered}>
       <nav class="side" aria-label={t.purposes}>
         <div class="brand">
           <Logo />
@@ -53,7 +53,7 @@ export function Browse({ state, send, rising }: { state: ViewState; send: (inten
               </div>
               <Target state={state} t={t} />
             </header>
-            <Components listing={listing} showsHosts={state.target.hosts.length > 1} />
+            <Components listing={listing} showsHosts={state.target.hosts.length > 1} send={send} />
             {listing.apps && <Apps {...listing.apps} />}
           </>
         ) : (
@@ -61,7 +61,7 @@ export function Browse({ state, send, rising }: { state: ViewState; send: (inten
         )}
       </main>
 
-      <Tray t={t} send={send} />
+      <Tray selected={state.selected} t={t} send={send} />
     </div>
   );
 }
@@ -169,7 +169,7 @@ function Target({ state, t }: { state: ViewState; t: Text }) {
   );
 }
 
-function Components({ listing, showsHosts }: { listing: ListingView; showsHosts: boolean }) {
+function Components({ listing, showsHosts, send }: { listing: ListingView; showsHosts: boolean; send: (intent: Intent) => void }) {
   // 卡片浮上来的先后跨着分区数
   let order = 0;
   return (
@@ -179,7 +179,7 @@ function Components({ listing, showsHosts }: { listing: ListingView; showsHosts:
           <SectionTitle title={section.title} note={section.note} />
           <ul class="cards">
             {section.entries.map((entry) => (
-              <Card key={entry.name} entry={entry} showsHosts={showsHosts} order={Math.min(order++, STAGGERED - 1)} />
+              <Card key={entry.name} kind={section.kind} entry={entry} showsHosts={showsHosts} order={Math.min(order++, STAGGERED - 1)} send={send} />
             ))}
           </ul>
         </section>
@@ -197,14 +197,37 @@ function SectionTitle({ title, note }: { title: string; note?: string | undefine
   );
 }
 
-function Card({ entry, showsHosts, order }: { entry: ComponentView; showsHosts: boolean; order: number }) {
+function Card({
+  kind,
+  entry,
+  showsHosts,
+  order,
+  send,
+}: {
+  kind: SectionView['kind'];
+  entry: ComponentView;
+  showsHosts: boolean;
+  order: number;
+  send: (intent: Intent) => void;
+}) {
   const unavailable = entry.unavailable !== undefined;
+  const picked = entry.picked === true;
+  // 现在勾得上的只有本仓库的 skill；别的类型的勾选框先是点不了的。
+  // 点了只告诉安装器，勾选框自己先不变：勾没勾上等画面状态来了才算
+  const toggle =
+    kind === 'skill' && !unavailable
+      ? (event: { currentTarget: HTMLInputElement }): void => {
+          event.currentTarget.checked = picked;
+          send({ type: 'pick', kind, name: entry.name, on: !picked });
+        }
+      : undefined;
   return (
-    <li class={unavailable ? 'card unavailable' : 'card'} style={{ '--i': order }}>
-      <div class="head">
+    <li class={`card${unavailable ? ' unavailable' : ''}${picked ? ' selected' : ''}`} style={{ '--i': order }}>
+      {/* 名字和勾选框是同一个标签：点名字也勾得上 */}
+      <label class="head">
         <h3>{entry.name}</h3>
-        <input type="checkbox" aria-label={entry.name} disabled />
-      </div>
+        <input type="checkbox" checked={picked} disabled={!toggle} onChange={toggle} />
+      </label>
       {entry.mark !== undefined && (
         <p class="tags">
           <span class="tag solid">{entry.mark}</span>
@@ -251,20 +274,36 @@ function Apps({ title, note, entries }: { title: string; note: string; entries: 
   );
 }
 
-/** 右栏：已选。现在还不能勾选，先是空状态；「完成」让安装器退出 */
-function Tray({ t, send }: { t: Text; send: (intent: Intent) => void }) {
+/** 右栏：已选了哪些、一共几个，能在这里直接去掉某一个；「去汇总」和「完成」固定在底部。「完成」让安装器退出 */
+function Tray({ selected, t, send }: { selected: ViewState['selected']; t: Text; send: (intent: Intent) => void }) {
   const [finishing, setFinishing] = useState(false);
   return (
     <aside class="tray" aria-label={t.selected}>
       <div class="picked">
         <h2>
           {t.selected}
-          <span class="number">0</span>
+          <span class="number">{selected.length}</span>
         </h2>
-        <p class="empty">{t.nothingSelected}</p>
+        {selected.length === 0 ? (
+          <p class="empty">{t.nothingSelected}</p>
+        ) : (
+          <ul>
+            {selected.map((entry) => (
+              <li key={`${entry.kind} ${entry.name}`}>
+                <p>
+                  <span class="name">{entry.name}</span>
+                  <small>{entry.type}</small>
+                </p>
+                <button type="button" class="remove" aria-label={t.remove(entry.name)} onClick={() => send({ type: 'pick', kind: entry.kind, name: entry.name, on: false })}>
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <footer>
-        <button type="button" class="primary" disabled>
+        <button type="button" class="primary" disabled={selected.length === 0} onClick={() => send({ type: 'review' })}>
           {t.toSummary} →
         </button>
         <button

@@ -61,6 +61,11 @@ export class Interrupted extends Error {
   }
 }
 
+/** 意料之外的错写成出错说明：只取消息的第一行（后面可能跟着堆栈），消息为空时退而用错误的类型名 */
+export function unexpected(error: unknown): Failure {
+  return { kind: 'unexpected', detail: error instanceof Error ? error.message.split('\n')[0] || error.name : String(error) };
+}
+
 /**
  * 本仓库的 skill 在前，第三方 Skill 其次，MCP 在后，工具排在最后——它的命令会直接接管终端的输入输出。
  * 一项失败不影响其余项

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Intent, ViewState } from '../src/web-protocol.ts';
 import { Browse } from './browse.tsx';
 import { Intro } from './intro.tsx';
+import { Run, Summary } from './panel.tsx';
 import { TEXT, type Lang } from './text.tsx';
 
 /** connecting 是还没收到画面状态；denied 是口令不对；exited 是连接断了、重连不上 */
@@ -94,9 +95,12 @@ function App() {
   if (screen.kind === 'denied') return <Ended mark="✗" tone="failed" {...t.denied} />;
   if (screen.kind === 'exited') return <Ended mark="–" tone="quiet" {...t.exited} />;
   if (screen.state.stage === 'finished') return <Ended mark="✓" tone="ready" {...t.finished} />;
+  const { summary, run } = screen.state;
   return (
     <>
-      <Browse state={screen.state} send={send} rising={intro.rising} />
+      <Browse state={screen.state} send={send} rising={intro.rising} covered={Boolean(summary ?? run)} />
+      {summary && <Summary summary={summary} t={t} send={send} />}
+      {run && <Run run={run} t={t} send={send} />}
       {intro.playing && <Intro version={screen.state.version} ended={introEnded} skipped={introSkipped} />}
     </>
   );

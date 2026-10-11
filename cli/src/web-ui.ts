@@ -1,12 +1,16 @@
 // 网页界面这一边的流程：起本机的网页、交给浏览器打开、等到用户点「完成」。
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
-import type { Machine } from './availability.ts';
-import type { Catalog } from './catalog.ts';
+import { listingStatus, type Machine } from './availability.ts';
+import type { Catalog, Skill } from './catalog.ts';
+import type { Host, Scope } from './hosts.ts';
 import type { LinkOpener } from './installer.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type WebUnavailable } from './messages.ts';
-import { Interrupted } from './run-plan.ts';
+import { byName } from './listing.ts';
+import { planInstall, type Plan } from './plan.ts';
+import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
 import type { Ui } from './ui.ts';
+import { asksOverwrite, decided, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
 import type { Intent, ViewState } from './web-protocol.ts';
 import { startWebServer, type WebServer } from './web-server.ts';
 import { listingView, menuOf } from './web-view.ts';
@@ -16,13 +20,13 @@ export interface WebUiOptions {
   lang: Lang;
   version: string;
   catalog: Catalog;
-  machine: Machine;
+  /** 本机的事实和执行要的东西：交给共用的「算计划」「执行」的就是它 */
+  runtime: Runtime;
   /** 目录里各类条目的数量，和本机信息里数的是同一份 */
   counts: { skills: number; mcps: number; tools: number; apps: number };
   webDir: string;
   ui: Ui;
   openLink: LinkOpener;
-  interrupt: AbortSignal;
 }
 
 /** finished 是用户在页面上点了「完成」；unavailable 是进来之后才知道网页界面用不了，调用方接着走终端界面 */
@@ -30,15 +34,42 @@ export type WebUiOutcome = 'finished' | { unavailable: WebUnavailable };
 
 /** 被 Ctrl+C 打断时抛 Interrupted，抛之前已经把本机的网页关掉。 */
 export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
-  const { interrupt } = options;
+  const { catalog, runtime } = options;
+  const { interrupt } = runtime;
   // 口令 24 个随机字节，写出来 32 个字符：整条网址在终端上写得下一行
   const token = randomBytes(24).toString('base64url');
   // 网页界面的状态都在这里；画面状态每次从它现算，条目的状态因此总是现探测的
-  const session: Session = { lang: options.lang, stage: 'open', introSeen: false, list: menuOf(options.catalog, options.lang)[0]?.id };
+  const session: Session = {
+    lang: options.lang,
+    stage: 'open',
+    introSeen: false,
+    list: menuOf(catalog, options.lang)[0]?.id,
+    picked: [],
+    step: 'browse',
+    agreed: new Set(),
+    renewed: false,
+  };
   let finish = (): void => {};
   const finished = new Promise<void>((resolve) => (finish = resolve));
 
   let server: WebServer;
+  const push = (): void => server.push(viewOf(options, session));
+  // 照计划去装，进度每变一次推一次画面状态。它不往外抛：意料之外的错变成这一批的出错说明
+  const install = async (plan: Plan): Promise<void> => {
+    const { batch, progress } = trackBatch(plan, push);
+    session.batch = batch;
+    let failure: unknown;
+    try {
+      await runPlan(runtime, plan, progress);
+    } catch (error) {
+      // 被 Ctrl+C 打断：本机的网页已经当场关掉了，进程随即退出
+      if (interrupt.aborted) return;
+      failure = error;
+    }
+    settleBatch(batch, failure === undefined ? undefined : unexpected(failure));
+    session.step = 'results';
+    push();
+  };
   try {
     server = await startWebServer({
       webDir: options.webDir,
@@ -49,11 +80,13 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
         if (!intent) return false;
         switch (intent.type) {
           case 'finish':
+            // 正在装的这一批要装完
+            if (session.step === 'installing') return false;
             session.stage = 'finished';
             break;
           case 'open':
             // 只认左栏里有的那几行
-            if (!menuOf(options.catalog, session.lang).some((row) => row.id === intent.list)) return false;
+            if (!menuOf(catalog, session.lang).some((row) => row.id === intent.list)) return false;
             session.list = intent.list;
             break;
           case 'intro-seen':
@@ -63,8 +96,50 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             // 只换说法：正在看的列表照旧（id 不随语言变）；终端上的呈现层不动
             session.lang = intent.lang;
             break;
+          case 'pick': {
+            if (session.step !== 'browse') return false;
+            const skill = catalog.skills.find((candidate) => candidate.name === intent.name);
+            if (!skill) return false;
+            // 不可选的勾不上；去掉总是可以的
+            if (intent.on && !pickable(runtime, skill)) return false;
+            const rest = session.picked.filter((candidate) => candidate !== skill);
+            session.picked = intent.on ? [...rest, skill] : rest;
+            break;
+          }
+          case 'review':
+            if (session.step !== 'browse' || session.picked.length === 0) return false;
+            session.step = 'summary';
+            // 每次进汇总，逐项的覆盖都从「不覆盖」起
+            session.agreed.clear();
+            break;
+          case 'overwrite':
+            if (session.step !== 'summary' || !asksOverwrite(planOf(runtime, session), intent.item)) return false;
+            if (intent.on) session.agreed.add(intent.item);
+            else session.agreed.delete(intent.item);
+            break;
+          case 'install': {
+            if (session.step !== 'summary') return false;
+            // 展示的和执行的是同一份：现在重算出来的和页面上那一份不是同一个标识就不装，给看新的
+            const plan = planOf(runtime, session);
+            session.renewed = summaryId(plan) !== intent.summary;
+            if (session.renewed) break;
+            session.step = 'installing';
+            void install(plan);
+            break;
+          }
+          case 'revise':
+            if (session.step !== 'summary') return false;
+            session.step = 'browse';
+            session.renewed = false;
+            break;
+          case 'continue':
+            if (session.step !== 'results') return false;
+            session.step = 'browse';
+            session.picked = [];
+            delete session.batch;
+            break;
         }
-        server.push(viewOf(options, session));
+        push();
         if (session.stage === 'finished') finish();
         return true;
       },
@@ -103,23 +178,47 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   }
 }
 
-/** 页面上会变的那几样：页面的语言、走到哪一步、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有） */
+/**
+ * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
+ * 勾上了的条目（目录里的那几个对象，照勾选的先后）、挑选走到哪一步、汇总里同意覆盖的那几项、
+ * 上一次确认是不是因为对不上而没装、这一批的进度
+ */
 interface Session {
   lang: Lang;
   stage: ViewState['stage'];
   introSeen: boolean;
   list: string | undefined;
+  picked: Skill[];
+  step: 'browse' | 'summary' | 'installing' | 'results';
+  agreed: Set<string>;
+  renewed: boolean;
+  batch?: Batch;
 }
 
-function viewOf({ version, catalog, machine, counts }: WebUiOptions, session: Session): ViewState {
+// 还不能改：装进检测到的全部宿主，装到全局
+function targetOf(machine: Machine): { hosts: Host[]; scope: Scope } {
+  return { hosts: machine.hosts.filter((host) => host.detected), scope: 'global' };
+}
+
+// 这个 skill 现在勾不勾得上：可不可选由两套界面共用的那一块定
+function pickable(machine: Machine, skill: Skill): boolean {
+  const { hosts, scope } = targetOf(machine);
+  return listingStatus(machine, { skills: [skill], thirdParty: [], mcps: [], tools: [] }, hosts, scope).skills.every(({ unavailable }) => !unavailable);
+}
+
+// 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。本仓库的 skill 按名字，和终端界面的先后一样
+function planOf(machine: Machine, session: Session): Plan {
+  const selection = { ...targetOf(machine), skills: byName(session.picked), thirdParty: [], mcps: [], tools: [], filledKeys: new Map() };
+  return decided(planInstall(machine, selection), session.agreed);
+}
+
+function viewOf({ version, catalog, runtime: machine, counts }: WebUiOptions, session: Session): ViewState {
   const { lang } = session;
   const t = MESSAGES[lang];
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
-  // 还不能改：装进检测到的全部宿主，装到全局
-  const hosts = machine.hosts.filter((host) => host.detected);
-  const scope = 'global';
-  const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang);
+  const { hosts, scope } = targetOf(machine);
+  const listing = session.list === undefined ? undefined : listingView(machine, catalog, session.list, hosts, scope, lang, new Set(session.picked));
   return {
     lang,
     // 和终端界面的语言提问是同一份字
@@ -146,15 +245,22 @@ function viewOf({ version, catalog, machine, counts }: WebUiOptions, session: Se
     },
     menu: menuOf(catalog, lang),
     ...(listing ? { listing } : {}),
+    selected: session.picked.map((skill) => ({ kind: 'skill', name: skill.name, type: t.kinds.skill })),
+    ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(machine, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
+    ...(session.batch ? { run: runView(t, machine.platform, session.batch) } : {}),
   };
 }
 
-// 页面发来的东西不可信：只认得出形状对的意图
+// 页面发来的东西不可信：只认得出形状对的意图。每种意图认得的字段是定死的，多带了别的（命令、路径之类）整个不认
 function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
-  const { type, list, lang } = raw as { type?: unknown; list?: unknown; lang?: unknown };
-  if (type === 'finish' || type === 'intro-seen') return { type };
-  if (type === 'open' && typeof list === 'string') return { type, list };
-  if (type === 'lang' && (lang === 'zh' || lang === 'en')) return { type, lang };
+  const { type, list, lang, kind, name, on, item, summary } = raw as Record<string, unknown>;
+  const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
+  if ((type === 'finish' || type === 'intro-seen' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
+  if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
+  if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
+  if (type === 'pick' && kind === 'skill' && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) return { type, kind, name, on };
+  if (type === 'overwrite' && typeof item === 'string' && typeof on === 'boolean' && only('item', 'on')) return { type, item, on };
+  if (type === 'install' && typeof summary === 'string' && only('summary')) return { type, summary };
   return undefined;
 }

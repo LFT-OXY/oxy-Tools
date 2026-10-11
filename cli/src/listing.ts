@@ -12,7 +12,8 @@ export interface Listing {
   marksRecommended: boolean;
 }
 
-const byName = <Entry extends { name: string }>(entries: readonly Entry[]): Entry[] =>
+/** 按名字排 */
+export const byName = <Entry extends { name: string }>(entries: readonly Entry[]): Entry[] =>
   [...entries].sort((a, b) => (a.name < b.name ? -1 : 1));
 // 组件的一段里带推荐的在前，其余按名字
 const recommendedFirst = <Entry extends { name: string; recommended: boolean }>(entries: readonly Entry[]): Entry[] => [

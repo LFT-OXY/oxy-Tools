@@ -9,8 +9,8 @@ import { mcpStatusText, skillStatusText, thirdPartyStatusText, toolStatusText, u
 import type { ComponentView, ListingView, MenuRow, SectionView, StatusView } from './web-protocol.ts';
 
 const RECOMMENDED = 'recommended';
-// 版本不同时两个版本号之间的箭头
-const ARROW = '→';
+/** 版本不同时两个版本号之间的箭头 */
+export const ARROW = '→';
 // 用途的 id 前面加一段，免得哪个用途恰好叫 recommended
 const purposeRow = (id: string): string => `purpose:${id}`;
 
@@ -32,9 +32,17 @@ function listingOf(catalog: Catalog, id: string): Listing | undefined {
 
 /**
  * menu 里 id 这一行的那张列表，条目的状态现探测；id 不在 menu 里时没有。
- * hosts 是要装进的宿主，scope 是安装范围
+ * hosts 是要装进的宿主，scope 是安装范围，picked 是勾上了的条目（目录里的那几个对象）
  */
-export function listingView(machine: Machine, catalog: Catalog, id: string, hosts: readonly Host[], scope: Scope, lang: Lang): ListingView | undefined {
+export function listingView(
+  machine: Machine,
+  catalog: Catalog,
+  id: string,
+  hosts: readonly Host[],
+  scope: Scope,
+  lang: Lang,
+  picked: ReadonlySet<object>,
+): ListingView | undefined {
   const listing = listingOf(catalog, id);
   if (!listing || sizeOf(listing) === 0) return undefined;
   const t = MESSAGES[lang];
@@ -52,6 +60,7 @@ export function listingView(machine: Machine, catalog: Catalog, id: string, host
     ...marked(recommended),
     statuses,
     ...(unavailable ? { unavailable: unavailableReason(t, unavailable) } : {}),
+    ...(picked.has(entry) ? { picked: true as const } : {}),
   });
   // 每个宿主一段，与 hosts 一一对应
   const perHost = (texts: StatusText[]): StatusView[] => texts.map((text, column) => ({ host: hosts[column]?.name ?? '', ...text }));

@@ -297,7 +297,7 @@ result.project;          // 临时的项目目录（options.projectDir）；初�
 
 ```ts
 const result = await run({
-  page: async (page) => {
+  page: async (page, { home, project }) => {            // 第二个参数是这次运行的主目录和项目目录
     expect(page.state().machine.hosts).toEqual([...]); // 最近收到的那份画面状态
     await page.send({ type: 'finish' });               // 发一个意图，等到它的答复
   },
@@ -320,7 +320,8 @@ result.exitCode; result.opened; // opened[0] 就是网页界面的网址
 - `browserOpens: false`：链接打开器照样记下网址，然后拒绝——浏览器打不开。`webDir: <一个不存在的目录>`：页面的静态文件读不到——本机的网页起不来。这两种都退回终端界面，所以不给 `page`，自己带上 `env: { OXY_TOOLS_WEB: '1' }`，后面的终端界面照常用 `answers` 应答（语言提问照旧由架子代答）。
 - 页面的静态文件是构建产物：`vitest.config.ts` 的 `globalSetup`（`test/build-web.ts`）在全部测试之前把页面打一遍到 `dist/web/`，架子缺省把它当 `webDir`。
 - 页面本身不写自动化测试（它只把画面状态画出来、把操作变成意图）；规则都在安装器这边，经这里测到。
-- **页面的脚本里拿不到这次运行的主目录**（`result.home` 要等 `run` 返回才有）。要证明「页面开着的时候机器上变了，刷新看得到」，把宿主的配置目录用 `env` 指到用例自己建的临时目录（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`），脚本里往那里写，再 `page.reload()`（`web-browse.test.ts` 的「状态是现查的」）。
+- **页面开着的时候要改机器上的东西，用脚本的第二个参数**（工单 07 加的）：`{ home, project }` 是这次运行的主目录和项目目录，脚本里往那里写（`writeTree(home, …)`），再发意图或 `page.reload()`——「汇总之后状态变了不装」就是这样测的（`web-install.test.ts`）。工单 07 之前拿不到主目录，`web-browse.test.ts` 的「状态是现查的」因此是把宿主的配置目录用 `env` 指到用例自己建的临时目录（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`）；那个办法仍然有效，但 skill 目录不认这两个变量，只能用主目录。
+- **要看一批装到一半的样子**（哪一行正在下载、正在装的时候哪些意图不照办），给一个会卡住的目录来源：`{ ...localCatalogSource(dir), pin: async (options) => (await held, local.pin(options)) }`，脚本里放行。进度是一份份推来的，**要等的那一份可能在发意图的答复回来之前就推完了**：先 `const seen = page.until(…)` 挂上，再发意图，最后 `await seen`。
 - 架子在每条测试之后把它建过的临时目录都删掉（`afterEach`），所以样例目录（`catalogDir()`）要在每条测试里现建，不能放在模块顶层共用：第二条用到它的测试会因为目录已经不在而「安装器没有打开网页界面」（工单 06 踩到过）。
 - 逛目录的用例（`web-browse.test.ts`）按左栏上的字去换列表：从 `page.state().menu` 里找名字对得上的那一行，把它的 `id` 原样放进 `open` 意图——和页面做的是一回事，用例不去拼 `id`（专测「不在左栏里的列表不照办」的那一条除外：它要造一个不在左栏里的）。
 

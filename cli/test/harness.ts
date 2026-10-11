@@ -235,9 +235,10 @@ export interface RunOptions {
   rows?: number;
   /**
    * 在页面上做什么。给了它就走网页界面（架子打开临时开关）：架子拿着链接打开器记下的网址，经真实的本机 HTTP
-   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给就走终端界面
+   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给就走终端界面。
+   * world 是这次运行的主目录和项目目录：页面开着的时候要改机器上的东西就往那里写
    */
-  page?: (page: Page) => Promise<void>;
+  page?: (page: Page, world: { home: string; project: string }) => Promise<void>;
   /** 浏览器打不打得开，缺省打得开；false 时链接打开器记下网址之后拒绝 */
   browserOpens?: boolean;
   /** 网页界面的静态文件所在的目录，缺省是构建出来的那一份；给一个不存在的目录就是本机的网页起不来 */
@@ -375,11 +376,11 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   options.interrupt?.addEventListener('abort', stop);
   let visit: Promise<void> | undefined;
   let pageFailure: unknown;
-  const visiting = async (script: (page: Page) => Promise<void>, url: string): Promise<void> => {
+  const visiting = async (script: NonNullable<RunOptions['page']>, url: string): Promise<void> => {
     let page: Awaited<ReturnType<typeof openPage>> | undefined;
     try {
       page = await openPage(url);
-      await script(page);
+      await script(page, { home, project });
       let patience: NodeJS.Timeout | undefined;
       const exited = await Promise.race([
         installer.then(() => true),

@@ -34,6 +34,17 @@ export type KeyOutcome = 'entered' | 'blank' | 'reused';
 
 const OS_NAMES: Record<ToolOs, string> = { macos: 'macOS', linux: 'Linux', windows: 'Windows' };
 
+type Totals = { succeeded: number; failed: number; skipped: number };
+// 合计的三段：数写在词前面
+const tallied =
+  (words: Record<keyof Totals, string>) =>
+  (totals: Totals): string[] =>
+    (['succeeded', 'failed', 'skipped'] as const).map((outcome) => `${totals[outcome]} ${words[outcome]}`);
+const TOTAL_WORDS = {
+  zh: { succeeded: '成功', failed: '失败', skipped: '跳过' },
+  en: { succeeded: 'succeeded', failed: 'failed', skipped: 'skipped' },
+};
+
 export interface FailureText {
   title: string;
   cause: string;
@@ -183,6 +194,10 @@ export interface Messages {
   answerYesOrNo: string;
   installing: string;
   results: string;
+  /** 网页界面的进度里还没轮到的那一行；终端界面没有这种行 */
+  waiting: string;
+  /** 网页界面的结果里，有没装上的时候「下一步」下面的那一句；终端界面的结果只有原因，没有这一段 */
+  afterFailures: string;
   downloading: string;
   configuring: string;
   /** 第三方 Skill 进行中的那一行 */
@@ -206,7 +221,9 @@ export interface Messages {
    */
   toolResult: (result: ToolResult, evidence: ToolEvidence) => string;
   totalKey: string;
-  totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
+  /** 合计里三种结局的词；totals 是把数写在词前面的三段 */
+  totalWords: Record<keyof Totals, string>;
+  totals: (totals: Totals) => string[];
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -330,6 +347,8 @@ const zh: Messages = {
   answerYesOrNo: '请输入 y 或 n',
   installing: '正在安装',
   results: '结果',
+  waiting: '等待',
+  afterFailures: '没装上的各项没有改动原有的东西。排除原因后点「继续挑选」，重新勾选再装一次。',
   downloading: '正在下载',
   configuring: '正在配置',
   installingOne: '正在安装',
@@ -378,7 +397,8 @@ const zh: Messages = {
     return `${ended}，但${found}${'command' in evidence ? '；可能要重开终端才找得到' : ''}`;
   },
   totalKey: '合计',
-  totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
+  totalWords: TOTAL_WORDS.zh,
+  totals: tallied(TOTAL_WORDS.zh),
   keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）', quit: '退出' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
@@ -607,6 +627,8 @@ const en: Messages = {
   answerYesOrNo: 'Please answer y or n',
   installing: 'Installing',
   results: 'Results',
+  waiting: 'waiting',
+  afterFailures: 'Items that failed left what was there untouched. Fix the cause, choose “Pick more”, then select and install them again.',
   downloading: 'downloading',
   configuring: 'configuring',
   installingOne: 'installing',
@@ -657,7 +679,8 @@ const en: Messages = {
     return `${ended}, but ${found}${'command' in evidence ? '; a new terminal may be needed to find it' : ''}`;
   },
   totalKey: 'Total',
-  totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
+  totalWords: TOTAL_WORDS.en,
+  totals: tallied(TOTAL_WORDS.en),
   keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)', quit: 'quit' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },

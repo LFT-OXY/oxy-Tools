@@ -1,7 +1,7 @@
 # 网页界面的契约
 
 > 网页界面的页面与安装器之间说什么（意图、画面状态）、本机的那个网页守哪几道、它什么时候起来什么时候关。页面该长什么样见 [网页界面的设计](./web-ui-design.md)；入口怎么定下用哪个界面、测试架子怎么扮演浏览器，见 [入口与测试](./installer-entry.md)。
-> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 06 之后的样子——骨架（起得来、连得上、守得住、退得出）加上逛目录：左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言。还不能勾选、不能装；宿主是检测到的全部，安装范围是全局。后面的工单每加一种意图、画面状态里每多一块，先改这里。
+> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 07 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），加上第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选。第三方 Skill、MCP、工具还勾不上（工单 09、10、12）；宿主是检测到的全部，安装范围是全局（工单 08）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
 
 ---
 
@@ -20,7 +20,14 @@ export type Intent =
   | { type: 'finish' }
   | { type: 'open'; list: string }   // 换一张列表看：list 是 menu 里某一行的 id
   | { type: 'intro-seen' }           // 页面开始播开场动画了（或决定不播）：这次运行里不再播
-  | { type: 'lang'; lang: Lang };    // 换语言：安装器按新的语言重发画面状态；终端上的语言不变
+  | { type: 'lang'; lang: Lang }     // 换语言：安装器按新的语言重发画面状态；终端上的语言不变
+  | { type: 'pick'; kind: PickableKind; name: string; on: boolean } // 勾上或去掉一个条目：kind、name 是画面状态里那个条目的
+  | { type: 'review' }               // 要汇总
+  | { type: 'overwrite'; item: string; on: boolean }  // 汇总里要逐项决定的那一项覆盖不覆盖：item 是那一行的 overwrite.id
+  | { type: 'install'; summary: string }              // 确认安装：summary 是页面上那份汇总的标识
+  | { type: 'revise' }               // 从汇总返回修改
+  | { type: 'continue' };            // 装完之后继续挑选
+export type PickableKind = 'skill';  // 现在勾得上的类型；后面的工单往里加
 export type Lang = 'zh' | 'en';
 export interface ViewState {
   lang: Lang;                       // 页面现在的语言：起初是系统语言或 --lang 的，之后是页面上换过的
@@ -40,6 +47,9 @@ export interface ViewState {
   };
   menu: MenuRow[];                  // 左栏的行：「推荐」（里面有条目时）在最前，然后是有条目的各个用途
   listing?: ListingView;            // 正在看的那张列表；目录里一个条目都没有时没有
+  selected: SelectedView[];         // 已选的条目，照勾选的先后
+  summary?: SummaryView;            // 汇总：要了汇总、还没确认安装时有
+  run?: RunView;                    // 这一批的进度与结果：确认安装之后有，点了「继续挑选」之后没有
 }
 export interface MenuRow { id: string; name: string; count: number; recommended?: true } // recommended：这一行是「推荐」
 export interface ListingView {
@@ -54,11 +64,52 @@ export interface ComponentView {
   mark?: string;                    // 「推荐」的标记，要标时是那个词；「推荐」那张列表里每一条都是，不标
   statuses: StatusView[];           // 每个要装进的宿主一段（与 target.hosts 一一对应）；工具只有一段，没有 host
   unavailable?: string;             // 不可选的原因；有它就勾不上
+  picked?: true;                    // 已经勾上了
 }
 export interface StatusView { host?: string; text: string; tone: Tone; rest?: string } // rest：词后面不上色的一段（版本、装了几个）
 export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
 export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
+export interface SelectedView { kind: PickableKind; name: string; type: string } // type 是类型写出来的词（Skill）
+export interface SummaryView {
+  id: string;                       // 这份汇总的标识：确认安装时带回
+  title: string;                    // 「将安装 N 项」，N 是条目数
+  entries: SummaryEntryView[];      // 每个要装的条目一段，照执行的先后
+  notices: string[];                // 提醒，和终端界面的汇总是同一份话
+  revise: string; install: string;  // 两个按钮上的字：终端界面那一问里的「返回修改」「开始安装」
+  renewed?: true;                   // 上一次确认没有照办（状态变了，或带的是旧标识）：这是新的一份，要再确认
+}
+export interface SummaryEntryView { name: string; type: string; version: string; rows: SummaryRowView[] } // version 是要装的版本；rows 每个宿主一行
+export interface SummaryRowView {
+  host: string;
+  action: string;                   // 新装、覆盖
+  overwrites?: true;                // 这一行会覆盖已有的东西
+  location: string;                 // 给用户看的位置
+  note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装
+  overwrite?: { id: string; agreed: boolean }; // 要逐项决定覆盖不覆盖的才有；缺省没同意
+}
+export interface RunView {
+  title: string;                    // 装着的时候是「正在安装」，装完是「结果」
+  done: boolean;
+  loading?: string;                 // 正在向 GitHub 查询时的那一句
+  failure?: FailureView;            // 这一批里出的错（向 GitHub 查询失败）
+  rows: RunRowView[];               // 每一项一行，照执行的先后
+  totals?: { label: string; succeeded: TotalView; failed: TotalView; skipped: TotalView }; // 装完才有
+  next?: { label: string; lines: string[] }; // 装完之后有没装上的才有：「下一步」和它下面的话
+}
+export interface RunRowView {
+  name: string; host: string;
+  state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  text: string;                     // 等待、正在下载、已安装、失败、跳过
+  rest?: string;                    // 词后面的话：版本、原因
+}
+export interface TotalView { count: number; word: string }
+export interface FailureView {      // 出错说明，和终端界面是同一份话、同一个结构
+  title: string;                    // 以「出错：」开头
+  cause: { label: string; text: string };
+  location?: string;                // 出问题的网址或路径
+  next: { label: string; lines: string[] };
+}
 
 // cli/src/web-server.ts —— 只管 HTTP：静态文件、那几道检查、长连接、收意图
 export interface WebServer { port: number; push(state: ViewState): void; close(): Promise<void>; closeNow(): void }
@@ -83,10 +134,19 @@ export const versionChange: (installed: string, listed: string, arrow: string) =
 
 // cli/src/web-ui.ts —— 网页界面这一边的流程：状态在这里，意图在这里变成状态
 export type WebUiOutcome = 'finished' | { unavailable: 'server' | 'browser' };
-export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打断时抛 Interrupted
+export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打断时抛 Interrupted；options.runtime 是执行要的那些（和终端界面交给「执行」的是同一份）
+
+// cli/src/web-install.ts —— 把共用的「算计划」「执行」接到画面状态上：计划写成汇总，进度记成一行行的结局
+export function decided(plan: Plan, agreed: ReadonlySet<string>): Plan; // 要逐项决定的覆盖里没同意的标成不装；agreed 是同意了的那几项的标识
+export function summaryId(plan: Plan): string;                          // 一份标过决定的计划的标识：取摘要，与语言无关
+export function summaryView(t: Messages, plan: Plan): SummaryView;      // 把标过决定的计划写成汇总
+export interface Batch { rows: …; loading: boolean; failure?: Failure; done: boolean } // 一批的进度：画面状态从它现算
+export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; progress: Progress }; // progress 交给共用的「执行」，每变一次调一次 changed
+export function settleBatch(batch: Batch, failure?: Failure): void;     // 这一批结束了；failure 是执行中出的意料之外的错
+export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): RunView;
 ```
 
-页面的源码在 `cli/web/`（入口 `main.tsx`，逛目录的三栏 `browse.tsx`，开场动画 `intro.tsx`，大标志 `logo.tsx`，页面自己的文字 `text.tsx`；`index.html`、`style.css`、`favicon.svg`，另有它自己的 `tsconfig.json`），由 `cli/scripts/build-web.ts` 用 esbuild 打成 `dist/web/` 下的四个静态文件：`index.html`、`app.js`、`app.css`、`favicon.svg`（`index.html` 和 `favicon.svg` 是原样拷过去的）。Preact 和 esbuild 都是开发依赖，运行时依赖一个都不加；构建产物不提交（ADR-0001）。
+页面的源码在 `cli/web/`（入口 `main.tsx`，逛目录的三栏 `browse.tsx`，汇总与进度、结果的面板 `panel.tsx`，开场动画 `intro.tsx`，大标志 `logo.tsx`，页面自己的文字 `text.tsx`；`index.html`、`style.css`、`favicon.svg`，另有它自己的 `tsconfig.json`），由 `cli/scripts/build-web.ts` 用 esbuild 打成 `dist/web/` 下的四个静态文件：`index.html`、`app.js`、`app.css`、`favicon.svg`（`index.html` 和 `favicon.svg` 是原样拷过去的）。Preact 和 esbuild 都是开发依赖，运行时依赖一个都不加；构建产物不提交（ADR-0001）。
 
 ### 3. Contracts
 
@@ -94,7 +154,7 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 
 **算画面状态、办意图的时候不许抛。** 它们是在本机网页的请求处理函数里被调用的（`web-server.ts` 的 `state()`、`intent()`），那里没有接住的错会让整个安装器退出。现在靠的是底下的探测各自把「读不了」当成一种状态（配置读不了是「未知」，目录不在是「未装」）；后面的工单往这两条路上加会失败的事（算计划、下载、执行）时，失败要变成画面状态里的出错说明，不能往外抛。
 
-安装器记着的只有会变的那几样（`web-ui.ts` 的 `Session`）：走到哪一步、开场动画播过没有、正在看哪张列表。**画面状态每次都从它们现算**（新连上一个页面时算一次，每个意图之后算一次再推给所有页面），不存上一份——条目的状态因此总是现探测的：页面开着的时候机器上装了什么、配了什么，刷新就看得到。
+安装器记着的只有会变的那几样（`web-ui.ts` 的 `Session`）：走到哪一步、开场动画播过没有、正在看哪张列表、勾了哪些条目、汇总里同意覆盖的是哪几项、这一批的进度。**画面状态每次都从它们现算**（新连上一个页面时算一次，每个意图之后、进度每变一次算一次再推给所有页面），不存上一份——条目的状态因此总是现探测的：页面开着的时候机器上装了什么、配了什么，刷新就看得到；**汇总也是现算的**，不存上一份。
 
 **说了什么由安装器定，怎么排由页面定。** 状态的词、数量的写法、提醒，用的是和终端界面同一份中英文案（`messages.ts`），随画面状态发给页面；页面自己的文字只有版式上固定的那些，都在 `cli/web/text.tsx` 的 `TEXT` 里，中英各一份：
 
@@ -103,11 +163,13 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 | 栏名（用途、本机、目录、注意、已选） | 版式上固定的 |
 | 只装进一个宿主时的那一句「装进 <宿主>」 | 终端界面里没有这句话（只检测到一个宿主时那边不问）；宿主的名字来自画面状态 |
 | 条目数的写法（「21 项」） | 数来自画面状态，「项」是版式上的 |
-| 按钮（去汇总、完成）、已选为空时的那一句 | 版式上固定的 |
+| 按钮（去汇总、完成、继续挑选）、已选为空时的那一句、已选里去掉一项的那个 × 的名字 | 版式上固定的；终端界面里没有这几样 |
+| 汇总标题下面的那一句、「覆盖它」和没勾时的后果、收到新的一份汇总时的那一句 | 终端界面里覆盖是确认之后一个个问的，没有这几句 |
+| 安装中底部的那一句提醒、「7 / 17」的写法 | 终端界面里没有 |
 | 还没连上时的「正在连接安装器…」 | 这时还没有画面状态 |
 | 三种结束画面的标题和说明（已完成、安装器已退出、口令不对） | 后两种没有画面状态可依；「已完成」和它们是同一种画面，放在一处 |
 
-**随画面状态来、页面不许自己写的**：用途和「推荐」的名字、分区的标题和它后面的那句话（「第三方 Skill　内容直接来自作者」「外部项目　只给链接，不安装」）、条目的名字与说明、「推荐」的标记、状态的词、不可选的原因、本机信息里的数量和提醒、「装进哪些 AI Agent」「装到哪里」和各个安装范围的名字。**终端界面的文案里已经有的话，页面一律不另写一遍**——另写的那一份迟早和原来的对不上（工单 04 的审查里就对不上过：页面写的是 Install into，终端界面是 Install into which AI Agents）。
+**随画面状态来、页面不许自己写的**：用途和「推荐」的名字、分区的标题和它后面的那句话（「第三方 Skill　内容直接来自作者」「外部项目　只给链接，不安装」）、条目的名字与说明、「推荐」的标记、状态的词、不可选的原因、本机信息里的数量和提醒、「装进哪些 AI Agent」「装到哪里」和各个安装范围的名字；已选里类型的词；汇总的标题、操作、位置、备注、提醒和「返回修改」「开始安装」；进度与结果里每一行的词和原因、「正在安装」「结果」、合计的三个词、有没装上的时候「下一步」那一段、出错说明的全部。**终端界面的文案里已经有的话，页面一律不另写一遍**——另写的那一份迟早和原来的对不上（工单 04 的审查里就对不上过：页面写的是 Install into，终端界面是 Install into which AI Agents）。
 
 没有画面状态时页面照浏览器的语言说（`navigator.language` 以 `zh` 开头是中文）；收到过画面状态就一直跟它的 `lang`。**经入口的测试断不到页面自己的这些字**，它们靠截图核对。
 
@@ -120,7 +182,61 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 - `language` 是切换语言的控件要的字：`label` 是终端界面语言提问的那一句（`Language / 语言`，不随语言变），`options` 是它的两项（`中文`、`English`），照显示的先后。页面不另写这几个字。
 - 意图 `lang`：`lang` 必须是 `zh` 或 `en`，否则不照办（400），语言不变。
 
-**逛目录**（工单 04；还不能勾选、不能装）
+**勾选与已选**（工单 07；现在只有本仓库的 skill 勾得上）
+
+- 勾选是意图 `pick`，**状态在安装器这边**：`kind`、`name` 是画面状态里那个条目的类型和名字，`on` 是勾上还是去掉。勾上的记在 `Session` 里，与正在看哪张列表无关——换一张列表看，之前勾的还在；一个条目同时在「推荐」和它的用途下，两处是同一个条目，一处勾了另一处的 `picked` 也是 `true`。
+- `selected` 是已选，**照勾选的先后**：每项带 `kind`、`name`（去掉它时原样放进 `pick`）和类型写出来的词（文案里的 `kinds`）。已选了几个，页面数它的长度。
+- **勾不上的不照办**（400，已选不变）：名字不在目录里；`kind` 不是现在勾得上的（`PickableKind`）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
+- 换语言不动勾选。
+- 这几种意图只在浏览的时候照办：汇总开着、正在装、结果还没收掉时 `pick` 和 `review` 都是 400——页面上那时盖着面板，本来也点不到。
+
+**汇总**（工单 07）
+
+- 意图 `review`：已选为空时不照办（400）；照办之后画面状态里多出 `summary`，并且**逐项的覆盖决定清空**（每次进汇总都从「不覆盖」起）。
+- `summary` 经两套界面共用的「算计划」得出（`plan.ts` 的 `planInstall`），每次算画面状态时现算。`entries` 每个要装的条目一段，照执行的先后（本仓库的 skill 按名字），带着类型的词和**要装的版本**（清单里的那个）；段里每个宿主一行：宿主、操作、位置，和备注。词和终端界面的汇总是同一份：
+
+  | 那里现在的状态 | `action` | `overwrites` | `note` | `overwrite` |
+  |----------------|----------|--------------|--------|-------------|
+  | 未装 | 新装 | — | — | — |
+  | 已装，版本相同 | 覆盖 | `true` | `重装 <版本>` | — |
+  | 已装，版本不同 | 覆盖 | `true` | `<已装的> → <清单的>` | — |
+  | 非本工具安装 | 覆盖 | `true` | `非本工具安装`（不带终端界面的「另行确认」：决定就在这一行下面） | `{ id, agreed: false }` |
+
+- `title` 是「将安装 N 项」，N 是条目数（和终端界面同一种数法）。`notices` 是提醒，和终端界面汇总后面的「注意」是同一份话、同一个先后，**只少「key 以占位符显示」那一条**；有会覆盖的就有「覆盖即整目录替换，目录内的本地改动会丢失」。
+- **汇总里没有将执行的命令**，画面状态的任何地方都没有（维护者 2026-10-11 定的）。
+- **不是本工具装的目录逐项决定，缺省不覆盖**：那一行带着 `overwrite`，意图 `overwrite` 带回它的 `id` 和勾没勾。`id` 不在这份汇总里的不照办（400）。没同意的那一项不装，结果里是「跳过 未同意覆盖，保持原样」。
+- 意图 `revise`：回到浏览，勾选还在。
+
+**展示的和执行的是同一份**（工单 07）
+
+- `summary.id` 是这份汇总的标识：从计划里的每一项（条目、宿主、位置、要装的版本、那里现在的状态）、每一项的覆盖决定和提醒算出来的摘要，**与语言无关**——换语言不换标识。页面不去解读它。
+- 意图 `install` 带回页面上那份汇总的标识。安装器**当场重新探测、重算一遍计划和标识**：
+  - 和带回的一样 → 照这同一份计划去装。
+  - 不一样（机器上的状态变了；多了一项要逐项决定的覆盖；覆盖的决定和页面上的不是同一份；带的是早先那份的标识）→ **不装**，推一份新的画面状态，`summary` 是现算的那一份，带着 `renewed: true`；页面写明这是新的一份、要再确认。这种情形意图是照办了的（204）：没照办的只是「装」。
+- `renewed` 在这份汇总被确认、或返回修改之后就没有了。
+- 将执行的命令不出安装器：页面只发条目的名字和选项，命令由安装器照这同一份计划去执行。
+
+**安装与结果**（工单 07）
+
+- 确认之后画面状态里没有 `summary`，多出 `run`；执行经两套界面共用的「执行」（`run-plan.ts` 的 `runPlan`），网页界面是它的进度的接收方：每一项的开始、结局、跳过各推一次画面状态。
+- `run.rows` 每一项一行（一个条目在一个宿主下），照执行的先后。词和终端界面的结果行是同一份：
+
+  | `state` | `text` | `rest` |
+  |---------|--------|--------|
+  | `waiting` | 等待（网页界面自己的词：终端界面没有这种行） | — |
+  | `running` | 正在下载（终端界面进行中那一行的词） | — |
+  | `succeeded` | 已安装 | 版本；原先是别的版本时是 `<已装的> → <清单的>` |
+  | `failed` | 失败 | 原因（「来源里没有 SKILL.md，目标目录未改动」这一类） |
+  | `skipped` | 跳过 | 未同意覆盖，保持原样 |
+
+- 一项失败不影响其余；单项失败不改变退出状态。装完之后**有没装上的**，`run.next` 是「下一步」和它下面的话（终端界面的结果行只有原因，没有这一段：这句话是网页界面多出来的，放在文案里——`afterFailures`——随画面状态来，经入口的测试断得到）。
+- **向 GitHub 查询**：要下载本仓库的 skill 时先查钉住的来源，查询期间 `run.loading` 是「正在查询 skill 的文件列表」。查询失败时 `run.failure` 是出错说明（标题、原因、下一步，和终端界面同一份话），**本仓库的 skill 一个都不装、不在 `rows` 里**，安装器不退出。全都没同意覆盖时不查询。
+- 全部结束后 `run.done` 是 `true`、`title` 换成「结果」，多出 `totals`：合计的名字和成功、失败、跳过三个数，各带自己的词。
+- 意图 `continue`（只在装完之后照办）：回到浏览，**已选清空**，`run` 没有了；状态本来就是每次现探测的，刚装上的已经是「已装」。
+- 正在装的时候 `finish` 不照办（400）：这一批要装完。Ctrl+C 仍然当场以 130 退出。
+- 执行中出了意料之外的错（不是单项安装的失败）：不往外抛，变成 `run.failure` 里的「意外错误」，还没有结局的行拿掉，这一批算结束。
+
+**逛目录**（工单 04）
 
 - `menu` 是左栏的行：「推荐」（里面有条目时，带 `recommended: true`）在最前，然后是有条目的各个用途，照目录里的先后；**没有条目的用途不在里面**。数量和终端界面的主菜单是同一种数法（`listing.ts` 的 `recommendedListing`、`purposeCounts`）。`id` 是交回给安装器的标识，页面不去解读它（现在「推荐」是 `recommended`，用途是 `purpose:<用途的 id>`——加一段前缀，免得哪个用途恰好叫 `recommended`）。
 - `listing` 是正在看的那张列表。页面刚打开时是 `menu` 的第一行：有「推荐」就是它，否则是第一个有条目的用途；目录里一个条目都没有时 `menu` 是空的、没有 `listing`。
@@ -183,7 +299,7 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 - **请求行不拿去解析**：路径只取问号前面的那一段，和认得的几条逐字去对。请求行是别人写的，`new URL(request.url, …)` 遇到 `http://[` 这样的会抛错，而请求处理函数里没接住的错会让整个安装器退出。
 - 连请求都解析不了时（不是 HTTP 的东西）是 Node 自己答的 400，不经请求处理函数：`clientError` 上照样带着上面那几个头答复。
 
-**生命周期**（工单 03 的部分，工单 04 没有动；页面关掉后过几秒自己退出、`t` 改用终端界面在工单 11）
+**生命周期**（工单 03 的部分；页面关掉后过几秒自己退出、安装中关了页面这一批照样装完、`t` 改用终端界面在工单 11）
 
 | 时刻 | 安装器 | 页面 |
 |------|--------|------|
@@ -205,6 +321,11 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 | `/api/` 下不带口令、口令不对 | 403，正文空 |
 | `/api/intent` 的正文不是 JSON、不是认得的意图 | 400，正文空 |
 | 意图 `open` 的 `list` 不是字符串，或不在 `menu` 里（包括目录里有、但下面没有条目的用途） | 400，正文空；正在看的列表不变 |
+| 意图 `pick` 的条目不在目录里、类型现在勾不上、条目不可选 | 400，已选不变 |
+| **任何一种意图里多带了它不该有的东西**（`command`、`path`、`args` 之类）：每种意图认得的字段是定死的，多一个就整个不照办 | 400，什么都不变 |
+| 意图 `review` 而已选为空；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
+| 意图不合这一步：浏览时的 `overwrite`、`install`、`revise`、`continue`；汇总或安装中的 `pick`、`review`；正在装时的 `finish`、`continue` | 400，什么都不变 |
+| 意图 `install` 带的标识不是现在这一份的 | 204；不装，推来的 `summary` 带着 `renewed: true` |
 | `/api/intent` 的正文超过 64 KB | 413，正文空；意图没有被执行 |
 | 不认识的路径 | 404 |
 | 认得的路径、方法不对（`PUT /api/intent`、`POST /api/events`、`DELETE /app.js`） | 405——前面三道先查，所以 `/api/` 下不带口令的仍是 403 |
@@ -227,6 +348,10 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 - Good：中文的页面正看着「文档处理」，发 `{"type":"lang","lang":"en"}` → 204，推来的画面状态 `lang` 是 `en`，`listing.id` 没变，左栏那一行叫 `Documents`，状态的词是 `installed`，原因是 `needs another AI Agent`；刷新拿到的还是英文；终端上没有多出一行。
 - Bad：`{"type":"lang","lang":"fr"}` → 400，语言不变。
 - Base：只检测到 Claude Code，目录里有一个只支持 Codex 的 MCP → 它在列表里，带 `unavailable: "需要别的 AI Agent"`，`statuses` 是 `[{ host: "Claude Code", text: "不支持", tone: "faint" }]`。
+- Good：在「推荐」里勾 `alpha`，换到它的用途下再勾 `beta-pack` → `selected` 是这两个，照勾选的先后；`review` → `summary.title` 是「将安装 2 项」；`install` 带回 `summary.id` → 推来的 `run.rows` 从「等待」走到「已安装 1.0.0」，最后 `done`、合计「2 成功」；主目录里的东西和终端界面装出来的一样。`continue` → `selected` 是空的，两张卡片的状态是「已装」。
+- Base：`~/.claude/skills/alpha` 是用户自己放的 → 汇总里那一行带 `overwrite: { agreed: false }`；不动它就 `install` → `alpha` 那一行「跳过 未同意覆盖，保持原样」，目录原样；发了 `overwrite` 再装就整目录替换。
+- Bad：看着汇总的时候另一个终端往 `~/.claude/skills/alpha` 放了东西，页面拿着原来的标识 `install` → 什么都没装，推来的是新的汇总（那一行成了「覆盖」、要逐项决定），带着 `renewed`。
+- Bad：`{"type":"pick","kind":"skill","name":"alpha","on":true,"command":"rm -rf ~"}` → 400，`alpha` 没有勾上。
 - Base：链接打开器拒绝 → 终端上一行「注意」，接着是语言提问和主菜单；那个网址已经连不上。
 - Bad：别的网站的页面向 `http://127.0.0.1:<端口>/api/intent` 发 `{"type":"finish"}`，带着它自己的 `Origin` → 403，安装器还开着。
 - Bad：`curl http://127.0.0.1:<端口>/api/events`（不带口令）→ 403，正文是空的，里面没有宿主的名字。
@@ -269,6 +394,16 @@ export function runWebUi(options: …): Promise<WebUiOutcome>; // 被 Ctrl+C 打
 - `language` 里的名字和各项与终端界面的语言提问逐字相同。
 - `lang` 不是 `zh`、`en` 的写法都是 400，语言不变。
 
+装本仓库的 skill 的在 `cli/test/web-install.test.ts`，同样经主接缝（脚本的第二个参数给出这次运行的主目录和项目目录，见 [入口与测试](./installer-entry.md)）：
+
+- 勾选：跨两个用途各勾一个，换用途之后之前勾的还在；同一个条目在「推荐」和它的用途下一处勾了另一处也是；已选照勾选的先后、能去掉；勾不上不可选的条目（一个宿主都没有）、不在目录里的、现在勾不上的类型；意图里多带了命令、路径的整个不照办（`pick` 和别的几种各试）；换语言后勾选不变。
+- 汇总：已选为空去不了；每个 skill 在每个宿主下一行，带位置、操作和备注（新装、重装、版本不同、非本工具安装各一条）；有会覆盖的就有那句提醒；画面状态里没有命令；返回修改后勾选还在。
+- 一次装上：主目录里的东西与终端界面装同样的东西装出来的逐个文件相同（安装标记里的时间除外）；进度从等待、正在下载到已安装；合计；`continue` 之后已选清空、状态是新的。
+- 非本工具安装：缺省不覆盖（目录原样，结果里是跳过）；同意后整目录替换。
+- 展示的和执行的是同一份：旧标识的确认不装；汇总之后状态变了不装、推来新的一份带 `renewed`，拿新的标识再确认才装。
+- 一项失败其余照常，退出状态 0，结果里有「下一步」那一段（全都装上时没有）；向 GitHub 查询失败：出错说明的标题、原因、下一步，一个都没装，安装器还开着、能接着挑。
+- 不合这一步的意图都是 400。
+
 **经入口的测试断不到的**（页面只把画面状态画出来）：三栏的版式、开场动画怎么演、键盘与焦点、链接是不是在新标签页打开——这些在真实的浏览器里看：版式、开场的定格和键盘焦点在网页界面的预览里各有一格（`npm run preview:web`，见 [网页界面的设计](./web-ui-design.md) 的「网页界面的预览」），其余的手动核对。
 
 ### 7. Wrong vs Correct
@@ -299,6 +434,19 @@ state: () => ({ ...view(), introSeen: seen++ > 0 }),
 
 // 站点图标里内嵌样式，或写成内嵌的数据网址：内容安全策略两样都不许
 <svg><style>rect { fill: #111 }</style>…</svg>
+
+// 把汇总时算的那份计划存起来，确认时照它装：看汇总的那一会儿机器上变了，装的就不是现在该装的
+session.plan = planInstall(…);            // review 的时候
+runPlan(runtime, session.plan, progress); // install 的时候
+
+// 丢掉意图里多带的东西、照办剩下的：规格说的是带了命令、路径一律不认
+const { type, kind, name, on } = raw;     // command、path 悄悄没了，意图照办
+
+// 把将执行的命令放进画面状态「反正页面不画」：页面用不上的东西不出安装器
+summary: { entries, commands: plan.thirdPartyJobs.map((job) => job.command) }
+
+// 页面自己写结果里的话：经入口的测试断不到，也不随安装器的文案走
+<p>{t.afterFailures}</p>                  // TEXT 里的
 ```
 
 #### Correct
@@ -324,6 +472,18 @@ case 'intro-seen': session.introSeen = true; break;
 
 // 站点图标是一个静态文件，颜色写在属性上
 <rect width="12" height="12" rx="2.5" fill="#111111"/>
+
+// 汇总不存：确认时重算一遍计划和标识，和页面带回的一样才装
+const plan = planOf(runtime, session);
+session.renewed = summaryId(plan) !== intent.summary;
+if (!session.renewed) void install(plan);
+
+// 每种意图认得的字段是定死的，多一个就整个不认
+const only = (...fields: string[]) => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
+if (type === 'pick' && … && only('kind', 'name', 'on')) return { type, kind, name, on };
+
+// 结果里的话随画面状态来；页面只画
+{run.next && run.next.lines.map((line) => <p key={line}>{line}</p>)}
 ```
 
 ---
@@ -356,5 +516,11 @@ case 'intro-seen': session.introSeen = true; break;
 | 画面状态每次现算，不存上一份 | 规格要状态现查。探测只读几个目录和宿主的配置文件，不执行命令，一张列表几十次文件系统调用 |
 | 切换语言的控件的名字和两项随画面状态来（`language`），不是页面自己写的 | 它们是终端界面语言提问的那一份（`Language / 语言`、`中文`、`English`），从呈现层搬到了文案里让两套界面共用；页面不另写一遍 |
 | `menu` 的 `id` 给用途加前缀 `purpose:` | 「推荐」和用途在同一个清单里，用途的 id 是目录作者写的，不能假定它不叫 `recommended` |
+| 汇总的标识是从计划和逐项的决定算出来的摘要，不是随机数（工单 07） | 汇总不存上一份，每次现算；标识跟着内容走，「和汇总时不一样就不装」「旧标识不装」就成了同一条判断：重算出来的标识和带回的不一样。两个标签页一个改了覆盖的决定、另一个拿着改之前的画面去确认，也在这一条里 |
+| 逐项的覆盖决定每次进汇总都清空（工单 07） | 规格只说缺省不覆盖。留着上一次的决定的话，返回修改再回来时有一项已经是「覆盖」而用户未必记得；多勾一次的代价小于悄悄覆盖 |
+| 意图里多带了东西就整个不照办（工单 07），不是丢掉多的照办剩下的 | 规格说的是「带了命令、路径之类的东西一律不认」。页面和安装器是一起发布的，页面从不多带；多带了说明发意图的不是这一版的页面 |
+| 标识对不上时意图答 204、推新的汇总，不答 400 | 意图本身没有错，没照办的只是「装」；页面不看答复，只看推来的画面状态 |
+| 进行中那一行的词照终端界面（本仓库的 skill 是「正在下载」），不是设计规范表里笼统的「正在安装」 | 说了什么由安装器定，两套界面一个说法；「等待」是网页界面多出来的词，放在文案里（`waiting`） |
+| 已选照勾选的先后，汇总和执行照名字 | 已选是用户自己的清单，新勾的落在最后才找得到；执行的先后要和终端界面一样 |
 | 「推荐」的标记随条目来（`mark`），不是一个布尔值 | 那个词是文案里的（中文「推荐」、英文「pick」），和终端界面同一份；页面不另写一遍 |
 | 状态带着 `tone`（含义），不带颜色 | 颜色是页面的事，含义是安装器的事；终端界面拿同一个 `tone` 去上样式码 |
