@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层写的都是已经落地的做法：启动、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
+本层写的都是已经落地的做法：启动、定下用哪个界面（网页界面现在只有骨架，要带着临时开关才进得去）、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、两个宿主与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
 
 ```
 cli/
@@ -34,15 +34,24 @@ cli/
 │   ├── plan.ts           # 两套界面共用：算计划——把勾选算成要装的每一项
 │   ├── run-plan.ts       # 两套界面共用：执行——照计划逐项去装，把进度报给接收方
 │   ├── flow.ts           # 终端界面的交互流程：逐步问什么、显示什么；算和装都经上面四块
+│   ├── web-ui.ts         # 网页界面这一边的流程：画面状态在这里，页面发来的意图在这里变成状态
+│   ├── web-server.ts     # 本机的网页：只管 HTTP——静态文件、口令和另外几道检查、长连接、收意图
+│   ├── web-protocol.ts   # 页面和安装器共用的类型：意图、画面状态。不引用别的模块
 │   ├── ui.ts             # 呈现层：一切终端输出的样式
 │   ├── messages.ts       # 中英文案
 │   ├── prompter.ts       # 提问器的接口
 │   ├── inquirer-prompter.ts  # 提问器的正式实现（@inquirer）
-│   ├── open-link.ts      # 链接打开器的正式实现：把网址交给系统的默认浏览器
+│   ├── open-link.ts      # 链接打开器的正式实现：把网址交给系统的默认浏览器。只用来打开网页界面
 │   ├── text.ts           # 显示宽度、截断、折行
 │   └── version.ts        # 版本号：从 cli/package.json 读
+├── web/                  # 网页界面的页面：源码，不进 tsc 的构建，由 esbuild 打成 dist/web/ 下的静态文件
+│   ├── index.html
+│   ├── main.tsx          # 把画面状态画出来、把操作变成意图（Preact）
+│   ├── style.css
+│   └── tsconfig.json     # 页面自己的类型检查：带浏览器的类型，不带 Node 的
 ├── test/                 # 只经入口断言的测试，和测试架子
 └── scripts/              # 仅供开发的脚本，不进 dist/，不随 npm 包发布
+    ├── build-web.ts          # 把页面打成 dist/web/ 下的静态文件；npm run build、测试的 globalSetup 和界面预览页都调它
     ├── preview.ts            # 界面预览页
     ├── validate-catalog.ts   # 目录校验命令
     └── check-upstream.ts     # 上游核对命令：目录里的第三方 Skill 和作者仓库还对不对得上（要联网，不进 CI）
@@ -58,11 +67,11 @@ cli/
 |------|----------------|
 | **自带包描述文件，仓库根不放** | `package.json`、`package-lock.json`、`tsconfig*.json`、`vitest.config.ts`、`.gitignore`、`README.md`、`LICENSE` 都在 `cli/` 里；仓库里除了上游整包自带的，只有 `cli/package.json` 这一个包描述文件 |
 | **只通过目录来源读数据，不引用 `cli/` 以外的文件** | 目录来源缺省是 GitHub 上本仓库 `main` 分支的原始文件地址（`catalog.ts` 的 `githubCatalogSource`）。本地目录只来自运行的人给的路径：环境变量 `OXY_TOOLS_CATALOG`、目录校验命令和上游核对命令的参数（后者另有 `--repos` 给的本地仓库目录）——所以脚本和 `package.json` 里都不写死 `..`；测试用自己写到临时目录的样例，不读仓库真实的目录数据 |
-| **构建和测试只扫 `cli/` 内部** | `vitest.config.ts` 的 `include` 只有 `test/**/*.test.ts`；`tsconfig.json` 的 `include` 只有 `src`、`test`、`scripts` 和 `vitest.config.ts`；CI 只检出 `cli/` 和仓库根的文件。`skills/` 下的上游整包自带测试和 `package.json`，不能被扫进来 |
+| **构建和测试只扫 `cli/` 内部** | `vitest.config.ts` 的 `include` 只有 `test/**/*.test.ts`；`tsconfig.json` 的 `include` 只有 `src`、`test`、`scripts` 和 `vitest.config.ts`，页面另有 `web/tsconfig.json`（只有 `web` 和共用的类型那一个文件）；CI 只检出 `cli/` 和仓库根的文件。`skills/` 下的上游整包自带测试和 `package.json`，不能被扫进来 |
 
 随之而来的两条：
 
-- **npm 包只含构建产物**：`package.json` 的 `files` 只有 `dist`，另有 npm 自动带上的 `package.json`、`README.md`、`LICENSE`。不含任何 skill 内容，不含目录数据，不含 `scripts/` 和 `test/`。在 `cli/` 下 `npm pack --dry-run` 能看到包里有什么。
+- **npm 包只含构建产物**：`package.json` 的 `files` 只有 `dist`，另有 npm 自动带上的 `package.json`、`README.md`、`LICENSE`。不含任何 skill 内容，不含目录数据，不含 `scripts/`、`test/` 和页面的源码 `web/`。网页界面的页面是构建产物的一部分：`dist/web/` 下的 `index.html`、`app.js`、`app.css`，运行时依赖不因它多一个（Preact 打进了 `app.js`，它和 esbuild 都是开发依赖）。在 `cli/` 下 `npm pack --dry-run` 能看到包里有什么。
 - **依赖目录和构建产物不提交**：`cli/.gitignore` 挡着 `node_modules/`、`dist/`、`.preview/` 和 `npm pack` 打出来的 `*.tgz`。这同时是对 A Team Workflow 的承诺——它安装额外 skill 时下载的是整个仓库，见 [清单与版本](../skills/manifest-versioning.md)。
 
 ---
@@ -79,13 +88,13 @@ cli/
 | 提问器 | `prompter` | `inquirerPrompter()` | 按预设的应答回答；要核对提问实际打出的东西时换成真实的交互库加脚本按键 |
 | 链接打开器 | `openLink` | `systemLinkOpener(platform)` | 只记录 |
 
-启动参数、环境变量、操作系统、输出流、项目目录（运行安装器时所在的目录）、放临时文件的目录和“提问之外按了 Ctrl+C”的信号也都从 `options` 来，入口不直接碰 `process`；它们是运行环境的事实，不算外部依赖。
+启动参数、环境变量、操作系统、输出流、项目目录（运行安装器时所在的目录）、放临时文件的目录、网页界面的静态文件所在的目录和“提问之外按了 Ctrl+C”的信号也都从 `options` 来，入口不直接碰 `process`；它们是运行环境的事实，不算外部依赖。
 
 测试只有两个接缝，只经由对外行为断言，不为内部模块单独写测试：
 
 | 接缝 | 是什么 | 怎么用 |
 |------|--------|--------|
-| 主接缝 | 安装器入口 | `cli/test/harness.ts` 的 `run({ answers, catalog, home, project, onPath, … })`：给定一份目录、主目录和项目目录的初始状态和一串应答，断言终端上输出了什么、退出状态、记录到的命令和链接、主目录和项目目录里有什么。见 [入口与测试](./installer-entry.md) |
+| 主接缝 | 安装器入口 | `cli/test/harness.ts` 的 `run({ answers, catalog, home, project, onPath, … })`：给定一份目录、主目录和项目目录的初始状态和一串应答，断言终端上输出了什么、退出状态、记录到的命令和链接、主目录和项目目录里有什么。测网页界面时给 `page`（一段「在页面上做什么」的脚本）：架子拿着链接打开器记下的网址，经真实的本机 HTTP 扮演浏览器，不另开接缝。见 [入口与测试](./installer-entry.md) |
 | 辅助接缝 | 目录校验命令、上游核对命令 | `npm run validate-catalog -- <目录>`：测试把它当子进程跑，只断言标准输出、标准错误和退出状态；维护者和 CI 用同一条命令检查仓库里真实的目录数据。`npm run check-upstream -- <目录>` 是同一种跑法，测试里让它对着本地的假仓库目录，联网的那一段手动核对。见 [目录校验与 CI](./catalog-validation.md) |
 
 界面预览页也经主接缝驱动安装器，但它不是测试：观感由它加视觉评审把关，见 [界面设计](./ui-design.md)。
@@ -94,7 +103,7 @@ cli/
 
 ## 两套界面共用的部分
 
-安装器有两套界面：终端界面（已有的）和网页界面（任务 `10-11-installer-web-ui`，还没有实现）。**装什么、怎么装只写一遍**：下面四块不依赖提问器和呈现层——不提问、不往终端上打东西——两套界面都经它们走。界面自己只管在哪里挑、在哪里看。
+安装器有两套界面：终端界面（已有的）和网页界面（任务 `10-11-installer-web-ui`，逐张工单实现；工单 03 之后只有骨架，还用不到下面四块）。**装什么、怎么装只写一遍**：下面四块不依赖提问器和呈现层——不提问、不往终端上打东西——两套界面都经它们走。界面自己只管在哪里挑、在哪里看。
 
 | 模块 | 管什么 | 给它什么 | 它给出什么 |
 |------|--------|----------|------------|
@@ -165,12 +174,13 @@ export class Interrupted extends Error {}
 
 | 文档 | 内容 |
 |------|------|
-| [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、链接打开器的契约（现在不调用它）、退出状态、主菜单与流程、目录读取与校验的契约（含外部项目条目的字段，用途清单、条目的用途与推荐标记、本仓库 skill 的用途）、测试架子的用法 |
+| [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、启动顺序与定下用哪个界面（含临时开关）、链接打开器的契约（只用来打开网页界面）、退出状态、主菜单与流程、目录读取与校验的契约（含外部项目条目的字段，用途清单、条目的用途与推荐标记、本仓库 skill 的用途）、测试架子的用法 |
 | [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、按安装范围装到全局还是项目的哪个目录、skill 的四种状态、覆盖与单独确认、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵；第二个 Scenario 是第三方 Skill：`catalog.json` 的条目与校验、skills CLI 那条命令的写法与环境变量、状态只看目录在不在、成败看复核、覆盖前另问、清单 |
 | [安装 MCP](./mcp-install.md) | `catalog.json` 的 MCP 条目与校验（含环境变量）、两个宿主的命令写法与配置文件、三种状态加「不支持」、已配置与状态未知时怎么装、带 key 的 MCP 怎么问怎么传、key 的值不许去的地方、外部命令执行器的契约、Codex 添加远程地址时当场登录的提醒、出错矩阵 |
 | [安装工具](./tool-install.md) | `catalog.json` 的工具条目与校验、安装命令是一整行 shell、按系统选命令、两种检查方式与两种状态、哪些条目不可选、它在混合流程里排在哪、成功与否只看复核的结论矩阵、外部命令执行器的 shell 模式与手动核对的办法、已知的限制 |
 | [界面设计](./ui-design.md) | **只管终端界面。** 画面该长什么样：视觉方向「账本」、版式的总规则、颜色与符号的含义、状态的写法、标题区、各类画面的版式要点、深浅色与不显示颜色和没有 Unicode 时的要求、界面预览页的生成命令和用法、还没经维护者确认的画法 |
-| [网页界面的设计](./web-ui-design.md) | 网页界面该长什么样（**还没有实现**，任务 `10-11-installer-web-ui` 先行的规范）：视觉方向「利落」与维护者明确不要的几样、颜色的变量与含义、字号、间距与圆角、三栏的版式与各个画面的要点、不可选的画法、汇总里不列命令、开场动画、放不下时的退路、还没经维护者看过的画法 |
+| [网页界面的契约](./web-ui-contract.md) | 页面与安装器之间说什么（意图、画面状态）、本机的网页有哪几条路径、口令与另外几道检查、每个答复都带的头、生命周期、页面的源码与构建；逐张工单补全 |
+| [网页界面的设计](./web-ui-design.md) | 网页界面该长什么样（**工单 03 只做了从简的骨架页，照本规范画是工单 04 起**，任务 `10-11-installer-web-ui` 先行的规范）：视觉方向「利落」与维护者明确不要的几样、颜色的变量与含义、字号、间距与圆角、三栏的版式与各个画面的要点、不可选的画法、汇总里不列命令、开场动画、放不下时的退路、还没经维护者看过的画法 |
 | [终端输出](./terminal-output.md) | 呈现层的职责、上色与 Unicode 的判断、不可选的行（原因在状态的位置）、是否题、隐藏输入、选择安装范围（当前目录的写法与截断）、带备注的表、将执行的命令与占位符、工具的执行分区与结论、混合列表与外部项目的说明与链接、标准输出与标准错误的分工、块与块之间的空行、改写已打出的行、结果行与合计共用一份、界面预览页 |
 | [目录校验与 CI](./catalog-validation.md) | 目录校验命令的输出与退出状态、被跳过条目的原因怎么记、没有让条目被跳过的写坏之处（`Catalog.flaws`）怎么记怎么说、命令的测试怎么写；上游核对命令的输出与退出状态、怎么认出上游有哪些 skill、为什么不进 CI；工作流的触发与检出范围 |
 
@@ -182,6 +192,7 @@ export class Interrupted extends Error {}
 - [ ] 要加或改任何画面的样子（颜色、符号、状态的词、间距、横线）→ [界面设计](./ui-design.md)：先改那份文档，再改实现，然后生成界面预览页对照
 - [ ] 要加或改网页界面的样子（颜色、字号、间距、部件、版式、开场动画）→ [网页界面的设计](./web-ui-design.md)：先改那份文档，再改实现；彩色只有说状态的那三种，不用紫色，汇总里不列将执行的命令
 - [ ] 要往终端上打任何东西 → [终端输出](./terminal-output.md)：只能经呈现层
+- [ ] 要给本机的网页加一条路径、一种意图、画面状态里的一个字段，或动任何一个答复头 → [网页界面的契约](./web-ui-contract.md)：先改那份文档；口令不进静态文件和任何答复，意图里没有会被原样执行的东西，不发允许跨来源访问的头
 - [ ] 要动列表里有什么、怎么排，条目的状态与可不可选，勾选怎么算成要装的各项，或执行的先后与一项失败之后怎么办 → 上面「两套界面共用的部分」：改在那四块里，不在 `flow.ts` 里另写一遍；它们不提问、不往终端上打东西
 - [ ] 要动下载、落盘、宿主探测、状态探测、覆盖前问不问、安装范围（装到全局还是项目、各落在哪个目录），加一个宿主，或加一种装不上的原因 → [安装 skill](./skill-install.md)
 - [ ] 要加一种提问 → [终端输出](./terminal-output.md) 的「是否题」「隐藏输入」：先读交互库的源码，主题要盖全，按键提示和出错的句子要本地化
@@ -204,14 +215,15 @@ export class Interrupted extends Error {}
 
 | 命令 | 作用 |
 |------|------|
-| `npm run typecheck` | 类型检查（`src`、`test`、`scripts`），无输出即通过 |
-| `npm test` | 全部测试（vitest），只扫 `cli/test/` |
-| `npm run build` | 构建到 `dist/`（不提交） |
+| `npm run typecheck` | 类型检查：先 `src`、`test`、`scripts`，再页面（`web/tsconfig.json`），无输出即通过 |
+| `npm test` | 全部测试（vitest），只扫 `cli/test/`；开跑之前先把页面打一遍到 `dist/web/` |
+| `npm run build` | 构建到 `dist/`（不提交）：`tsc` 编安装器，再把页面打成 `dist/web/` 下的静态文件 |
+| `npm run build:web` | 只把页面打一遍 |
 | `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍。**不许改画面的重构**（搬代码、拆模块）拿它当凭据：动手之前先生成一份另存，改完再生成一份，两份应当逐字节相同——预览页经入口把每个画面都走一遍，测试没断言到的字也在里面 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
 | `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
 | `npm run check-upstream -- ..` | 把目录里登记的第三方 Skill 和作者在 GitHub 上的仓库对一遍：仓库还在不在、归档或改名没有、里面的 skill 多了少了。要联网，不进 CI；录入或改动第三方 Skill 之后跑，设上 `GITHUB_TOKEN` 免得被限流 |
-| `npm pack --dry-run` | 列出 npm 包里会有哪些文件，不生成文件；动了 `package.json` 的 `files`、`README.md`、`LICENSE` 时看一眼 |
+| `npm pack --dry-run` | 列出 npm 包里会有哪些文件，不生成文件；动了 `package.json` 的 `files`、`README.md`、`LICENSE`、页面的构建时看一眼（先 `npm run build`：`dist/web/` 下的三个文件要在里面） |
 
 推送后 CI（`.github/workflows/cli.yml`）在 macOS、Linux、Windows 上各用 Node 22.13 和 24 跑全部测试，另跑类型检查和目录校验。
 

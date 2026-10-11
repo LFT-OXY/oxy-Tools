@@ -9,6 +9,7 @@ import xterm from '@xterm/headless';
 import { CatalogError, githubCatalogSource, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller, type CommandRunner } from '../src/installer.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
+import { buildWeb } from './build-web.ts';
 import { COLUMNS, KEY, keyboardPrompter } from '../test/terminal.ts';
 
 const ROWS = 60;
@@ -16,6 +17,9 @@ const down = (times: number): string[] => Array<string>(times).fill(KEY.down);
 // 假装粘贴进来的 key：它不该出现在任何一格画面里
 const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 const BOTH_HOSTS = ['claude', 'codex'];
+// 网页界面的网址每次运行都不同（端口是系统挑的，口令是随机的）：画面上换成这一个，两次生成才逐字节相同
+const SAMPLE_WEB_URL = 'http://127.0.0.1:51234/?token=Jc3kTq0xW8nL2vRb7ZyGf4HsPd6MuA1e';
+const WEB_URL = /http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/g;
 
 interface Scene {
   title: string;
@@ -51,6 +55,11 @@ interface Scene {
   answersScope?: boolean;
   /** 终端只有这么多行，画面只取还在屏幕上的部分；缺省是够高的终端，连同滚上去的都取 */
   rows?: number;
+  /**
+   * 走网页界面（打开临时开关）：opens 是浏览器打开了，画面停在终端上的那个块；no-browser 是链接打开器拒绝，
+   * no-server 是页面的静态文件读不到——后两种退回终端界面。不给就是终端界面，链接打开器不会被调用
+   */
+  web?: 'opens' | 'no-browser' | 'no-server';
 }
 
 /** 一条假装执行的工具安装命令 */
@@ -678,7 +687,15 @@ const scenes: Scene[] = [
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
   { title: '出错 · 无法识别的参数', note: 'npx oxy-tools --frobnicate', argv: ['--frobnicate'] },
   { title: '帮助', note: 'npx oxy-tools --help', argv: ['--help'] },
+  { title: '网页界面 · 已在浏览器打开', note: '带着临时开关 OXY_TOOLS_WEB：终端上不问语言，本机信息下面多一个块——已在浏览器打开、整条写在一行上的网址、按键提示。网址是样例：真实的每次运行各有各的端口和口令', web: 'opens' },
+  { title: '网页界面 · 已在浏览器打开 · 检测到两个宿主、有条目被跳过', note: '本机信息照旧，那个块接在通栏横线下面', web: 'opens', onPath: BOTH_HOSTS, catalog: withBrokenEntry },
+  { title: '退回终端界面 · 浏览器打不开', note: '链接打开器拒绝：一行「注意」说明原因，下面空一行，然后从语言提问接着走终端界面；本机信息不重打', web: 'no-browser' },
+  { title: '退回终端界面 · 本机的网页起不来', note: '页面的静态文件读不到：同一个画法，另一句原因；没有去打开浏览器', web: 'no-server' },
+  { title: '退回终端界面 · 语言提问中', note: '原因下面空一行才是提问', web: 'no-browser', answersLanguage: true },
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en · 给了 --lang 就不问语言', argv: ['--lang', 'en'] },
+  { title: '英文界面 · 网页界面 · 已在浏览器打开', argv: ['--lang', 'en'], web: 'opens' },
+  { title: '英文界面 · 退回终端界面', note: '给了 --lang 就不问语言：「注意」下面空一行直接是主菜单', argv: ['--lang', 'en'], web: 'no-browser' },
+  { title: '英文界面 · 退回终端界面 · 本机的网页起不来', argv: ['--lang', 'en'], web: 'no-server' },
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
   { title: '英文界面 · 汇总与结果', argv: ['--lang', 'en'], catalog: oneFails, keys: install },
   { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toRecommended },
@@ -792,6 +809,8 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 // 每个场景一个假的主目录、临时目录和可执行路径，全部放在这下面，结束时一并删掉
 const scratch = mkdtempSync(join(tmpdir(), 'oxy-tools-preview-'));
+// 网页界面的场景里本机的网页发的是构建出来的静态文件
+const builtWeb = await buildWeb();
 function scratchDir(label: string): string {
   return mkdtempSync(join(scratch, `${label}-`));
 }
@@ -802,7 +821,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
   let lastWrite = Date.now();
   const write = (text: string): void => {
     lastWrite = Date.now();
-    terminal.write(text);
+    terminal.write(text.replace(WEB_URL, SAMPLE_WEB_URL));
   };
   // 输出停下来一小会儿就算画完了；转动符号一直在写，所以另设上限
   const settle = async (): Promise<void> => {
@@ -831,9 +850,11 @@ async function play(scene: Scene): Promise<Cell[][]> {
     mkdirSync(dirname(join(project, path)), { recursive: true });
     writeFileSync(join(project, path), content);
   }
+  // 网页界面开着时不在提问里：收场靠这个信号
+  const interrupt = new AbortController();
   const finished = runInstaller({
     argv: scene.argv ?? [],
-    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(scene.web ? { OXY_TOOLS_WEB: '1' } : {}), ...scene.env },
     platform: scene.platform ?? 'darwin',
     systemLocale: 'zh-CN',
     stdout: { isTTY: tty, rows, columns: COLUMNS, write },
@@ -843,7 +864,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
     homeDir: home,
     projectDir: project,
     tempDir: scratchDir('tmp'),
-    interrupt: new AbortController().signal,
+    webDir: scene.web === 'no-server' ? join(scratch, 'no-such-web') : builtWeb,
+    interrupt: interrupt.signal,
     runCommand: async (command, args, options) => {
       if (!options?.shell) {
         if (scene.commands || command !== 'npx') return (scene.commands ?? (async () => ok))(command, args);
@@ -870,8 +892,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
       return { exitCode: run.exitCode ?? 0 };
     },
     prompter,
-    // 安装器不该再打开浏览器：真调用了就让这一格出错，看得出来
-    openLink: () => Promise.reject(new Error('the installer must not open a browser')),
+    // 预览页从不真的打开浏览器：网页界面的场景里它只是兑现或拒绝；走终端界面的场景不带临时开关，它不会被调用
+    openLink: () => (scene.web === 'opens' ? Promise.resolve() : Promise.reject(new Error('the installer must not open a browser'))),
   });
 
   await settle();
@@ -881,8 +903,9 @@ async function play(scene: Scene): Promise<Cell[][]> {
   }
   await new Promise<void>((resolve) => terminal.write('', resolve));
   const cells = readCells(terminal, scene.rows !== undefined);
-  // 收掉还开着的提问；一直在加载的场景不会结束，由进程退出时一并了结
+  // 收掉还开着的提问和本机的网页；一直在加载的场景不会结束，由进程退出时一并了结
   keyboard.write(KEY.ctrlC);
+  interrupt.abort();
   await Promise.race([finished, sleep(200)]);
   return cells;
 }

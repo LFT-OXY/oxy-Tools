@@ -11,3 +11,4 @@
 {"file": ".atw/tasks/10-11-installer-web-ui/research/web-ui-interview.md", "reason": "访谈的 11 条结论、从代码里查到的事实、要跟着改的现有文字、留给工单定的事"}
 {"file": ".atw/spec/cli/web-ui-design.md", "reason": "网页界面的设计规范：选定的方向「利落」、颜色与字号、各个画面的版式、不可选的画法、汇总里不列命令、开场动画、还没经维护者看过的画法"}
 {"file": ".atw/tasks/10-11-installer-web-ui/ui-direction.md", "reason": "工单 01 的结论：选定的方向、维护者的原话与喜欢不喜欢、没选的十二个候选、设计说明与验收重点、对比页上没画照着推的"}
+{"file": ".atw/tasks/10-11-installer-web-ui/issues/03-web-ui-skeleton.md", "reason": "ATW current ticket"}

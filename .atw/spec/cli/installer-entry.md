@@ -30,16 +30,17 @@ export interface InstallerOptions {
   runCommand: CommandRunner;      // 外部命令执行器
   prompter: Prompter;             // 提问器
   openLink: LinkOpener;           // 链接打开器
-  // 三样运行环境的事实，和 env、platform 同类，不算外部依赖
+  // 四样运行环境的事实，和 env、platform 同类，不算外部依赖
   projectDir: string;             // 项目目录：运行安装器时所在的目录（bin.ts 给 process.cwd()），安装范围选「项目」时装到它下面
   tempDir: string;                // 放临时文件的目录（bin.ts 给 os.tmpdir()）
+  webDir: string;                 // 网页界面的静态文件所在的目录（bin.ts 给它自己旁边的 web/，也就是构建产物 dist/web/）
   interrupt: AbortSignal;         // 用户在提问之外按 Ctrl+C 时触发
 }
 ```
 
 入口不直接碰 `process`：参数、环境变量、平台、输出流都从 `options` 来。`cli/src/bin.ts` 负责把真实的东西接上去，除此之外不放逻辑。
 
-`interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。执行一批安装的途中被这个信号打断时，`run-plan.ts` 抛的是它自己的 `Interrupted`（它不认识提问器）；入口把两种都当作以 130 退出。
+`interrupt` 触发后 `bin.ts` 随即 `process.exit(130)`，**所以监听它的收尾只能是同步的**（`rmSync`，不是 `await rm`）；异步的 `finally` 等不到执行。提问进行中的 Ctrl+C 不走这个信号——终端处在原始模式，交互库自己把它变成 `PromptAborted`。执行一批安装的途中被这个信号打断时，`run-plan.ts` 抛的是它自己的 `Interrupted`（它不认识提问器）；入口把两种都当作以 130 退出。网页界面开着时被它打断也是抛 `Interrupted`：抛之前当场把本机的网页关掉（同步的），页面那边的长连接随之断开。
 
 `runCommand` 的正式实现是 `cli/src/run-command.ts` 的 `systemCommandRunner()`。它有两种用法：不经 shell、输出不上屏的（安装 MCP 和第三方 Skill 用，约定见 [安装 MCP](./mcp-install.md)），和第三个参数给 `{ shell: true }` 时整行交给系统的 shell、输入输出直接接在终端上的（安装工具用，约定和手动核对的办法见 [安装工具](./tool-install.md)）。两种起的子进程都继承进程自己的环境，不是 `options.env`；不经 shell 的那种可以用第三个参数的 `env` 另外带上几个变量、用 `cwd` 指定在哪个目录下运行（安装第三方 Skill 用：装到项目时要在项目目录下运行，见 [安装 skill](./skill-install.md)）。
 
@@ -51,7 +52,7 @@ export type CommandOptions =
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 ```
 
-`openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`。**安装器现在不调用它**：外部项目只列出说明与链接，不替用户打开浏览器（一次勾好几个会弹出一堆网页；任务 `10-10-catalog-purpose-categories` 工单 05 起）。它作为入口的一样可替换依赖先留着，要不要拿掉另议；下面是它自己的契约：
+`openLink` 的正式实现是 `cli/src/open-link.ts` 的 `systemLinkOpener(platform)`。**它只用来打开网页界面**（任务 `10-11-installer-web-ui` 工单 03 起）：一次运行里最多调用一次，交给它的是本机那个网页的网址；它拒绝时安装器退回终端界面。外部项目的链接仍然不由安装器打开——终端界面只列出说明与链接（一次勾好几个会弹出一堆网页；任务 `10-10-catalog-purpose-categories` 工单 05 起），网页界面里由用户自己点。下面是它自己的契约：
 
 ```ts
 export type LinkOpener = (url: string) => Promise<void>; // 打不开时拒绝
@@ -71,9 +72,25 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 **启动顺序**
 
-解析启动参数 → 参数有误、`--help`、`--version`、没有交互式终端这四种情况各自处理并退出 → 打大标志 → 没给 `--lang` 就问语言 → 读取目录 → 本机信息 → 主菜单。
+解析启动参数 → 参数有误、`--help`、`--version`、没有交互式终端这四种情况各自处理并退出 → 打大标志 → **定下用哪个界面** → 终端界面没给 `--lang` 就问语言，网页界面不问 → 读取目录 → 本机信息 → 进入所选的界面（终端界面是主菜单）。
 
-**界面语言在一次运行的中途才定下来。** 那四种不问就退出的情况、大标志和语言提问用按系统语言建的呈现层；语言提问回答之后入口按选定的语言重建一个（`createUi({ …, lang, continued: true })`），此后的一切输出——加载提示、本机信息、菜单、提问、出错说明、目录条目的说明——都用它。重建时带上 `continued`，见 [终端输出](./terminal-output.md) 的「块与块之间的空行」。
+**定下用哪个界面**（任务 `10-11-installer-web-ui`；现在是工单 03 之后的样子，缺省仍是终端界面，工单 13 才换）：
+
+| 情形 | 用哪个 |
+|------|--------|
+| 环境变量 `OXY_TOOLS_WEB` 非空 | 网页界面 |
+| 其余 | 终端界面，和加网页界面之前完全一样 |
+
+`OXY_TOOLS_WEB` 是开发期间的临时开关，工单 13 拿掉，换成「缺省网页界面，认出打不开浏览器的机器时用终端界面」的判断。判断只看入口收到的环境变量和平台，不直接碰 `process`。
+
+**用网页界面时**：
+
+- 终端上不问语言：呈现层就是启动时按系统语言或 `--lang` 建的那一个，不重建。页面的语言起始也是它。
+- 目录在打开浏览器之前读：读不了时照旧在终端上出错并以 1 退出，**没有起本机的网页，链接打开器没有被调用**。
+- 本机信息照旧打在终端上，然后才进入网页界面：起本机的网页 → 把网址交给链接打开器 → 终端上打出「网页界面开着」的那个块（画法见 [界面设计](./ui-design.md) 的「网页界面开着时」）→ 等到页面上点了「完成」（以 0 退出）或终端上按了 Ctrl+C（以 130 退出）。页面与安装器之间说什么、本机的网页守哪几道，见 [网页界面的契约](./web-ui-contract.md)。
+- **进入网页界面之后才知道用不了的两种情形**：本机的网页起不来（静态文件读不到、监听不了），或链接打开器拒绝。安装器把本机的网页关掉（起来了的话），在终端上打一行「注意」说明原因（经呈现层的 `webUnavailable`，画法见界面设计规范的同一节），然后**从语言提问接着走终端界面**：没给 `--lang` 就问语言、按选定的语言重建呈现层，接着是主菜单。目录不重读，本机信息不重打。
+
+**界面语言在一次运行的中途才定下来。**（下面两段说的是终端界面。） 那四种不问就退出的情况、大标志和语言提问用按系统语言建的呈现层；语言提问回答之后入口按选定的语言重建一个（`createUi({ …, lang, continued: true })`），此后的一切输出——加载提示、本机信息、菜单、提问、出错说明、目录条目的说明——都用它。重建时带上 `continued`，见 [终端输出](./terminal-output.md) 的「块与块之间的空行」。
 
 语言提问用提问器现有的单选（`ui.languageQuestion()`），不是新的提示种类。选择只留在这次运行的内存里：安装器不为它写任何文件，下一次启动照样问。在它上面按 Ctrl+C 和别的提问一样以 130 退出。
 
@@ -97,7 +114,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 - **汇总是一个分区「将安装 N 项」**，N 是会装的组件条目数（外部项目不算，必填的 key 没填的 MCP 不算，清单里一个都没勾的第三方 Skill 也不算）；里面按类型分成小表。这一轮有第三方 Skill、MCP 或工具要装时接着是「将执行 N 条命令」，第三方 Skill 的在前、MCP 的其次、工具的在后。确认的提问统一是「开始安装吗」：开始安装、返回修改、取消。
 - **执行的先后：本仓库的 skill、第三方 Skill、MCP、工具**，一项失败不影响其余项。前三样共用一个「正在安装」分区；工具排在最后，每个一个以它名字为标题的分区——它的命令会直接接管终端的输入输出。向 GitHub 查询失败时本仓库的 skill 一个都不装、结果里也没有它们的行，出错说明之后第三方 Skill、MCP 和工具照常装（第三方 Skill 不经那次查询），再列出勾选的外部项目。
 - **外部项目的说明与链接排在结果之后**。汇总上选了「取消」则这一轮什么都不做，外部项目也不列。
-- 没有要确认的东西时不问：只勾了外部项目，**没有汇总，不问开始不开始**，直接列出每一个的名字、说明、完整的链接；勾上的组件全是必填的 key 没填的 MCP 时同样没有汇总，直接是「结果」分区（每个宿主一行跳过），再是勾选的外部项目；勾上的组件只有第三方 Skill、而清单里一个都没勾时，什么都不装，直接回主菜单（勾了外部项目的照常列出）。**整个运行里不调用链接打开器。**
+- 没有要确认的东西时不问：只勾了外部项目，**没有汇总，不问开始不开始**，直接列出每一个的名字、说明、完整的链接；勾上的组件全是必填的 key 没填的 MCP 时同样没有汇总，直接是「结果」分区（每个宿主一行跳过），再是勾选的外部项目；勾上的组件只有第三方 Skill、而清单里一个都没勾时，什么都不装，直接回主菜单（勾了外部项目的照常列出）。**终端界面的整个流程里不调用链接打开器。**
 
 **启动参数**
 
@@ -112,6 +129,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 | 变量 | 行为 |
 |------|------|
+| `OXY_TOOLS_WEB` | 非空时用网页界面，否则用终端界面。**开发期间的临时开关**，不写进帮助和 README，工单 13 拿掉 |
 | `OXY_TOOLS_CATALOG` | 非空时，目录来源改为这个本地目录（其中要有 `index.json` 和 `catalog.json`），覆盖传入的 `catalogSource`；skill 的内容也从这个目录读 |
 | `GITHUB_TOKEN` | 非空时，向 GitHub 的接口查询带上它（`Authorization: Bearer`）；下载文件从不带 |
 | `PATH`、`PATHEXT` | 判断宿主的命令在不在，见 [安装 skill](./skill-install.md) |
@@ -125,10 +143,10 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 | 状态 | 情况 |
 |------|------|
-| 0 | 正常退出、`--help`、`--version` |
+| 0 | 正常退出（终端界面的主菜单上选了退出、网页界面上点了「完成」）、`--help`、`--version` |
 | 1 | 没有交互式终端、目录读不了、目录格式有误或版本过高、意外错误 |
 | 2 | 启动参数不对 |
-| 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`） |
+| 130 | 用户按了 Ctrl+C（提问中，或提问之外经 `interrupt`——网页界面开着时就是后一种） |
 
 单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流），都**不改变退出状态**：前一种只在结果里列出，后一种打出出错说明后回到主菜单。
 
@@ -275,6 +293,34 @@ result.home; result.tmp; // 临时的主目录、交给安装器放临时文件�
 result.project;          // 临时的项目目录（options.projectDir）；初始内容用 run({ project: { 相对路径: 内容 } }) 给
 ```
 
+**测网页界面：给一段「在页面上做什么」的脚本**（任务 `10-11-installer-web-ui` 工单 03 起）。不给脚本时走终端界面，和以前一样；给了，架子就打开临时开关 `OXY_TOOLS_WEB`，从只记录的链接打开器那里拿到网址，**经真实的本机 HTTP 扮演浏览器**：用网址里的口令连上长连接，收到第一份画面状态之后跑脚本。不为网页界面另开接缝。
+
+```ts
+const result = await run({
+  page: async (page) => {
+    expect(page.state().machine.hosts).toEqual([...]); // 最近收到的那份画面状态
+    await page.send({ type: 'finish' });               // 发一个意图，等到它的答复
+  },
+});
+result.exitCode; result.opened; // opened[0] 就是网页界面的网址
+```
+
+| `page` 上的 | 是什么 |
+|-------------|--------|
+| `url`、`token` | 交给链接打开器的网址，和里面的口令 |
+| `state()` | 最近收到的那份画面状态 |
+| `until(predicate)` | 等到一份让 `predicate` 为真的画面状态（已经是了就当场给） |
+| `send(intent)` | 像页面那样发一个意图；答复不是成功就失败 |
+| `reload()` | 再开一条长连接（刷新，或再开一个标签页），给出它收到的第一份画面状态 |
+| `closed` | 页面的长连接断开时兑现（安装器退出了） |
+| `request(path, { method, headers, body })` | 不经页面直接发一个 HTTP 请求，头由用例给（口令和 `Origin` 都不代填；不给 `Host` 时它是网址里的那个）：用来扮演别的网站、别的机器。给出 `status`、`headers`、`body` |
+
+- 脚本跑完之后安装器应当已经退出（点了「完成」，或脚本里触发了 `interrupt`）；两秒之内没有退出，架子替它中断并让测试失败。脚本里抛出的错（断言失败）同样先中断安装器再抛出来，不会挂住。
+- 架子扮演浏览器用的是 `node:http`，不用全局的 `fetch`：有的用例拿假的 GitHub 替换了它。
+- `browserOpens: false`：链接打开器照样记下网址，然后拒绝——浏览器打不开。`webDir: <一个不存在的目录>`：页面的静态文件读不到——本机的网页起不来。这两种都退回终端界面，所以不给 `page`，自己带上 `env: { OXY_TOOLS_WEB: '1' }`，后面的终端界面照常用 `answers` 应答（语言提问照旧由架子代答）。
+- 页面的静态文件是构建产物：`vitest.config.ts` 的 `globalSetup`（`test/build-web.ts`）在全部测试之前把页面打一遍到 `dist/web/`，架子缺省把它当 `webDir`。
+- 页面本身不写自动化测试（它只把画面状态画出来、把操作变成意图）；规则都在安装器这边，经这里测到。
+
 - **语言提问缺省由架子替用户按回车**，接受光标起始所在的那一项：`answers` 和 `keys` 里都不用写它。光标的起始位置是按系统语言定的，所以靠 `env: { LANG: … }`、`systemLocale` 决定界面语言的测试照旧成立，带 `--lang` 的也一样（那时根本不问）。专门测语言提问的用例给 `answersLanguage: true`：它就和别的提问一样，用掉 `answers` 的第一个应答，或由 `keys` 的脚本来按。用 `keys` 时架子等语言提问画出来才按回车，并且等它收成一行之后才开始认脚本要等的字——语言提问自己的按键提示不算数。
 
 - **安装范围的提问同样缺省由架子替用户按回车**（全局）：`answers` 和 `keys` 里都不用写它，所以不测安装范围的用例的应答序列和加这一问之前一样；它照样被记进 `output`。专门测它的用例给 `answersScope: true`，自己应答（`choose('项目')`、`accept()`，或由 `keys` 来按）。架子靠提问的文案认它（`test/terminal.ts` 的 `SCOPE_QUESTIONS`，中英各一句），改了文案要跟着改。
@@ -282,7 +328,7 @@ result.project;          // 临时的项目目录（options.projectDir）；初�
 - `choose(label)` 按画面上第一栏的字选一项（单选），那一项不在、或者不可选，就失败；`pick(...labels)` 是多选，只勾这几项再确认，一个都不传就是什么都不勾直接确认；`accept()` 是什么都不动直接回车——单选选中光标起始所在的那一项（它不可选就失败），多选照提问出现时的勾选确认，用来证明“默认是什么”；是否题取它的缺省回答，用来证明“默认是什么”；`yes()`、`no()` 回答是否题；`secret(值)` 回答隐藏输入（问 key），`blank()` 是什么都不输直接回车；`interrupt()` 表示在这个提问上按 Ctrl+C。应答用错了提问的种类（单选用了 `pick`、是否题用了 `choose`、隐藏输入用了 `accept`……）会直接报错，并说该用哪个。预设的应答没用完或不够用，测试都会失败——所以“这里不该多问一次”不用另写断言，多问了自然会失败。
 - 预设应答的提问器把每个提问照画面的样子记进 `output`（提问——它上下的空行在主题的提问标记和提问样式里，有就照打——、每一行、光标所在行的说明全文；多选的每行前面带勾选框；不可选的行照交互库的拼法——单选的行首一个短横，多选的是不可选的勾选框——原因接在后面，并经过主题的 `disabled` 样式；是否题只有提问和后面的 `(y/N)` 或 `(Y/n)`；隐藏输入只有提问和后面那句固定的提示，**输入的东西不记**），所以“菜单里有什么”可以直接断言文字。它只是照着拼的：**一行到底选不选得了，要用 `keys` 在真实的交互库上证明**。
 - 外部命令执行器只记录不执行：每条命令按先后进 `result.commands`（`{ command, args }`；整行交给 shell 的多一个 `shell: true`，`args` 是空的；不经 shell 而另带了环境变量的多一个 `env`——第三方 Skill 的安装命令，断言「不是 shell 方式」「带着关遥测的变量」看的就是这两样），缺省都以 0 退出。不经 shell 而指定了在哪个目录下运行的再多一个 `cwd`（装到项目的第三方 Skill；装到全局的没有这个键）。`commandResult: (command, args, { home, cwd }) => …` 预设结果（`cwd` 就是那条命令的运行目录，没指定时是 `undefined`）：返回 `{ exitCode: 3 }` 让它非零退出，返回一个 `Error` 表示命令没能起来，它自己抛出表示执行器当场抛出（没返回承诺），什么都不返回就是成功。假的执行器不会真的改宿主的配置、也不会真的装工具——要证明“装完再看是新状态”，让 `commandResult` 顺手把配置文件写出来，或往第三个参数给的 `home`（这次运行的临时主目录）里写出工具的检查路径。
-- 链接打开器只记录：要打开的网址按先后进 `result.opened`。安装器现在不调用它，所以它只用来断言「没有调用」：`expect(result.opened).toEqual([])`。
+- 链接打开器只记录：要打开的网址按先后进 `result.opened`。走终端界面的运行里安装器不调用它：`expect(result.opened).toEqual([])`；走网页界面的运行里它恰好被调用一次，记下的就是网页界面的网址。
 - **样例目录带着用途清单。** `fixtures.ts` 的 `EMPTY_CATALOG` 里有 `SAMPLE_PURPOSES`（两个用途），`SAMPLE_MCPS`、`KEYED_MCP`、`SAMPLE_TOOLS`、`SAMPLE_APPS` 的每一条都写了其中一个；所以照 `{ ...EMPTY_CATALOG, mcps: [...] }` 拼目录、照 `{ ...SAMPLE_TOOLS[0], name: 'x' }` 拼条目的用例不用管用途。**从头手写一条条目时要自己带上 `purpose`**，不然它会因为没有用途被跳过——断言「没有这一条」的用例会因此假通过。要造没有用途清单的旧格式目录，自己写 `{ version: 1, mcps: [...] }`，不从 `EMPTY_CATALOG` 展开。界面预览页（`scripts/preview.ts`）的样例条目同理：它用的也是 `EMPTY_CATALOG` 带的那份用途清单（外部项目的场景另带一份 `SHOWCASE_PURPOSES`），新加的样例条目要写清单里的一个用途，不然那一格里它就不见了。
 - **主菜单上第一行是「推荐」，各个用途排在它后面。** 用 `keys` 按光标走的用例，光标起始在「推荐」上（目录里一个 skill 都没有、也没有带推荐标记的条目时才落在第一个用途上）：`[HINT, KEY.enter]` 进的是「推荐」，再下移一行是第一个有条目的用途。第三方 Skill、MCP、工具和外部项目都会让它们的用途出现在主菜单上，所以要按「下移几行」走的用例得数清中间有几个用途；用预设应答的 `choose('联网搜索与文档检索')` 按字选，不受影响。
 - **第三方 Skill 从用途进（带推荐标记的也在「推荐」里）。** 样例是 `fixtures.ts` 的 `SAMPLE_THIRD_PARTY`：两条都在「联网搜索与文档检索」下，`paper-kit` 含三个 skill（勾了它会多出一张清单，要多预设一个 `pick(...)`），`solo-notes` 只含一个叫 `note-taker` 的 skill（条目的名字和 skill 的名字故意不同：汇总、命令、结果里出现的是 skill 的名字）。`EMPTY_CATALOG` 里没有它们，要用时自己拼 `{ ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY }`。假的执行器不会真的装东西：让 `commandResult` 在「执行」那条命令时往 `home` 里写出 `<skill 目录>/<名字>/SKILL.md`（`third-party.test.ts` 的 `installs()`），不写就是「命令结束了但没装上」。

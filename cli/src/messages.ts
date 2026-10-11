@@ -18,6 +18,9 @@ export type Failure =
 /** 复核一个工具时查的是什么：可执行路径上的一个命令，或主目录下的一个路径（给用户看的写法） */
 export type ToolEvidence = { command: string } | { path: string };
 
+/** 进入网页界面之后才知道它用不了的原因：本机的网页起不来、浏览器打不开 */
+export type WebUnavailable = 'server' | 'browser';
+
 /** 一个 key 问完之后的结局：填了、留空了、这次运行里早先填过所以没再问 */
 export type KeyOutcome = 'entered' | 'blank' | 'reused';
 
@@ -46,6 +49,8 @@ export interface Messages {
   counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
+  /** 网页界面开着时终端上的那个块，和退回终端界面时说明的那一句原因 */
+  webUi: { key: string; opened: string; unavailable: Record<WebUnavailable, string> };
   pickPurpose: string;
   /** 「推荐」：主菜单的第一行，也是列表下方「类型」一行里跟在类型后面的那个词 */
   recommended: string;
@@ -230,6 +235,11 @@ const zh: Messages = {
   ],
   noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
+  webUi: {
+    key: '网页界面',
+    opened: '已在浏览器打开',
+    unavailable: { server: '本机的网页起不来，改用终端界面', browser: '浏览器打不开，改用终端界面' },
+  },
   pickPurpose: '选择用途',
   recommended: '推荐',
   recommendedMark: '推荐',
@@ -361,7 +371,7 @@ const zh: Messages = {
   },
   totalKey: '合计',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
-  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）' },
+  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）', quit: '退出' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
   errorPrefix: '出错：',
@@ -495,6 +505,14 @@ const en: Messages = {
   ],
   noEntries: 'no usable entries',
   skipped: (count) => `${count} malformed catalog ${count === 1 ? 'entry was' : 'entries were'} skipped`,
+  webUi: {
+    key: 'Web UI',
+    opened: 'opened in your browser',
+    unavailable: {
+      server: 'Could not start the local web page; using the terminal UI instead',
+      browser: 'Could not open a browser; using the terminal UI instead',
+    },
+  },
   pickPurpose: 'Pick a purpose',
   recommended: 'Recommended',
   recommendedMark: 'pick',
@@ -632,7 +650,7 @@ const en: Messages = {
   },
   totalKey: 'Total',
   totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
-  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)' },
+  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)', quit: 'quit' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },
   errorPrefix: 'Error: ',

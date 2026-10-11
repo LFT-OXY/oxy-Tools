@@ -7,6 +7,7 @@ import { PromptAborted, type Prompter } from './prompter.ts';
 import { Interrupted } from './run-plan.ts';
 import { createUi, type TerminalOutput } from './ui.ts';
 import { VERSION } from './version.ts';
+import { runWebUi } from './web-ui.ts';
 
 /** 外部命令跑完的结果 */
 export interface CommandResult {
@@ -32,7 +33,7 @@ export type CommandOptions =
  * 命令没能起来时拒绝
  */
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
-/** 链接打开器：在默认浏览器里打开一个网址。安装器现在不调用它：外部项目只列出链接 */
+/** 链接打开器：在默认浏览器里打开一个网址，打不开时拒绝。只用来打开网页界面：外部项目的链接不由安装器打开 */
 export type LinkOpener = (url: string) => Promise<void>;
 
 export interface InstallerOptions {
@@ -52,6 +53,8 @@ export interface InstallerOptions {
   projectDir: string;
   /** 放临时文件的目录 */
   tempDir: string;
+  /** 网页界面的静态文件所在的目录 */
+  webDir: string;
   /** 用户在提问之外按 Ctrl+C 时触发。触发后进程随即退出，所以监听它的收尾只能是同步的 */
   interrupt: AbortSignal;
   runCommand: CommandRunner;
@@ -70,8 +73,9 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
   const args = parseArguments(options.argv);
   const speaking = (lang: Lang, continued = false) =>
     createUi({ out: stdout, err: options.stderr, lang, env, platform: options.platform, continued });
-  // 没给 --lang 时先按系统语言说话：不问语言就退出的几种情况、大标志和语言提问都用它
-  let ui = speaking(args.lang ?? detectLang(env, options.systemLocale));
+  // 没给 --lang 时先按系统语言说话：不问语言就退出的几种情况、大标志和语言提问都用它；网页界面开着时终端上一直是它
+  const startingLang = args.lang ?? detectLang(env, options.systemLocale);
+  let ui = speaking(startingLang);
 
   try {
     if (args.invalid) {
@@ -92,25 +96,44 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     }
 
     ui.logo(VERSION);
-    if (args.lang === undefined) {
-      // 语言提问收成的那一行留在标题区下面：按选定的语言接着写时，画面上已经有内容
-      ui = speaking(await options.prompter.select(ui.languageQuestion()), true);
-    }
+    // 没给 --lang 就问语言。提问收成的那一行留在画面上：按选定的语言接着写时，画面上已经有内容
+    const askLanguage = async (): Promise<void> => {
+      if (args.lang === undefined) ui = speaking(await options.prompter.select(ui.languageQuestion()), true);
+    };
+    // 开发期间的临时开关：非空时用网页界面。网页界面不在终端上问语言
+    const web = Boolean(env['OXY_TOOLS_WEB']);
+    if (!web) await askLanguage();
     const loading = ui.loading('catalog');
     // 维护者预览用：环境变量把目录来源改为本地目录
     const localCatalog = env['OXY_TOOLS_CATALOG'];
     const source = localCatalog ? localCatalogSource(localCatalog) : options.catalogSource;
     const catalog = await loadCatalog(source).finally(() => loading.done());
     const hosts = detectHosts(env, options.homeDir, options.projectDir);
-    ui.catalogSummary({
-      hosts,
+    const counts = {
       // 本仓库的和第三方的合在一起数
       skills: catalog.skills.length + catalog.thirdPartySkills.length,
       mcps: catalog.mcps.length,
       tools: catalog.tools.length,
       apps: catalog.apps.length,
-      skipped: catalog.skipped.length,
-    });
+    };
+    ui.catalogSummary({ hosts, ...counts, skipped: catalog.skipped.length });
+    if (web) {
+      const outcome = await runWebUi({
+        lang: startingLang,
+        version: VERSION,
+        hosts,
+        counts,
+        skipped: catalog.skipped.length,
+        webDir: options.webDir,
+        ui,
+        openLink: options.openLink,
+        interrupt: options.interrupt,
+      });
+      if (outcome === 'finished') return 0;
+      // 进来之后才知道网页界面用不了：说明一句原因，从语言提问接着走终端界面。目录不重读
+      ui.webUnavailable(outcome.unavailable);
+      await askLanguage();
+    }
     await mainMenu({
       catalog,
       source,

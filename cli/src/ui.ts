@@ -7,7 +7,7 @@ import type { Command, Environment, Host, Scope } from './hosts.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type KeyOutcome, type Lang } from './messages.ts';
+import { MESSAGES, type Failure, type KeyOutcome, type Lang, type WebUnavailable } from './messages.ts';
 import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
@@ -564,6 +564,26 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         rule(),
         '',
       );
+    },
+
+    /**
+     * 网页界面开着时本机信息下面的那个块：已在浏览器打开、整条写在一行上的网址（浏览器没有弹出来时照着复制）、
+     * 按键提示。
+     */
+    webOpened(url: string): void {
+      print(
+        ...gapAbove(),
+        ...keyValue(t.webUi.key, t.webUi.opened),
+        // 网址不截断也不折行，独占一行
+        `  ${' '.repeat(KEY_WIDTH)}${url}`,
+        '',
+        theme.style.keysHelpTip([['Ctrl+C', 'quit']]),
+      );
+    },
+
+    /** 进入网页界面之后才知道它用不了：说明一句原因，调用方接着走终端界面。 */
+    webUnavailable(reason: WebUnavailable): void {
+      print(...gapAbove(), ...keyValue(t.noticeKey, t.webUi.unavailable[reason], attention), '');
     },
 
     failure(failure: Failure): void {

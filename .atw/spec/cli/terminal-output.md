@@ -18,7 +18,7 @@ ui.installSummary({ skills, mcps, tools });
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
 
-文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。唯一的例外是语言提问的三段字（`Language / 语言`、`中文`、`English`）：它们不随界面语言变，是 `ui.ts` 里的常量。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另外的类型（skill 是 `SkillInstallProblem`，MCP 是 `McpInstallProblem`），文案在 `installProblem`、`mcpInstallProblem`。
+文案都在 `cli/src/messages.ts`，中英各一份、同一个 `Messages` 接口；加一句话两边都要加，类型检查会拦住漏的。例外有两处：语言提问的三段字（`Language / 语言`、`中文`、`English`）不随界面语言变，是 `ui.ts` 里的常量；网页界面的页面自己那几句版式上固定的字（栏名、按钮、结束画面的说明）在 `cli/web/main.tsx` 里，因为它们在页面连不上安装器时也得说得出来——哪些算、为什么，见 [网页界面的契约](./web-ui-contract.md)。出错的种类是 `Failure` 这个联合类型，每种对应标题、原因、下一步；出问题的网址或路径放在 `location`，由呈现层单独打一行，不截断也不折行。单个条目装不上的原因是另外的类型（skill 是 `SkillInstallProblem`，MCP 是 `McpInstallProblem`），文案在 `installProblem`、`mcpInstallProblem`。
 
 括号里的技术原因只放错误码和 `HTTP 503` 这类不需要翻译的东西。**别的模块里不写给用户看的句子**：要说一句话，就给联合类型加一种情况，在 `messages.ts` 里写中英两份。外部命令自己打出来的话同样不转述（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）。
 
@@ -385,6 +385,22 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 
 ---
 
+## 网页界面开着时与退回终端界面
+
+用网页界面时终端上多出来的只有两样，都经呈现层（画法见 [界面设计](./ui-design.md) 的「网页界面开着时」）：
+
+| 方法 | 什么时候 | 打什么 |
+|------|----------|--------|
+| `ui.webOpened(url)` | 链接打开器兑现之后 | 一个键值行（`t.webUi.key`、`t.webUi.opened`）；网址单独一行，照出错说明里 `location` 的写法——缩进到值的左缘，不截断也不折行；空一行；按键提示 |
+| `ui.webUnavailable(reason)` | 本机的网页起不来（`server`），或链接打开器拒绝（`browser`） | 一行「注意」（`t.webUi.unavailable[reason]`），下面空一行 |
+
+- 两样都写到**标准输出**：后一种不是出错，安装器接着走终端界面。
+- 按键提示用的是提问主题里的那一个函数（`theme.style.keysHelpTip([['Ctrl+C', 'quit']])`），动作词在 `t.keys` 里：和提问下方的按键提示同一个画法、同一套本地化。这一行现在由呈现层自己打——网页界面开着时没有提问在问；工单 11 把它换成待命的提问。
+- `webUnavailable` 以空行收尾，`spaced` 因此是「是」：紧接着的语言提问上方不另空，回答之后收成的那一行与「注意」之间隔着这一行空行。带了 `--lang` 不问语言时，隔开的是「注意」与主菜单。
+- 原因是一个种类（`WebUnavailable`，在 `messages.ts`），写成哪句话照文案；别的模块里不写给用户看的句子。
+
+---
+
 ## 块与块之间的空行
 
 空行由呈现层统一给，画面该空在哪见 [界面设计](./ui-design.md) 的「块与块之间的空行」。一条总的约束是**任何地方都不出现连着两行空行**，所以每一处“上方空一行”都先看一个状态 `spaced`——画面的最后一行是不是空行（画面还是空的也算）：
@@ -508,7 +524,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 单元格的前景色有两种读法（`readCells`）：命名色记编号，转成类名 `c0`–`c7`，色值跟着深色、浅色两套配色变；24 位色记成 `#rrggbb` 直接写进 `style`，两边是同一个值。只认调色板色的话，渐变的标志在预览页上是默认前景色，看上去和不显示颜色一样而不报任何错。
 - 画面取的是无头终端的**整个缓冲区**（`readCells` 读到 `buffer.length`），不是屏幕上那 `ROWS` 行：汇总加结果再回到主菜单的场景会超过一屏，只读前 `ROWS` 行会把底下的截掉而不报任何错（工单 12 之前有四个画面就是这样少了末尾几行）。
 - 要看矮终端里屏幕上还剩什么，场景给 `rows`（如 `rows: 24`）：终端、提问器和安装器拿到的都是这个行数，画面**只取还在屏幕上的那几行**（从 `buffer.baseY` 读起）。「skill 多选列表 · 24 行的终端」用的是 `manySkills`（二十条样例）。
-- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面：进「文档处理」用 `toDocuments`。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。要 skill、MCP、外部项目三种类型同表，场景用 `...THREE_KINDS`（`withThreeKinds`：在 `withMixed` 之上「文档处理」下多三个 MCP——`markitdown` 带推荐标记、`excel` 只支持 Claude Code、`mistral-ocr` 的 key 必填；主目录里 skill 的四种状态照 `MIXED`，Claude Code 里 `excel` 已配置）：`pickSkillAndMcps` 勾一个 skill 和两个 MCP，`pickThreeKinds` 再勾一个外部项目，`toThreeKindsSummary` 填好 key 停在汇总上。要四种类型同表，场景用 `...FOUR_KINDS`（`withFourKinds`：再往「文档处理」下加三个工具——`docling` 带推荐标记、安装命令里有引号，`officecli` 只支持 Linux，`pandoc` 在场景里已经装着；检测到两个宿主，缺省的假命令把 `docling` 装上）：`pickFourKinds` 四种类型各勾一个，`toFourKindsSummary` 停在汇总上（这四个都不要 key），再回车就装完。只检测到一个宿主或一个都没有时自己给 `onPath`——要 `pandoc` 显示已安装就把它也放进去。预览页的链接打开器一被调用就抛错——安装器不该再打开浏览器。
+- 要画出外部项目，场景用 `catalog: withApps`：它另带一份用途清单 `SHOWCASE_PURPOSES`（照仓库里真实的那十个），十条样例外部项目分在其中四个用途下——主菜单才看得出按用途排开、空用途不出现的样子。样例里有一条名字最长的、一条链接比一行长的、几条说明比一行长的。主菜单上第一行是「推荐」（`toRecommended` 直接回车进去），各个用途排在它后面：进「文档处理」用 `toDocuments`。要画出 skill 和外部项目混在一张列表里，场景用 `catalog: withMixed`：在 `withApps` 之上给四个 skill 写了用途（三个在「文档处理」下）、给 `mineru` 标了推荐；进「文档处理」用 `toMixedDocuments(asksHosts)`（检测到两个宿主时传 `true`，替用户在宿主选择上回车），`pickMixed` 勾两个 skill 和两个外部项目，`installMixed` 一路装完。要 skill、MCP、外部项目三种类型同表，场景用 `...THREE_KINDS`（`withThreeKinds`：在 `withMixed` 之上「文档处理」下多三个 MCP——`markitdown` 带推荐标记、`excel` 只支持 Claude Code、`mistral-ocr` 的 key 必填；主目录里 skill 的四种状态照 `MIXED`，Claude Code 里 `excel` 已配置）：`pickSkillAndMcps` 勾一个 skill 和两个 MCP，`pickThreeKinds` 再勾一个外部项目，`toThreeKindsSummary` 填好 key 停在汇总上。要四种类型同表，场景用 `...FOUR_KINDS`（`withFourKinds`：再往「文档处理」下加三个工具——`docling` 带推荐标记、安装命令里有引号，`officecli` 只支持 Linux，`pandoc` 在场景里已经装着；检测到两个宿主，缺省的假命令把 `docling` 装上）：`pickFourKinds` 四种类型各勾一个，`toFourKindsSummary` 停在汇总上（这四个都不要 key），再回车就装完。只检测到一个宿主或一个都没有时自己给 `onPath`——要 `pandoc` 显示已安装就把它也放进去。预览页从不真的打开浏览器：走终端界面的场景里链接打开器不会被调用（网页界面的场景见下面 `web` 那一条）。
 - 要画出没有「推荐」的主菜单，场景用 `catalog: withoutRecommended`（`index.json` 里没有 skill，外部项目照 `withApps`）；要画出某个宿主不支持的第三方 Skill，用 `...FIVE_KINDS, catalog: withHostLimitedThirdParty`（`guizang-ppt-skill` 写了 `hosts: ['claude-code']`，主目录和可执行路径照 `FIVE_KINDS`）。
 - 要画出只有工具的列表，场景用 `...TOOLS`（`withTools`：五条为预览编的样例——两种检查方式都有，一条另给了 Windows 的命令，一条只支持 Linux，一条只给 Codex 用；主目录里 `bun` 已经装着）。它们都在「开发工作流与规范」下，主菜单上紧跟在「推荐」后面，`toTools` 下移一行进去；**段里按名字排**（bubblewrap、bun、codex-usage、openspec、uv），光标起始在不可选的 `bubblewrap` 上，按键照这个先后数：`pickTools` 勾 openspec 和 uv，`pickUv` 只勾 uv。命令是假的：场景的 `shell: (command) => ShellRun` 说它往终端上打什么（`output`）、怎么结束（`exitCode`、`cannotStart`、`hangs`）、装没装上（`installs` 往可执行路径里放一个命令，`creates` 在主目录下写出一个路径），缺省是 `installsTool`（uv 装好，别的以非零状态结束）。名字和命令都长的样例在 `withLongCommandTool`。预览页从不真的执行命令。
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
@@ -516,4 +532,5 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。`...PROJECT` 的项目目录里还有一份配过 `markitdown` 的 `.mcp.json`（全局配过的是 `excel`），MCP 的状态按范围读才看得出来；`toProjectMcpSummary` 勾上 `markitdown` 和带 key 的 `mistral-ocr` 停在汇总上（明文和批准的两行提醒），`intoProjectCodexOnly` 在宿主选择上去掉 Claude Code 再进项目范围的列表（MCP 不可选）。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
+- **要画出网页界面开着时终端上的那个块，或退回终端界面的那一行原因**，场景给 `web`：`'opens'` 是浏览器打开了，画面停在那个块上；`'no-browser'` 是链接打开器拒绝，`'no-server'` 是页面的静态文件读不到，这两种退回终端界面（语言提问照旧由假键盘代答，要停在它上面就给 `answersLanguage: true`）。给了 `web` 的场景自己带上临时开关 `OXY_TOOLS_WEB`；预览页开头把页面打一遍（`buildWeb()`），本机的网页是真的起来的，但**预览页从不真的打开浏览器**——链接打开器只是兑现或拒绝。网址每次运行都不同（端口是系统挑的，口令是随机的），画面上一律换成 `SAMPLE_WEB_URL`，两次生成才逐字节相同。场景收场时除了按 Ctrl+C 还触发 `interrupt`：网页界面开着时没有提问在问，靠它把本机的网页关掉。没给 `web` 的场景不带临时开关，走的是终端界面，链接打开器不会被调用。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问和安装范围提问的做法：假键盘等那一问最后一个选项的名字画出来才按回车。

@@ -1,7 +1,9 @@
-// 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器。
+// 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器；
+// 测网页界面时另给一段页面的脚本，架子拿着链接打开器记下的网址扮演浏览器。
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
@@ -14,6 +16,7 @@ import {
   type Prompter,
   type SelectQuestion,
 } from '../src/prompter.ts';
+import { openPage, type Page } from './browser.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
 import { LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
 
@@ -34,6 +37,7 @@ export {
   underWebSearch,
 } from './fixtures.ts';
 export { KEY } from './terminal.ts';
+export type { Page } from './browser.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
 export const STYLE_CODE = /\x1b\[[0-9;]*m/;
@@ -168,6 +172,10 @@ const plain = stripVTControlCharacters;
 const firstCell = (text: string): string => plain(text).trim().split(/\s{2,}/)[0] ?? '';
 const ERASE_LINE = '\r\x1b[2K';
 const ROWS = 40;
+// 页面的静态文件是构建产物：全部测试之前由 globalSetup（build-web.ts）打一遍
+const BUILT_WEB = fileURLToPath(new URL('../dist/web/', import.meta.url));
+// 页面的脚本跑完之后，等安装器退出最多这么久
+const EXIT_PATIENCE_MS = 2000;
 
 interface Streams {
   stdin?: boolean;
@@ -225,6 +233,15 @@ export interface RunOptions {
   columns?: number;
   /** 终端的行数，缺省 40 */
   rows?: number;
+  /**
+   * 在页面上做什么。给了它就走网页界面（架子打开临时开关）：架子拿着链接打开器记下的网址，经真实的本机 HTTP
+   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给就走终端界面
+   */
+  page?: (page: Page) => Promise<void>;
+  /** 浏览器打不打得开，缺省打得开；false 时链接打开器记下网址之后拒绝 */
+  browserOpens?: boolean;
+  /** 网页界面的静态文件所在的目录，缺省是构建出来的那一份；给一个不存在的目录就是本机的网页起不来 */
+  webDir?: string;
 }
 
 export interface RunResult {
@@ -245,7 +262,7 @@ export interface RunResult {
    * （装到项目的第三方 Skill 和 MCP）再多一个 cwd
    */
   commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>>; cwd?: string }[];
-  /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
+  /** 交给链接打开器的网址：走终端界面时一直是空的，走网页界面时只有一个，就是网页界面的网址 */
   opened: string[];
   home: string;
   /** 交给安装器当项目目录的那个临时目录 */
@@ -351,37 +368,71 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
   };
 
-  const [exitCode] = await Promise.all([
-    runInstaller({
-      argv: options.argv ?? [],
-      env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...options.env },
-      platform: options.platform ?? 'linux',
-      systemLocale: options.systemLocale ?? 'en-US',
-      stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },
-      stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
-      stdinIsTTY: tty.stdin ?? true,
-      catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
-      homeDir: home,
-      projectDir: project,
-      tempDir: tmp,
-      interrupt: options.interrupt ?? new AbortController().signal,
-      runCommand: (command, args, runOptions) => {
-        const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
-        commands.push({
-          command,
-          args,
-          ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
-          ...(cwd === undefined ? {} : { cwd }),
-        });
-        const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
-        return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
-      },
-      prompter: options.keys ? interactive : scripted,
-      openLink: async (url) => void opened.push(url),
-    }),
-    typing(),
-  ]);
+  // 架子自己也要能中断安装器：页面的脚本出了错，或跑完了安装器却没有退出
+  const stopping = new AbortController();
+  const stop = (): void => stopping.abort();
+  if (options.interrupt?.aborted) stop();
+  options.interrupt?.addEventListener('abort', stop);
+  let visit: Promise<void> | undefined;
+  let pageFailure: unknown;
+  const visiting = async (script: (page: Page) => Promise<void>, url: string): Promise<void> => {
+    let page: Awaited<ReturnType<typeof openPage>> | undefined;
+    try {
+      page = await openPage(url);
+      await script(page);
+      let patience: NodeJS.Timeout | undefined;
+      const exited = await Promise.race([
+        installer.then(() => true),
+        new Promise<boolean>((resolve) => (patience = setTimeout(() => resolve(false), EXIT_PATIENCE_MS))),
+      ]);
+      clearTimeout(patience);
+      if (!exited) throw new Error('页面的脚本跑完了，安装器还没有退出');
+    } catch (error) {
+      pageFailure = error;
+      stop();
+    } finally {
+      page?.dispose();
+    }
+  };
 
+  const installer: Promise<number> = runInstaller({
+    argv: options.argv ?? [],
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(options.page ? { OXY_TOOLS_WEB: '1' } : {}), ...options.env },
+    platform: options.platform ?? 'linux',
+    systemLocale: options.systemLocale ?? 'en-US',
+    stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },
+    stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
+    stdinIsTTY: tty.stdin ?? true,
+    catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
+    homeDir: home,
+    projectDir: project,
+    tempDir: tmp,
+    webDir: options.webDir ?? BUILT_WEB,
+    interrupt: stopping.signal,
+    runCommand: (command, args, runOptions) => {
+      const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
+      commands.push({
+        command,
+        args,
+        ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
+        ...(cwd === undefined ? {} : { cwd }),
+      });
+      const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
+      return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
+    },
+    prompter: options.keys ? interactive : scripted,
+    openLink: async (url) => {
+      opened.push(url);
+      if (options.browserOpens === false) throw new Error('no browser');
+      if (options.page) visit = visiting(options.page, url);
+    },
+  });
+  const [exitCode] = await Promise.all([installer, typing()]);
+  await visit;
+  options.interrupt?.removeEventListener('abort', stop);
+
+  if (pageFailure !== undefined) throw pageFailure;
+  if (options.page && !visit) throw new Error('给了页面的脚本，安装器却没有打开网页界面');
   if (unanswered !== undefined) throw new Error(`没有为提问「${unanswered}」预设应答`);
   if (answers.length > 0) throw new Error(`还有 ${answers.length} 个预设应答没有用上`);
   const raw = textOf();
