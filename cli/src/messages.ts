@@ -18,10 +18,38 @@ export type Failure =
 /** 复核一个工具时查的是什么：可执行路径上的一个命令，或主目录下的一个路径（给用户看的写法） */
 export type ToolEvidence = { command: string } | { path: string };
 
+/** 进入网页界面之后才知道它用不了的原因：本机的网页起不来、浏览器打不开 */
+export type WebUnavailable = 'server' | 'browser';
+
+/**
+ * 网页界面这边怎么收的场：页面上点了「完成」、页面关了、页面关了而这一批的结果没有页面看到（接着把结果打在终端上）、
+ * 终端上按了 t 改用终端界面
+ */
+export type WebEnding = 'finished' | 'closed' | 'closedUnseen' | 'terminal';
+
+// 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项。
+// 终端界面的语言提问和网页界面上切换语言的控件用的是同一份
+export const LANGUAGE_QUESTION = 'Language / 语言';
+export const LANGUAGES: readonly { lang: Lang; label: string }[] = [
+  { lang: 'zh', label: '中文' },
+  { lang: 'en', label: 'English' },
+];
+
 /** 一个 key 问完之后的结局：填了、留空了、这次运行里早先填过所以没再问 */
 export type KeyOutcome = 'entered' | 'blank' | 'reused';
 
 const OS_NAMES: Record<ToolOs, string> = { macos: 'macOS', linux: 'Linux', windows: 'Windows' };
+
+type Totals = { succeeded: number; failed: number; skipped: number };
+// 合计的三段：数写在词前面
+const tallied =
+  (words: Record<keyof Totals, string>) =>
+  (totals: Totals): string[] =>
+    (['succeeded', 'failed', 'skipped'] as const).map((outcome) => `${totals[outcome]} ${words[outcome]}`);
+const TOTAL_WORDS = {
+  zh: { succeeded: '成功', failed: '失败', skipped: '跳过' },
+  en: { succeeded: 'succeeded', failed: 'failed', skipped: 'skipped' },
+};
 
 export interface FailureText {
   title: string;
@@ -46,6 +74,8 @@ export interface Messages {
   counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
+  /** 网页界面开着时终端上的那个块、它收场时的那一行，和退回终端界面时说明的那一句原因 */
+  webUi: { key: string; opened: string; ended: Record<WebEnding, string>; unavailable: Record<WebUnavailable, string> };
   pickPurpose: string;
   /** 「推荐」：主菜单的第一行，也是列表下方「类型」一行里跟在类型后面的那个词 */
   recommended: string;
@@ -122,6 +152,21 @@ export interface Messages {
   unmanagedNote: string;
   /** 汇总里第三方 Skill 覆盖项的备注：目标位置已有同名目录 */
   existingNote: string;
+  /** 同上，网页界面用的那句：决定就在那一行下面，不说「另行确认」 */
+  existingDir: string;
+  /** 网页界面的已选里，含多个 skill 的第三方 Skill 挑了几个 */
+  chosenSkills: (chosen: number, total: number) => string;
+  /** 网页界面的已选里，含多个 skill 的第三方 Skill 一个都没挑：这一条不装 */
+  noSkillChosen: string;
+  /** 网页界面里要 key 的 MCP 卡片上的标记：有必填的变量、只有可选的 */
+  keyTags: { required: string; optional: string };
+  /** 网页界面的已选里要 key 的 MCP：必填的还有没填的、填过了 */
+  keyStates: { missing: string; filled: string };
+  /** 网页界面填 key 时每个变量的那几个词：必填还是可选、这次运行里填过了 */
+  keyNeeds: { required: string; optional: string };
+  keyFilled: string;
+  /** 网页界面填 key 时一个变量不填会怎样：必填的是不装这个 MCP，可选的是不设置这个变量 */
+  keyBlank: (mcp: string, required: boolean) => string;
   /** 汇总那个分区的标题：count 是要装的组件条目数 */
   installSummary: (count: number) => string;
   /** MCP 汇总里的备注：宿主里已有同名的、宿主的状态未知 */
@@ -170,6 +215,16 @@ export interface Messages {
   answerYesOrNo: string;
   installing: string;
   results: string;
+  /** 网页界面的进度里还没轮到的那一行；终端界面没有这种行 */
+  waiting: string;
+  /** 网页界面的结果里，有没装上的时候「下一步」下面的那一句；终端界面的结果只有原因，没有这一段 */
+  afterFailures: string;
+  /** 同上，没配置上的是 MCP 时的那一句：不说原有的东西没动——已配置的是先移除再添加，添加失败时原先的那份已经不在了 */
+  afterMcpFailures: string;
+  /** 同上，没装上的是工具时的那一句：命令跑过了，原因在终端里它自己的输出里 */
+  afterToolFailures: string;
+  /** 网页界面的进度里工具进行中的那一行：它的命令在终端里跑，输入输出都在那边 */
+  toolInTerminal: string;
   downloading: string;
   configuring: string;
   /** 第三方 Skill 进行中的那一行 */
@@ -193,7 +248,9 @@ export interface Messages {
    */
   toolResult: (result: ToolResult, evidence: ToolEvidence) => string;
   totalKey: string;
-  totals: (totals: { succeeded: number; failed: number; skipped: number }) => string[];
+  /** 合计里三种结局的词；totals 是把数写在词前面的三段 */
+  totalWords: Record<keyof Totals, string>;
+  totals: (totals: Totals) => string[];
   keys: Record<string, string>;
   /** 交互库传进来的是英文单词的按键，任何终端里都换成这里的文字 */
   keyWords: Record<string, string>;
@@ -230,6 +287,17 @@ const zh: Messages = {
   ],
   noEntries: '没有可用的条目',
   skipped: (count) => `目录中有 ${count} 个条目格式有误，已跳过`,
+  webUi: {
+    key: '网页界面',
+    opened: '已在浏览器打开',
+    ended: {
+      finished: '页面上点了「完成」，安装器退出',
+      closed: '页面已关闭，安装器退出',
+      closedUnseen: '页面已关闭；这一批照样装完了，结果如下',
+      terminal: '已改用终端界面',
+    },
+    unavailable: { server: '本机的网页起不来，改用终端界面', browser: '浏览器打不开，改用终端界面' },
+  },
   pickPurpose: '选择用途',
   recommended: '推荐',
   recommendedMark: '推荐',
@@ -278,6 +346,14 @@ const zh: Messages = {
   reinstallNote: (version) => `重装 ${version}`,
   unmanagedNote: '非本工具安装，另行确认',
   existingNote: '已有同名目录，另行确认',
+  existingDir: '已有同名目录',
+  chosenSkills: (chosen, total) => `${total} 个 skill 里挑了 ${chosen} 个`,
+  noSkillChosen: '一个 skill 都没挑，这一条不装',
+  keyTags: { required: '要填 key', optional: '可选的 key' },
+  keyStates: { missing: '要填 key', filled: 'key 已填' },
+  keyNeeds: { required: '必填', optional: '可选' },
+  keyFilled: '已填',
+  keyBlank: (mcp, required) => (required ? `不填就不装 ${mcp}，其余照常装` : '留空则不设置这个变量'),
   installSummary: (count) => `将安装 ${count} 项`,
   mcpConfiguredNote: '已配置，先移除再添加',
   mcpUnknownNote: '状态未知，先尝试移除同名配置',
@@ -312,6 +388,11 @@ const zh: Messages = {
   answerYesOrNo: '请输入 y 或 n',
   installing: '正在安装',
   results: '结果',
+  waiting: '等待',
+  afterFailures: '没装上的各项没有改动原有的东西。排除原因后点「继续挑选」，重新勾选再装一次。',
+  afterMcpFailures: '没配置上的 MCP：排除原因后点「继续挑选」，重新勾选再装一次。原因里写着「此前已执行移除」的，原先的那份配置已经不在了。',
+  afterToolFailures: '没装上的工具：原因看终端里那条命令自己的输出。排除后点「继续挑选」，重新勾选再装一次。',
+  toolInTerminal: '这一项正在终端里安装，请看终端',
   downloading: '正在下载',
   configuring: '正在配置',
   installingOne: '正在安装',
@@ -360,8 +441,9 @@ const zh: Messages = {
     return `${ended}，但${found}${'command' in evidence ? '；可能要重开终端才找得到' : ''}`;
   },
   totalKey: '合计',
-  totals: ({ succeeded, failed, skipped }) => [`${succeeded} 成功`, `${failed} 失败`, `${skipped} 跳过`],
-  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）' },
+  totalWords: TOTAL_WORDS.zh,
+  totals: tallied(TOTAL_WORDS.zh),
+  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）', terminal: '改用终端界面', quit: '退出' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
   errorPrefix: '出错：',
@@ -466,6 +548,7 @@ const zh: Messages = {
     options: '选项',
     optionRows: [
       ['--lang <zh|en>', '界面语言；缺省时启动后询问'],
+      ['--terminal', '用终端界面，不打开浏览器'],
       ['-h, --help', '显示这份帮助'],
       ['-v, --version', '显示版本号'],
     ],
@@ -495,6 +578,20 @@ const en: Messages = {
   ],
   noEntries: 'no usable entries',
   skipped: (count) => `${count} malformed catalog ${count === 1 ? 'entry was' : 'entries were'} skipped`,
+  webUi: {
+    key: 'Web UI',
+    opened: 'opened in your browser',
+    ended: {
+      finished: 'Done was clicked on the page; quitting',
+      closed: 'The page was closed; quitting',
+      closedUnseen: 'The page was closed; this batch still finished, results below',
+      terminal: 'Switched to the terminal UI',
+    },
+    unavailable: {
+      server: 'Could not start the local web page; using the terminal UI instead',
+      browser: 'Could not open a browser; using the terminal UI instead',
+    },
+  },
   pickPurpose: 'Pick a purpose',
   recommended: 'Recommended',
   recommendedMark: 'pick',
@@ -546,6 +643,14 @@ const en: Messages = {
   reinstallNote: (version) => `reinstall ${version}`,
   unmanagedNote: 'unmanaged; asked separately',
   existingNote: 'already there; asked separately',
+  existingDir: 'already there',
+  chosenSkills: (chosen, total) => `${chosen} of ${total} skills chosen`,
+  noSkillChosen: 'no skill chosen; this entry is not installed',
+  keyTags: { required: 'needs a key', optional: 'optional key' },
+  keyStates: { missing: 'needs a key', filled: 'key entered' },
+  keyNeeds: { required: 'required', optional: 'optional' },
+  keyFilled: 'entered',
+  keyBlank: (mcp, required) => (required ? `Leave it empty and ${mcp} is skipped; the rest still installs` : 'Leave it empty to leave this variable unset'),
   installSummary: (count) => `Install ${count} ${count === 1 ? 'item' : 'items'}`,
   mcpConfiguredNote: 'configured; removed, then added',
   mcpUnknownNote: 'status unknown; removal tried first',
@@ -581,6 +686,12 @@ const en: Messages = {
   answerYesOrNo: 'Please answer y or n',
   installing: 'Installing',
   results: 'Results',
+  waiting: 'waiting',
+  afterFailures: 'Items that failed left what was there untouched. Fix the cause, choose “Pick more”, then select and install them again.',
+  afterMcpFailures:
+    'MCP servers that failed: fix the cause, choose “Pick more”, then select and install them again. Where the reason says the remove command had already run, the earlier configuration is gone.',
+  afterToolFailures: 'Tools that failed: the cause is in the command’s own output in your terminal. Fix it, choose “Pick more”, then select and install them again.',
+  toolInTerminal: 'this item is installing in your terminal; watch it there',
   downloading: 'downloading',
   configuring: 'configuring',
   installingOne: 'installing',
@@ -631,8 +742,9 @@ const en: Messages = {
     return `${ended}, but ${found}${'command' in evidence ? '; a new terminal may be needed to find it' : ''}`;
   },
   totalKey: 'Total',
-  totals: ({ succeeded, failed, skipped }) => [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`],
-  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)' },
+  totalWords: TOTAL_WORDS.en,
+  totals: tallied(TOTAL_WORDS.en),
+  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)', terminal: 'use the terminal UI', quit: 'quit' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },
   errorPrefix: 'Error: ',
@@ -743,6 +855,7 @@ const en: Messages = {
     options: 'Options',
     optionRows: [
       ['--lang <zh|en>', 'Interface language; asked at startup when omitted'],
+      ['--terminal', 'Use the terminal UI; do not open a browser'],
       ['-h, --help', 'Show this help'],
       ['-v, --version', 'Show the version number'],
     ],

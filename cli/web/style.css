@@ -1,0 +1,1271 @@
+/* 网页界面的样式。颜色都是具名的变量，深色、浅色各一份，跟随系统；数值取自 .atw/spec/cli/web-ui-design.md。
+   彩色只有说状态的那三种（就绪、留意、失败）；强调一律用前景色。 */
+:root {
+  color-scheme: light dark;
+  --ground: #ffffff;
+  --side: #fafafa;
+  --card: #ffffff;
+  --raised: #f2f2f2;
+  /* 只给左栏里当前的用途：比抬一档再深一档，压在侧栏底色上才认得出是哪一行 */
+  --current: #e6e6e6;
+  --ink: #111111;
+  --secondary: #5c5f66;
+  --faint: #8a8f98;
+  --line: #e8e8e8;
+  --ready: #1f7a3a;
+  --attention: #8a5a00;
+  --failed: #b3261e;
+  --attention-ground: #fbf3d9;
+  /* 盖着面板时底下压暗的那一层 */
+  --scrim: rgb(0 0 0 / 32%);
+  /* 开场那一层在深色、浅色下都是黑底白字；里面的控件用的另外几样是深色那一套的值 */
+  --intro-ground: #000000;
+  --intro-ink: #f7f8f8;
+  --intro-raised: #1a1b1d;
+  --intro-secondary: #a2a6ad;
+  --intro-faint: #6c7078;
+  --intro-line: #202225;
+  --intro-attention: #e5c04b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 各栏自己的滚动条：轨道不另铺底色（深色下原生的轨道是一条亮带），滑块用最淡的文字色 */
+  scrollbar-color: var(--faint) transparent;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #08090a;
+    --side: #0d0e0f;
+    --card: #101112;
+    --raised: #1a1b1d;
+    --current: #26282c;
+    --ink: #f7f8f8;
+    --secondary: #a2a6ad;
+    --faint: #6c7078;
+    --line: #202225;
+    --ready: #7bd88f;
+    --attention: #e5c04b;
+    --failed: #f2777a;
+    --attention-ground: #231e0d;
+    --scrim: rgb(0 0 0 / 60%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 13px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+code {
+  color: var(--ink);
+  font: 12px/1 var(--mono);
+}
+.mono {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+small {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* 状态的含义。留意和失败的词同时加粗：含义不单靠颜色 */
+.ready {
+  color: var(--ready);
+}
+.attention {
+  color: var(--attention);
+  font-weight: 600;
+}
+.failed {
+  color: var(--failed);
+  font-weight: 600;
+}
+.faint {
+  color: var(--faint);
+}
+.quiet {
+  color: var(--secondary);
+}
+
+/* 按钮：缺省是次要的（卡片底色、线的边）；主按钮是前景色实心，一个画面上只有一个 */
+button {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+button.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ground);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 勾选框：真正的表单控件，画成 16px 见方的小方框；勾上是前景色实心 */
+input[type='checkbox'] {
+  appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--faint);
+  border-radius: 4px;
+}
+input[type='checkbox']:checked {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+input[type='checkbox']:checked::after {
+  content: '';
+  width: 8px;
+  height: 4px;
+  border: solid var(--ground);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+/* 标记：线框；「推荐」是前景色实心 */
+.tag {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--secondary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.tag.solid {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ground);
+  font-weight: 500;
+}
+
+/* 大标志：单色，跟着所在的文字走 */
+.logo rect {
+  fill: currentColor;
+}
+
+/* ───── 三栏：左边用途，中间条目，右边已选。每一栏各自滚动，整页不滚 ───── */
+.shell {
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr) 296px;
+  /* 这一行正好是窗口的高：内容再多也是各栏自己滚 */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 10px 14px;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  background: var(--side);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 16px;
+  white-space: nowrap;
+}
+/* 大标志横向 25 格：宽取 25 的整数倍，每个方块才落在整像素上 */
+.brand .logo {
+  flex: none;
+  width: 50px;
+}
+.product {
+  font-weight: 600;
+}
+.menu button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  /* 用途名只占一行时这一行正好 36px 高；折成两行的行跟着高 */
+  padding: 9px 8px;
+  border: 0;
+  background: none;
+  color: var(--secondary);
+  font-weight: 400;
+  /* 写成整像素：1.4 是 18.2px，每行的零头攒起来，1024×768、英文界面下左栏会多出一像素、冒出滚动条 */
+  line-height: 18px;
+  text-align: left;
+  /* 用途名放不下就折成两行，条目数留在第一行右边 */
+  white-space: normal;
+}
+.menu button:hover {
+  color: var(--ink);
+}
+.menu button[aria-current='true'] {
+  background: var(--current);
+  color: var(--ink);
+  font-weight: 500;
+}
+.menu .count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+.menu .recommended {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.machine {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 20px 8px 0;
+  color: var(--secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.machine h2 {
+  font-size: 12px;
+  font-weight: 500;
+}
+.hosts,
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+/* 宿主的名字和它的状态、每一类的数量，要么整个在这一行，要么整个到下一行 */
+.host,
+.counts span {
+  display: inline-flex;
+  gap: 5px;
+  white-space: nowrap;
+}
+.machine .notice {
+  color: var(--ink);
+}
+/* 切换语言：本机信息下面的一个分段控件，靠左，不撑满这一栏 */
+.language {
+  align-self: flex-start;
+  margin: 14px 8px 0;
+}
+
+.list {
+  padding: 0 24px 40px;
+  overflow: auto;
+}
+/* 这一栏贴着窗口的上下沿，焦点的描边画在里面 */
+.list:focus-visible {
+  outline-offset: -2px;
+}
+.list > .empty {
+  padding-top: 16px;
+  color: var(--secondary);
+}
+/* 顶上贴着不动的一条：标题与条目数，后面是宿主和安装范围 */
+.bar {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-wrap: wrap;
+  /* 照基线对齐：标题下面多一行目录时，同一行的宿主和安装范围仍对着标题，不掉到两行中间 */
+  align-items: baseline;
+  gap: 8px 20px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--ground);
+}
+.title {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 200px;
+}
+.title h1 {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* 选了项目时写明是哪个目录：自己占一行，目录是等宽字，长了在任意处断开、从不截断 */
+.title .directory {
+  flex-basis: 100%;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.title .directory code,
+.intro-directory code {
+  margin-left: 4px;
+  font-size: 12.5px;
+}
+/* 宿主和安装范围是一整块：放不下就两样一起折到标题的下一行 */
+.target,
+.field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.target {
+  gap: 8px 20px;
+}
+.field {
+  gap: 8px;
+}
+.label {
+  color: var(--secondary);
+}
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.option input {
+  width: 14px;
+  height: 14px;
+}
+/* 分段控件：两个单选，选中的那一格抬一档 */
+.segments {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.segments label {
+  position: relative;
+}
+.segments input {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+.segments span {
+  display: block;
+  padding: 1px 10px;
+  border-radius: 4px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+.segments input:checked + span {
+  background: var(--raised);
+  color: var(--ink);
+  font-weight: 500;
+}
+.segments input:focus-visible {
+  outline: none;
+}
+.segments input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  margin: 22px 0 8px;
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.section small {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 一区上方的提醒（MCP 那一区）：话用前景色，不用最淡的 */
+.list .notice {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+/* 条目的卡片：两张一排，同一排一样高，状态那一行沉在底部 */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.card .head {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+}
+.card h3 {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.card .head input {
+  margin-top: 2px;
+}
+.card .head:has(input:enabled) {
+  cursor: pointer;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* 说明从不截断：放不下就折行，卡片跟着变高 */
+.about {
+  color: var(--secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+}
+/* 状态的词不折行、不被挤窄：一个宿主一段，放不下就整段到下一行 */
+.status {
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* 选中：前景色的边、抬一档的底色，加上实心的勾——不单靠颜色 */
+.card.selected {
+  border-color: var(--ink);
+  background: var(--raised);
+}
+/* 不可选：虚线的边、没有底色，名字退一档（和说明同色，不用最淡的：整栏都不可选时要读得清）；
+   原因比周围都亮才读得到 */
+.card.unavailable {
+  border-style: dashed;
+  background: none;
+}
+.card.unavailable h3 {
+  color: var(--secondary);
+}
+.card.unavailable input {
+  border-style: dashed;
+}
+.reason {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 含多个 skill 的第三方 Skill 勾上之后占一整行，说明下面是挑 skill 的清单：那一句，然后三栏（窄时两栏），
+   每个 skill 一个小勾选框、名字、说明和它自己的状态 */
+.card.wide {
+  grid-column: 1 / -1;
+}
+.choices {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+.choices .lead {
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.choices ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.choices li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+.choices li.chosen {
+  border-color: var(--ink);
+}
+.choices label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.choices .name {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.choices .about {
+  font-size: 12px;
+}
+.choices .statuses {
+  padding-top: 4px;
+  font-size: 11.5px;
+}
+
+/* 外部项目：不是卡片，没有勾选框——两栏的列表，项与项之间一条线 */
+.apps ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.apps li {
+  padding: 10px 0;
+}
+/* 线只在项与项之间：第一排上面没有 */
+.apps li:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+.apps .name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.apps a {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.apps a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.apps a::after {
+  content: ' ↗';
+  color: var(--faint);
+  font-weight: 400;
+}
+.apps .url {
+  color: var(--faint);
+  font: 11.5px/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.tray {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--side);
+}
+.picked {
+  flex: 1;
+  padding: 16px 16px 8px;
+  overflow: auto;
+}
+.picked h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 8px;
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.picked .number {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* 改了宿主或安装范围之后装不了的：标题旁写有几项，那几行名字划掉、退一档，下面是原因 */
+.picked h2 .attention {
+  font-size: 12px;
+}
+.picked .stuck .name {
+  color: var(--secondary);
+  font-weight: 400;
+}
+.picked .empty {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  color: var(--secondary);
+}
+/* 已选的每一项：名字，下面一行小字是类型，右边是去掉它的 × */
+.picked li {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.picked li p {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.picked .name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--secondary);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+.remove:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+.tray footer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 1099px) {
+  .shell {
+    grid-template-columns: 196px minmax(0, 1fr) 256px;
+  }
+  /* 产品名和版本号不许折行：栏窄了就把间隔收一点 */
+  .brand {
+    gap: 8px;
+  }
+  .list {
+    padding: 0 16px 32px;
+  }
+  .picked {
+    padding: 14px 12px 6px;
+  }
+  .choices ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tray footer {
+    padding: 10px 12px 14px;
+  }
+}
+
+/* ───── 盖在上面的面板：汇总、安装中、结果。从右边出来，底下压暗；内容自己滚动，底部的按钮不动 ───── */
+.scrim {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  justify-content: flex-end;
+  background: var(--scrim);
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  /* 至少给底下留 280px */
+  width: min(720px, 100vw - 280px);
+  border-left: 1px solid var(--line);
+  background: var(--card);
+}
+/* 焦点落在面板上是为了让键盘从这里起步，不画描边 */
+.panel:focus {
+  outline: none;
+}
+.panel > header {
+  display: grid;
+  gap: 6px;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.panel h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.panel h2 .count {
+  color: var(--secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+.lead {
+  color: var(--secondary);
+}
+.panel > .body {
+  flex: 1;
+  padding: 4px 24px 24px;
+  overflow: auto;
+}
+.panel > footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--line);
+}
+.panel > footer .lead {
+  flex: 1;
+}
+.panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+/* 填 key 的对话框：和面板同样的上中下三段，画成居中的一块，圆角 12px */
+.scrim.centered {
+  align-items: center;
+  justify-content: center;
+}
+.panel.dialog {
+  width: min(680px, 100vw - 48px);
+  max-height: calc(100vh - 80px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dialog > .body {
+  padding-bottom: 8px;
+}
+/* 每个要 key 的 MCP 一段：名字，后面最淡的小字是它所在的用途 */
+.keyed {
+  display: grid;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.keyed:last-child {
+  border-bottom: 0;
+}
+.keyed h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 14px;
+}
+.variable {
+  display: grid;
+  gap: 6px;
+}
+.variable .name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+/* 申请的链接自己占一行：说明长短不一，链接都从行首起 */
+.variable .apply {
+  color: var(--secondary);
+}
+.variable a {
+  color: var(--ink);
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+/* 网址的末尾和箭头不拆开：箭头不单独掉到下一行 */
+.variable .tail {
+  white-space: nowrap;
+}
+/* 下划线只在网址下面，不延到箭头 */
+.variable .arrow {
+  display: inline-block;
+  margin-left: 4px;
+}
+.variable input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+/* 输入的内容画成圆点。不认这条样式的浏览器里它是真正的密码框（keys.tsx） */
+.variable input.secret {
+  -webkit-text-security: disc;
+}
+.variable input::placeholder {
+  color: var(--secondary);
+}
+/* 不填会怎样：可选的是最淡的一句，必填的是留意色粗体 */
+.consequence {
+  color: var(--faint);
+  font-size: 12px;
+}
+.consequence.required {
+  color: var(--attention);
+  font-weight: 600;
+}
+/* 填过的：一行「已填」，右边是「换一个」。不显示值，也看不出长度 */
+.filled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+/* 写成一行字的按钮 */
+button.text {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 进度条：6px 高，前景色 */
+progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  background: var(--raised);
+}
+progress::-webkit-progress-bar {
+  background: var(--raised);
+}
+progress::-webkit-progress-value {
+  background: var(--ink);
+}
+progress::-moz-progress-bar {
+  background: var(--ink);
+}
+
+/* 汇总：每个要装的条目一段，段与段之间一条线；段里每个宿主一行——宿主、操作、位置，位置下面是备注 */
+.renewed {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--attention-ground);
+}
+.entry {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+/* 线只在段与段之间：最后一段下面没有 */
+.entry:last-child {
+  border-bottom: 0;
+}
+.entry h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-bottom: 6px;
+}
+/* 第三方 Skill 里每个要装的 skill 一小组：skill 的名字，下面是它在各个宿主下的行 */
+.entry .group + .group {
+  margin-top: 6px;
+}
+.entry h4 {
+  margin: 10px 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.entry .group:first-of-type h4 {
+  margin-top: 4px;
+}
+.entry li {
+  display: grid;
+  /* 宿主和操作两栏的宽是定死的：各段的位置才上下对得齐；英文的 overwrite 也放得下 */
+  grid-template-columns: 96px 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 12px;
+  padding: 3px 0;
+}
+.where {
+  display: grid;
+  font-size: 12px;
+}
+/* 工具的那一行只有要做什么：没有宿主和位置，占满三栏 */
+.entry .sole {
+  grid-column: 1 / -1;
+}
+/* 备注说的是这一项会怎样（重装、版本、非本工具安装），不用最淡的文字 */
+.where small {
+  color: var(--secondary);
+}
+/* 要逐项决定的覆盖就在那一行下面：留意底色的一条，缺省不勾 */
+.decide {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 6px 0 4px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--attention-ground);
+  font-weight: 500;
+}
+.decide small {
+  color: var(--ink);
+}
+.notices {
+  display: grid;
+  gap: 4px;
+  padding-top: 16px;
+}
+.notices h3 {
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 结果的合计：三格，数字大；失败的数字是失败色 */
+.totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+.totals div {
+  padding: 10px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.totals dd {
+  margin: 0;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.totals dt {
+  color: var(--secondary);
+}
+/* 每一项一行：符号、名字、宿主、结果的词加原因。原因放不下就折行 */
+.rows {
+  padding-top: 10px;
+}
+.rows li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 5fr) minmax(0, 3fr) minmax(0, 8fr);
+  align-items: baseline;
+  gap: 0 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+/* 还在等待的那一行名字不加粗 */
+.rows .mono {
+  font-size: 12px;
+}
+.rows .name {
+  font-weight: 600;
+}
+/* 正在终端里装的那一行（工具）：留意底色的一条，和别的「正在装」分得开——这时要看的是终端。字不往里缩，和上下的行对齐；
+   往上多盖一像素：上一行的底线只有内容那么宽，露在这一条的上缘会像半截描边 */
+.rows .elsewhere {
+  margin: -1px -10px 0;
+  padding: 7px 10px 6px;
+  border-bottom-color: transparent;
+  border-radius: 6px;
+  background: var(--attention-ground);
+}
+.rows .elsewhere strong {
+  font-weight: 600;
+}
+/* 没有名字和宿主的那一行（正在向 GitHub 查询）：话占满符号后面的三格 */
+.rows .spinner + .what {
+  grid-column: 2 / -1;
+}
+.sym {
+  text-align: center;
+}
+/* 正在装：转动的小圆环。贴着这一行的第一行（和 ✓ ✗ 一样），后面的话折成两行时不掉到两行中间 */
+.spinner {
+  align-self: start;
+  justify-self: center;
+  margin-top: 4.5px;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--ink);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+/* 出错说明：标题是失败色粗体，「原因」「下一步」两个词退后，话用前景色 */
+.failure {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.failure dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 8px 0 0;
+}
+.failure dt {
+  color: var(--faint);
+}
+.failure dd {
+  display: grid;
+  margin: 0;
+}
+.failure .mono {
+  font-size: 12px;
+}
+
+/* ───── 一栏、居中：还没连上时的那一句，和几种结束画面 ───── */
+.solo {
+  width: min(520px, 100vw - 48px);
+  margin: 0 auto;
+  padding-top: 18vh;
+}
+/* 三种结束画面的符号占同样宽的一格，标题才从同一处起 */
+.ended .mark {
+  flex: none;
+  width: 16px;
+  text-align: center;
+}
+.ended h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ended p {
+  color: var(--secondary);
+}
+
+/* ───── 开场：盖在页面上面的一层。前半段是开场动画，后半段是开场引导 ─────
+   动画（.playing）：0.15–0.95 秒敲出那条命令；1.05 秒起大标志一行行打出来（每行隔 0.11 秒，行里从左到右略有先后）；
+   1.75 秒版本号。之后分两种：
+   没有开场引导（.unguided，一个宿主都没检测到）：2.2–2.6 秒整层淡出；2.3 秒起底下的卡片依次浮上来，每张隔 50 毫秒。
+   有开场引导：2.2 秒起第一行提问、第二行提问、按钮（连同目录那一行）依次出现，每样隔 0.15 秒，2.7 秒都到位、可以操作，
+   然后停着（.still）等用户答；
+   答完了（.leaving）整层 0.4 秒淡出，0.1 秒起底下的卡片依次浮上来。
+   不带 .playing 的就是静止的样子：每样东西都在它最后的位置上。 */
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  /* 这一层在深色、浅色下都是黑底白字：里面的控件照深色那一套画 */
+  --ground: var(--intro-ground);
+  --ink: var(--intro-ink);
+  --raised: var(--intro-raised);
+  --secondary: var(--intro-secondary);
+  --faint: var(--intro-faint);
+  --line: var(--intro-line);
+  --attention: var(--intro-attention);
+  background: var(--ground);
+  color: var(--ink);
+  color-scheme: dark;
+}
+.intro.unguided {
+  animation: intro-out 0.4s ease-in 2.2s both;
+}
+.intro.leaving {
+  animation: intro-out 0.4s ease-in both;
+}
+/* 竖着居中；窗口矮得放不下时这一层自己滚动，不把哪一样裁掉 */
+.intro-stage {
+  display: grid;
+  position: absolute;
+  inset: 0;
+  place-content: safe center;
+  gap: 28px;
+  padding: 24px 0;
+  overflow-y: auto;
+}
+.intro-banner {
+  display: grid;
+  justify-items: start;
+  gap: 20px;
+  font: 15px/1.4 var(--mono);
+}
+.intro-command {
+  display: inline-block;
+  width: 16ch;
+  overflow: hidden;
+  border-right: 2px solid transparent;
+  white-space: nowrap;
+}
+.intro.playing .intro-command {
+  border-right-color: var(--ink);
+  animation:
+    intro-type 0.8s steps(16) 0.15s both,
+    intro-caret 0.5s step-end infinite;
+}
+.intro-prompt {
+  opacity: 0.5;
+}
+.intro .logo {
+  width: min(450px, 60vw);
+}
+.intro.playing .logo rect {
+  animation: appear 0.01s linear both;
+  animation-delay: calc(1.05s + var(--y) * 0.11s + var(--x) * 6ms);
+}
+.intro-version {
+  opacity: 0.55;
+}
+.intro.playing .intro-version {
+  animation: appear 0.2s ease-out 1.75s both;
+}
+/* 开场引导：和大标志一样宽，接在它下面。两行提问像终端里的提问，行首一个淡的问号 */
+.intro-guide {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  width: min(450px, 60vw);
+}
+.intro.playing :is(.intro-guide .field, .intro-directory, .intro-actions) {
+  animation: appear 0.2s ease-out both;
+  animation-delay: calc(2.2s + var(--n) * 0.15s);
+}
+.intro-guide .target {
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+}
+.intro-guide .field {
+  --n: 0;
+}
+.intro-guide .field + .field {
+  --n: 1;
+}
+/* 行首的问号不读给读屏软件。只检测到一个宿主时那一行不是提问：没有问号，位置留着，两行的字才从同一处起 */
+.intro-guide .label::before {
+  content: '?';
+  content: '?' / '';
+  display: inline-block;
+  width: 8px;
+  margin-right: 8px;
+  color: var(--faint);
+  font-family: var(--mono);
+}
+.intro-guide p.field > .label::before {
+  content: '';
+}
+/* 说的是上面那一行「装到哪里」：贴着它、和它的字从同一处起。一直占着一行：点「项目」的时候上面的控件不跟着挪 */
+.intro-directory {
+  --n: 2;
+  min-height: 20px;
+  margin-top: -8px;
+  padding-left: 16px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.intro-actions {
+  --n: 2;
+  display: flex;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: var(--secondary);
+}
+.rising .card {
+  animation: rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--rise-from) + var(--i) * 50ms);
+}
+.rising.after-intro {
+  --rise-from: 2.3s;
+}
+.rising.after-guide {
+  --rise-from: 0.1s;
+}
+/* 还没连上的那一句通常一闪而过：等一会儿还没连上才显出来 */
+@media (prefers-reduced-motion: no-preference) {
+  .connecting {
+    animation: appear 0.2s ease-out 0.4s both;
+  }
+}
+@keyframes intro-type {
+  from {
+    width: 0;
+  }
+}
+@keyframes intro-caret {
+  50% {
+    border-color: transparent;
+  }
+}
+@keyframes intro-out {
+  to {
+    visibility: hidden;
+    opacity: 0;
+  }
+}
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+}

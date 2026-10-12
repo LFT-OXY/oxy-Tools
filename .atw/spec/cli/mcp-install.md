@@ -1,6 +1,6 @@
 # 安装 MCP
 
-> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。带 API key 的 MCP（条目里的 `env`）也在这里。
+> 目录里的 MCP 条目（`cli/src/catalog.ts`）、宿主适配里关于 MCP 的三问（`cli/src/hosts.ts`）、状态探测（`cli/src/mcp-status.ts`）、安装动作（`cli/src/install-mcp.ts`）、外部命令执行器（`cli/src/run-command.ts`）五段的契约，以及两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）和终端界面的流程（`cli/src/flow.ts`）怎么把它们串起来。带 API key 的 MCP（条目里的 `env`）也在这里。
 
 ---
 
@@ -77,10 +77,16 @@ export interface McpInstallProblem {
 }
 export class McpInstallError extends Error { readonly problem: McpInstallProblem }
 
-// cli/src/flow.ts
-interface Session {
+// cli/src/run-plan.ts —— 执行要的东西；终端界面的 Session（flow.ts）在它上面加目录、呈现层和提问器
+interface Runtime {
   // …
   keys: Map<string, Map<string, string>>; // 这次运行里填过的 key：MCP 的名字 → 变量名 → 值。只在内存里
+}
+
+// cli/src/plan.ts —— 算计划只收变量名
+interface Selection {
+  // …
+  filledKeys: ReadonlyMap<string, ReadonlySet<string>>; // MCP 的名字 → 填过的变量名；值不到这里来
 }
 
 // cli/src/installer.ts
@@ -91,7 +97,7 @@ export type CommandRunner = (command: string, args: readonly string[], options?:
 export function systemCommandRunner(): CommandRunner;
 ```
 
-`installMcp` 失败时**只**抛 `McpInstallError`——执行器当场抛出（没返回承诺）的也算在内。`mcpSteps` 先算出来、交给汇总展示，之后执行的就是这同一份——“看到的就是执行的”靠的是不重算。带 key 的命令也一样：`steps` 里 key 的位置是一个 `KeyArgument`（只有变量名），展示时写成占位符，执行时由 `installMcp` 从 `keys` 里取值代入，**值不进 `steps`，也不进呈现层**。
+`installMcp` 失败时**只**抛 `McpInstallError`——执行器当场抛出（没返回承诺）的也算在内。`mcpSteps` 在算计划时（`planInstall`）算出来、交给汇总展示，之后 `runPlan` 执行的就是这同一份——“看到的就是执行的”靠的是不重算。带 key 的命令也一样：`steps` 里 key 的位置是一个 `KeyArgument`（只有变量名），展示时写成占位符，执行时由 `installMcp` 从 `keys` 里取值代入，**值不进 `steps`，也不进呈现层**。
 
 ### 3. Contracts
 
@@ -132,7 +138,7 @@ export function systemCommandRunner(): CommandRunner;
 | `env[i].required` | 布尔值，**必须写**，不猜缺省 |
 | `env[i].description`、`env[i].url` | 说明同各类条目的 `description`；`url` 是申请地址，与外部项目的 `url` 同一条规则 |
 
-`command` 和 `args` 收得这么紧，是因为它们有三个去处：原样打到终端上让用户确认、交给宿主的命令、被宿主记进配置之后每次启动都执行。规则保证里面没有空白、引号和任何 shell 会另作解释的字符，所以展示出来的那一行没有歧义，Windows 上经 `cmd.exe` 起 `.cmd` 时也不必转义引号。代价是带空格的参数、带查询串的网址参数、Windows 路径都写不进目录。这条规则是工单 08 的实现者定的，**维护者尚未确认**；要放宽先改这里和 `catalog.ts` 的 `COMMAND_WORD`，并重新核对 `ui.ts` 里展示命令时加引号的判断（`PLAIN_ARGUMENT`）。
+`command` 和 `args` 收得这么紧，是因为它们有三个去处：原样打到终端上让用户确认、交给宿主的命令、被宿主记进配置之后每次启动都执行。规则保证里面没有空白、引号和任何 shell 会另作解释的字符，所以展示出来的那一行没有歧义，Windows 上经 `cmd.exe` 起 `.cmd` 时也不必转义引号。代价是带空格的参数、带查询串的网址参数、Windows 路径都写不进目录。这条规则是工单 08 的实现者定的，**维护者尚未确认**；要放宽先改这里和 `catalog.ts` 的 `COMMAND_WORD`，并重新核对 `notice-text.ts` 里展示命令时加引号的判断（`PLAIN_ARGUMENT`）。
 
 **两个宿主的命令与配置文件**（2026-10-09 对照官方文档，并在本机用 claude 2.1.295、codex 0.162.0 在临时配置目录里实测）
 
@@ -204,7 +210,7 @@ export function systemCommandRunner(): CommandRunner;
   - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。
 - 规格里「Codex 只对受信任的项目读这份配置」那一行随 Codex 不支持而没有做；哪天给 Codex 补上 `projectMcp`，这一行要一起补（那条事实已经实测过，在试通记录里）。
 
-**在混合列表里（`flow.ts` 的 `planEntries`、`runJobs`）**
+**在混合列表里（终端界面的提问在 `flow.ts` 的 `planEntries`；算成要装的各项在 `plan.ts` 的 `planInstall`，执行在 `run-plan.ts` 的 `runPlan`）**
 
 MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张混合列表里勾选（任务 `10-10-catalog-purpose-categories` 工单 07 起），一起确认、一起装。上面每一条规矩原样带进来，合在一起之后多出来的只有这几条：
 
@@ -214,7 +220,7 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 - 确认的提问是「开始安装吗」（开始安装、返回修改、取消），不再是「执行这些命令吗」。
 - 带推荐标记的 MCP 同时出现在「推荐」和它的用途下。
 
-**带 key 的 MCP（`flow.ts` 的 `askKeys`）**
+**带 key 的 MCP（终端界面怎么问在 `flow.ts` 的 `askKeys`；带哪些变量、缺哪个由 `plan.ts` 照填过的变量名定）**
 
 勾选之后、汇总之前，对每个勾上的、带 `env` 的 MCP 逐个变量问（画面见 [终端输出](./terminal-output.md) 的「隐藏输入」）：
 
@@ -227,7 +233,8 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 | 勾上的组件全都因此被跳过（这一轮没有 skill 要装，也没有别的 MCP 要装） | 没有要确认的东西：**不显示汇总、不问开始不开始**，直接进结果分区，然后是勾选的外部项目，再回主菜单 |
 
 - key 按 MCP 问，不按宿主问：两个宿主都选了也只问一次。
-- 值只有三个去处：`Session.keys`（内存）、`installMcp` 拼出来的参数、宿主自己的配置。**安装器不把它写进任何文件，不打到终端上**——呈现层的函数只收变量名和结局（`'entered' | 'blank' | 'reused'`），从不收值。
+- 值只有三个去处：`Session.keys`（内存）、`installMcp` 拼出来的参数、宿主自己的配置。**算计划的拿不到值**：流程交给 `planInstall` 的只有每个 MCP 填过的变量名（`filledKeys`），计划和进度的报告里都没有值；值到执行时才由 `runPlan` 从 `keys` 里取出来交给 `installMcp`。**安装器不把它写进任何文件，不打到终端上**——呈现层的函数只收变量名和结局（`'entered' | 'blank' | 'reused'`），从不收值。
+- **网页界面里填的 key 守同一条**（工单 10）：值经一个 `key` 意图的请求正文进来，记进同一个 `Runtime.keys`，此外哪里都不去——不进交给浏览器的网址，不进任何答复（照办的是没有正文的 204，不照办的 400 正文也是空的），不进画面状态（那里只有「填了没有」，没有值、没有长度），不打到终端上，不写任何文件，也不让浏览器记住（输入框的写法见 [网页界面的契约](./web-ui-contract.md)）。网页界面的汇总不列命令，所以也没有占位符和「key 以占位符显示」那一条；别的提醒照旧。**上表里和网页界面不一样的三处**：填 key 的对话框把这一批要 key 的 MCP 的变量全列出来（照勾选的先后），必填的留空不影响后面的变量；填过的可以「换一个」；勾上的组件全都因缺 key 被跳过时照样到汇总（「将安装 0 项」加那条提醒），确认之后才是结果。见 [网页界面的契约](./web-ui-contract.md) 的「MCP 与填 key」。
 - key 作为命令行参数传给宿主，命令运行的那一瞬间本机别的进程看得到（`ps`）。这是规格定的做法（「key 只作为参数传给宿主的添加命令」），不是疏漏。
 
 **外部命令执行器（`systemCommandRunner`）**
@@ -300,7 +307,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - `prompts.test.ts`：不可选的行的勾选位与原因、在它上面按空格勾不上、`a` 全选不会勾上它、`NO_COLOR` 下不带样式码且没有零宽空格、没有 Unicode 时的 `[-]`。
 
 - 带 key 的在 `cli/test/mcp-keys.test.ts`：说明与申请链接出现在提问之前；两个宿主的命令（**字面值**，带着输入的值）；两个宿主只问一次；可选留空不带、必填留空跳过（结果里的原因、其余照常、后面的变量不再问、全被跳过时不问开始不开始）；汇总里的占位符和两行「注意」的先后；`返回修改` 和再装一次都不再问、留空的重新问、两个 MCP 同名变量各问各的；写坏的 `env` 每种一条。
-- **key 的值不出现**：`result.raw + result.stdout + result.stderr` 里找不到输入的值——成功、命令非零退出、命令起不来而错误消息里带着整条命令（值还被转义过）、执行器当场抛出，各一条；外加主目录和 `result.tmp` 里什么都没多。`prompts.test.ts` 里用真实的交互库再证一遍输入不回显。
+- **key 的值不出现**（网页界面的那一组在 `cli/test/web-mcp.test.ts`，见 [网页界面的契约](./web-ui-contract.md)）：`result.raw + result.stdout + result.stderr` 里找不到输入的值——成功、命令非零退出、命令起不来而错误消息里带着整条命令（值还被转义过）、执行器当场抛出，各一条；外加主目录和 `result.tmp` 里什么都没多。`prompts.test.ts` 里用真实的交互库再证一遍输入不回显。
 
 - `mixed.test.ts`：三种类型同表（段的先后、两种类型的状态落在各自宿主那一栏、原因比状态栏宽时各行的说明仍从同一列起、读不到配置的提示只在列表里有 MCP 时出现）；一次勾 skill、MCP、外部项目（汇总的小表、命令只有 MCP 的、skill 的各行排在 MCP 之前、取消什么都不做、返回修改勾选都在、三种失败互不影响、向 GitHub 查询失败时 MCP 照常装）；汇总里的提醒（先后、几行挨着、没填 key 的不算进 N、只剩 skill 时没有命令分区、全被跳过时直接是结果再是外部项目）。
 
@@ -405,7 +412,7 @@ detail: errorCode(error), // string | undefined
 
 工单 09 把同一条规矩收紧到“命令没能起来”上：原先错误没带错误码时退而取它的消息（`technicalReason`），现在只取错误码，没有就只说「没能运行」。Node 起不了子进程时的消息会带上整条命令（如参数里有空字符时的 `ERR_INVALID_ARG_VALUE`）。
 
-**代价**：用户只看到哪一步、退出状态几。完整的命令在汇总里，可以照着自己再跑一遍看原因。要改回去，先在终端输出的规范里立例外，并解决上面后两条。
+**代价**：用户只看到哪一步、退出状态几。终端界面里完整的命令在汇总里，可以照着自己再跑一遍看原因；网页界面的汇总不列命令，没有这条出路。要改回去，先在终端输出的规范里立例外，并解决上面后两条。
 
 ---
 
@@ -417,7 +424,7 @@ detail: errorCode(error), // string | undefined
 
 留空的不算填过：必填的留空之后回头再选它，要是不重新问，这次运行里就再也装不上它；可选的同理。代价是可选项每次返回修改都会再问一遍（按一下回车）。
 
-记住的值在这次运行结束前改不了：粘贴错了要退出重来。
+终端界面里记住的值在这次运行结束前改不了：粘贴错了要退出重来。网页界面里填 key 的对话框有「换一个」，再填一次就是新的值。
 
 **没有经维护者确认**，记在任务的 `prd.md` 修订记录里。
 
@@ -477,7 +484,7 @@ detail: errorCode(error), // string | undefined
 
 **Symptom**：照 `catalog.json` 里的顺序预设 key 的应答，值填到了别的 MCP 上；或断言「第一条是 X」不通过。
 
-**Cause**：混合列表里 MCP 一段带推荐的在前、其余按名字（`flow.ts` 的 `recommendedFirst`），问 key、汇总、命令、结果都照这个先后。旧入口照的是目录文件。
+**Cause**：混合列表里 MCP 一段带推荐的在前、其余按名字（`listing.ts` 的 `recommendedFirst`），问 key、汇总、命令、结果都照这个先后。旧入口照的是目录文件。
 
 **Fix**：按名字排好再写应答；断言命令属于哪个 MCP 时带上它的名字，不靠位置。
 

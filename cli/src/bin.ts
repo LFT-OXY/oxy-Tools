@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { homedir, tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { githubCatalogSource } from './catalog.ts';
 import { inquirerPrompter } from './inquirer-prompter.ts';
 import { runInstaller } from './installer.ts';
@@ -36,6 +37,9 @@ process.exitCode = await runInstaller({
   homeDir: homedir(),
   projectDir: process.cwd(),
   tempDir: tmpdir(),
+  // 页面的静态文件和这个文件一起在构建产物里
+  webDir: fileURLToPath(new URL('./web/', import.meta.url)),
+  pageGraceMs: 5000,
   interrupt: interrupt.signal,
   runCommand: systemCommandRunner(),
   prompter: inquirerPrompter(),

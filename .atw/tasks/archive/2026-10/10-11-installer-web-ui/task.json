@@ -1,0 +1,28 @@
+{
+  "id": "installer-web-ui",
+  "name": "installer-web-ui",
+  "title": "安装器的网页界面",
+  "description": "安装器缺省在本机浏览器里打开网页界面完成挑选、确认和安装，打不开浏览器的机器上退回终端界面",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "autuhae",
+  "assignee": "autuhae",
+  "createdAt": "2026-10-11",
+  "completedAt": "2026-10-12",
+  "branch": "consult/install-browser-ui",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "implementation_base_sha": "7139336bbfe7bd10494481667f73b1f4543d5a07"
+  }
+}

@@ -1,16 +1,27 @@
 // 呈现层：所有终端输出都从这里出去，配色、符号、间距、横线和标题区由它统一决定（视觉方向「账本」）。
 // 其余模块只说“显示什么”。
 import { styleText } from 'node:util';
-import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool, ToolOs } from './catalog.ts';
-import type { Command, Host, Scope } from './hosts.ts';
-import type { McpInstallProblem } from './install-mcp.ts';
-import type { SkillInstallProblem } from './install-skill.ts';
+import type { Unavailable } from './availability.ts';
+import type { App, Mcp, McpVariable, Purpose, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
+import type { Command, Environment, Host, Scope } from './hosts.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
-import type { InstallableMcpStatus, McpStatus } from './mcp-status.ts';
-import { MESSAGES, type Failure, type KeyOutcome, type Lang, type ToolEvidence } from './messages.ts';
-import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import type { McpStatus } from './mcp-status.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebEnding, type WebUnavailable } from './messages.ts';
+import { commandLine, mcpColumnNoticeTexts, noticeTexts } from './notice-text.ts';
+import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
+import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion, StandbyQuestion } from './prompter.ts';
+import type { InstallOutcome, McpOutcome } from './run-plan.ts';
 import type { SkillStatus } from './skill-status.ts';
+import {
+  mcpStatusText,
+  skillStatusText,
+  thirdPartyStatusText,
+  toolStatusText,
+  unavailableReason,
+  versionChange as versionChangeText,
+  type StatusText,
+} from './status-text.ts';
 import type { ThirdPartyStatus } from './third-party-status.ts';
 import type { ToolStatus } from './tool-status.ts';
 import { displayWidth, pad, truncate, wrap } from './text.ts';
@@ -81,12 +92,6 @@ const ASCII: typeof UNICODE = {
 };
 // 大标志的渐变从左到右依次经过这三个色标：粉、紫、蓝
 const LOGO_STOPS = ['#E255C0', '#8B5CF6', '#3D8FE6'].map((hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)));
-// 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项
-const LANGUAGE_QUESTION = 'Language / 语言';
-const LANGUAGES: readonly { lang: Lang; label: string }[] = [
-  { lang: 'zh', label: '中文' },
-  { lang: 'en', label: 'English' },
-];
 // 转动符号的节奏照搬交互库的默认值
 const SPINNER_INTERVAL = 80;
 const ERASE_LINE = '\r\x1b[2K';
@@ -95,49 +100,6 @@ const REASON_MARK = '\u200b';
 
 export type MenuChoice = 'recommended' | Purpose | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
-export type InstallOutcome = { ok: true; version: string } | { ok: false; problem: SkillInstallProblem };
-
-/** 一项安装：哪个条目、装进哪个宿主、装到哪（给用户看的路径）、要装的版本、那里现在的状态 */
-export interface InstallTarget {
-  name: string;
-  host: string;
-  location: string;
-  version: string;
-  status: SkillStatus;
-}
-
-/**
- * 一项第三方 Skill 安装：哪个 skill（entry 是它所属条目的名字）、装进哪个宿主、装到哪（给用户看的路径）、
- * 那里现在是不是已经有东西
- */
-export interface ThirdPartyTarget {
-  entry: string;
-  name: string;
-  host: string;
-  location: string;
-  exists: boolean;
-}
-
-/** 一项 MCP 安装：哪个条目、装进哪个宿主、它在那里现在的状态 */
-export interface McpTarget {
-  name: string;
-  host: string;
-  status: InstallableMcpStatus;
-}
-
-export type McpOutcome = { ok: true } | { ok: false; problem: McpInstallProblem };
-
-/** 工具不可选的原因：一个宿主都没检测到，条目把当前系统标为不支持，或它要的宿主一个都没检测到 */
-export type ToolUnavailable = { kind: 'no-host' } | { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
-
-/** 一项工具安装：哪个条目、要执行的那一行命令、装完之后查什么 */
-export interface ToolTarget {
-  name: string;
-  command: string;
-  evidence: ToolEvidence;
-}
-
-export type Environment = Readonly<Record<string, string | undefined>>;
 
 export interface UiOptions {
   out: TerminalOutput;
@@ -154,20 +116,6 @@ export interface UiOptions {
 }
 
 export type Ui = ReturnType<typeof createUi>;
-
-// 展示时不加引号也不会被 shell 另作解释的参数
-const PLAIN_ARGUMENT = /^[A-Za-z0-9@%+=:,./_~-]+$/;
-
-// 给用户看的一条完整命令。参数里有 shell 会另作解释的字符（网址里的 & ? 之类）就加上单引号，照着敲也是同一条命令。
-// key 的位置写成占位符 <变量名>，由 placeholder 上样式；真实的值不到这里来
-function commandLine({ command, args }: Command, placeholder: (text: string) => string = (text) => text): string {
-  return [command, ...args]
-    .map((arg) => {
-      if (typeof arg !== 'string') return `${arg.variable}=${placeholder(`<${arg.variable}>`)}`;
-      return PLAIN_ARGUMENT.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
-    })
-    .join(' ');
-}
 
 // 大标志某一列的 24 位前景色码。t 是这一列在标志里的位置，最左是 0，最右是 1；相邻两个色标之间红、绿、蓝各自线性过渡
 function logoColor(t: number): string {
@@ -379,50 +327,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     keywords: { yes: 'y', no: 'n', error: () => t.answerYesOrNo },
   };
 
-  // 状态一律用词表达，不显示颜色时文字一字不变。listed 是清单里的版本
-  const versionChange = (status: { version: string }, listed: string): string =>
-    `${status.version} ${symbols.arrow} ${listed}`;
-  const statusCell = (status: SkillStatus, listed: string): string => {
-    switch (status.kind) {
-      case 'none':
-        return dim(t.skillStatus.none);
-      case 'installed':
-        return `${paint('green', t.skillStatus.installed)} ${status.version}`;
-      case 'other-version':
-        return paint(attention, versionChange(status, listed));
-      case 'unmanaged':
-        return paint(attention, t.skillStatus.unmanaged);
-    }
+  // listed 是清单里的版本
+  const versionChange = (status: { version: string }, listed: string): string => versionChangeText(status.version, listed, symbols.arrow);
+  // 状态一律用词表达，不显示颜色时文字一字不变。词和含义来自两套界面共用的那张表，这里只照含义上样式
+  const statusCell = ({ text, tone, rest }: StatusText): string => {
+    const word = tone === 'ready' ? paint('green', text) : tone === 'attention' ? paint(attention, text) : tone === 'faint' ? dim(text) : text;
+    return rest === undefined ? word : `${word} ${rest}`;
   };
+  const skillCell = (status: SkillStatus, listed: string): string => statusCell(skillStatusText(t, status, listed, symbols.arrow));
+  const thirdPartyCell = (status: ThirdPartyStatus): string => statusCell(thirdPartyStatusText(t, status));
 
-  // 条目的一栏：只含一个 skill 的写未装、已装，含多个的装了几个就写「已装 几个/共几个」
-  const thirdPartyCell = (status: ThirdPartyStatus): string => {
-    if (status === 'unsupported') return dim(t.mcpStatus.unsupported);
-    const installed = status.filter(Boolean).length;
-    if (installed === 0) return dim(t.skillStatus.none);
-    return `${paint('green', t.skillStatus.installed)}${status.length > 1 ? ` ${installed}/${status.length}` : ''}`;
-  };
-
-  const mcpStatusCell = (status: McpStatus): string => {
-    switch (status) {
-      case 'none':
-        return dim(t.mcpStatus.none);
-      case 'configured':
-        return paint('green', t.mcpStatus.configured);
-      case 'unknown':
-        return t.mcpStatus.unknown;
-      // 条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围：栏里是同一个词
-      case 'unsupported':
-      case 'global-only':
-        return dim(t.mcpStatus.unsupported);
-    }
-  };
-
-  // 所选的宿主一个都装不了这个 MCP 时它不可选：有哪个只是装不到所选的范围，原因就写只能装到全局——换成全局就装得了
-  const mcpUnavailable = (statuses: readonly McpStatus[]): { unavailable?: string } => {
-    if (!statuses.every((status) => status === 'unsupported' || status === 'global-only')) return {};
-    return { unavailable: statuses.includes('global-only') ? t.mcpGlobalOnly : t.unsupportedByHosts };
-  };
+  const reasonOf = (unavailable: Unavailable | undefined): { unavailable?: string } =>
+    unavailable ? { unavailable: unavailableReason(t, unavailable) } : {};
 
   // 条目一次全部列出；一屏放不下时才由交互库滚动。列表之外还要占的行不能把提问顶出屏幕：提问上下各一行空行、
   // 提问、列表下方的空行、两行说明、说明下方的空行、按键提示。表头算在列表里。below 是列表下方另外多占的行数
@@ -465,8 +381,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   };
 
   // 一轮的执行，各类组件共用：targets 进「正在安装」分区，每一项进行中的那一行写的字（doing）和它的结果都由调用方
-  // 说成文字；asides 是输出不归呈现层管的那些（工具）的名字，各占一个以名字为标题的分区，排在后面
-  const progress = (targets: readonly { name: string; host: string }[], asides: readonly string[]) => {
+  // 说成文字；asides 是输出不归呈现层管的那些（工具）的名字，各占一个以名字为标题的分区，排在后面。
+  // recap 是这一批已经装完、只把结果补打出来：标题直接是「结果」，没有进行中的那一行
+  const progress = (targets: readonly { name: string; host: string }[], asides: readonly string[], recap = false) => {
     type Target = (typeof targets)[number];
     // verdict 是成功的那一行里先写的结果词（工具的「已可用」）：折行时续行与它后面的字对齐
     type Result = { ok: true; text: string; verdict?: string } | { ok: false; reason: string };
@@ -487,10 +404,11 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       settled.push(rows);
       print(...rows);
     };
-    if (targets.length > 0) print(...heading(t.installing));
+    // 补打结果时工具的结论也在这个分区里：只有工具的一批同样要有标题
+    if (targets.length > 0 || (recap && asides.length > 0)) print(...heading(recap ? t.results : t.installing));
     return {
       begin(target: Target, doing: string): (result?: Result) => void {
-        const erase = spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
+        const erase = recap ? (): void => {} : spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
         return (result) => {
           erase();
           if (result) settle(rowsOf(lead(target.name, target.host), result));
@@ -502,6 +420,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       },
       // 它自己的输出原样接在 intro 下面，不经过这里；交出结果时上方空一行。没有转动符号：行首重写会和它的输出撞车
       aside(name: string, intro: readonly string[]): (result: Result) => void {
+        // 补打结果时它的分区早就打过了：只把结论和别的行排在一起
+        if (recap) return (result) => settle(rowsOf(lead(name), result));
         print(...heading(name), ...intro);
         return (result) => {
           const rows = rowsOf(lead(name), result);
@@ -510,6 +430,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         };
       },
       finish(): void {
+        // 补打结果时行都已经在「结果」这个标题下面了，只差合计
+        if (recap) return print(...results.total());
         if (asides.length > 0) {
           // 前面的结果早被它们的输出顶出屏幕了：不止一行时集中再列一遍。标题不回头改写——不知道那些输出占了几行
           if (settled.length > 1) print(...heading(t.results), ...settled.flat());
@@ -524,6 +446,17 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       },
     };
   };
+
+  // 轮到一个工具：打出以它名字为标题的分区和要执行的那一行，命令自己的输出随后原样接在下面；用返回的函数交出结论
+  const toolSection =
+    (rows: ReturnType<typeof progress>) =>
+    (target: ToolTarget): ((result: ToolResult) => void) => {
+      const settle = rows.aside(target.name, hanging('  ', `${dim('$')} `, target.command));
+      return (result) => {
+        const text = t.toolResult(result, target.evidence);
+        settle(result.available ? { ok: true, verdict: paint('green', t.toolAvailable), text } : { ok: false, reason: text });
+      };
+    };
 
   return {
     line(text: string): void {
@@ -598,6 +531,45 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       );
     },
 
+    /**
+     * 网页界面开着时本机信息下面的那个块：已在浏览器打开、整条写在一行上的网址（浏览器没有弹出来时照着复制）。
+     * 下面空一行；再下面的按键提示由待命的提问画。
+     */
+    webOpened(url: string): void {
+      print(
+        ...gapAbove(),
+        ...keyValue(t.webUi.key, t.webUi.opened),
+        // 网址不截断也不折行，独占一行
+        `  ${' '.repeat(KEY_WIDTH)}${url}`,
+        '',
+      );
+    },
+
+    /**
+     * 网页界面开着时的待命：按键提示那一行由它画，等 t（改用终端界面）或 Ctrl+C。它结束时那一行擦掉、不收成一行，
+     * 画面回到问之前的样子，所以不碰 spaced。
+     */
+    standby(): StandbyQuestion<'terminal'> {
+      return {
+        hint: [
+          ['t', 'terminal'],
+          ['Ctrl+C', 'quit'],
+        ],
+        answers: { t: 'terminal' },
+        theme,
+      };
+    },
+
+    /** 网页界面这边收场时的那一行说明。改用终端界面的下面空一行：后面接着是语言提问或主菜单。 */
+    webEnded(how: WebEnding): void {
+      print(...gapAbove(), ...keyValue(t.webUi.key, t.webUi.ended[how]), ...(how === 'terminal' ? [''] : []));
+    },
+
+    /** 进入网页界面之后才知道它用不了：说明一句原因，调用方接着走终端界面。 */
+    webUnavailable(reason: WebUnavailable): void {
+      print(...gapAbove(), ...keyValue(t.noticeKey, t.webUi.unavailable[reason], attention), '');
+    },
+
     failure(failure: Failure): void {
       const { title, cause, location, next } = t.failure(failure, platform);
       errors.print(
@@ -663,8 +635,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /**
      * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、第三方
      * Skill、MCP、工具），前三样每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；工具只有一个状态，与宿主无关，
-     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏，前三样都不可选：一个宿主都没检测到，或
-     * 列表里根本没有它们。所选的宿主一个都不支持的第三方 Skill 和 MCP、装不了的工具同样不可选；原因都写在状态的位置。
+     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏。带着 unavailable 的行不可选，原因写在
+     * 状态的位置：哪些行不可选、为什么，由调用方照共用的规矩给。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
@@ -679,10 +651,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       marksRecommended,
     }: {
       hosts: readonly Host[];
-      skills: readonly { skill: Skill; statuses: readonly SkillStatus[] }[];
-      thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[] }[];
-      mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[] }[];
-      tools: readonly { tool: Tool; status: ToolStatus; unavailable?: ToolUnavailable }[];
+      skills: readonly { skill: Skill; statuses: readonly SkillStatus[]; unavailable?: Unavailable }[];
+      thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[]; unavailable?: Unavailable }[];
+      mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[]; unavailable?: Unavailable }[];
+      tools: readonly { tool: Tool; status: ToolStatus; unavailable?: Unavailable }[];
       apps: readonly App[];
       checked: readonly (Skill | ThirdPartySkill | Mcp | Tool | App)[];
       marksRecommended: boolean;
@@ -691,8 +663,6 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
       const hostless = hosts.length === 0;
-      const toolReason = (unavailable: ToolUnavailable): string =>
-        unavailable.kind === 'no-host' ? t.needsHost : unavailable.kind === 'os' ? t.unsupportedOs(unavailable.os) : t.unsupportedByHosts;
       // 组件各段的行：cells 是各栏状态，比状态栏少时后面空着；unavailable 是这一行不可选的原因，写在状态的位置、
       // 占满各个状态栏，这时不看 cells
       const sections: {
@@ -705,37 +675,37 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           ...t.sections.skill,
           kind: t.kinds.skill,
           // 本仓库的 skill 都是推荐的
-          rows: skills.map(({ skill, statuses }) => ({
+          rows: skills.map(({ skill, statuses, unavailable }) => ({
             value: skill,
             name: skill.name,
             about: skill.description[lang],
             recommended: true,
-            cells: statuses.map((status) => statusCell(status, skill.version)),
-            ...(hostless ? { unavailable: t.needsHost } : {}),
+            cells: statuses.map((status) => skillCell(status, skill.version)),
+            ...reasonOf(unavailable),
           })),
         },
         {
           ...t.sections.thirdParty,
           kind: t.kinds.thirdParty,
-          rows: thirdParty.map(({ entry, statuses }) => ({
+          rows: thirdParty.map(({ entry, statuses, unavailable }) => ({
             value: entry,
             name: entry.name,
             about: entry.description[lang],
             recommended: entry.recommended,
             cells: statuses.map(thirdPartyCell),
-            ...(hostless ? { unavailable: t.needsHost } : statuses.every((status) => status === 'unsupported') ? { unavailable: t.unsupportedByHosts } : {}),
+            ...reasonOf(unavailable),
           })),
         },
         {
           ...t.sections.mcp,
           kind: t.kinds.mcp,
-          rows: mcps.map(({ mcp, statuses }) => ({
+          rows: mcps.map(({ mcp, statuses, unavailable }) => ({
             value: mcp,
             name: mcp.name,
             about: mcp.description[lang],
             recommended: mcp.recommended,
-            cells: statuses.map(mcpStatusCell),
-            ...(hostless ? { unavailable: t.needsHost } : mcpUnavailable(statuses)),
+            cells: statuses.map((status) => statusCell(mcpStatusText(t, status))),
+            ...reasonOf(unavailable),
           })),
         },
         {
@@ -746,8 +716,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             name: tool.name,
             about: tool.description[lang],
             recommended: tool.recommended,
-            cells: [status === 'installed' ? paint('green', t.toolStatus.installed) : dim(t.toolStatus.none)],
-            ...(unavailable ? { unavailable: toolReason(unavailable) } : {}),
+            cells: [statusCell(toolStatusText(t, status))],
+            ...reasonOf(unavailable),
           })),
         },
       ].filter((section) => section.rows.length > 0);
@@ -948,11 +918,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
      */
     mcpColumnNotices({ globalOnly, unreadable }: { globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
-      const names = (hosts: readonly Host[]): string => hosts.map((host) => host.name).join(t.listSeparator);
-      const notices = [
-        ...(globalOnly.length > 0 ? [t.mcpGlobalOnlyNotice(names(globalOnly))] : []),
-        ...(unreadable.length > 0 ? [t.mcpConfigUnreadable(names(unreadable))] : []),
-      ];
+      const notices = mcpColumnNoticeTexts(t, { globalOnly, unreadable });
       if (notices.length > 0) print(...gapAbove(), ...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 
@@ -1058,8 +1024,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 全部结束后 finish 打出合计：没有工具时把「正在安装」的标题换成「结果」；有工具时标题不动，结果不止一行就先用
      * 一个「结果」分区把每一行再列一遍——前面的早被命令的输出顶出屏幕了。
      */
-    installation(skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[]) {
-      const rows = progress([...skills, ...thirdParty, ...mcps], tools.map((target) => target.name));
+    installation(skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[], recap = false) {
+      const rows = progress([...skills, ...thirdParty, ...mcps], tools.map((target) => target.name), recap);
       return {
         skill: {
           begin(target: InstallTarget): (outcome?: InstallOutcome) => void {
@@ -1104,17 +1070,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           },
           skip: (target: McpTarget, missingVariable: string): void => rows.skip(target, t.keyMissing(missingVariable)),
         },
-        tool: {
-          begin(target: ToolTarget): (result: ToolResult) => void {
-            const settle = rows.aside(target.name, hanging('  ', `${dim('$')} `, target.command));
-            return (result) => {
-              const text = t.toolResult(result, target.evidence);
-              settle(result.available ? { ok: true, verdict: paint('green', t.toolAvailable), text } : { ok: false, reason: text });
-            };
-          },
-        },
+        tool: { begin: toolSection(rows) },
         finish: rows.finish,
       };
+    },
+
+    /**
+     * 网页界面开着时轮到工具：终端上只有它们各自的分区，和上面 installation 里工具的分区同一个画法；别的行、「结果」
+     * 和合计都在页面上，这里不打。都跑完后 done 在下面空一行：待命的提问随后画回来，和它上面的块隔开。
+     * 这一批里没有工具时什么都不打。
+     */
+    toolSections(tools: readonly ToolTarget[]): { begin(target: ToolTarget): (result: ToolResult) => void; done(): void } {
+      return { begin: toolSection(progress([], tools.map((target) => target.name))), done: tools.length > 0 ? gap : (): void => {} };
     },
 
     /**
@@ -1137,42 +1104,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 汇总最后要提醒的事，各占一行，几行挨着：有覆盖项时本地改动会丢失；这一轮有第三方 Skill 时装的是作者当时的
-     * 最新版；命令里 key 的位置是占位符；装到项目的 MCP 带着的 key 会以明文写进项目里的哪些文件（plaintextKeys 只有
-     * 变量名和文件名，variables 是空的就不写）；装到项目的 MCP 写进了哪个文件、要用户在宿主里批准之后才启用
-     * （command 是启动宿主的命令）；必填的 key 没填、
-     * 不在这次要装的里面的 MCP；添加远程地址的 MCP 时可能当场打开浏览器登录的宿主（它的输出不会显示在这里，login 是
-     * 事后补登录的命令）。一件都没有时什么都不打。
+     * 汇总最后要提醒的事，各占一行，几行挨着：哪几句、什么先后由两套界面共用的 noticeTexts 定；placeholders 是命令里
+     * key 的位置是占位符（只有终端界面展示命令）。一件都没有时什么都不打。
      */
-    summaryNotices({
-      overwrites,
-      thirdParty,
-      placeholders,
-      plaintextKeys,
-      approvals,
-      missingKeys,
-      logins,
-    }: {
-      overwrites: boolean;
-      thirdParty: boolean;
-      placeholders: boolean;
-      plaintextKeys: { variables: readonly string[]; files: readonly string[] };
-      approvals: readonly { host: string; file: string; command: string }[];
-      missingKeys: readonly { mcp: string; variable: string }[];
-      logins: readonly { host: string; login: Command }[];
-    }): void {
-      const notices = [
-        ...(overwrites ? [t.replaceNotice] : []),
-        ...(thirdParty ? [t.thirdPartyNotice] : []),
-        ...(placeholders ? [t.keyPlaceholderNotice] : []),
-        ...(plaintextKeys.variables.length > 0
-          ? [t.keyPlaintextNotice(plaintextKeys.variables.join(t.listSeparator), plaintextKeys.files.join(t.listSeparator))]
-          : []),
-        ...approvals.map(({ host, file, command }) => t.mcpApprovalNotice(host, file, command)),
-        ...missingKeys.map(({ mcp, variable }) => t.keyMissingNotice(mcp, variable)),
-        ...logins.map(({ host, login }) => t.mcpLoginNotice(host, commandLine(login))),
-      ];
-      if (notices.length > 0) print(...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
+    summaryNotices({ placeholders, ...notices }: PlanNotices & { placeholders: boolean }): void {
+      const lines = noticeTexts(t, notices, placeholders);
+      if (lines.length > 0) print(...lines.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 
     /** 问一个 key 之前：哪个 MCP 要它、它是什么、去哪申请、留空会怎样。 */

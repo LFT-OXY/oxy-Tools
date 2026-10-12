@@ -1,0 +1,511 @@
+// 网页界面这一边的流程：起本机的网页、交给浏览器打开、等到它收场——用户点了「完成」、页面关了，或在终端上按了 t。
+// 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
+import { randomBytes } from 'node:crypto';
+import { listingStatus, type Machine, type Unavailable } from './availability.ts';
+import type { Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
+import type { Host, Scope } from './hosts.ts';
+import type { LinkOpener } from './installer.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type Messages, type WebUnavailable } from './messages.ts';
+import { byName } from './listing.ts';
+import { homeRelative, planInstall, type Plan } from './plan.ts';
+import type { Prompter } from './prompter.ts';
+import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
+import { unavailableReason } from './status-text.ts';
+import type { Ui } from './ui.ts';
+import { asksOverwrite, decided, reportBatch, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
+import type { Intent, PickableKind, ViewState } from './web-protocol.ts';
+import { startWebServer, type WebServer } from './web-server.ts';
+import { listingView, menuOf } from './web-view.ts';
+
+export interface WebUiOptions {
+  /** 页面起始的语言：系统语言，或 --lang 给的 */
+  lang: Lang;
+  version: string;
+  catalog: Catalog;
+  /** 本机的事实和执行要的东西：交给共用的「算计划」「执行」的就是它 */
+  runtime: Runtime;
+  /** 目录里各类条目的数量，和本机信息里数的是同一份 */
+  counts: { skills: number; mcps: number; tools: number; apps: number };
+  webDir: string;
+  /** 页面全都断开之后，等多久才当作页面关了 */
+  pageGraceMs: number;
+  ui: Ui;
+  /** 只用来问待命的提问：网页界面开着时终端上等按键的那一行 */
+  prompter: Prompter;
+  openLink: LinkOpener;
+}
+
+/** 网页界面这边收场的三种：页面上点了「完成」、页面关了（这两种安装器随后退出）、终端上按了 t 改用终端界面 */
+type Ending = 'finished' | 'closed' | 'terminal';
+/** unavailable 是进来之后才知道网页界面用不了；它和 terminal 一样，调用方接着走终端界面 */
+export type WebUiOutcome = Ending | { unavailable: WebUnavailable };
+
+/** 被 Ctrl+C 打断时抛 Interrupted（在待命的提问上按的是 PromptAborted），抛之前已经把本机的网页关掉。 */
+export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
+  const { catalog, runtime } = options;
+  const { interrupt } = runtime;
+  // 口令 24 个随机字节，写出来 32 个字符：整条网址在终端上写得下一行
+  const token = randomBytes(24).toString('base64url');
+  // 网页界面的状态都在这里；画面状态每次从它现算，条目的状态因此总是现探测的
+  const session: Session = {
+    lang: options.lang,
+    stage: 'open',
+    introSeen: false,
+    // 一个宿主都没检测到就没有可选的：不出开场引导
+    guideAnswered: !runtime.hosts.some((host) => host.detected),
+    list: menuOf(catalog, options.lang)[0]?.id,
+    // 起初和终端界面两个提问光标起始的答案一样：检测到的全部、全局
+    hosts: new Set(runtime.hosts.filter((host) => host.detected).map((host) => host.id)),
+    scope: 'global',
+    picked: [],
+    chosen: new Map(),
+    step: 'browse',
+    agreed: new Set(),
+    renewed: false,
+  };
+  // 网页界面这边收场了：只认第一次，之后的意图都不照办
+  let ending: Ending | undefined;
+  let settle = (how: Ending): void => {};
+  const ended = new Promise<Ending>((resolve) => (settle = resolve));
+  const end = (how: Ending): void => {
+    ending ??= how;
+    settle(ending);
+  };
+
+  let server: WebServer;
+  const push = (): void => server.push(viewOf(options, session));
+
+  // 「页面还开着」就是有长连接连着。连上过之后全都断开满了时限，才当作页面关了；时限内又连上（刷新）就当没断过
+  let connected = 0;
+  let grace: NodeJS.Timeout | undefined;
+  let deserted = false;
+  // 这一批装完的时候没有页面连着，之后也没有页面连上过：它的结果没有人看到
+  let unseen = false;
+  const pages = (count: number): void => {
+    // 收场时本机的网页关掉，长连接也是这样一条条断开的：那不是页面关了
+    if (ending) return;
+    connected = count;
+    clearTimeout(grace);
+    if (count > 0) {
+      deserted = false;
+      unseen = false;
+      return;
+    }
+    grace = setTimeout(() => {
+      deserted = true;
+      // 正在装的这一批要装完，装完再走
+      if (session.step !== 'installing') end('closed');
+    }, options.pageGraceMs);
+    // 被 Ctrl+C 打断时本机的网页是当场关的，长连接随后才断开：不让这个时限拖着进程不退出
+    grace.unref();
+  };
+
+  // 待命的提问：网页界面开着、没有在安装时一直问着。在它上面按了 Ctrl+C 就从 aborted 出去
+  let standing: { withdraw: AbortController; settled: Promise<void> } | undefined;
+  let aborted = (error: unknown): void => {};
+  const stand = (): void => {
+    const withdraw = new AbortController();
+    const settled = options.prompter.standby(options.ui.standby(), withdraw.signal).then((answer) => {
+      // 按键和「确认安装」同时到、意图先办了的话不照办：这一批要装完
+      if (answer === 'terminal' && session.step !== 'installing') end('terminal');
+    }, aborted);
+    standing = { withdraw, settled };
+  };
+  // 收回之后要等它了结才能往终端上打东西：它擦掉自己那一行是在了结的同一拍里
+  const withdrawStandby = async (): Promise<void> => {
+    const current = standing;
+    standing = undefined;
+    current?.withdraw.abort();
+    await current?.settled;
+  };
+
+  // 照计划去装，进度每变一次推一次画面状态。它不往外抛：意料之外的错变成这一批的出错说明
+  const install = async (plan: Plan): Promise<void> => {
+    const { batch, progress } = trackBatch(plan, push, options.ui);
+    session.batch = batch;
+    // 安装进行中终端上没有待命的提问：工具的安装命令要接管终端的输入输出
+    await withdrawStandby();
+    let failure: unknown;
+    try {
+      await runPlan(runtime, plan, progress);
+    } catch (error) {
+      // 被 Ctrl+C 打断：本机的网页已经当场关掉了，进程随即退出
+      if (interrupt.aborted) return;
+      failure = error;
+    }
+    settleBatch(batch, failure === undefined ? undefined : unexpected(failure));
+    session.step = 'results';
+    unseen = connected === 0;
+    // 安装中页面关了：这一批装完了，该走了
+    if (deserted) return end('closed');
+    stand();
+    push();
+  };
+  try {
+    server = await startWebServer({
+      webDir: options.webDir,
+      token,
+      state: () => viewOf(options, session),
+      pages,
+      intent: (raw) => {
+        const intent = parseIntent(raw);
+        if (!intent || ending) return false;
+        switch (intent.type) {
+          case 'finish':
+            // 正在装的这一批要装完
+            if (session.step === 'installing') return false;
+            session.stage = 'finished';
+            break;
+          case 'open':
+            // 只认左栏里有的那几行
+            if (!menuOf(catalog, session.lang).some((row) => row.id === intent.list)) return false;
+            session.list = intent.list;
+            break;
+          case 'intro-seen':
+            session.introSeen = true;
+            break;
+          case 'guide-answered':
+            // 只是记成答过：发几次都一样，不看走到哪一步
+            session.guideAnswered = true;
+            break;
+          case 'lang':
+            // 只换说法：正在看的列表照旧（id 不随语言变）；终端上的呈现层不动
+            session.lang = intent.lang;
+            break;
+          case 'host': {
+            if (session.step !== 'browse' || !runtime.hosts.some((host) => host.detected && host.id === intent.host)) return false;
+            // 至少留一个：去掉最后一个不照办
+            if (!intent.on && session.hosts.size === 1 && session.hosts.has(intent.host)) return false;
+            if (intent.on) session.hosts.add(intent.host);
+            else session.hosts.delete(intent.host);
+            break;
+          }
+          case 'scope':
+            // 一个宿主都没检测到就没有要装进的地方，也就没有范围可言
+            if (session.step !== 'browse' || !runtime.hosts.some((host) => host.detected)) return false;
+            session.scope = intent.scope;
+            break;
+          case 'pick': {
+            if (session.step !== 'browse') return false;
+            // 名字只在各自的类型里唯一
+            const entry = PICKABLE[intent.kind](catalog).find((candidate) => candidate.name === intent.name);
+            if (!entry) return false;
+            // 不可选的勾不上；去掉总是可以的
+            if (intent.on && !pickable(runtime, session, entry)) return false;
+            const rest = session.picked.filter((candidate) => candidate !== entry);
+            session.picked = intent.on ? [...rest, entry] : rest;
+            break;
+          }
+          case 'choose': {
+            if (session.step !== 'browse') return false;
+            // 只认勾上了的、含多个 skill 的第三方 Skill 里的 skill
+            const entry = session.picked.find((candidate): candidate is ThirdPartySkill => isThirdParty(candidate) && candidate.name === intent.entry);
+            const skill = entry && entry.skills.length > 1 ? entry.skills.find((candidate) => candidate.name === intent.skill) : undefined;
+            if (!entry || !skill) return false;
+            const wanted = session.chosen.get(entry) ?? new Set<SourcedSkill>();
+            session.chosen.set(entry, wanted);
+            if (intent.on) wanted.add(skill);
+            else wanted.delete(skill);
+            break;
+          }
+          case 'review':
+            if (session.step === 'browse') {
+              // 已选里一个会装的都没有，和已选为空一样去不了
+              if (installable(runtime, session).length === 0) return false;
+              // 有要 key 的 MCP 就先填 key：和终端界面同一个先后
+              session.step = keyed(runtime, session).length > 0 ? 'keys' : 'summary';
+            } else if (session.step === 'keys') {
+              // 必填的没填只是那个 MCP 不装，汇总照去
+              session.step = 'summary';
+            } else return false;
+            // 每次进汇总，逐项的覆盖都从「不覆盖」起
+            session.agreed.clear();
+            break;
+          case 'key': {
+            if (session.step !== 'keys') return false;
+            // 只认填 key 这一步里列着的 MCP 和它的变量；粘贴进来的常带着首尾的空白
+            const mcp = keyed(runtime, session).find((candidate) => candidate.name === intent.mcp);
+            const value = intent.value.trim();
+            if (!mcp?.env.some((variable) => variable.name === intent.variable) || value === '') return false;
+            const known = runtime.keys.get(mcp.name) ?? new Map<string, string>();
+            runtime.keys.set(mcp.name, known);
+            known.set(intent.variable, value);
+            break;
+          }
+          case 'overwrite':
+            if (session.step !== 'summary' || !asksOverwrite(planOf(runtime, session), intent.item)) return false;
+            if (intent.on) session.agreed.add(intent.item);
+            else session.agreed.delete(intent.item);
+            break;
+          case 'install': {
+            if (session.step !== 'summary') return false;
+            // 展示的和执行的是同一份：现在重算出来的和页面上那一份不是同一个标识就不装，给看新的
+            const plan = planOf(runtime, session);
+            session.renewed = summaryId(plan) !== intent.summary;
+            if (session.renewed) break;
+            session.step = 'installing';
+            void install(plan);
+            break;
+          }
+          case 'revise':
+            if (session.step !== 'summary' && session.step !== 'keys') return false;
+            session.step = 'browse';
+            session.renewed = false;
+            break;
+          case 'continue':
+            if (session.step !== 'results') return false;
+            session.step = 'browse';
+            session.picked = [];
+            session.chosen.clear();
+            delete session.batch;
+            break;
+        }
+        push();
+        if (session.stage === 'finished') end('finished');
+        return true;
+      },
+    });
+  } catch {
+    return { unavailable: 'server' };
+  }
+
+  if (interrupt.aborted) {
+    server.closeNow();
+    throw new Interrupted();
+  }
+  let interrupted = (): void => {};
+  const interruption = new Promise<never>((_, reject) => {
+    // 这里的收尾只能是同步的：信号触发之后进程随即退出
+    interrupted = (): void => {
+      server.closeNow();
+      reject(new Interrupted());
+    };
+    aborted = (error): void => {
+      server.closeNow();
+      reject(error);
+    };
+  });
+  interrupt.addEventListener('abort', interrupted, { once: true });
+
+  try {
+    const url = `http://127.0.0.1:${server.port}/?token=${token}`;
+    const opened = await Promise.race([(async () => options.openLink(url))().then(() => true, () => false), interruption]);
+    if (!opened) {
+      await server.close();
+      return { unavailable: 'browser' };
+    }
+    options.ui.webOpened(url);
+    stand();
+    const how = await Promise.race([ended, interruption]);
+    await withdrawStandby();
+    if (how === 'terminal') {
+      // 页面得知已改用终端界面，之后连接断开不再改口
+      session.stage = 'terminal';
+      push();
+    }
+    await server.close();
+    if (how === 'closed' && unseen && session.batch) {
+      options.ui.webEnded('closedUnseen');
+      reportBatch(session.batch, options.ui);
+    } else options.ui.webEnded(how);
+    return how;
+  } finally {
+    clearTimeout(grace);
+    interrupt.removeEventListener('abort', interrupted);
+  }
+}
+
+/** 勾得上的条目：四种组件 */
+type Pickable = Skill | ThirdPartySkill | Mcp | Tool;
+const isThirdParty = (entry: Pickable): entry is ThirdPartySkill => 'source' in entry;
+const isMcp = (entry: Pickable): entry is Mcp => 'server' in entry;
+const isTool = (entry: Pickable): entry is Tool => 'install' in entry;
+const isSkill = (entry: Pickable): entry is Skill => !isThirdParty(entry) && !isMcp(entry) && !isTool(entry);
+const kindOf = (entry: Pickable): PickableKind => (isThirdParty(entry) ? 'thirdParty' : isMcp(entry) ? 'mcp' : isTool(entry) ? 'tool' : 'skill');
+// 每种勾得上的类型在目录里的那一类条目
+const PICKABLE: Record<PickableKind, (catalog: Catalog) => readonly Pickable[]> = {
+  skill: (catalog) => catalog.skills,
+  thirdParty: (catalog) => catalog.thirdPartySkills,
+  mcp: (catalog) => catalog.mcps,
+  tool: (catalog) => catalog.tools,
+};
+
+/**
+ * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、开场引导答过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
+ * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、
+ * 含多个 skill 的第三方 Skill 里挑了哪几个（去掉条目也留着，再勾上时还在）、挑选走到哪一步、
+ * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度。
+ * 填过的 key 不在这里：它们记在两套界面共用的 Runtime.keys 里
+ */
+interface Session {
+  lang: Lang;
+  stage: ViewState['stage'];
+  introSeen: boolean;
+  guideAnswered: boolean;
+  list: string | undefined;
+  hosts: Set<string>;
+  scope: Scope;
+  picked: Pickable[];
+  chosen: Map<ThirdPartySkill, Set<SourcedSkill>>;
+  step: 'browse' | 'keys' | 'summary' | 'installing' | 'results';
+  agreed: Set<string>;
+  renewed: boolean;
+  batch?: Batch;
+}
+
+// 这一轮要装进的宿主（照本机信息里的先后）和安装范围
+function targetOf(machine: Machine, session: Session): { hosts: Host[]; scope: Scope } {
+  return { hosts: machine.hosts.filter((host) => host.detected && session.hosts.has(host.id)), scope: session.scope };
+}
+
+// 这个条目在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
+function unavailableOf(machine: Machine, session: Session, entry: Pickable): Unavailable | undefined {
+  const { hosts, scope } = targetOf(machine, session);
+  const only = { skills: isSkill(entry) ? [entry] : [], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: isMcp(entry) ? [entry] : [], tools: isTool(entry) ? [entry] : [] };
+  const status = listingStatus(machine, only, hosts, scope);
+  return (status.skills[0] ?? status.thirdParty[0] ?? status.mcps[0] ?? status.tools[0])?.unavailable;
+}
+
+// 这个条目现在勾不勾得上
+const pickable = (machine: Machine, session: Session, entry: Pickable): boolean => unavailableOf(machine, session, entry) === undefined;
+
+// 含多个 skill 的第三方 Skill 要装其中哪几个：只含一个的就是那一个
+const wantedOf = (session: Session, entry: ThirdPartySkill): SourcedSkill[] =>
+  entry.skills.length > 1 ? entry.skills.filter((skill) => session.chosen.get(entry)?.has(skill)) : entry.skills;
+
+/** 已选里这一项现在不进汇总的原因：装不了，或含多个 skill 而一个都没挑 */
+type Idle = { kind: 'unavailable'; unavailable: Unavailable } | { kind: 'none-chosen' };
+function idleOf(machine: Machine, session: Session, entry: Pickable): Idle | undefined {
+  const unavailable = unavailableOf(machine, session, entry);
+  if (unavailable) return { kind: 'unavailable', unavailable };
+  return isThirdParty(entry) && wantedOf(session, entry).length === 0 ? { kind: 'none-chosen' } : undefined;
+}
+const idleReason = (t: Messages, idle: Idle): string => (idle.kind === 'unavailable' ? unavailableReason(t, idle.unavailable) : t.noSkillChosen);
+
+// 已选里现在会装的那些：装不了的、一个 skill 都没挑的留在已选里，但不进汇总
+const installable = (machine: Machine, session: Session): Pickable[] => session.picked.filter((entry) => idleOf(machine, session, entry) === undefined);
+
+// 已选里会装的、要 key 的 MCP，照勾选的先后：填 key 那一步里每个一段
+const keyed = (machine: Machine, session: Session): Mcp[] => installable(machine, session).filter((entry): entry is Mcp => isMcp(entry) && entry.env.length > 0);
+
+// 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。
+// 各类的条目各按名字（一批可以跨用途，没有现成的先后）；交给算计划的只有填过的 key 的变量名
+function planOf(runtime: Runtime, session: Session): Plan {
+  const picked = installable(runtime, session);
+  const selection = {
+    ...targetOf(runtime, session),
+    skills: byName(picked.filter(isSkill)),
+    thirdParty: byName(picked.filter(isThirdParty)).map((entry) => ({ entry, wanted: wantedOf(session, entry) })),
+    mcps: byName(picked.filter(isMcp)),
+    tools: byName(picked.filter(isTool)),
+    filledKeys: new Map([...runtime.keys].map(([mcp, known]) => [mcp, new Set(known.keys())])),
+  };
+  return decided(planInstall(runtime, selection), session.agreed);
+}
+
+function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Session): ViewState {
+  const { lang } = session;
+  const t = MESSAGES[lang];
+  const perKind = t.counts(counts);
+  const skipped = catalog.skipped.length;
+  const { hosts, scope } = targetOf(runtime, session);
+  const listing = session.list === undefined ? undefined : listingView(runtime, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
+  return {
+    lang,
+    // 和终端界面的语言提问是同一份字
+    language: { label: LANGUAGE_QUESTION, options: LANGUAGES.map(({ lang: id, label }) => ({ id, name: label })) },
+    stage: session.stage,
+    version,
+    introSeen: session.introSeen,
+    guideAnswered: session.guideAnswered,
+    machine: {
+      hosts: runtime.hosts.map((host) => ({ name: host.name, detected: host.detected, ...(host.detected ? {} : { status: t.notDetected }) })),
+      catalog: perKind.length > 0 ? perKind : [t.noEntries],
+      // 和终端界面的本机信息是同一句
+      ...(hosts.length === 0 ? { noHosts: t.noHosts(runtime.hosts.map((host) => host.name), counts.apps > 0) } : {}),
+      ...(skipped > 0 ? { skipped: t.skipped(skipped) } : {}),
+    },
+    target: {
+      hostsLabel: t.pickHosts,
+      choices: runtime.hosts.filter((host) => host.detected).map((host) => ({ id: host.id, name: host.name, on: session.hosts.has(host.id) })),
+      hosts: hosts.map((host) => host.name),
+      scopeLabel: t.pickScope,
+      scopes: [
+        { id: 'global', name: t.scopes.global.name },
+        { id: 'project', name: t.scopes.project.name },
+      ],
+      scope,
+      // 目录的写法和终端界面「项目」那一行一样
+      project: { note: t.scopes.project.about, dir: homeRelative(runtime, runtime.projectDir) },
+    },
+    menu: menuOf(catalog, lang),
+    ...(listing ? { listing } : {}),
+    selected: session.picked.map((entry) => {
+      const idle = idleOf(runtime, session, entry);
+      // 要 key 的 MCP：必填的还有没填的要去填；填过了哪个就写已填。不进汇总时只写原因
+      const filled = runtime.keys.get(entry.name);
+      const key =
+        !isMcp(entry) || idle
+          ? undefined
+          : entry.env.some((variable) => variable.required && !filled?.has(variable.name))
+            ? { text: t.keyStates.missing, tone: 'attention' as const }
+            : entry.env.some((variable) => filled?.has(variable.name))
+              ? { text: t.keyStates.filled, tone: 'ready' as const }
+              : undefined;
+      // 含多个 skill 的第三方 Skill 写明挑了几个；不进汇总时只写原因
+      const detail = isThirdParty(entry) && entry.skills.length > 1 && !idle ? t.chosenSkills(wantedOf(session, entry).length, entry.skills.length) : undefined;
+      return {
+        kind: kindOf(entry),
+        name: entry.name,
+        type: t.kinds[kindOf(entry)],
+        ...(detail === undefined ? {} : { detail }),
+        ...(key ? { key } : {}),
+        ...(idle ? { unavailable: idleReason(t, idle) } : {}),
+      };
+    }),
+    // 只有填了没有：值和它的长度都不到画面状态里来
+    ...(session.step === 'keys'
+      ? {
+          keys: {
+            entries: keyed(runtime, session).map((mcp) => ({
+              mcp: mcp.name,
+              purpose: catalog.purposes.find((purpose) => purpose.id === mcp.purpose)?.name[lang] ?? '',
+              variables: mcp.env.map((variable) => ({
+                name: variable.name,
+                required: variable.required,
+                need: variable.required ? t.keyNeeds.required : t.keyNeeds.optional,
+                about: variable.description[lang],
+                url: variable.url,
+                ...(runtime.keys.get(mcp.name)?.has(variable.name) ? { filled: t.keyFilled } : {}),
+                blank: t.keyBlank(mcp.name, variable.required),
+              })),
+            })),
+          },
+        }
+      : {}),
+    ...(session.step === 'summary' ? { summary: { ...summaryView(t, planOf(runtime, session)), ...(session.renewed ? { renewed: true as const } : {}) } } : {}),
+    ...(session.batch ? { run: runView(t, runtime.platform, session.batch) } : {}),
+  };
+}
+
+// 页面发来的东西不可信：只认得出形状对的意图。每种意图认得的字段是定死的，多带了别的（命令、路径之类）整个不认
+function parseIntent(raw: unknown): Intent | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const { type, list, lang, kind, name, on, item, summary, host, scope, entry, skill, mcp, variable, value } = raw as Record<string, unknown>;
+  const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
+  if ((type === 'finish' || type === 'intro-seen' || type === 'guide-answered' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
+  if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
+  if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
+  if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };
+  if (type === 'scope' && (scope === 'global' || scope === 'project') && only('scope')) return { type, scope };
+  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty' || kind === 'mcp' || kind === 'tool') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
+    return { type, kind, name, on };
+  }
+  if (type === 'choose' && typeof entry === 'string' && typeof skill === 'string' && typeof on === 'boolean' && only('entry', 'skill', 'on')) return { type, entry, skill, on };
+  if (type === 'key' && typeof mcp === 'string' && typeof variable === 'string' && typeof value === 'string' && only('mcp', 'variable', 'value')) {
+    return { type, mcp, variable, value };
+  }
+  if (type === 'overwrite' && typeof item === 'string' && typeof on === 'boolean' && only('item', 'on')) return { type, item, on };
+  if (type === 'install' && typeof summary === 'string' && only('summary')) return { type, summary };
+  return undefined;
+}

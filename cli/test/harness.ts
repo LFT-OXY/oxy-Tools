@@ -1,7 +1,9 @@
-// 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器。
+// 主接缝的测试架子：本地样例目录、临时主目录、只记录不执行的命令执行器、按预设应答的提问器；
+// 测网页界面时另给一段页面的脚本，架子拿着链接打开器记下的网址扮演浏览器。
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach } from 'vitest';
 import { localCatalogSource, type CatalogSource } from '../src/catalog.ts';
@@ -14,8 +16,9 @@ import {
   type Prompter,
   type SelectQuestion,
 } from '../src/prompter.ts';
+import { openPage, type Page } from './browser.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
-import { LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
+import { KEY, LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
 
 export {
   EMPTY_CATALOG,
@@ -34,6 +37,7 @@ export {
   underWebSearch,
 } from './fixtures.ts';
 export { KEY } from './terminal.ts';
+export type { Page } from './browser.ts';
 
 /** 任何样式码（颜色、粗体、暗淡、下划线） */
 export const STYLE_CODE = /\x1b\[[0-9;]*m/;
@@ -74,6 +78,17 @@ export function catalogDir(files: { index?: unknown; catalog?: unknown; content?
   write('catalog.json', files.catalog === undefined ? EMPTY_CATALOG : files.catalog);
   writeTree(dir, files.content ?? SAMPLE_FILES);
   return dir;
+}
+
+/**
+ * 一个会卡在向 GitHub 查询上的本地目录来源，release() 之后照常装：用来停在一批装到一半的地方。
+ * dir 缺省是 catalogDir()
+ */
+export function heldCatalog(dir = catalogDir()): { catalog: CatalogSource; release: () => void } {
+  const local = localCatalogSource(dir);
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  return { catalog: { ...local, pin: async (options) => (await held, local.pin(options)) }, release };
 }
 
 type ListQuestion = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
@@ -167,7 +182,35 @@ export function interrupt(): Answer {
 const plain = stripVTControlCharacters;
 const firstCell = (text: string): string => plain(text).trim().split(/\s{2,}/)[0] ?? '';
 const ERASE_LINE = '\r\x1b[2K';
+// 最后留在画面上的字：被擦掉重写的行只算最后一次
+const screenOf = (raw: string): string =>
+  raw
+    .split('\n')
+    .map((line) => (line.includes(ERASE_LINE) ? line.slice(line.lastIndexOf(ERASE_LINE) + ERASE_LINE.length) : line))
+    .join('\n');
 const ROWS = 40;
+// 页面的静态文件是构建产物：全部测试之前由 globalSetup（build-web.ts）打一遍
+const BUILT_WEB = fileURLToPath(new URL('../dist/web/', import.meta.url));
+// 页面的脚本跑完之后，等安装器退出最多这么久
+const EXIT_PATIENCE_MS = 2000;
+// 页面全都断开之后等多久才当作页面关了：正式运行是 5 秒，测试里不等那么久
+const PAGE_GRACE_MS = 150;
+
+/** 用户面前的终端：页面的脚本里用它做终端上的事 */
+export interface Terminal {
+  /**
+   * 在待命的提问上按一个键（KEY.ctrlC 是按 Ctrl+C）。预设应答的提问器下，这时没有待命的提问在等就失败；
+   * 用真实的交互库时（给了 keys）键直接写进假键盘，按早了会丢：先等按键提示画出来
+   */
+  press(key: string): void;
+  /** 这一刻留在画面上的文字，和 RunResult.screen 同一种算法 */
+  screen(): string;
+  /** 到这一刻为止终端收到的原始输出：交给 screenLines 还原真实的画面 */
+  raw(): string;
+}
+
+/** 预设的一条外部命令的结局：盖过缺省结果的字段、没能起来的错，或什么都不给（缺省的结果） */
+type CommandPreset = Partial<CommandResult> | Error | undefined;
 
 interface Streams {
   stdin?: boolean;
@@ -199,14 +242,15 @@ export interface RunOptions {
   /**
    * 预设外部命令的结果：命令照样记下来，不执行。返回的字段盖过缺省的结果（退出状态 0）；
    * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
-   * 它自己抛出则表示执行器当场抛出、连承诺都没返回
+   * 它自己抛出则表示执行器当场抛出、连承诺都没返回。
+   * 返回一个承诺表示这条命令还在跑，它兑现成上面那几种之一时才结束：用来停在一条命令跑到一半的地方
    */
   commandResult?: (
     command: string,
     args: readonly string[],
     /** cwd 是这条命令被指定在哪个目录下运行，没指定时没有 */
     context: { home: string; cwd?: string },
-  ) => Partial<CommandResult> | Error | undefined;
+  ) => CommandPreset | Promise<CommandPreset>;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
   /** 项目目录（运行安装器时所在的目录）的初始状态：相对路径 → 文件内容 */
@@ -225,6 +269,24 @@ export interface RunOptions {
   columns?: number;
   /** 终端的行数，缺省 40 */
   rows?: number;
+  /**
+   * 让安装器自己定用哪个界面：架子不在启动参数前面带 --terminal，环境变量里有桌面（DISPLAY），没有别的缘故就是
+   * 网页界面。缺省不是（架子带上 --terminal，走终端界面）；给了 page 就是。要网页界面却没有页面去连（浏览器
+   * 打不开、本机的网页起不来、没人来连），或专门测用哪个界面的用例才自己给
+   */
+  web?: boolean;
+  /**
+   * 在页面上做什么。给了它就走网页界面：架子拿着链接打开器记下的网址，经真实的本机 HTTP
+   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给也没给 web 就走终端界面。
+   * world 是这次运行的主目录和项目目录（页面开着的时候要改机器上的东西就往那里写），和用户面前的终端
+   */
+  page?: (page: Page, world: { home: string; project: string; terminal: Terminal }) => Promise<void>;
+  /** 网页界面的页面全都断开之后等多久才当作页面关了，缺省 150 毫秒；要在时限内重连的用例给一个长些的 */
+  pageGraceMs?: number;
+  /** 浏览器打不打得开，缺省打得开；false 时链接打开器记下网址之后拒绝 */
+  browserOpens?: boolean;
+  /** 网页界面的静态文件所在的目录，缺省是构建出来的那一份；给一个不存在的目录就是本机的网页起不来 */
+  webDir?: string;
 }
 
 export interface RunResult {
@@ -245,7 +307,7 @@ export interface RunResult {
    * （装到项目的第三方 Skill 和 MCP）再多一个 cwd
    */
   commands: { command: string; args: readonly string[]; shell?: true; env?: Readonly<Record<string, string>>; cwd?: string }[];
-  /** 交给链接打开器的网址。安装器不再打开浏览器，所以它应当一直是空的 */
+  /** 交给链接打开器的网址：走终端界面时一直是空的，走网页界面时只有一个，就是网页界面的网址 */
   opened: string[];
   home: string;
   /** 交给安装器当项目目录的那个临时目录 */
@@ -313,11 +375,31 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
     return answer(question, prompt);
   };
+  // 待命的提问在等按键时，把一个键交给它
+  let standingBy: ((key: string) => void) | undefined;
   const scripted: Prompter = {
     select: async <Value>(question: SelectQuestion<Value>) => ask('select', question, question.default) as Value,
     checkbox: async <Value>(question: CheckboxQuestion<Value>) => ask('checkbox', question) as Value[],
     confirm: async (question) => ask('confirm', question) as boolean,
     password: async (question) => ask('password', question) as string,
+    // 待命：那一行按键提示记进输出，行尾不换行；结束时照真实的样子擦掉。它不吃预设的应答：按键由页面的脚本来按
+    standby: (question, withdraw) =>
+      new Promise((resolve, reject) => {
+        record('stdout')(question.theme.style.keysHelpTip(question.hint));
+        const settle = (finish: () => void): void => {
+          record('stdout')(ERASE_LINE);
+          standingBy = undefined;
+          withdraw.removeEventListener('abort', withdrawn);
+          finish();
+        };
+        const withdrawn = (): void => settle(() => resolve(undefined));
+        if (withdraw.aborted) return withdrawn();
+        withdraw.addEventListener('abort', withdrawn);
+        standingBy = (key) => {
+          if (key === KEY.ctrlC) settle(() => reject(new PromptAborted()));
+          else if (key in question.answers) settle(() => resolve(question.answers[key]));
+        };
+      }),
   };
 
   const rows = options.rows ?? ROWS;
@@ -351,51 +433,96 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
   };
 
-  const [exitCode] = await Promise.all([
-    runInstaller({
-      argv: options.argv ?? [],
-      env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...options.env },
-      platform: options.platform ?? 'linux',
-      systemLocale: options.systemLocale ?? 'en-US',
-      stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },
-      stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
-      stdinIsTTY: tty.stdin ?? true,
-      catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
-      homeDir: home,
-      projectDir: project,
-      tempDir: tmp,
-      interrupt: options.interrupt ?? new AbortController().signal,
-      runCommand: (command, args, runOptions) => {
-        const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
-        commands.push({
-          command,
-          args,
-          ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
-          ...(cwd === undefined ? {} : { cwd }),
-        });
-        const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
-        return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
-      },
-      prompter: options.keys ? interactive : scripted,
-      openLink: async (url) => void opened.push(url),
-    }),
-    typing(),
-  ]);
+  const terminal: Terminal = {
+    press(key) {
+      if (options.keys) return void keyboard.write(key);
+      if (!standingBy) throw new Error(`终端上没有待命的提问，按下的 ${JSON.stringify(key)} 没有人接`);
+      standingBy(key);
+    },
+    screen: () => plain(screenOf(textOf())),
+    raw: () => textOf(),
+  };
 
+  // 架子自己也要能中断安装器：页面的脚本出了错，或跑完了安装器却没有退出
+  const stopping = new AbortController();
+  const stop = (): void => stopping.abort();
+  if (options.interrupt?.aborted) stop();
+  options.interrupt?.addEventListener('abort', stop);
+  let visit: Promise<void> | undefined;
+  let pageFailure: unknown;
+  const visiting = async (script: NonNullable<RunOptions['page']>, url: string): Promise<void> => {
+    let page: Awaited<ReturnType<typeof openPage>> | undefined;
+    try {
+      page = await openPage(url);
+      await script(page, { home, project, terminal });
+      let patience: NodeJS.Timeout | undefined;
+      const exited = await Promise.race([
+        installer.then(() => true),
+        new Promise<boolean>((resolve) => (patience = setTimeout(() => resolve(false), EXIT_PATIENCE_MS))),
+      ]);
+      clearTimeout(patience);
+      if (!exited) throw new Error('页面的脚本跑完了，安装器还没有退出');
+    } catch (error) {
+      pageFailure = error;
+      stop();
+    } finally {
+      page?.dispose();
+    }
+  };
+
+  const web = options.web ?? Boolean(options.page);
+  const installer: Promise<number> = runInstaller({
+    argv: web ? (options.argv ?? []) : ['--terminal', ...(options.argv ?? [])],
+    // 架子的平台缺省是 linux：有 DISPLAY 才算有桌面
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(web ? { DISPLAY: ':0' } : {}), ...options.env },
+    platform: options.platform ?? 'linux',
+    systemLocale: options.systemLocale ?? 'en-US',
+    stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },
+    stderr: { isTTY: tty.stderr ?? true, write: record('stderr') },
+    stdinIsTTY: tty.stdin ?? true,
+    catalogSource: typeof catalog === 'string' ? localCatalogSource(catalog) : catalog,
+    homeDir: home,
+    projectDir: project,
+    tempDir: tmp,
+    webDir: options.webDir ?? BUILT_WEB,
+    pageGraceMs: options.pageGraceMs ?? PAGE_GRACE_MS,
+    interrupt: stopping.signal,
+    runCommand: (command, args, runOptions) => {
+      const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
+      commands.push({
+        command,
+        args,
+        ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
+        ...(cwd === undefined ? {} : { cwd }),
+      });
+      const ended = (preset: CommandPreset): Promise<CommandResult> =>
+        preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
+      const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
+      return preset instanceof Promise ? preset.then(ended) : ended(preset);
+    },
+    prompter: options.keys ? interactive : scripted,
+    openLink: async (url) => {
+      opened.push(url);
+      if (options.browserOpens === false) throw new Error('no browser');
+      if (options.page) visit = visiting(options.page, url);
+    },
+  });
+  const [exitCode] = await Promise.all([installer, typing()]);
+  await visit;
+  options.interrupt?.removeEventListener('abort', stop);
+
+  if (pageFailure !== undefined) throw pageFailure;
+  if (options.page && !visit) throw new Error('给了页面的脚本，安装器却没有打开网页界面');
   if (unanswered !== undefined) throw new Error(`没有为提问「${unanswered}」预设应答`);
   if (answers.length > 0) throw new Error(`还有 ${answers.length} 个预设应答没有用上`);
   const raw = textOf();
-  const screen = raw
-    .split('\n')
-    .map((line) => (line.includes(ERASE_LINE) ? line.slice(line.lastIndexOf(ERASE_LINE) + ERASE_LINE.length) : line))
-    .join('\n');
   return {
     exitCode,
     output: plain(raw),
     raw,
     stdout: plain(textOf('stdout')),
     stderr: plain(textOf('stderr')),
-    screen: plain(screen),
+    screen: plain(screenOf(raw)),
     commands,
     opened,
     home,

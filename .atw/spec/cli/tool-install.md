@@ -1,6 +1,6 @@
 # 安装工具
 
-> 目录里的工具条目（`cli/src/catalog.ts`）、状态探测（`cli/src/tool-status.ts`）、安装动作（`cli/src/install-tool.ts`）、外部命令执行器的 shell 模式（`cli/src/run-command.ts`）四段的契约，以及流程（`cli/src/flow.ts`）怎么把它们串起来。
+> 目录里的工具条目（`cli/src/catalog.ts`）、状态探测（`cli/src/tool-status.ts`）、安装动作（`cli/src/install-tool.ts`）、外部命令执行器的 shell 模式（`cli/src/run-command.ts`）四段的契约，以及两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）和终端界面的流程（`cli/src/flow.ts`）怎么把它们串起来。
 
 ---
 
@@ -38,15 +38,19 @@ export interface ToolResult {
 export async function installTool(command: string, runCommand: CommandRunner, check: () => boolean): Promise<ToolResult>; // 不抛错
 
 // cli/src/installer.ts
-export interface CommandOptions { shell: true }
+export type CommandOptions = { shell: true } | { shell?: never; env?: Readonly<Record<string, string>>; cwd?: string }; // 工具只用前一支
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 
-// cli/src/ui.ts
-export type ToolUnavailable = { kind: 'no-host' } | { kind: 'os'; os: ToolOs } | { kind: 'hosts' };
+// cli/src/availability.ts —— 两套界面共用，见总览的「两套界面共用的部分」
+export type Unavailable = { kind: 'no-host' } | { kind: 'hosts' } | { kind: 'global-only' } | { kind: 'os'; os: ToolOs }; // 工具用得到的是 no-host、os、hosts 三种
+export function toolUnavailable(machine: Machine, tool: Tool): Unavailable | undefined; // 先看有没有宿主，再看系统，再看它要的宿主
+
+// cli/src/plan.ts
 export interface ToolTarget { name: string; command: string; evidence: ToolEvidence } // evidence：{ command } | { path: 给用户看的路径 }
+export interface ToolJob { tool: Tool; target: ToolTarget; status: ToolStatus }       // 计划里的一项：装不了的工具即使在勾选里也没有这一项
 ```
 
-`installCommand` 先算出来、交给汇总展示，之后 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
+`installCommand` 在算计划时（`planInstall`）算出来、交给汇总（终端界面的汇总展示它，网页界面的不展示），之后 `runPlan` 里 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
 
 ### 3. Contracts
 
@@ -79,7 +83,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 | `check.command` | 一个命令的名字：`^[A-Za-z0-9._-]+$` 且不是 `.`、`..`——要拿它去可执行路径的各个目录里找，所以不带目录 |
 | `check.path` | 主目录下的相对路径，与 skill 的 `path` 同一条规则（`/` 分段，拒绝绝对路径、`..`、空段） |
 
-**安装命令是一整行 shell，不是“命令 + 参数”**（维护者 2026-10-09 确认）。官方安装命令大多是 `curl … | sh` 这样的管道，拆成参数写不出来。它和 MCP 的 `server.command` 是两套口径：那边不经过 shell、每个词只收安全字符；这边整行交给 shell，把关靠三样——目录的审核、只收可见 ASCII 的校验、执行前整行展示并确认。**不要把这条规则套到别的字段上，也不要让别的字段的值流进这一行。**
+**安装命令是一整行 shell，不是“命令 + 参数”**（维护者 2026-10-09 确认）。官方安装命令大多是 `curl … | sh` 这样的管道，拆成参数写不出来。它和 MCP 的 `server.command` 是两套口径：那边不经过 shell、每个词只收安全字符；这边整行交给 shell，把关靠三样——目录的审核、只收可见 ASCII 的校验、执行前整行展示并确认。**第三样只在终端界面成立**：网页界面的汇总不列那一行命令（维护者 2026-10-11 定的，见下面「网页界面下」），它到轮到这个工具时才打在终端上，那时已经确认过了。**不要把这条规则套到别的字段上，也不要让别的字段的值流进这一行。**
 
 **按系统选命令（`installCommand`）**
 
@@ -111,7 +115,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 
 工具不装进宿主：`hosts` 只决定可不可选，看的是**检测到的**宿主，不是这一轮选的那几个；状态只有一个，与选了哪些宿主无关。但它仍是组件——一个宿主都没检测到时和别的组件一样不可选。
 
-**流程**（`flow.ts`：工具没有自己的入口，和别的类型一起走混合列表，见 [入口与测试](./installer-entry.md) 的「主菜单与流程」）
+**流程**（终端界面的在 `flow.ts`，可不可选在 `availability.ts`，算和装在 `plan.ts`、`run-plan.ts`：工具没有自己的入口，和别的类型一起走混合列表，见 [入口与测试](./installer-entry.md) 的「主菜单与流程」）
 
 1. 混合列表里工具自成一段，排在 MCP 之后。**这张列表里只有工具和外部项目时不问装进哪些宿主**：没有要装进宿主的东西。
 2. 汇总「将安装 N 项」里工具是最后一张小表，只有条目和操作两栏，操作写「执行安装命令」。
@@ -120,6 +124,22 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 5. 逐个执行，**排在本仓库的 skill 和 MCP 之后**：每个工具一个以它名字为标题的分区，第一行 `$ <命令>`，然后命令自己的输出，然后空一行、一行结论。
 6. 这一轮的结果不止一行时（不止一个工具，或工具之外还有别的组件），一个「结果」分区把每一行再列一遍（维护者 2026-10-09 定的：前面的结论早被输出顶出屏幕了）；只装一个工具、没有别的组件时不重复。
 7. 通栏横线、「合计」；勾了外部项目的接着是它们的说明与链接，再回主菜单。
+
+**网页界面下**（任务 `10-11-installer-web-ui` 工单 12；页面与安装器之间说什么见 [网页界面的契约](./web-ui-contract.md) 的「工具」）
+
+工具在页面上勾选、和别的组件一起确认，**命令仍在终端里跑**——它要接管终端的输入输出（`sudo` 的密码只有终端答得了），把输出搬到页面上不做。可不可选、算计划、执行、成败怎么判，用的是上面同一套（`availability.ts`、`plan.ts`、`run-plan.ts`），和终端界面不一样的只有在哪展示：
+
+| 哪一步 | 页面上 | 终端上 |
+|--------|--------|--------|
+| 列表 | 「工具」一区，卡片上一段状态（已安装、未安装），没有宿主的名字；不可选的三种原因和终端界面是同一句 | — |
+| 汇总 | 每个工具一段，段里一行，只有操作「执行安装命令」。**不列那一行命令**（维护者 2026-10-11 定的），画面状态里也没有它 | 不列：终端上没有「将执行 N 条命令」 |
+| 轮到它 | 它那一行写「这一项正在终端里安装，请看终端」 | 以它名字为标题的分区、`$ <命令>`、命令自己的输出、空一行、一行结论——**和终端界面的分区同一个画法**（同一段代码：呈现层的 `toolSection`，终端界面经 `ui.installation` 用它，网页界面经 `ui.toolSections` 用它）。这期间没有待命的提问 |
+| 跑完 | 那一行换成结论：「已可用」加查到了什么，或「失败」加原因——结论矩阵里的那几句 | 分区最后的那一行结论 |
+| 一批装完 | 结果与合计 | 待命的提问画回来。**没有「结果」分区、没有合计**：页面开着时终端上不重复页面上的内容。安装中页面关了的那一种例外——这一批的结果补打在终端上，工具的结论和别的行排在同一个「结果」分区里，不再打一遍它的分区 |
+
+- **执行的仍是目录里的那一整行**：`planInstall` 算出的 `ToolTarget.command`，`runPlan` 原样交给 `installTool`。页面发来的只有工具的名字。
+- **执行在最后**，排在本仓库的 skill、第三方 Skill、MCP 之后（共用的「执行」定的）。一批里的工具跨用途时**按名字**排（`listing.ts` 的 `byName`，和别的类型一样）。
+- **工具不受所选的宿主和安装范围影响**：页面上改了宿主、选了项目，工具的状态和可不可选都不变（看的是检测到的宿主），已选里的工具不会因此变得装不了。
 
 **外部命令执行器的 shell 模式（`systemCommandRunner`，`options.shell`）**
 
@@ -176,6 +196,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 - 和别的类型一起：汇总里都有、命令的先后（MCP 在前，工具在后）、工具的分区排在「正在安装」之后、结果各一行、最后是外部项目的链接。
 - 两种检查方式各有“已安装”的状态测试和“装完再进列表是新状态”的测试；Windows 上 `PATHEXT` 一条。
 - 安装器自己不往主目录和临时目录里写东西。
+- 网页界面下的在 `cli/test/web-tools.test.ts`，同样经主接缝（架子扮演浏览器）：一个工具的正常路径（记录到的命令是字面值、页面上的进度与结论、终端上有它的分区）；结论矩阵里「非零退出但复核通过」「以 0 退出但复核不通过」「没能起来」各一条；三种不可选的原因各一条（卡片上的原因、勾不上）；和 skill、第三方 Skill、MCP 混在一批里的先后；画面状态和答复里搜不到那一行命令；安装中没有待命的提问、装完回来；安装中页面关了时终端上补打的结果。
 
 测试架子：`commandResult: (command, args, { home }) => …` 的第三个参数给出这次运行的临时主目录——假的执行器不会真的装东西，要证明“装完复核通过”，就让它往 `home` 里写出 `check.path` 的那个文件；`check.command` 的则自己建一个目录当 `PATH`（里面放上 `claude`），让它往里加命令。
 
@@ -219,13 +240,14 @@ const unavailable = hosts.length === 0 ? { kind: 'no-host' } : tool.hosts && !ho
 #### Correct
 
 ```ts
-// 可不可选看检测到的宿主（detected），和这一轮选了哪些无关
-const unavailable = detected.length === 0 ? { kind: 'no-host' } : 'unsupported' in command ? { kind: 'os', os: command.unsupported } : …;
+// availability.ts：可不可选看检测到的宿主（detected），和这一轮选了哪些无关
+if (detected.length === 0) return { kind: 'no-host' };
+if ('unsupported' in command) return { kind: 'os', os: command.unsupported };
 
-// 先算出要执行的那一行，展示的和执行的是同一个字符串；成败看复核
-const plan = installCommand(tool, session.platform);
-ui.commandList([...mcpCommands, ...toolJobs.map((job) => job.target.command)]);
-settle(await installTool(target.command, session.runCommand, () => toolStatus(tool, session) === 'installed'));
+// plan.ts 先算出要执行的那一行，flow.ts 展示的和 run-plan.ts 执行的是同一个字符串；成败看复核
+const command = installCommand(tool, machine.platform);
+ui.commandList([...commands, ...toolJobs.map((job) => job.target.command)]);
+settle(await installTool(target.command, runtime.runCommand, () => toolStatus(tool, runtime) === 'installed'));
 ```
 
 ---

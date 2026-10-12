@@ -1,8 +1,24 @@
 // 提问部分实际打到终端上的东西：这里用真实的交互库渲染，按脚本发按键。
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_CATALOG, KEY, KEYED_MCP, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_THIRD_PARTY, SAMPLE_TOOLS, STYLE_CODE, catalogDir, run, underWebSearch } from './harness.ts';
+import {
+  EMPTY_CATALOG,
+  KEY,
+  KEYED_MCP,
+  SAMPLE_APPS,
+  SAMPLE_MCPS,
+  SAMPLE_THIRD_PARTY,
+  SAMPLE_TOOLS,
+  STYLE_CODE,
+  catalogDir,
+  heldCatalog,
+  run,
+  underWebSearch,
+  type Page,
+  type Terminal,
+} from './harness.ts';
 import { displayWidth } from '../src/text.ts';
 import { screenLines } from './terminal.ts';
 
@@ -1246,6 +1262,209 @@ describe('真实的画面：填写 key', () => {
     });
 
     expect(result.output).toMatch(/^\? SEARCH_API_KEY \(input hidden; paste, then press enter\)$/m);
+  });
+});
+
+describe('真实的画面：网页界面开着时的待命', () => {
+  const STANDING = 'Ctrl+C 退出';
+  // 待命的那一行按键提示画出来了。from 是只认终端输出里这之后的部分：等的是重新画出来的那一行
+  const drawn = async (terminal: Terminal, text = STANDING, from = 0): Promise<void> => {
+    const deadline = Date.now() + 2000;
+    while (!stripVTControlCharacters(terminal.raw().slice(from)).includes(text)) {
+      if (Date.now() > deadline) throw new Error(`画面上一直没有出现「${text}」`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+  // 画出来之后再过一小会儿它才认按键：刚画出来时送到的键是早先敲的，不算数
+  const listening = async (terminal: Terminal): Promise<void> => {
+    await drawn(terminal);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  };
+  // 勾上 alpha、确认安装，停在查询卡住的地方
+  const startInstalling = async (page: Page): Promise<void> => {
+    await page.send({ type: 'pick', kind: 'skill', name: 'alpha', on: true });
+    await page.send({ type: 'review' });
+    const { summary } = await page.until((state) => state.summary !== undefined);
+    const loading = page.until((state) => state.run?.loading !== undefined);
+    await page.send({ type: 'install', summary: summary?.id ?? '' });
+    await loading;
+  };
+  // 网址那一行之后还在画面上的行
+  const below = async (raw: string, url: string): Promise<string[]> => {
+    const lines = await screenLines(raw);
+    return lines.slice(lines.findIndex((line) => line.trim() === url) + 1).filter((line, at, rest) => line !== '' || rest.slice(at).some((later) => later !== ''));
+  };
+
+  it('网址下面空一行是按键提示：t 改用终端界面、Ctrl+C 退出；按 Ctrl+C 以 130 退出，那一行不留在画面上', async () => {
+    let open: string[] = [];
+    const result = await run({
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal);
+        open = await below(terminal.raw(), page.url);
+        terminal.press(KEY.ctrlC);
+        await page.closed;
+      },
+    });
+
+    expect(open).toEqual(['', '   t 改用终端界面 · Ctrl+C 退出']);
+    expect(result.exitCode).toBe(130);
+    expect(await below(result.raw, result.opened[0] ?? '')).toEqual([]);
+    expect(result.output).not.toContain('出错');
+  });
+
+  it('英文界面的按键提示也是英文', async () => {
+    let open: string[] = [];
+    await run({
+      argv: ['--lang', 'en'],
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal, 'Ctrl+C quit');
+        open = await below(terminal.raw(), page.url);
+        terminal.press(KEY.ctrlC);
+        await page.closed;
+      },
+    });
+
+    expect(open).toEqual(['', '   t use the terminal UI · Ctrl+C quit']);
+  });
+
+  it.each([
+    ['中文', [], 'Ctrl+C 退出', '   t 改用终端界面 - Ctrl+C 退出'],
+    ['英文', ['--lang', 'en'], 'Ctrl+C quit', '   t use the terminal UI - Ctrl+C quit'],
+  ])('%s、没有 Unicode、不显示颜色：分隔符退成 ASCII，不带样式码，整行在 79 列以内', async (_label, argv, standing, hint) => {
+    let open: string[] = [];
+    const result = await run({
+      argv,
+      platform: 'win32',
+      env: { TERM: '', NO_COLOR: '1' },
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal, standing);
+        open = await below(terminal.raw(), page.url);
+        terminal.press(KEY.ctrlC);
+        await page.closed;
+      },
+    });
+
+    expect(open).toEqual(['', hint]);
+    expect(displayWidth(hint)).toBeLessThanOrEqual(79);
+    expect(result.raw).not.toMatch(STYLE_CODE);
+  });
+
+  it('动作词暗淡、按键是默认前景色，没有交互库自带的青色', async () => {
+    const result = await run({
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal);
+        terminal.press(KEY.ctrlC);
+        await page.closed;
+      },
+    });
+
+    expect(result.raw).toMatch(/ {3}t \x1b\[2m改用终端界面\x1b\[22m/);
+    expect(result.raw).not.toMatch(/\x1b\[(?:36|96)m/);
+  });
+
+  it('不认的键不理、也不回显；按 t：那一行擦掉，换成一行说明，空一行之后是语言提问收成的一行和主菜单', async () => {
+    let afterOtherKeys: string[] = [];
+    let told: string | undefined;
+    const result = await run({
+      keys: [[HINT, KEY.ctrlC]],
+      page: async (page, { terminal }) => {
+        await listening(terminal);
+        terminal.press('x');
+        terminal.press(KEY.enter);
+        terminal.press(KEY.down);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        afterOtherKeys = await below(terminal.raw(), page.url);
+        const switched = page.until((state) => state.stage === 'terminal');
+        terminal.press('t');
+        told = (await switched).stage;
+        await page.closed;
+      },
+    });
+
+    expect(afterOtherKeys).toEqual(['', '   t 改用终端界面 · Ctrl+C 退出']);
+    expect(told).toBe('terminal');
+    const left = await below(result.raw, result.opened[0] ?? '');
+    expect(left.slice(0, 6)).toEqual(['', expect.stringMatching(/^\s+网页界面\s+已改用终端界面$/), '', '✓ Language / 语言 · 中文', '', '? 选择用途']);
+    expect(left.join('\n')).not.toContain('Ctrl+C');
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('一批安装进行中敲的 t 不算数：它在待命重新画出来的那一刻才送到，网页界面照常开着', async () => {
+    const { catalog, release } = heldCatalog();
+    let installed: string | undefined;
+    const result = await run({
+      catalog,
+      keys: [],
+      page: async (page, { terminal }) => {
+        await listening(terminal);
+        await startInstalling(page);
+        // 真实的终端里，没有提问在听的时候敲的键留在键盘那头，下一个提问一画出来就送到（实测晚不到 1 毫秒）
+        const from = terminal.raw().length;
+        const delivered = new Promise<void>((resolve) => {
+          const deliver = (): void => {
+            if (!stripVTControlCharacters(terminal.raw().slice(from)).includes(STANDING)) return void setImmediate(deliver);
+            terminal.press('t');
+            resolve();
+          };
+          setImmediate(deliver);
+        });
+        release();
+        await page.until((state) => state.run?.done === true);
+        await delivered;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        installed = page.state().run?.title;
+        // 安装器还开着、还是网页界面：这个意图有人接
+        await page.send({ type: 'finish' });
+        await page.closed;
+      },
+    });
+
+    expect(installed).toBe('结果');
+    expect(result.exitCode).toBe(0);
+    expect(result.output).not.toContain('已改用终端界面');
+  });
+
+  it('页面上点了「完成」：待命被收回，那一行擦掉，原处是一行说明', async () => {
+    const result = await run({
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal);
+        await page.send({ type: 'finish' });
+        await page.closed;
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(await below(result.raw, result.opened[0] ?? '')).toEqual(['', expect.stringMatching(/^\s+网页界面\s+页面上点了「完成」，安装器退出$/)]);
+  });
+
+  it('一批安装开始时待命的那一行收掉，装完又画回来', async () => {
+    const { catalog, release } = heldCatalog();
+    let installing: string[] = [];
+    let installed: string[] = [];
+    await run({
+      catalog,
+      keys: [],
+      page: async (page, { terminal }) => {
+        await drawn(terminal);
+        await startInstalling(page);
+        installing = await below(terminal.raw(), page.url);
+        const before = terminal.raw().length;
+        release();
+        await page.until((state) => state.run?.done === true);
+        await drawn(terminal, STANDING, before);
+        installed = await below(terminal.raw(), page.url);
+        await page.send({ type: 'finish' });
+        await page.closed;
+      },
+    });
+
+    expect(installing).toEqual([]);
+    expect(installed).toEqual(['', '   t 改用终端界面 · Ctrl+C 退出']);
   });
 });
 

@@ -1,0 +1,14 @@
+{"file": ".atw/spec/cli/index.md", "reason": "CLI 层总览：自成一体的三条规矩、入口与两个测试接缝、质量检查命令、发布前在本机核对"}
+{"file": ".atw/spec/cli/installer-entry.md", "reason": "入口签名与可替换依赖、启动顺序、启动参数与环境变量、链接打开器的契约、测试架子的用法"}
+{"file": ".atw/spec/cli/ui-design.md", "reason": "终端界面的画法与「状态的写法」：网页界面沿用状态的词；网页界面开着时终端上的新块要先写进这里"}
+{"file": ".atw/spec/cli/terminal-output.md", "reason": "呈现层的职责、提问的主题、块与块之间的空行：待命的提问和退回终端界面时的那句原因落在这里"}
+{"file": ".atw/spec/cli/skill-install.md", "reason": "本仓库 skill 与第三方 Skill 的状态、覆盖前另问、安装范围：两套界面共用这些规矩"}
+{"file": ".atw/spec/cli/mcp-install.md", "reason": "MCP 的命令写法、key 的值不许去的地方：网页界面填 key 要守这些。「命令先展示再执行」只管终端界面——网页界面的汇总不列命令（维护者 2026-10-11 定的），但执行的命令是同一份"}
+{"file": ".atw/spec/cli/tool-install.md", "reason": "工具的整行 shell 接管终端、成败只看复核：工具仍在终端里装"}
+{"file": "docs/adr/0004-web-ui-by-default-terminal-ui-as-fallback.md", "reason": "本任务的决定：缺省网页界面、终端界面留作退路，放弃的做法与后果"}
+{"file": "docs/adr/0001-installer-lives-in-skill-repo.md", "reason": "cli/ 自成一体的三条规矩：页面的源码、构建、静态文件都要在 cli/ 里"}
+{"file": "GLOSSARY.md", "reason": "术语：网页界面、终端界面、宿主、安装范围、用途、推荐、外部项目"}
+{"file": ".atw/tasks/10-11-installer-web-ui/research/web-ui-interview.md", "reason": "访谈的 11 条结论、从代码里查到的事实、要跟着改的现有文字、留给工单定的事"}
+{"file": ".atw/spec/cli/web-ui-design.md", "reason": "网页界面的设计规范：选定的方向「利落」、颜色与字号、各个画面的版式、不可选的画法、汇总里不列命令、开场动画、还没经维护者看过的画法"}
+{"file": ".atw/tasks/10-11-installer-web-ui/ui-direction.md", "reason": "工单 01 的结论：选定的方向、维护者的原话与喜欢不喜欢、没选的十二个候选、设计说明与验收重点、对比页上没画照着推的"}
+{"file": ".atw/tasks/10-11-installer-web-ui/research/acceptance-feedback.md", "reason": "验收时维护者提的两处修改：原话、说定的与顺着推的——开场引导和左栏的行高、当前的用途"}

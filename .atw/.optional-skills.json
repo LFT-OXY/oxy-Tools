@@ -42,6 +42,13 @@
         ".agents/skills",
         ".claude/skills"
       ]
+    },
+    "atw-run-tickets": {
+      "version": "1.0.0",
+      "roots": [
+        ".agents/skills",
+        ".claude/skills"
+      ]
     }
   }
 }
