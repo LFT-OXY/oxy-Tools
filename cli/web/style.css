@@ -20,6 +20,8 @@
   --intro-ground: #000000;
   --intro-ink: #f7f8f8;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 各栏自己的滚动条：轨道不另铺底色（深色下原生的轨道是一条亮带），滑块用最淡的文字色 */
+  scrollbar-color: var(--faint) transparent;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -294,7 +296,8 @@ input[type='checkbox']:checked::after {
   top: 0;
   z-index: 1;
   flex-wrap: wrap;
-  align-items: center;
+  /* 照基线对齐：标题下面多一行目录时，同一行的宿主和安装范围仍对着标题，不掉到两行中间 */
+  align-items: baseline;
   gap: 8px 20px;
   padding: 14px 0 12px;
   border-bottom: 1px solid var(--line);
@@ -1013,10 +1016,11 @@ progress::-moz-progress-bar {
 .sym {
   text-align: center;
 }
-/* 正在装：转动的小圆环 */
+/* 正在装：转动的小圆环。贴着这一行的第一行（和 ✓ ✗ 一样），后面的话折成两行时不掉到两行中间 */
 .spinner {
-  align-self: center;
+  align-self: start;
   justify-self: center;
+  margin-top: 4.5px;
   width: 11px;
   height: 11px;
   border: 1.5px solid var(--ink);

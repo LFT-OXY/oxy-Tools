@@ -75,7 +75,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | Claude Code | 可执行路径上有 `claude` 命令 | `<主目录>/.claude/skills` |
 | Codex | 可执行路径上有 `codex` 命令 | `<主目录>/.agents/skills`（它自己的 `.codex/skills` 已被标为废弃） |
 
-每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量和主目录，交出一个 `Host`），都回答同样的问题（关于 MCP 的那几问见 [安装 MCP](./mcp-install.md)）；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
+每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量、主目录和项目目录，交出一个 `Host`），都回答同样的问题（关于 MCP 的那几问见 [安装 MCP](./mcp-install.md)）；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
 
 “可执行路径上有某个命令”的判断不执行任何东西：把 `env.PATH` 按本机的分隔符（`path.delimiter`）拆开，在每个目录里找这个名字，以及这个名字接上 `env.PATHEXT` 里每个扩展名（Windows 上有这个变量，别的系统没有）；找到的必须是可执行的普通文件，同名的目录不算。不看传入的 `platform`——文件系统的事按真实的系统来，测试里才能在任何系统上用一个临时目录当可执行路径。
 
@@ -83,7 +83,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 | 检测到的宿主 | 主菜单上方 | 进「推荐」或一个用途之后 |
 |--------------|-----------|-------------------|
-| 两个及以上 | 「AI Agent」一行每个宿主后面一个 `✓` | 列表里有组件时先问「装进哪些 AI Agent」：多选，默认全选，名字后面不写目录；再进混合列表。列表里只有外部项目时不问 |
+| 两个及以上 | 「AI Agent」一行每个宿主后面一个 `✓` | 列表里有 skill、第三方 Skill 或 MCP 时先问「装进哪些 AI Agent」：多选，默认全选，名字后面不写目录；再进混合列表。列表里只有工具和外部项目时不问 |
 | 只有一个 | 没检测到的写「– 未检测到」，另有一行「注意」说明它被跳过、组件只装进检测到的那个 | 不问，直接用它 |
 | 一个都没有 | 每个都写「– 未检测到」，一行「注意」说明暂时装不了组件 | 照常进得去，不问宿主；skill 的行不可选，状态的位置写「需要 AI Agent」，外部项目照常可选 |
 
@@ -123,6 +123,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - **全都没同意时不向 GitHub 查询**：没有要下载的。
 - 汇总里只要有一项是覆盖，表后就有一行「注意  覆盖即整目录替换，目录内的本地改动会丢失」；全是新装时没有这一行。
 - 同意覆盖符号链接时，换掉的只是链接本身（见落盘第 5 步），那里变成一个装好的真目录，链接原先指向的目录一个字节都不动。
+- **上表的最后一栏和「另问」说的是终端界面。** 网页界面不在确认之后再问：`asksOverwrite` 的那些项在汇总里各自那一行下面有一个「覆盖它」，缺省不勾、每次进汇总都从不勾起；备注只写「非本工具安装」，不带「另行确认」。没勾的同样不装、结果里同样是跳过。见 [网页界面的契约](./web-ui-contract.md) 的「汇总」。
 
 **向 GitHub 查询（`githubCatalogSource().pin`）**
 
@@ -174,7 +175,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 ### 4. Validation & Error Matrix
 
-查询失败（`pin` 抛 `CatalogError`）：流程把它交给 `ui.failure()`，写到标准错误，然后回到主菜单，**不退出、不改变退出状态**，本轮什么都不装。
+查询失败（`pin` 抛 `CatalogError`）：共用的执行把它交给进度的接收方（`report.failure`）——终端界面是 `ui.failure()`，写到标准错误，然后回到主菜单；网页界面是这一批结果里的出错说明，页面上可以接着挑。两边都**不退出、不改变退出状态**，这一批本仓库的 skill 一个都不装（同一批里的第三方 Skill、MCP、工具照常）。
 
 | 情况 | `CatalogFailure` | 说明里有什么 |
 |------|------------------|--------------|
@@ -193,7 +194,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | 下载这一步的其他失败 | `download`，`detail` 是 `HTTP 503`、`ENOTFOUND`、`ENOENT`（本地来源里没有这个目录）等 |
 | 建临时目录、写标记、建 skill 目录、挪动、替换失败 | `write`，`detail` 是错误码 |
 
-不算失败的一种结果：用户没同意覆盖。它不经 `installSkill`，流程直接调 `progress.skip(target)`，这一行写「跳过 未同意覆盖，保持原样」，退出状态不变。
+不算失败的一种结果：用户没同意覆盖。它不经 `installSkill`，共用的执行（`runPlan`）直接调 `progress.skill.skip(target)`，这一行写「跳过 未同意覆盖，保持原样」，退出状态不变。
 
 令牌的值不出现在任何输出里：出错说明只提变量名。
 
@@ -405,9 +406,9 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 | 怎么执行 | 外部命令执行器不经 shell 的那种方式：命令和参数分开传，输出不上屏，也读不到用户的输入。它自己的字符画、框线、进度到不了终端，也没有机会提问 |
 | 额外的环境变量 | `DISABLE_TELEMETRY=1`、`DO_NOT_TRACK=1`（关掉它的遥测，两个它都认）；外加这个宿主的 `skillsCli.env`。两种安装范围带的是同一份 |
 | 在哪个目录下运行 | 装到全局：不指定（进程自己的当前目录，它不影响全局的落点）。装到项目：项目目录。展示的命令里不写目录——项目目录就是用户运行安装器时所在的目录，照着敲落在同一处 |
-| 列在哪 | 「将执行的命令」里，排在 MCP 和工具的前面，完整展示。环境变量不写在里面 |
+| 列在哪 | 终端界面：「将执行的命令」里，排在 MCP 和工具的前面，完整展示，环境变量不写在里面。网页界面的汇总不列命令 |
 
-`skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 是空的。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
+`skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 是空的。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：终端界面的汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
 
 > **Warning**：skills CLI 另外会往用户的状态目录里写一个 `skills/.skill-lock.json`（`XDG_STATE_HOME` 下，记着装了哪些 skill、来源和时间）。安装器不读它，也不清它；手动核对时要把 `XDG_*` 也指到临时目录。**装到项目时它不写那一个，改在项目目录的最上层写一个 `skills-lock.json`**（和 `.claude`、`.agents` 并排；2026-10-11 实测）。安装器同样不读、不清，汇总里也不提它——用户的项目里会多出这个文件，要不要在画面上交代一句，维护者还没有定。
 
@@ -415,7 +416,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 
 命令结束后 `<skillsDir>/<名字>/SKILL.md` 在才算装上，不看退出状态；`installThirdPartySkill` 不抛错。各种结局的结果行见下面的出错矩阵。
 
-**流程里的位置（先后在 `listing.ts` 和 `plan.ts`，终端界面的提问在 `flow.ts`）**
+**流程里的位置（先后在 `listing.ts` 和 `plan.ts`；下面的提问和画面说的是终端界面，在 `flow.ts`，网页界面的见最后一条）**
 
 - 混合列表里第三方 Skill 自成一段，排在本仓库的 skill 之后、MCP 之前；段内带推荐的在前，其余按名字。
 - 列表确认之后、问 key 之前，**每个勾选的、含多个 skill 的条目各问一次**要其中哪几个（多选，起始一个都不勾）；只含一个的不问。清单里一个都不勾就确认：这一条不装，其余勾选的照常。汇总里选「返回修改」再走到这一问时，上次勾的还在。
@@ -423,6 +424,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 - 这一轮有第三方 Skill 要装时，命令下面多一行「注意」：装的是作者当时的最新版，维护者没有逐版检查。排在覆盖的提醒之后。
 - **目标位置已有东西的，选了「开始安装」之后、执行之前逐项另问**，缺省不覆盖——skills CLI 自己遇到同名目录是直接覆盖的。排在本仓库 skill 的那几问之后。没同意的那一项不执行命令，结果里是「跳过 未同意覆盖，保持原样」。想更新一个已经装过的第三方 Skill 也要答一次「是」。
 - 执行的先后：本仓库的 skill、第三方 Skill、MCP、工具。前三样共用「正在安装」分区，进行中的那一行写「正在安装…」。
+- **网页界面里是同样的规矩、换了地方**：含多个 skill 的条目勾上之后在卡片上当场挑（意图 `choose`），不另问；汇总里一个条目一段、每个 skill 一小组，不列命令；目标位置已有东西的在汇总里逐项勾「覆盖它」，缺省不勾；执行的先后和成败怎么判不变。见 [网页界面的契约](./web-ui-contract.md) 的「第三方 Skill」。
 
 ### 4. Validation & Error Matrix
 
@@ -439,7 +441,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 | 没有 | 非零退出 | `✗ … 失败 安装命令退出状态 1` |
 | 没有 | 没能运行 | `✗ … 失败 安装命令没能运行（ENOENT）`；错误没带错误码时不写括号 |
 
-- 原因里不转述 skills CLI 的话（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）；完整的命令在汇总里，用户可以照着自己跑一遍看原因。
+- 原因里不转述 skills CLI 的话（理由见 [安装 MCP](./mcp-install.md) 的 Design Decision）；终端界面里完整的命令在汇总里，用户可以照着自己跑一遍看原因；网页界面的汇总不列命令，没有这条出路。
 - 执行器当场抛出（没返回承诺）的也算「没能运行」，不取错误的消息。
 - 没同意覆盖的那一项不执行命令，结果是「跳过 未同意覆盖，保持原样」，计入合计的跳过。
 
@@ -486,10 +488,10 @@ outcome = result.exitCode === 0 ? 'installed' : 'failed';
 #### Correct
 
 ```ts
-// 一条命令一个 skill、一个宿主；汇总里展示的 Command 对象就是之后执行的那一个
-const command = skillsCliCommand(entry.source, name, host);
-// 成败只看复核
-const result = await installThirdPartySkill(command, host, runCommand, () => hasSkillFile(host.skillsDir, name));
+// 一条命令一个 skill、一个宿主；计划里的这个 Command 对象就是之后执行的那一个（终端界面的汇总展示的也是它）
+const command = skillsCliCommand(entry.source, name, host, scope);
+// 成败只看复核：看的是这个安装范围下的 skill 目录；装到项目时在项目目录下运行
+const result = await installThirdPartySkill(command, host, runCommand, () => hasSkillFile(skillsDir, name), cwd);
 ```
 
 ### 已知的限制
@@ -547,7 +549,7 @@ const result = await installThirdPartySkill(command, host, runCommand, () => has
 
 **Decision**：现在只有至少一项的操作是「覆盖」时才打这一行。全是新装时没有东西会丢，这一行只是噪音；有了「操作」一栏，哪些会被覆盖已经逐行标出。
 
-**没有经维护者确认**；要它固定出现，改 `ui.installSummary` 里那一个条件即可。
+**没有经维护者确认**；要它固定出现，改 `plan.ts` 里 `notices.overwrites` 那一个条件即可。
 
 ---
 

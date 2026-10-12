@@ -38,7 +38,7 @@ export interface ToolResult {
 export async function installTool(command: string, runCommand: CommandRunner, check: () => boolean): Promise<ToolResult>; // 不抛错
 
 // cli/src/installer.ts
-export interface CommandOptions { shell: true }
+export type CommandOptions = { shell: true } | { shell?: never; env?: Readonly<Record<string, string>>; cwd?: string }; // 工具只用前一支
 export type CommandRunner = (command: string, args: readonly string[], options?: CommandOptions) => Promise<CommandResult>;
 
 // cli/src/availability.ts —— 两套界面共用，见总览的「两套界面共用的部分」
@@ -50,7 +50,7 @@ export interface ToolTarget { name: string; command: string; evidence: ToolEvide
 export interface ToolJob { tool: Tool; target: ToolTarget; status: ToolStatus }       // 计划里的一项：装不了的工具即使在勾选里也没有这一项
 ```
 
-`installCommand` 在算计划时（`planInstall`）算出来、交给汇总展示，之后 `runPlan` 里 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
+`installCommand` 在算计划时（`planInstall`）算出来、交给汇总（终端界面的汇总展示它，网页界面的不展示），之后 `runPlan` 里 `installTool` 执行的就是 `ToolTarget.command` 这同一个字符串——“看到的就是执行的”靠的是不重算。
 
 ### 3. Contracts
 
@@ -83,7 +83,7 @@ export interface ToolJob { tool: Tool; target: ToolTarget; status: ToolStatus } 
 | `check.command` | 一个命令的名字：`^[A-Za-z0-9._-]+$` 且不是 `.`、`..`——要拿它去可执行路径的各个目录里找，所以不带目录 |
 | `check.path` | 主目录下的相对路径，与 skill 的 `path` 同一条规则（`/` 分段，拒绝绝对路径、`..`、空段） |
 
-**安装命令是一整行 shell，不是“命令 + 参数”**（维护者 2026-10-09 确认）。官方安装命令大多是 `curl … | sh` 这样的管道，拆成参数写不出来。它和 MCP 的 `server.command` 是两套口径：那边不经过 shell、每个词只收安全字符；这边整行交给 shell，把关靠三样——目录的审核、只收可见 ASCII 的校验、执行前整行展示并确认。**不要把这条规则套到别的字段上，也不要让别的字段的值流进这一行。**
+**安装命令是一整行 shell，不是“命令 + 参数”**（维护者 2026-10-09 确认）。官方安装命令大多是 `curl … | sh` 这样的管道，拆成参数写不出来。它和 MCP 的 `server.command` 是两套口径：那边不经过 shell、每个词只收安全字符；这边整行交给 shell，把关靠三样——目录的审核、只收可见 ASCII 的校验、执行前整行展示并确认。**第三样只在终端界面成立**：网页界面的汇总不列那一行命令（维护者 2026-10-11 定的，见下面「网页界面下」），它到轮到这个工具时才打在终端上，那时已经确认过了。**不要把这条规则套到别的字段上，也不要让别的字段的值流进这一行。**
 
 **按系统选命令（`installCommand`）**
 

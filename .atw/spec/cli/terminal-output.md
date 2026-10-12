@@ -6,14 +6,14 @@
 
 ## 只有呈现层往终端上写
 
-`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary({ skills, mcps, tools })`、`ui.mainMenu(recommended, purposes)`，不拼样式码、不算栏宽、不决定空行。
+`createUi()` 返回的对象是唯一的输出出口。其余模块只说“显示什么”：`flow.ts` 调 `ui.installSummary({ skills, thirdParty, mcps, tools })`、`ui.mainMenu(recommended, purposes)`，不拼样式码、不算栏宽、不决定空行。
 
 ```ts
 // 错：流程里自己拼
 stdout.write(`\x1b[1m${target.name}\x1b[22m  ${target.location}\n`);
 
 // 对：交给呈现层
-ui.installSummary({ skills, mcps, tools });
+ui.installSummary({ skills, thirdParty, mcps, tools });
 ```
 
 提问也一样：呈现层把提问做成 `SelectQuestion`（已排好栏的每一行、光标起始位置、主题），提问器只负责问。**主题要把交互库用到的样式函数和它自带的句子全部盖掉**（前缀、光标、提问、回答、活动行、说明、不可选的行、在不可选的行上按确认时的那句话及其样式、按键提示），原因见下一节。
@@ -255,7 +255,7 @@ const inline = tables.every((table) => notesOf(table).every((note) => startOf(ta
 
 ## 将执行的命令
 
-执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。它接在汇总的小表后面；这一轮只装本仓库的 skill 时没有命令，也就没有这个分区。接着是 `ui.summaryNotices(notices)` 和 `ui.confirmInstall()`：开始安装、返回修改、取消（`decision`）。
+终端界面里，执行任何外部命令之前，`ui.commandList(commands)` 把每一条完整地列出来（网页界面的汇总不列命令，见 [网页界面的设计](./web-ui-design.md)）：一个「将执行 N 条命令」分区，每条前面是暗淡的右对齐序号（至少两位宽），之后空一行。它接在汇总的小表后面；这一轮只装本仓库的 skill 时没有命令，也就没有这个分区。接着是 `ui.summaryNotices(notices)` 和 `ui.confirmInstall()`：开始安装、返回修改、取消（`decision`）。
 
 一条命令有两种：`Command`（命令加参数，第三方 Skill 和 MCP 的，不经 shell）和**一个字符串**（工具的安装命令，一整行 shell）。两种列在同一个分区里、接着编号，先后照执行的先后（第三方 Skill 在前，MCP 其次，工具在后）。第三方 Skill 的命令执行时另带的环境变量不写在里面。
 
@@ -265,7 +265,7 @@ const inline = tables.every((table) => notesOf(table).every((note) => startOf(ta
 | 参数里有 shell 会另作解释的字符（网址里的 `&`、`?`） | 展示时给这个参数加单引号（`commandLine`），照着敲也是同一条命令；执行时不经过 shell，参数原样传 |
 | 工具的安装命令（字符串） | **原样写出，不加引号、不改一个字**，不经 `commandLine`：它本来就是给 shell 的一整行，展示的和交给 shell 的是同一个字符串。前面不写工具的名字 |
 | 命令里有 key（`KeyArgument`） | 写成 `变量名=<变量名>`，尖括号这一段是黄色粗体，不加引号；真实的值不到呈现层来。`commandLine(command, placeholder)` 的第二个参数给占位符上样式 |
-| 要提醒的事 | `ui.summaryNotices(notices)`：命令之后（没有命令时是小表之后）空一行，每件事一行「注意」键值，**几行挨着**，最后空一行；一件都没有时什么都不打。先后是：覆盖即整目录替换（有覆盖项才有）、第三方 Skill 装的是作者当时的最新版（这一轮有第三方 Skill 才有）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、装到项目的 MCP 带着的 key 会以明文写进哪个文件（`plaintextKeys`：只有变量名和文件名）、装到项目的 MCP 写进了哪个文件且要在宿主里批准才启用（`approvals`，一个宿主一行）、必填的 key 没填而不安装的 MCP（一个 MCP 一行）、宿主会当场打开浏览器登录（一个宿主一行）。流程只说有哪几件事，句子和先后由呈现层定 |
+| 要提醒的事 | `ui.summaryNotices(notices)`：命令之后（没有命令时是小表之后）空一行，每件事一行「注意」键值，**几行挨着**，最后空一行；一件都没有时什么都不打。先后是：覆盖即整目录替换（有覆盖项才有）、第三方 Skill 装的是作者当时的最新版（这一轮有第三方 Skill 才有）、「key 以占位符显示，执行时才代入真实的值」（命令里有占位符才有）、装到项目的 MCP 带着的 key 会以明文写进哪个文件（`plaintextKeys`：只有变量名和文件名）、装到项目的 MCP 写进了哪个文件且要在宿主里批准才启用（`approvals`，一个宿主一行）、必填的 key 没填而不安装的 MCP（一个 MCP 一行）、宿主会当场打开浏览器登录（一个宿主一行）。流程只说有哪几件事，句子和先后由两套界面共用的 `noticeTexts`（`notice-text.ts`）定，呈现层只管打成「注意」的键值行 |
 
 ```ts
 // 错：命令交给会截断的栏，用户确认的就不是完整的命令
@@ -279,7 +279,7 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 
 ## 工具：执行分区与结论
 
-工具的勾选、汇总、命令、确认都和别的类型走同一套函数；只有执行不一样，因为它的输出不归呈现层管。它是 `ui.installation(skills, mcps, tools)` 返回的 `tool.begin(target)`：
+工具的勾选、汇总、命令、确认都和别的类型走同一套函数；只有执行不一样，因为它的输出不归呈现层管。它是 `ui.installation(skills, thirdParty, mcps, tools)` 返回的 `tool.begin(target)`（网页界面开着时是 `ui.toolSections(tools).begin`，同一段代码）：
 
 | 段 | 画法 |
 |----|------|
@@ -310,7 +310,7 @@ hanging('  ', `${dim(pad(String(index + 1), indexWidth, 'right'))}  `, commandLi
 | 表头 | 分隔行，和别的多选列表一样比条目多缩进（勾选框的宽度加一格）。栏是名称、每个所选的宿主一栏状态（一个宿主都没检测到时是一栏「状态」）、说明；一个组件都没有时没有状态栏，只有「名称」「说明」 |
 | 栏宽 | 名称一栏按所有条目里最长的名字定；每栏状态按这一栏最长的一格定（表头也算；不可选的行不写状态，不算），不可选的原因更宽时撑宽最后一栏（见「不可选的行」）；剩下的给说明。**组件的说明不足 `MIN_ABOUT`（12 列）时整栏不写**，表头也不写「说明」 |
 | skill 的行 | 名称、各栏状态（`statusCell`，和原先 skill 列表的写法一样）、说明。一段里按名字排 |
-| MCP 的行 | 名称、各栏状态（`mcpStatusCell`：未配置、已配置、未知、不支持）、说明。排在 skill 一段后面，段与段之间不空行；一段里带推荐的在前、其余按名字（流程排好了交进来） |
+| MCP 的行 | 名称、各栏状态（`statusCell(mcpStatusText(…))`，词来自两套界面共用的 `status-text.ts`：未配置、已配置、未知、不支持）、说明。排在 skill 一段后面，段与段之间不空行；一段里带推荐的在前、其余按名字（流程排好了交进来） |
 | 工具的行 | 名称、**一个状态**（已安装绿、未安装暗淡）、说明。状态写在第一栏状态的位置，后面补到各个状态栏合起来那么宽，说明仍和别的行从同一列起；它算进第一栏的栏宽。排在 MCP 一段后面，一段里带推荐的在前、其余按名字 |
 | 不可选的组件行 | 一个宿主都没检测到时每个组件都是，原因「需要 AI Agent」；所选的宿主一个都不支持的 MCP，原因「需要别的 AI Agent」；工具另有两种——这个系统不支持（「不支持 macOS」）、它要的宿主一个都没检测到（「需要别的 AI Agent」）。原因写在状态的位置：照交互库的拼法（「名称 + 一个空格 + 原因」），名称少补一格，`disabled` 是补到状态栏总宽的原因加说明；原因用 `REASON_MARK` 圈着，整行压暗时它保持正常亮度 |
 | 推荐的标记 | `marksRecommended` 时，带推荐的行（本仓库的 skill 全是，MCP、工具和外部项目看 `recommended`）在说明的最前面写 `推荐 · `（英文 `pick · `，文案是 `recommendedMark`，分隔用 `symbols.separator`）。标记不截断，截断的是它后面的说明；说明一栏连标记都放不下时整格不写 |
@@ -373,7 +373,7 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 `  ${dim(pad(t.linkKey, KEY_WIDTH))}${paint('underline', app.url)}`,
 ```
 
-**不打开浏览器**，画面上也没有「已在默认浏览器打开」「没能打开浏览器」这两句：链接打开器不再被调用（见 [入口与测试](./installer-entry.md)）。
+**不打开浏览器**，画面上也没有「已在默认浏览器打开」「没能打开浏览器」这两句：外部项目的链接不由安装器打开；链接打开器只用来打开网页界面（见 [入口与测试](./installer-entry.md)）。
 
 ---
 
@@ -401,7 +401,7 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 - 都写到**标准输出**：没有一样是出错。
 - `webUnavailable`、`webEnded('terminal')` 以空行收尾，`spaced` 因此是「是」：紧接着的语言提问上方不另空，回答之后收成的那一行与上面那一行之间隔着这一行空行。带了 `--lang` 不问语言时，隔开的是它与主菜单。
 - 原因和收场的情形都是一个种类（`WebUnavailable`、`WebEnding`，在 `messages.ts`），写成哪句话照文案；别的模块里不写给用户看的句子。
-- 网页界面开着时终端上不重复页面上的内容：一批安装的进度不打在终端上（工具的分区除外，工单 12）。例外只有上面第四行——页面关了，结果没有别处可看。
+- 网页界面开着时终端上不重复页面上的内容：一批安装的进度不打在终端上（工具的分区除外，工单 12）。例外只有上表里 `ui.installation(…, true)` 补打结果的那一行——页面关了，结果没有别处可看。
 
 ---
 
@@ -432,7 +432,7 @@ export interface Prompter {
 | 别的键 | 不理，也不回显：每次按键都把输入行清掉（`rl.clearLine(0)`） |
 | 早先敲的键 | **待命画出来之后的头 100 毫秒里收到的键不算数**（`STALE_KEYS_MS`）。没有提问在听的时候敲的键留在终端那头，下一个提问一画出来就送到——在伪终端里实测晚 0–1 毫秒；不挡的话，一批安装进行中敲的 `t` 会在装完的那一刻把网页界面切到终端界面，页面上的结果就看不到了。人看到提示再按，快不过 100 毫秒。Ctrl+C 不受这一条管：它不经这个按键处理，交互库自己接 |
 
-正式的实现（`inquirer-prompter.ts`）是用交互库的 `createPrompt` 写的一个小提示：`useKeypress` 里认按键，`context` 给 `{ signal: withdraw, clearPromptOnDone: true }`；被收回时交互库以 `AbortPromptError` 拒绝，这里把它变成 `undefined`。**它画的只有主题给的那一行**，没有用交互库自带的任何样式（不调 `makeTheme`、`usePrefix`），所以没有会漏出来的青色；`prompts.test.ts` 的「真实的画面：待命」照样把原始输出查一遍。
+正式的实现（`inquirer-prompter.ts`）是用交互库的 `createPrompt` 写的一个小提示：`useKeypress` 里认按键，`context` 给 `{ signal: withdraw, clearPromptOnDone: true }`；被收回时交互库以 `AbortPromptError` 拒绝，这里把它变成 `undefined`。**它画的只有主题给的那一行**，没有用交互库自带的任何样式（不调 `makeTheme`、`usePrefix`），所以没有会漏出来的青色；`prompts.test.ts` 的「真实的画面：网页界面开着时的待命」照样把原始输出查一遍。
 
 `createPrompt` 来自 `@inquirer/core`。它本来就随另外四个 `@inquirer/*` 一起装着（它们都依赖它），工单 11 把它**写进了 `package.json` 的 `dependencies`**（版本范围和那四个包要的一样，`^12.0.4`）：直接引用一个没声明的包，在按包隔离依赖的安装方式下（pnpm）会找不到。用户装下来的包一个都没多。
 
@@ -525,7 +525,7 @@ return { message, default: false, answers, theme: asking() }; // 是否题
 
 ## 改写已经打出去的行
 
-转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。这一轮的执行共用一个 `progress(targets, asides)`：`targets` 是进「正在安装」分区的行（skill、MCP），照先后排；`asides` 是输出不归呈现层管、各占一个分区的那些（工具）的名字。名字一栏按两样合起来定宽，宿主一栏按 `targets` 定宽（一行都没有时没有这一栏）。`targets` 的每一项 `begin(target, doing)` 时给出进行中那一行写的字（skill 是「正在下载」，MCP 是「正在配置」）；`asides` 的每一项 `aside(name, intro)` 另起一个以名字为标题的分区，`intro` 是标题下面先打的行。对外是一个 `ui.installation(skills, mcps, tools)`，返回 `{ skill: { begin, skip }, mcp: { begin, skip }, tool: { begin }, finish }`：各类组件只负责把各自的结果说成文字，行数、改写标题、要不要再列一遍都在 `progress` 里。再加一类组件时照此接上，不要另写一遍，也不要另开一个「正在安装」分区——那样标题就要改写两处。
+转动符号所在的那一行用 `\r\x1b[2K` 重写（`ui.ts` 的 `spin`：加载提示、安装进行中的那一项都用它）。这一轮的执行共用一个 `progress(targets, asides, recap = false)`（`recap` 是安装中页面关了之后补打结果的那一种）：`targets` 是进「正在安装」分区的行（skill、第三方 Skill、MCP），照先后排；`asides` 是输出不归呈现层管、各占一个分区的那些（工具）的名字。名字一栏按两样合起来定宽，宿主一栏按 `targets` 定宽（一行都没有时没有这一栏）。`targets` 的每一项 `begin(target, doing)` 时给出进行中那一行写的字（skill 是「正在下载」，MCP 是「正在配置」）；`asides` 的每一项 `aside(name, intro)` 另起一个以名字为标题的分区，`intro` 是标题下面先打的行。对外是一个 `ui.installation(skills, thirdParty, mcps, tools, recap = false)`，返回 `{ skill: { begin, skip }, thirdParty: { begin, skip }, mcp: { begin, skip }, tool: { begin }, finish }`：各类组件只负责把各自的结果说成文字，行数、改写标题、要不要再列一遍都在 `progress` 里。再加一类组件时照此接上，不要另写一遍，也不要另开一个「正在安装」分区——那样标题就要改写两处。
 
 **结果行和合计是再下面一层的 `tally()`**：`succeeded(lead, text)`、`failed(lead, reason)`、`skipped(lead, reason)` 各返回一项的结果行（`lead` 给结果符号排好位置；原因过长时自己折行）并记进合计，`total()` 返回一行空行、通栏横线和「合计」那一行。一轮只有一份，skill、MCP、工具的行都记在它里面，**不要再抄一遍失败行的拼法和合计**。
 
@@ -587,6 +587,6 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。`...PROJECT` 的项目目录里还有一份配过 `markitdown` 的 `.mcp.json`（全局配过的是 `excel`），MCP 的状态按范围读才看得出来；`toProjectMcpSummary` 勾上 `markitdown` 和带 key 的 `mistral-ocr` 停在汇总上（明文和批准的两行提醒），`intoProjectCodexOnly` 在宿主选择上去掉 Claude Code 再进项目范围的列表（MCP 不可选）。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
-- **要画出网页界面开着时终端上的那个块、网页界面结束时的那一行，或退回终端界面的那一行原因**，场景给 `web`：`'opens'` 是浏览器打开了，画面停在那个块上（按键提示是待命的提问画的，`keys` 里给 `t` 就是改用终端界面）；`'finished'` 是页面连上之后点了「完成」，`'closed'` 是页面连上之后关了，`'closed-installing'` 是页面勾了两个 skill（场景给了 `picks` 就勾它说的那几个，`[类型, 名字]` 一项一个）、确认安装之后关了——这三种由脚本拿着网址扮演页面（`cli/test/browser.ts` 的 `openPage`），安装器自己退出；`'installs'`（工单 12）是页面勾了 `picks` 那几个、确认安装，**页面一直开着**，画面停在这一批装完的时候——或者停在轮到的工具的命令还在跑的时候（场景的 `shell` 让它 `hangs`）：脚本等的是页面收到「这一批装完了」或「有一行正在终端里装」；`'no-browser'` 是链接打开器拒绝，`'no-server'` 是页面的静态文件读不到，这两种退回终端界面（语言提问照旧由假键盘代答，要停在它上面就给 `answersLanguage: true`）。没给 `web` 的场景拍的是终端界面：脚本在启动参数最前面带上 `--terminal`（和测试架子一样；场景的平台缺省是 macOS，不带的话就进网页界面了），给了 `web` 的不带；预览页开头把页面打一遍（`buildWeb()`），本机的网页是真的起来的，但**预览页从不真的打开浏览器**——链接打开器只是兑现或拒绝。网址每次运行都不同（端口是系统挑的，口令是随机的），画面上一律换成 `SAMPLE_WEB_URL`，两次生成才逐字节相同。`'opens'` 的场景收场时按 Ctrl+C（落在待命的提问上）并触发 `interrupt`（正在装的时候没有提问在问，靠它把本机的网页关掉）；`keys` 里的 `t` 要等待命画出来 100 毫秒之后才按（见「待命的提问」的「早先敲的键」），脚本自己等。扮演页面的三种里安装器是自己退出的：脚本等它退出才读画面，5 秒还没退出就报错停下；预览里页面断开之后的时限是 100 毫秒（`PAGE_GRACE_MS`）。走终端界面的场景里链接打开器不会被调用：它被调用了脚本就报错。
+- **要画出网页界面开着时终端上的那个块、网页界面结束时的那一行，或退回终端界面的那一行原因**，场景给 `web`：`'opens'` 是浏览器打开了，画面停在那个块上（按键提示是待命的提问画的，`keys` 里给 `t` 就是改用终端界面）；`'finished'` 是页面连上之后点了「完成」，`'closed'` 是页面连上之后关了，`'closed-installing'` 是页面勾了两个 skill（场景给了 `picks` 就勾它说的那几个，`[类型, 名字]` 一项一个）、确认安装之后关了——这三种由脚本拿着网址扮演页面（`cli/test/browser.ts` 的 `openPage`），安装器自己退出；`'installs'`（工单 12）是页面勾了 `picks` 那几个、确认安装，**页面一直开着**，画面停在这一批装完的时候——或者停在轮到的工具的命令还在跑的时候（场景的 `shell` 让它 `hangs`）：脚本等的是页面收到「这一批装完了」或「有一行正在终端里装」；`'no-browser'` 是链接打开器拒绝，`'no-server'` 是页面的静态文件读不到，这两种退回终端界面（语言提问照旧由假键盘代答，要停在它上面就给 `answersLanguage: true`）。没给 `web` 的场景拍的是终端界面：脚本在启动参数最前面带上 `--terminal`（和测试架子一样；场景的平台缺省是 macOS，不带的话就进网页界面了），给了 `web` 的不带；预览页开头把页面打一遍（`buildWeb()`），本机的网页是真的起来的，但**预览页从不真的打开浏览器**——链接打开器只是兑现或拒绝。网址每次运行都不同（端口是系统挑的，口令是随机的），画面上一律换成 `SAMPLE_WEB_URL`，两次生成才逐字节相同。`'opens'` 的场景收场时按 Ctrl+C（落在待命的提问上）并触发 `interrupt`（正在装的时候没有提问在问，靠它把本机的网页关掉）；`keys` 里的 `t` 要等待命画出来 100 毫秒之后才按（见「待命的提问」的「早先敲的键」），脚本自己等。扮演页面的三种里安装器是自己退出的：脚本等它退出才读画面，5 秒还没退出就报错停下；预览里页面断开之后的时限是 100 毫秒（`PAGE_GRACE_MS`）。走终端界面的场景带着 `--terminal`，链接打开器不会被调用；万一被调用了它是拒绝，那一格里会多出一行「浏览器打不开，改用终端界面」的「注意」，对照时看得出来（脚本不因此停下）。
 - **两份预览都用得上的样例在 `cli/scripts/preview-samples.ts`**（工单 `10-11-installer-web-ui` 的 05 分出去的）：样例条目（`SHOWCASE_SKILLS`、`SHOWCASE_PURPOSES`、`SHOWCASE_APPS`、`MIXED_CATALOG`，「文档处理」下的 `DOCUMENT_MCPS`、`DOCUMENT_TOOLS`、`DOCUMENT_THIRD_PARTY`，`LONG_NAME_MCP`，写一个带 key 的环境变量的 `keyed`）；拼目录来源的 `catalogOf` 与 `downloads`；这台机器事先的样子（`BOTH_HOSTS`，两个宿主的 skill 目录 `CLAUDE_SKILLS`、`CODEX_SKILLS`，`installedSkill`，四种状态都有的 `MIXED`，配过 excel 的 `EXCEL_CONFIGURED`，装过两条第三方 Skill 的 `THIRD_PARTY_INSTALLED`）；场景里「这台机器」那几个字段的类型 `World`，和照它布置出临时的可执行路径、主目录、项目目录的 `stageWorld`。只有终端界面的预览用的（`with*` 那些拼好的目录、按键序列、假的命令）留在 `preview.ts`。网页界面的预览要用哪一样，就把它搬过去，不抄一份。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问和安装范围提问的做法：假键盘等那一问最后一个选项的名字画出来才按回车。

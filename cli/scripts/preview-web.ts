@@ -617,6 +617,22 @@ class KeyLeaked extends Error {
 const MARKUP_AND_VALUES = `document.documentElement.outerHTML + '\\n' + [...document.querySelectorAll('input, textarea')].map((field) => field.value).join('\\n')`;
 // 中间一栏的内容有多高：窗口拉到这么高，整张列表就都在屏幕上
 const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
+/**
+ * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了。
+ * 给出是哪几块。开场那一层除外：那条命令是靠裁掉来一个字一个字敲出来的
+ */
+const OVERFLOWING = `(() => {
+  const found = [];
+  if (document.documentElement.scrollWidth > innerWidth) found.push('整页比窗口宽 ' + (document.documentElement.scrollWidth - innerWidth) + 'px');
+  for (const element of document.querySelectorAll('body *')) {
+    if (element.closest('.intro')) continue;
+    const { overflowX, overflowY } = getComputedStyle(element);
+    const name = element.tagName.toLowerCase() + (typeof element.className === 'string' && element.className ? '.' + element.className.trim().replace(/\\s+/g, '.') : '');
+    if (overflowX !== 'visible' && element.scrollWidth > element.clientWidth + 1) found.push(name + ' 里的内容比它宽 ' + (element.scrollWidth - element.clientWidth) + 'px');
+    if ((overflowY === 'hidden' || overflowY === 'clip') && element.scrollHeight > element.clientHeight + 1) found.push(name + ' 把内容裁掉了 ' + (element.scrollHeight - element.clientHeight) + 'px');
+  }
+  return found;
+})()`;
 
 // ── 驱动安装器，拍下页面 ──────────────────────────────────────────────────────
 
@@ -752,7 +768,15 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     // 假装填的 key 一处都不许有：页面的 HTML、每个输入框里的值、这一路从安装器收到的全部东西
     const everything = [await tab.evaluate<string>(MARKUP_AND_VALUES), page.received()].join('\n');
     if (everything.includes(FAKE_KEY)) throw new KeyLeaked('页面或安装器的答复里');
-    return { scene, prefix, viewport: { width, height }, files, text: await tab.evaluate<string>('document.body.innerText') };
+    const text = await tab.evaluate<string>('document.body.innerText');
+    // 每一格在两种窗口下都不许有放不下的地方：拍的那一种，和另一种（只查，不拍）
+    for (const size of [{ width, height }, ...[DESKTOP, NARROW].filter((standard) => standard.width !== width)]) {
+      await tab.viewport(size.width, size.height);
+      await tab.evaluate(SETTLED);
+      const overflowing = await tab.evaluate<string[]>(OVERFLOWING);
+      if (overflowing.length > 0) throw new Error(`${size.width}×${size.height} 下放不下：${overflowing.join('；')}`);
+    }
+    return { scene, prefix, viewport: { width, height }, files, text };
   } finally {
     for (const cleanup of cleanups.reverse()) await Promise.resolve().then(cleanup).catch(() => undefined);
   }
@@ -842,7 +866,10 @@ try {
     }
   }
   const html = preview(frames, chrome.product);
-  if (html.includes(FAKE_KEY)) throw new KeyLeaked('生成的预览页里');
+  if (html.includes(FAKE_KEY)) {
+    rmSync(target, { recursive: true, force: true });
+    throw new KeyLeaked('生成的预览页里');
+  }
   writeFileSync(join(target, 'index.html'), html);
   console.log(`${frames.length} 格 → ${join(target, 'index.html')}`);
 } finally {

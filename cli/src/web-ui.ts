@@ -382,7 +382,7 @@ const installable = (machine: Machine, session: Session): Pickable[] => session.
 const keyed = (machine: Machine, session: Session): Mcp[] => installable(machine, session).filter((entry): entry is Mcp => isMcp(entry) && entry.env.length > 0);
 
 // 把勾选算成要装的每一项，状态现探测；要逐项决定的覆盖里没同意的已经标成不装。
-// 各类的条目各按名字，和终端界面的先后一样；交给算计划的只有填过的 key 的变量名
+// 各类的条目各按名字（一批可以跨用途，没有现成的先后）；交给算计划的只有填过的 key 的变量名
 function planOf(runtime: Runtime, session: Session): Plan {
   const picked = installable(runtime, session);
   const selection = {

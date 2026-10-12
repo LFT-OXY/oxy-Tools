@@ -21,7 +21,7 @@ export interface InstallerOptions {
   env: Environment;               // Readonly<Record<string, string | undefined>>
   platform: NodeJS.Platform;
   systemLocale: string;           // 如 zh-CN；环境变量里没有语言设置时用它判断系统语言
-  stdout: TerminalOutput;         // { write(text), isTTY, rows? }
+  stdout: TerminalOutput;         // { write(text), isTTY, rows?, columns? }
   stderr: TerminalOutput;
   stdinIsTTY: boolean;
   // 五样可替换的外部依赖
@@ -102,7 +102,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 
 语言提问用提问器现有的单选（`ui.languageQuestion()`），不是新的提示种类。选择只留在这次运行的内存里：安装器不为它写任何文件，下一次启动照样问。在它上面按 Ctrl+C 和别的提问一样以 130 退出。
 
-**主菜单与流程**（任务 `10-10-catalog-purpose-categories` 逐张工单搬过来，这里写的是工单 09 之后的样子）
+**主菜单与流程（终端界面）**（任务 `10-10-catalog-purpose-categories` 逐张工单搬过来的。网页界面没有主菜单，一页到底：流程见 [网页界面的契约](./web-ui-contract.md)）
 
 | 主菜单的行 | 什么时候有 | 数量 | 选了之后 |
 |------------|------------|------|----------|
@@ -158,7 +158,7 @@ export function systemLinkOpener(platform: NodeJS.Platform): LinkOpener;
 | 2 | 启动参数不对 |
 | 130 | 用户按了 Ctrl+C（提问中——网页界面开着时是待命的提问；或提问之外经 `interrupt`——读目录、下载、网页界面正在装的时候） |
 
-单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流），都**不改变退出状态**：前一种只在结果里列出，后一种打出出错说明后回到主菜单。
+单个条目安装失败（skill 装不上、宿主的 MCP 命令非零退出或起不来、工具装完复核不通过）、向 GitHub 查询失败（含被限流），都**不改变退出状态**：前一种只在结果里列出，后一种打出出错说明后回到主菜单（网页界面里出错说明在页面上这一批的结果里，可以接着挑）。
 
 **目录来源**
 
@@ -250,7 +250,7 @@ export function localCatalogSource(dir: string): CatalogSource;
 
 `Catalog.flaws` 里的东西安装器一句都不提（它不影响用户能装什么），只有目录校验命令报，见 [目录校验与 CI](./catalog-validation.md)。本仓库的 skill 没有用途是常态，不是问题：凡是放进仓库的 skill 都属于「推荐」，只有个别的另外归到一个用途下。
 
-`url` 收得这么紧是因为它有两个去处：原样打到终端上让用户复制，和交给系统的打开命令。规则保证里面没有空白、引号、反斜杠、控制字符和不可见的字符（如改变文字方向的 `U+202E`），所以它在终端上不会被折开、看到的就是打开的、在任何系统的命令行上都是一个参数。这条规则是工单 07 的实现者定的，**维护者尚未确认**；要放宽（比如收 `http`）先改这里和 `catalog.ts` 的 `HTTPS_URL`。
+`url` 收得这么紧是因为它有两个去处：原样打到终端上让用户复制，和放进网页界面的画面状态、由页面画成在新标签页打开的链接（安装器自己从不把它交给系统的打开命令）。规则保证里面没有空白、引号、反斜杠、控制字符和不可见的字符（如改变文字方向的 `U+202E`），所以它在终端上不会被折开、看到的就是打开的。这条规则是工单 07 的实现者定的，**维护者尚未确认**；要放宽（比如收 `http`）先改这里和 `catalog.ts` 的 `HTTPS_URL`。
 
 其他不能继续的情况：标准输入或标准输出不是终端 →「没有交互式终端」，不打印大标志，不问语言，不读目录；任何没预料到的异常 →「意外错误」，原因取消息的第一行（为空时用错误的类型名），不打印堆栈。
 
