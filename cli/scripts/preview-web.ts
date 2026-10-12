@@ -278,12 +278,12 @@ const KEYED_TO_PROJECT = {
   project: { '.mcp.json': JSON.stringify({ mcpServers: { markitdown: { command: 'uvx' } } }) },
   drive: inOrder(crowded, toProject, picking('wizard'), pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing),
 };
-// 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
 // 同一批东西、三个宿主：项目里 Pi 那边配过 grok-search（它的 .pi/mcp.json）
 const KEYED_TO_PROJECT_WITH_PI = {
   ...KEYED_TO_PROJECT,
   project: { ...KEYED_TO_PROJECT.project, '.pi/mcp.json': JSON.stringify({ mcpServers: { 'grok-search': { command: 'npx' } } }) },
 };
+// 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
 const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
 const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
 // 两条第三方 Skill：只含一个 skill 的 drawio-skill（两个宿主下都装过了）和含三个的 paper-craft-skills，挑其中两个
@@ -379,6 +379,12 @@ const scenes: Scene[] = [
   {
     title: '浏览 · 装到项目',
     note: '选了「项目」：标题下面写明只对哪个目录生效（主目录里的以 ~ 开头）；全局装过的在项目里都是「未装」',
+    drive: inOrder(crowded, toProject),
+  },
+  {
+    title: '浏览 · 只检测到 Claude Code · 装到项目',
+    note: '宿主和安装范围和标题同一行；目录那一行在标题下面自己占一行，照整条的宽度排——标题那一格只剩两百来像素，短短的一个目录不许因此折成两行',
+    ...ONE_HOST,
     drive: inOrder(crowded, toProject),
   },
   { title: '浏览 · 装到项目 · 1024×768', note: '宿主和安装范围两样一起折到标题的下一行，目录那一行在它们上面', drive: inOrder(crowded, toProject), viewport: NARROW },
@@ -595,6 +601,7 @@ const scenes: Scene[] = [
     drive: crowded,
     reveal: 'markitdown',
   },
+  { title: '浏览 · 只检测到 Pi · 装到项目', note: '没检测到的两个写在旁边，这一行更长；目录那一行照样不折', ...PI_ONLY, ...PI_CONFIGURED, drive: inOrder(crowded, toProject) },
   {
     title: '汇总 · 带 key 的 MCP、装到项目 · 三个宿主',
     note: 'MCP 装进 Claude Code 和 Pi，每个宿主一行，没有 Codex 的；Pi 那边配过的 grok-search 写「覆盖」和备注。「注意」里：key 会以明文写进 .mcp.json 和 .pi/mcp.json（说变量名和文件，不说值）、两个宿主各一句要批准之后才启用、mistral-ocr 缺必填的 key 这次不装。每一句都完整显示',
@@ -760,7 +767,8 @@ const MARKUP_AND_VALUES = `document.documentElement.outerHTML + '\\n' + [...docu
 const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
 /**
  * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了；
- * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）。给出是哪几块。
+ * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）；顶上那一条里的目录那一行在整条放得下
+ * 它的时候折了行（只检测到一个宿主时标题那一格只剩两百来像素，这一行不许照它排）。给出是哪几块。
  * 开场里的那条命令除外：它是靠裁掉来一个字一个字敲出来的
  */
 const OVERFLOWING = `(() => {
@@ -774,6 +782,17 @@ const OVERFLOWING = `(() => {
     const name = element.tagName.toLowerCase() + (typeof element.className === 'string' && element.className ? '.' + element.className.trim().replace(/\\s+/g, '.') : '');
     if (overflowX !== 'visible' && element.scrollWidth > element.clientWidth + 1) found.push(name + ' 里的内容比它宽 ' + (element.scrollWidth - element.clientWidth) + 'px');
     if ((overflowY === 'hidden' || overflowY === 'clip') && element.scrollHeight > element.clientHeight + 1) found.push(name + ' 把内容裁掉了 ' + (element.scrollHeight - element.clientHeight) + 'px');
+  }
+  const directory = document.querySelector('.bar .directory');
+  if (directory) {
+    // 不折行时它有多宽、多高：拿一份不折行的拷贝量
+    const unwrapped = directory.cloneNode(true);
+    unwrapped.style.cssText = 'position:absolute;visibility:hidden;flex:none;width:max-content;white-space:nowrap';
+    directory.parentElement.append(unwrapped);
+    const natural = unwrapped.getBoundingClientRect();
+    unwrapped.remove();
+    const room = directory.closest('.bar').clientWidth;
+    if (natural.width <= room && directory.getBoundingClientRect().height > natural.height + 1) found.push('顶上那一条里的目录那一行折了行：它要 ' + Math.ceil(natural.width) + 'px，整条有 ' + room + 'px');
   }
   return found;
 })()`;

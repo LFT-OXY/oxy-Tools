@@ -152,7 +152,7 @@ export function systemCommandRunner(): CommandRunner;
 | 移除 | `claude mcp remove --scope user <名字>` | `codex mcp remove <名字>` | `pi mcp remove <名字>` |
 | 同名已存在时再添加 | **失败**，退出状态 1（`already exists in user config`） | 直接覆盖，退出状态 0 | 直接替换，退出状态 0 |
 | 移除一个不存在的 | 失败，退出状态 1 | 成功，退出状态 0 | 失败，退出状态 1 |
-| 用户级配置 | `<配置目录>/.claude.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是主目录，`CLAUDE_CONFIG_DIR` 非空时用它 | `<CODEX_HOME>/config.toml` 的 `mcp_servers` 表；`CODEX_HOME` 缺省是 `<主目录>/.codex` | `<配置目录>/mcp.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是 `<主目录>/.pi/agent`，`PI_CODING_AGENT_DIR` 非空时用它 |
+| 用户级配置 | `<配置目录>/.claude.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是主目录，`CLAUDE_CONFIG_DIR` 非空时用它 | `<CODEX_HOME>/config.toml` 的 `mcp_servers` 表；`CODEX_HOME` 缺省是 `<主目录>/.codex` | `<配置目录>/mcp.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是 `<主目录>/.pi/agent`，`PI_CODING_AGENT_DIR` 非空时用它（开头的 `~` 照 Pi 的规矩展开，见下面「状态」） |
 
 - 远程地址只有一种：可流式的 HTTP。SSE、请求头鉴权都不在范围内。
 - **Pi 的选项都跟在名字后面、`--` 前面**：它的解析是名字之后遇到 `--`（或凑够两个位置参数）就把剩下的原样当作启动命令，所以 `--env`、项目范围的 `-l` 放在这之前才被它认。它的添加命令**只写配置、不连接服务器**（`docs/cli.md`：does not connect），不事先检查版本：没有 `pi mcp` 的旧版 Pi 下这条命令非零退出，照普通的失败报告。Pi 把只差 `-` 和 `_` 的名字当成同一个服务器，状态探测按名字原样比，不管这一条（目录里现有的 MCP 名字没有只差这两个字符的）。
@@ -175,6 +175,7 @@ export function systemCommandRunner(): CommandRunner;
 | 读得出来，有这个名字 | `configured` | `已配置`（绿） |
 | 文件读不了（权限、那里是个目录）、解析不了、顶层或那张表不是对象 | `unknown` | `未知`（默认色） |
 
+- **Pi 的配置目录照 Pi 自己的规矩从 `PI_CODING_AGENT_DIR` 读**（`hosts.ts` 的 `piAgentDir`；对照它的 `dist/config.js` 的 `getAgentDir` 和 `dist/utils/paths.js` 的 `normalizePath`，只读）：值单独是一个 `~` 就是主目录，以 `~/` 开头（Windows 上还有 `~\`）就是主目录下的那一段，别的原样用。不展开的话，写成 `~/x` 的值在安装器这边成了相对路径，读不到文件，状态全是「未配置」、汇总写「新装」而不是「覆盖」。Pi 另外还认 `file://` 开头的写法、在 Windows 上把 shell 风格的路径（`/c/Users/…`）转成盘符路径，这两样安装器**没有**照做——值写成那样时状态会看错地方。`CLAUDE_CONFIG_DIR`、`CODEX_HOME` 原样用，没有动。
 - Codex 的配置用 `smol-toml` 解析，所以 `[mcp_servers.x]`、行内表、带点的键哪种写法都认得；解析失败就是 `unknown`，不自己猜。
 - 状态每次进列表都现探测，只探测这张列表里的 MCP；某个宿主那一栏出现 `unknown` 时，列表上方多一行「注意  读不到 <宿主> 的配置，无法判断哪些 MCP 已配置」。列表里没有 MCP 时没有这一行。
 
@@ -262,12 +263,12 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 | 怎么起 | `cross-spawn`，不经过 shell；Windows 上宿主的命令常是 npm 装出来的 `.cmd`，Node 不许直接起，`cross-spawn` 替我们经 `cmd.exe` 起并把参数转义好 |
 | 输入输出 | `stdio: 'ignore'`：命令的输出**不上屏**（进行中的那一行在转，混进别的字会乱），它也不从终端读输入 |
 | 环境 | 继承进程自己的环境。第三个参数给了 `{ env }` 时，那几个变量盖在继承来的环境之上（`{ ...process.env, ...env }`），别的不动；值是空字符串就是把那个变量清空。只有安装第三方 Skill 用它：关掉 skills CLI 的遥测、清空 `CLAUDE_CONFIG_DIR`，见 [安装 skill](./skill-install.md) |
-| 运行目录 | 不指定时是进程自己的当前目录。第三个参数给了 `cwd` 时在那个目录下运行（`spawn` 的 `cwd`），`env` 可以不给。装到项目时用它：skills CLI 不带全局选项时装进它的当前目录，见 [安装 skill](./skill-install.md)；Claude Code 带 `--scope project` 时把配置写进它的当前目录。装到全局的 MCP 命令不指定 |
+| 运行目录 | 不指定时是进程自己的当前目录。第三个参数给了 `cwd` 时在那个目录下运行（`spawn` 的 `cwd`），`env` 可以不给。装到项目时用它：skills CLI 不带全局选项时装进它的当前目录，见 [安装 skill](./skill-install.md)；Claude Code 带 `--scope project` 时把配置写进它的当前目录的 `.mcp.json`，Pi 带 `-l` 时写进它的当前目录下的 `.pi/mcp.json`。装到全局的 MCP 命令不指定 |
 | 结果 | 结束了就兑现 `{ exitCode }`（被信号结束算 1）；起不来（命令不存在）就拒绝，错误带 `code` |
 
 > **Warning**：`systemCommandRunner` 不进自动化测试（测试里的执行器只记录）。改了它就用一个假的宿主命令手动核对：参数原样逐个传到（含带 `&`、`'`、`$` 的网址）、非零退出、命令不存在、它的输出没有漏到终端上。Windows 经 `cmd.exe` 的那一支至今没有在真机上跑过。带 `env` 的那一支 2026-10-10 用真实的 `npx skills` 在临时主目录里核对过一次（macOS）：遥测的两个变量和清空的 `CLAUDE_CONFIG_DIR` 都传到了，输出没有漏到终端上，记录在任务 `10-10-catalog-purpose-categories` 的 `research/third-party-trial-record.md`。 带 `cwd` 的那一支 2026-10-11 同样用真实的 `npx skills` 核对过一次（macOS）：从另一个目录起脚本，skill 落在 `cwd` 指的目录里，起脚本的目录没有多出东西，记录在同一个任务的 `research/project-scope-trial-record.md`。
 >
-> 它起子进程时继承的是**进程自己的环境**，不是传给 `runInstaller` 的 `env`（正式运行时两者是同一份）。用真实的 `claude`、`codex` 做端到端核对时，`CLAUDE_CONFIG_DIR` 和 `CODEX_HOME` 要在起脚本的 shell 里 `export` 到临时目录，脚本开头先断言它们确实指向临时目录再动手；只放进 `env` 的话，状态探测看的是临时目录，命令却写进了真实的配置（工单 09 时出过一次，当场用宿主的移除命令撤回了）。
+> 它起子进程时继承的是**进程自己的环境**，不是传给 `runInstaller` 的 `env`（正式运行时两者是同一份）。用真实的 `claude`、`codex`、`pi` 做端到端核对时，`CLAUDE_CONFIG_DIR`、`CODEX_HOME` 和 `PI_CODING_AGENT_DIR` 要在起脚本的 shell 里 `export` 到临时目录，脚本开头先断言它们确实指向临时目录再动手；只放进 `env` 的话，状态探测看的是临时目录，命令却写进了真实的配置（工单 09 时出过一次，当场用宿主的移除命令撤回了）。装到项目的那几条（Claude Code 的 `--scope project`、Pi 的 `-l`）写的是命令的运行目录，核对时项目目录同样要是临时目录。Pi 的这一套至今没有在真机上跑过，由维护者在虚拟机里做（见任务 `10-12-installer-add-pi-omp-hosts` 的 `prd.md`）。
 >
 > key 的值不做任何校验就成了一个参数（只去掉首尾空白）。它是用户自己输入的，不是远程数据；但 `cross-spawn` 对全局装的 `.cmd` 只转义一次，值里有双引号时在 Windows 上可能传错。要不要拒绝或剥掉引号，维护者还没有定。
 
@@ -334,7 +335,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 - `mixed.test.ts`：三种类型同表（段的先后、两种类型的状态落在各自宿主那一栏、原因比状态栏宽时各行的说明仍从同一列起、读不到配置的提示只在列表里有 MCP 时出现）；一次勾 skill、MCP、外部项目（汇总的小表、命令只有 MCP 的、skill 的各行排在 MCP 之前、取消什么都不做、返回修改勾选都在、三种失败互不影响、向 GitHub 查询失败时 MCP 照常装）；汇总里的提醒（先后、几行挨着、没填 key 的不算进 N、只剩 skill 时没有命令分区、全被跳过时直接是结果再是外部项目）。
 
-- Pi 的 MCP 在 `cli/test/pi-mcp.test.ts`，网页界面那一边在 `cli/test/web-pi-mcp.test.ts`：全局和项目的添加（两种连接方式、带 key）与移除命令是**字面值**（项目的带 `-l`、`cwd` 是 `result.project`）；汇总里展示的就是那几条、key 的位置是占位符；状态按范围读（用户级、`PI_CODING_AGENT_DIR`、项目里的 `.pi/mcp.json`、每一种读不了、另一个范围的那一份写坏了不提）；已配置的先移除再添加、状态未知的先尝试移除；装完再进列表看到新状态；非零退出与没能起来（别的宿主照常）；三个宿主时三栏状态、三条命令、三行结果、key 只问一次、值不出现在终端和任何文件里、必填的没填每个宿主一行跳过；装到项目的两句提醒（文件名、启动命令、先后、选全局时没有）、三个宿主时两个文件与两句要批准；没有登录的提醒（和 Codex 一起选时只说 Codex）；中英文与 79 列。
+- Pi 的 MCP 在 `cli/test/pi-mcp.test.ts`，网页界面那一边在 `cli/test/web-pi-mcp.test.ts`：全局和项目的添加（两种连接方式、带 key）与移除命令是**字面值**（项目的带 `-l`、`cwd` 是 `result.project`）；汇总里展示的就是那几条、key 的位置是占位符；状态按范围读（用户级、`PI_CODING_AGENT_DIR`——含以 `~/` 开头和单独一个 `~` 的值、项目里的 `.pi/mcp.json`、每一种读不了、另一个范围的那一份写坏了不提）；已配置的先移除再添加、状态未知的先尝试移除；装完再进列表看到新状态；非零退出与没能起来（别的宿主照常）；三个宿主时三栏状态、三条命令、三行结果、key 只问一次、值不出现在终端和任何文件里、必填的没填每个宿主一行跳过；装到项目的两句提醒（文件名、启动命令、先后、选全局时没有）、三个宿主时两个文件与两句要批准；没有登录的提醒（和 Codex 一起选时只说 Codex）；中英文与 79 列。
 - **没有 MCP 配置的宿主此刻没有测试**：工单 01 写在 `pi.test.ts`、`web-pi.test.ts` 里的「Pi 的 MCP 安装器不装」两组随 Pi 接上 MCP 删掉了。工单 04 为 omp 重写时要盖住的：只选它时不可选与原因（全局、项目各一条）、和别的宿主一起选时那一栏的「不支持」、只装进别的宿主、没有它的命令、它的配置文件不读不写、英文。
 - 装到项目的在 `cli/test/scope.test.ts` 的「把 MCP 装到项目」几组（列表上方两行「注意」上下的空行在 `spacing.test.ts`）：Claude Code 的添加（两种连接方式、带 key）与移除命令是**字面值**且 `cwd` 是 `result.project`；汇总里展示的就是那几条；状态按范围读（项目里配过而全局没有、反过来、`.mcp.json` 写坏、用户级配置写坏不提）；装完再进列表看到新状态（`commandResult` 照真的来：往 `cwd` 的 `.mcp.json` 里写）；明文写入的提醒在「开始安装吗」之前、有变量名和文件名而没有值，可选的 key 留空时没有，选全局时没有；要批准的提醒；Codex 那一栏的「不支持」、列表上方的说明（列表里的 MCP 本来就都不支持它时没有）、只装进 Claude Code、没有登录的提醒；只有 Codex 时不可选与原因；`hosts` 只含一个宿主的条目在两种原因之间怎么选；英文界面与 79 列；真实的画面里在不可选的行上按空格勾不上。
 

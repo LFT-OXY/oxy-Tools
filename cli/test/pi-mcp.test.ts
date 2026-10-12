@@ -129,6 +129,35 @@ describe('Pi 的 MCP 状态：装到全局时看用户级配置', () => {
     expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+已配置\s/m);
   });
 
+  // Pi 自己先把这个值里开头的 ~ 展开成主目录再用（它的 dist/config.js 的 getAgentDir，2026-10-12 只读对照）
+  it('PI_CODING_AGENT_DIR 以 ~/ 开头：照 Pi 的规矩展开成主目录下的那个目录；那里配过的显示已配置，再装是覆盖', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      onPath: ONLY_PI,
+      env: { PI_CODING_AGENT_DIR: '~/elsewhere/pi' },
+      home: { 'elsewhere/pi/mcp.json': piConfig('docs-local'), '.pi/agent/mcp.json': piConfig('tracker-remote') },
+      answers: install('docs-local'),
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+已配置\s/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s/m);
+    expect(result.output).toMatch(/^\s+docs-local\s+Pi\s+覆盖\s+已配置，先移除再添加$/m);
+    expect(result.commands).toEqual([PI_REMOVE_LOCAL, PI_ADD_LOCAL]);
+  });
+
+  it('PI_CODING_AGENT_DIR 就是一个 ~：配置目录是主目录本身', async () => {
+    const result = await run({
+      catalog: withMcps(),
+      onPath: ONLY_PI,
+      env: { PI_CODING_AGENT_DIR: '~' },
+      home: { 'mcp.json': piConfig('tracker-remote') },
+      answers: browse,
+    });
+
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+已配置\s/m);
+  });
+
   it('项目里的 .pi/mcp.json 不算：选全局时不读它', async () => {
     const result = await run({ catalog: withMcps(), onPath: ONLY_PI, project: { '.pi/mcp.json': '{ 写坏了' }, answers: browse });
 

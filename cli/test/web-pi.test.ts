@@ -24,7 +24,7 @@ const open = async (page: Page, name: string): Promise<ViewState> => {
   return page.until((state) => state.listing?.id === row.id);
 };
 // 勾上一个条目，给出之后的画面状态
-const tick = async (page: Page, kind: 'skill' | 'thirdParty' | 'mcp', name: string): Promise<ViewState> => {
+const tick = async (page: Page, kind: 'skill' | 'thirdParty', name: string): Promise<ViewState> => {
   await page.send({ type: 'pick', kind, name, on: true });
   return page.until((state) => state.selected.some((entry) => entry.name === name));
 };

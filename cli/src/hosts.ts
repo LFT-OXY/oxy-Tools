@@ -1,7 +1,7 @@
 // 宿主适配：宿主在不在、skill 装到哪个目录、通用的 skill 安装程序怎么称呼它、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置；
 // 后两问全局和项目范围各答一遍——宿主也可以没有 MCP 配置，那就是它的 MCP 安装器不装。
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, sep } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { isRecord, type Mcp } from './catalog.ts';
 
@@ -159,7 +159,7 @@ const codex: HostAdapter = (env, homeDir, projectDir) => ({
  * Pi：以 pi 命令是否可用判断在不在。skill 装进共用 skill 目录（.agents/skills，Codex 已经在用的那一个），不用它自己的
  * ~/.pi/agent/skills：skills CLI 给它只装到这里，本仓库的 skill 和第三方 Skill 才在同一处（ADR-0005）。
  * 用户级的 MCP 记在配置目录下 mcp.json 顶层的 mcpServers 里，配置目录缺省是主目录的 .pi/agent，可由 PI_CODING_AGENT_DIR
- * 改到别处。项目范围的记在项目目录的 .pi/mcp.json 里：添加和移除带上 -l，它就写运行目录下的这个文件；写进去的要用户
+ * 改到别处（它先把这个值开头的 ~ 展开成主目录）。项目范围的记在项目目录的 .pi/mcp.json 里：添加和移除带上 -l，它就写运行目录下的这个文件；写进去的要用户
  * 在这个目录下启动它并信任这个项目之后才读。它的添加命令只写配置、不连接服务器，所以远程地址的 MCP 不会当场登录。
  */
 const pi: HostAdapter = (env, homeDir, projectDir) => ({
@@ -170,7 +170,7 @@ const pi: HostAdapter = (env, homeDir, projectDir) => ({
   projectSkillsDir: join(projectDir, '.agents', 'skills'),
   skillsCli: { agent: 'pi', env: {} },
   mcp: {
-    configuredMcps: () => namesIn(join(env['PI_CODING_AGENT_DIR'] || join(homeDir, '.pi', 'agent'), 'mcp.json'), JSON.parse, 'mcpServers'),
+    configuredMcps: () => namesIn(join(piAgentDir(env, homeDir), 'mcp.json'), JSON.parse, 'mcpServers'),
     ...piMcpCommands([]),
   },
   projectMcp: {
@@ -181,6 +181,14 @@ const pi: HostAdapter = (env, homeDir, projectDir) => ({
     ...piMcpCommands(['-l']),
   },
 });
+
+// Pi 的配置目录。PI_CODING_AGENT_DIR 照 Pi 自己的规矩读：单独一个 ~ 是主目录，以 ~/ 开头的（Windows 上还有 ~\）是主目录下的那一段
+function piAgentDir(env: Environment, homeDir: string): string {
+  const given = env['PI_CODING_AGENT_DIR'];
+  if (!given) return join(homeDir, '.pi', 'agent');
+  if (given === '~') return homeDir;
+  return given.startsWith('~/') || (sep === '\\' && given.startsWith('~\\')) ? join(homeDir, given.slice(2)) : given;
+}
 
 // Pi 项目范围的 MCP 配置文件，相对项目目录
 const PI_PROJECT_MCP_FILE = join('.pi', 'mcp.json');

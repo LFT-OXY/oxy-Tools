@@ -26,6 +26,9 @@ const CODEX_ADD_LOCAL = { command: 'codex', args: ['mcp', 'add', 'docs-local', '
 const KEY_VALUE = 'sk-test-4f9a2c71d0';
 const PI_ADD_KEYED = { command: 'pi', args: ['mcp', 'add', 'search-keyed', '--env', `SEARCH_API_KEY=${KEY_VALUE}`, '--', 'npx', '-y', '@example/search-mcp'] };
 // 装到项目：带 -l，在项目目录下运行（cwd 到断言时才知道）
+const PI_REMOVE_LOCAL_IN_PROJECT = { command: 'pi', args: ['mcp', 'remove', 'docs-local', '-l'] };
+const PI_ADD_LOCAL_IN_PROJECT = { command: 'pi', args: ['mcp', 'add', 'docs-local', '-l', '--', 'npx', '-y', '@example/docs-mcp@latest'] };
+const PI_ADD_REMOTE_IN_PROJECT = { command: 'pi', args: ['mcp', 'add', 'tracker-remote', '-l', '--url', 'https://mcp.example.org/mcp'] };
 const PI_ADD_KEYED_TO_PROJECT = { command: 'pi', args: ['mcp', 'add', 'search-keyed', '-l', '--env', `SEARCH_API_KEY=${KEY_VALUE}`, '--', 'npx', '-y', '@example/search-mcp'] };
 
 // 正常收场：点「完成」，等安装器把连接收掉
@@ -218,6 +221,62 @@ describe('网页界面：把 MCP 装进 Pi', () => {
     expect(whenExited.exitCode).toBe(0);
   });
 
+  it('必填的 key 没填：这个 MCP 不装——汇总里不算它、提醒写明缺哪个变量，结果里每个宿主一行跳过；别的照常装进 Pi', async () => {
+    let summary: SummaryView | undefined;
+    let batch: RunView | undefined;
+    const result = await run({
+      catalog: withMcps(LOCAL, KEYED_MCP),
+      onPath: ALL_HOSTS,
+      page: async (page) => {
+        await open(page, WEB_SEARCH);
+        await tick(page, 'docs-local');
+        await tick(page, 'search-keyed');
+        await toKeys(page);
+        summary = await review(page);
+        batch = await install(page, summary);
+        await done(page);
+      },
+    });
+
+    expect(summary?.title).toBe('将安装 1 项');
+    expect(rows(summary)).toEqual(['docs-local · MCP', '  Claude Code | 新装', '  Codex | 新装', '  Pi | 新装']);
+    expect(summary?.notices).toEqual(['search-keyed 缺少必填的 SEARCH_API_KEY，这次不安装']);
+    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL, CODEX_ADD_LOCAL, PI_ADD_LOCAL]);
+    expect(outcomes(batch)).toEqual([
+      'docs-local Claude Code 已配置',
+      'docs-local Codex 已配置',
+      'docs-local Pi 已配置',
+      'search-keyed Claude Code 跳过 未填写必填的 SEARCH_API_KEY',
+      'search-keyed Codex 跳过 未填写必填的 SEARCH_API_KEY',
+      'search-keyed Pi 跳过 未填写必填的 SEARCH_API_KEY',
+    ]);
+    expect(totals(batch)).toBe('3 成功 · 0 失败 · 3 跳过');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('只检测到 Pi、只勾了它、必填的没填：汇总是「将安装 0 项」加那条提醒，结果里是跳过，一条 pi 命令都没执行', async () => {
+    let summary: SummaryView | undefined;
+    let batch: RunView | undefined;
+    const result = await run({
+      catalog: withMcps(KEYED_MCP),
+      onPath: ONLY_PI,
+      page: async (page) => {
+        await open(page, WEB_SEARCH);
+        await tick(page, 'search-keyed');
+        await toKeys(page);
+        summary = await review(page);
+        batch = await install(page, summary);
+        await done(page);
+      },
+    });
+
+    expect(summary?.title).toBe('将安装 0 项');
+    expect(summary?.notices).toEqual(['search-keyed 缺少必填的 SEARCH_API_KEY，这次不安装']);
+    expect(result.commands).toEqual([]);
+    expect(outcomes(batch)).toEqual(['search-keyed Pi 跳过 未填写必填的 SEARCH_API_KEY']);
+    expect(totals(batch)).toBe('0 成功 · 0 失败 · 1 跳过');
+  });
+
   it('执行的命令和用终端界面装同样的东西时逐条相同', async () => {
     const web = await run({
       catalog: withMcps(LOCAL, REMOTE),
@@ -299,6 +358,55 @@ describe('网页界面：把 MCP 装到项目的 Pi', () => {
     ]);
     expect(result.commands).toEqual([{ ...PI_ADD_KEYED_TO_PROJECT, cwd: result.project }]);
     expect(outcomes(batch)).toEqual(['search-keyed Pi 已配置']);
+  });
+
+  it('项目里配过的：汇总里是覆盖和备注；先移除再添加，两条都带 -l、都在项目目录下运行', async () => {
+    let listed: ViewState | undefined;
+    let summary: SummaryView | undefined;
+    let batch: RunView | undefined;
+    const result = await run({
+      catalog: withMcps(LOCAL),
+      onPath: ONLY_PI,
+      project: { '.pi/mcp.json': piConfig('docs-local') },
+      page: async (page) => {
+        await open(page, WEB_SEARCH);
+        listed = await toProject(page);
+        await tick(page, 'docs-local');
+        summary = await review(page);
+        batch = await install(page, summary);
+        await done(page);
+      },
+    });
+
+    expect(card(listed, 'docs-local')?.statuses).toEqual([{ host: 'Pi', text: '已配置', tone: 'ready' }]);
+    expect(rows(summary)).toEqual(['docs-local · MCP', '  Pi | 覆盖 | 已配置，先移除再添加']);
+    expect(result.commands).toEqual([
+      { ...PI_REMOVE_LOCAL_IN_PROJECT, cwd: result.project },
+      { ...PI_ADD_LOCAL_IN_PROJECT, cwd: result.project },
+    ]);
+    expect(outcomes(batch)).toEqual(['docs-local Pi 已配置']);
+  });
+
+  it('远程地址的装到项目：命令带 -l 和 --url、在项目目录下运行；有要批准的那一句，没有登录的提醒', async () => {
+    let summary: SummaryView | undefined;
+    let batch: RunView | undefined;
+    const result = await run({
+      catalog: withMcps(REMOTE),
+      onPath: ONLY_PI,
+      page: async (page) => {
+        await open(page, WEB_SEARCH);
+        await toProject(page);
+        await tick(page, 'tracker-remote');
+        summary = await review(page);
+        batch = await install(page, summary);
+        await done(page);
+      },
+    });
+
+    expect(rows(summary)).toEqual(['tracker-remote · MCP', '  Pi | 新装']);
+    expect(summary?.notices).toEqual([`Pi 的 MCP 写进当前目录的 ${PI_FILE}，要你批准之后才启用：在这个目录下启动 pi 时它会问`]);
+    expect(result.commands).toEqual([{ ...PI_ADD_REMOTE_IN_PROJECT, cwd: result.project }]);
+    expect(outcomes(batch)).toEqual(['tracker-remote Pi 已配置']);
   });
 
   it('三个宿主：Codex 那一段是「不支持」并说明原因，装进 Claude Code 和 Pi；明文的提醒点到两个文件，两个宿主各一句要批准', async () => {

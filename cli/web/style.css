@@ -312,6 +312,8 @@ input[type='checkbox']:checked::after {
   padding: 14px 0 12px;
   border-bottom: 1px solid var(--line);
   background: var(--ground);
+  /* 目录那一行要照这一条的宽度排（100cqw） */
+  container-type: inline-size;
 }
 .title {
   display: flex;
@@ -326,9 +328,13 @@ input[type='checkbox']:checked::after {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-/* 选了项目时写明是哪个目录：自己占一行，目录是等宽字，长了在任意处断开、从不截断 */
+/*
+ * 选了项目时写明是哪个目录：自己占一行，目录是等宽字，长了在任意处断开、从不截断。
+ * 这一行照整条的宽度排，不照标题那一格：只有一个宿主时宿主和安装范围和标题同一行，标题那一格只剩两百来像素，
+ * 照它排的话短短的一个目录也会从中间折开
+ */
 .title .directory {
-  flex-basis: 100%;
+  flex: 0 0 100cqw;
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
