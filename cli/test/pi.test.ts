@@ -408,7 +408,8 @@ describe('三个宿主都选了时的 80 列', () => {
     catalogDir({
       catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search', 'beta-pack': 'web-search' } },
     });
-  // 状态最宽的样子：三个宿主下各有不是本工具装的、版本不同的
+  // 状态最宽的样子：三个宿主下各有不是本工具装的、版本不同的。不是本工具装的那个（alpha）只留在列表里、不去装：
+  // 覆盖前问几次、汇总和结果里共用 skill 目录的宿主出几行，都不归这一组管
   const home = {
     '.claude/skills/alpha/SKILL.md': '用户自己写的\n',
     '.agents/skills/alpha/SKILL.md': '用户自己写的\n',
@@ -429,19 +430,17 @@ describe('三个宿主都选了时的 80 列', () => {
       answers: [
         choose(WEB_SEARCH),
         accept(),
-        pick('alpha', 'beta-pack', 'paper-kit', 'solo-notes', 'docs-local', 'tracker-remote'),
+        pick('beta-pack', 'paper-kit', 'solo-notes', 'docs-local', 'tracker-remote'),
         pick('paper-reader', 'paper-comic'),
         choose('开始安装'),
-        yes(),
-        yes(),
-        yes(),
         choose('退出'),
       ],
     });
 
     expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓$/m);
     expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\b/m);
-    expect(result.output).toMatch(/^\s+✓\s+alpha\s+Pi\s+已安装 1\.0\.0$/m);
+    expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+非本工具安装(\s|$)/m);
+    expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+已安装 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
   });
 
@@ -455,17 +454,15 @@ describe('三个宿主都选了时的 80 列', () => {
       answers: [
         choose('Web search & docs retrieval'),
         accept(),
-        pick('alpha', 'beta-pack', 'paper-kit', 'solo-notes', 'docs-local', 'tracker-remote'),
+        pick('beta-pack', 'paper-kit', 'solo-notes', 'docs-local', 'tracker-remote'),
         pick('paper-reader', 'paper-comic'),
         choose('Install'),
-        yes(),
-        yes(),
-        yes(),
         choose('Exit'),
       ],
     });
 
-    expect(result.output).toMatch(/^\s+✓\s+alpha\s+Pi\s+installed 1\.0\.0$/m);
+    expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+Pi\b/m);
+    expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+installed 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
   });
 });

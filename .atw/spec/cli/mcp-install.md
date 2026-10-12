@@ -51,7 +51,7 @@ export interface ProjectMcpConfig extends McpConfig {
 }
 export interface Host {                                    // 不再继承 McpConfig：宿主可以没有 MCP 配置
   mcp?: McpConfig;                                         // 用户级（全局）的配置；没有它表示这个宿主的 MCP 安装器不装（现在的 Pi）
-  id: string;                                              // 目录里指代它的名字：claude-code、codex
+  id: string;                                              // 目录里指代它的名字：claude-code、codex、pi
   // …name、detected、skillsDir 见「安装 skill」
   projectMcp?: ProjectMcpConfig;                           // 有 mcp 而没有它表示这个宿主的 MCP 只能装到全局（Codex）
   remoteMcpLogin?: Command;                                // 见「宿主添加远程地址时会当场登录」
@@ -62,8 +62,8 @@ export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined;
 // cli/src/mcp-status.ts
 // no-config：这个宿主没有 MCP 配置，它的 MCP 安装器不装，哪个安装范围都一样
 // global-only：这个宿主的 MCP 只能装到全局，而这一轮选的是项目
-export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported' | 'global-only';
-export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'global-only'>;
+export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported' | 'no-config' | 'global-only';
+export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'no-config' | 'global-only'>;
 export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[], scope: Scope): McpStatus[][]; // [第几个 MCP][第几个宿主]
 
 // cli/src/install-mcp.ts
