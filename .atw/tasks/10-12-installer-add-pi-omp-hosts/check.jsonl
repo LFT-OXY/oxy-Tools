@@ -1,0 +1,13 @@
+{"file": ".atw/spec/cli/index.md", "reason": "CLI 层总览：自成一体的三条规矩、各模块的职责、入口这个测试接缝、质量检查命令、发布前在本机核对"}
+{"file": ".atw/spec/cli/installer-entry.md", "reason": "入口签名与可替换依赖、测试架子的用法：假的可执行路径、主目录、外部命令执行器"}
+{"file": ".atw/spec/cli/skill-install.md", "reason": "宿主与 skill 目录的对照表、状态探测、覆盖前另问、安装范围、第三方 Skill 经 skills CLI 装：新宿主和共用 skill 目录都落在这里"}
+{"file": ".atw/spec/cli/mcp-install.md", "reason": "MCP 的命令写法、状态探测、key 的值不许去的地方、项目范围的提醒：Pi 的 MCP 照这些来，omp 没有 MCP 配置要写进去"}
+{"file": ".atw/spec/cli/ui-design.md", "reason": "终端界面的画法、状态的写法、80 列：宿主栏变成最多四栏，列表的说明多两句"}
+{"file": ".atw/spec/cli/terminal-output.md", "reason": "呈现层的职责、块与块之间的空行：新加的两句说明打在哪"}
+{"file": ".atw/spec/cli/web-ui-contract.md", "reason": "页面和安装器之间的画面状态与意图：汇总和进度里宿主那一格可以是几个名字"}
+{"file": ".atw/spec/cli/web-ui-design.md", "reason": "网页界面的设计规范与预览的规矩：改了页面就生成预览看一遍、加了状态就加场景"}
+{"file": "docs/adr/0005-pi-and-omp-skills-go-to-shared-skill-directory.md", "reason": "本任务的决定：Pi 和 omp 的 skill 装进共用 skill 目录，没选的做法与后果"}
+{"file": "docs/adr/0003-third-party-skills-installed-by-skills-cli.md", "reason": "第三方 Skill 由 skills CLI 装：omp 借 pi 这个 agent 名的前提"}
+{"file": "docs/adr/0001-installer-lives-in-skill-repo.md", "reason": "cli/ 自成一体的三条规矩"}
+{"file": "GLOSSARY.md", "reason": "术语：宿主、共用 skill 目录、安装范围、全局、项目、第三方 Skill、MCP"}
+{"file": ".atw/tasks/10-12-installer-add-pi-omp-hosts/research/pi-omp-host-facts.md", "reason": "Pi 与 omp 的事实（命令、配置文件、skill 目录、skills CLI 认不认识）和维护者定下的十一条决定"}

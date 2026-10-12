@@ -25,8 +25,12 @@ _Avoid_: 应用项目、参考项、项目（单用）
 _Avoid_: 索引、manifest
 
 **宿主（Host）**:
-组件被装进的 AI 编码代理环境，如 Claude Code、Codex。安装器假定宿主已经存在，不负责安装宿主；界面文案显示为「AI Agent」。
+组件被装进的 AI 编码代理环境，如 Claude Code、Codex、Pi、omp。安装器假定宿主已经存在，不负责安装宿主；界面文案显示为「AI Agent」。
 _Avoid_: 平台、agent（留给子代理）
+
+**共用 skill 目录（Shared skill directory）**:
+几个宿主都会读的同一个 skill 目录。装进它的 skill，这几个宿主都看得到，不论安装时选的是其中哪一个。
+_Avoid_: 公共目录、通用目录
 
 ### 界面
 
