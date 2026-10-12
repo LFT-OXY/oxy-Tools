@@ -83,7 +83,7 @@ export function listingView(
           },
         }
       : {};
-  // MCP 那一区上方的提醒：和终端界面列表上方那两行是同一份话
+  // MCP 那一区上方的提醒：和终端界面列表上方关于 MCP 的那几行是同一份话
   const mcpNotices = mcpColumnNoticeTexts(t, mcpColumnHosts(hosts, status.mcps));
   // 要 key 的 MCP 的标记：说的是条目，不随填没填变
   const keyTag = ({ env }: Mcp): { key?: string } =>

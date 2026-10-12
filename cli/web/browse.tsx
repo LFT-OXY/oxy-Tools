@@ -218,7 +218,7 @@ function Components({ listing, showsHosts, t, send }: { listing: ListingView; sh
       {listing.sections.map((section) => (
         <section key={section.kind}>
           <SectionTitle title={section.title} note={section.note} />
-          {/* MCP 那一区上方的提醒：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了 */}
+          {/* MCP 那一区上方的提醒：哪个宿主的 MCP 只能装到全局、哪个宿主的 MCP 安装器不装、哪个宿主的配置读不了 */}
           {section.notices?.map((notice) => (
             <Notice key={notice} t={t} notice={notice} />
           ))}

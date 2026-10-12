@@ -76,7 +76,10 @@ const filesUnder = (dir: string): string[] => (existsSync(dir) ? (readdirSync(di
 const read = (...path: string[]): string => readFileSync(join(...path), 'utf8');
 const ALPHA_FILES = ['.oxy-tools.json', 'SKILL.md', 'references', join('references', 'guide.md')];
 
-/** 安装器从头到尾没有碰 omp：没有一条外部命令的命令名是 omp，主目录和项目目录下都没有出现 .omp */
+/**
+ * 安装器从头到尾没有碰 omp：没有一条外部命令的命令名是 omp，主目录和项目目录下都没有出现 .omp。每一条走到安装的用例最后都过它一遍；
+ * 主目录里本来就放着 .omp 的那一条除外（omp 自己的配置文件）：它断言记录到的命令逐条相等、那里的文件原样留着
+ */
 function expectOmpUntouched(result: RunResult): void {
   expect(result.commands.map(({ command }) => command)).not.toContain('omp');
   expect(readdirSync(result.home)).not.toContain('.omp');
@@ -245,7 +248,7 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
   it('英文界面：宿主那一格用英文的并列写法 Codex, Pi, omp', async () => {
     let summary: SummaryView | undefined;
     let batch: RunView | undefined;
-    await run({
+    const result = await run({
       argv: ['--lang', 'en'],
       onPath: ALL_HOSTS,
       page: async (page) => {
@@ -262,6 +265,7 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
       `  Codex, Pi, omp | new | ${join('~', SHARED_SKILLS, 'alpha')}`,
     ]);
     expect(outcomes(batch)).toEqual(['alpha Claude Code installed 1.0.0', 'alpha Codex, Pi, omp installed 1.0.0']);
+    expectOmpUntouched(result);
   });
 
   it('只留 omp 时 Skill 那一区也有共用 skill 目录的那句说明', async () => {
@@ -457,6 +461,7 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
     expect(notices(withOmp)).toEqual({ mcp: [OMP_MCP_NOTICE] });
     expect(notices(without)).toEqual({});
     expect(notices(again)).toEqual({ mcp: [OMP_MCP_NOTICE] });
+    expect(card(undetected, 'docs-local')).toBeDefined();
     expect(JSON.stringify(undetected)).not.toContain('安装器装不了');
   });
 

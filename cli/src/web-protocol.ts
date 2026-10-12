@@ -120,7 +120,7 @@ export interface SectionView {
   /** 标题后面的一句说明 */
   note?: string;
   /**
-   * 这一区上方的提醒。MCP 那一区的：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了。Skill 和第三方 Skill 这两区里
+   * 这一区上方的提醒。MCP 那一区的：哪个宿主的 MCP 只能装到全局、哪个宿主的 MCP 安装器不装、哪个宿主的配置读不了。Skill 和第三方 Skill 这两区里
    * 排在前面的那一区的：共用 skill 目录的那句说明（所选的宿主里有用它的才有，只出现一次）
    */
   notices?: string[];

@@ -52,7 +52,8 @@ const installed = (skillsDir: string, name: string, version: string): Record<str
 
 /**
  * 安装器从头到尾没有碰 omp：没有一条外部命令的命令名是 omp，主目录和项目目录下都没有出现 .omp。
- * 每一条装东西的用例最后都过它一遍
+ * 每一条走到安装的用例最后都过它一遍。主目录里本来就该有 .omp 的那三条除外（事先放着 omp 自己的配置文件、事先放着 omp 自己的
+ * skill 目录、假装的命令把 skill 装到了 omp 自己的目录）：它们断言记录到的命令逐条相等，前两条另断言那里的文件原样留着
  */
 function expectOmpUntouched(result: RunResult): void {
   expect(result.commands.map(({ command }) => command)).not.toContain('omp');
@@ -245,8 +246,13 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
 
     expect(listOf(result.output, '? Pick entries to install')).toMatch(/^ □ docs-local\s+none\s+unsupported(\s|$)/m);
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
-    expect(result.output.slice(result.output.indexOf('── Will install'))).not.toMatch(/\bomp\b/);
+    // 从汇总的标题到最后：先确认切到了汇总和结果（里面有 Claude Code 的那两行），再看里面没有 omp
+    const fromSummary = result.output.slice(result.output.indexOf('── Install 1 item'));
+    expect(fromSummary).toMatch(/^\s+docs-local\s+Claude Code\s+new$/m);
+    expect(fromSummary).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+configured$/m);
+    expect(fromSummary).not.toMatch(/\bomp\b/);
     expect(result.output).not.toMatch(/[一-鿿]/);
+    expectOmpUntouched(result);
   });
 });
 
@@ -368,6 +374,7 @@ describe('把本仓库的 skill 装给 omp', () => {
 
     expect(listOf(result.output)).toMatch(/^\s*□ alpha\s+未装\s/m);
     expect(result.output).not.toContain('要覆盖它吗');
+    expect(result.commands).toEqual([]);
     expect(filesUnder(join(result.home, '.omp'))).toEqual(['agent', join('agent', 'skills'), join('agent', 'skills', 'alpha'), join('agent', 'skills', 'alpha', 'SKILL.md')]);
     expect(read(result.home, '.omp', 'agent', 'skills', 'alpha', 'SKILL.md')).toBe(before['.omp/agent/skills/alpha/SKILL.md']);
     expect(existsSync(join(result.home, '.agents', 'skills', 'alpha', '.oxy-tools.json'))).toBe(true);
@@ -385,6 +392,7 @@ describe('把本仓库的 skill 装给 omp', () => {
     expect(filesUnder(join(result.home, '.agents', 'skills', 'alpha'))).toEqual(['SKILL.md']);
     expect(read(result.home, '.agents', 'skills', 'alpha', 'SKILL.md')).toBe('用户自己写的\n');
     expect(result.output).toMatch(/^\s+–\s+alpha\s+omp\s+跳过\s+未同意覆盖，保持原样$/m);
+    expectOmpUntouched(result);
   });
 
   it('同意了才覆盖：整目录替换，带上安装标记', async () => {
@@ -396,6 +404,7 @@ describe('把本仓库的 skill 装给 omp', () => {
 
     expect(filesUnder(join(result.home, '.agents', 'skills', 'alpha'))).toEqual(ALPHA_FILES);
     expect(read(result.home, '.agents', 'skills', 'alpha', 'SKILL.md')).toBe('# alpha\n');
+    expectOmpUntouched(result);
   });
 
   it('只选了 omp 时列表上方也有共用 skill 目录的那句说明', async () => {
@@ -417,6 +426,7 @@ describe('把本仓库的 skill 装给 omp', () => {
     expect(result.output).toMatch(/^\s+beta-pack\s+omp\s+overwrite\s+~\S+beta-pack\s+2\.0 → 2\.3$/m);
     expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+omp\s+installed 2\.0 → 2\.3$/m);
     expect(result.output).not.toMatch(/[一-鿿]/);
+    expectOmpUntouched(result);
   });
 });
 
@@ -442,6 +452,7 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expect(summaryOf(result.output)).toMatch(/^\s+alpha\s+Pi、omp\s+新装\s+~\S+alpha$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+alpha\s+Pi、omp\s+已安装 1\.0\.0$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+合计\s+1 成功 · 0 失败 · 0 跳过$/m);
+    expectOmpUntouched(result);
   });
 
   it('四个宿主都选了：每个 skill 两行——Claude Code 一行，「Codex、Pi、omp」一行；两个目录各有内容和各自的安装标记', async () => {
@@ -470,6 +481,7 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+alpha\s+Claude Code\s+已安装 1\.0\.0$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+alpha\s+omp\s+已安装 1\.0\.0$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+合计\s+2 成功 · 0 失败 · 0 跳过$/m);
+    expectOmpUntouched(result);
   });
 
   it('共用 skill 目录里已有不是本工具装的同名 skill：三个宿主只问一次，缺省不覆盖', async () => {
@@ -483,6 +495,7 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expect(result.output.split('不是本工具装的，要覆盖它吗').length - 1).toBe(1);
     expect(resultsOf(result.screen)).toMatch(/^\s+–\s+alpha\s+Codex、Pi、omp\s+跳过\s+未同意覆盖，保持原样$/m);
     expect(read(result.home, '.agents', 'skills', 'alpha', 'SKILL.md')).toBe('用户自己写的\n');
+    expectOmpUntouched(result);
   });
 
   it('装到项目时同样归组：项目目录的 .agents/skills 下只写一次，主目录里什么都不多', async () => {
@@ -495,6 +508,7 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expect(summaryOf(result.output)).toMatch(/^\s+alpha\s+Codex、Pi、omp\s+新装\s+\.agents\S+alpha$/m);
     expect(filesUnder(join(result.project, '.agents', 'skills', 'alpha'))).toEqual(ALPHA_FILES);
     expect(filesUnder(result.home)).toEqual([]);
+    expectOmpUntouched(result);
   });
 
   it('列表里的状态不合并：四个宿主四栏，Codex、Pi、omp 三栏写的一样', async () => {
@@ -519,6 +533,7 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expect(result.output).toMatch(/^\s+Codex, Pi, omp\s+new\s+~\S+alpha$/m);
     expect(result.screen).toMatch(/^\s+✓\s+alpha\s+Codex, Pi, omp\s+installed 1\.0\.0$/m);
     expect(result.screen).toMatch(/^\s+Total\s+2 succeeded · 0 failed · 0 skipped$/m);
+    expectOmpUntouched(result);
   });
 });
 
@@ -559,6 +574,7 @@ describe('把第三方 Skill 装给 omp', () => {
     expect(flat(commandsOf(result.output))).toContain('npx -y skills@1 add example-labs/solo-notes --skill note-taker --agent pi --yes --global ');
     expect(summaryOf(result.output)).toMatch(/^\s+note-taker\s+omp\s+新装\s+~\S+note-taker$/m);
     expect(summaryOf(result.output)).toContain(join('~', '.agents', 'skills', 'note-taker'));
+    expectOmpUntouched(result);
   });
 
   it('装完复核通过：共用 skill 目录里有 SKILL.md，结果是「已安装」', async () => {
@@ -566,6 +582,7 @@ describe('把第三方 Skill 装给 omp', () => {
 
     expect(result.output).toMatch(/^\s+✓\s+note-taker\s+omp\s+已安装$/m);
     expect(existsSync(join(result.home, '.agents', 'skills', 'note-taker', 'SKILL.md'))).toBe(true);
+    expectOmpUntouched(result);
   });
 
   it('命令把它装到了 omp 自己的目录而共用 skill 目录里没有：判失败', async () => {
@@ -577,6 +594,7 @@ describe('把第三方 Skill 装给 omp', () => {
     });
 
     expect(result.output).toMatch(/^\s+✗\s+note-taker\s+omp\s+失败\s+安装命令已结束，但目标位置没有 SKILL\.md$/m);
+    expect(result.commands).toEqual([soloVia('pi')]);
   });
 
   it('装到项目：命令不带全局选项、在项目目录下运行，agent 名仍是 pi；复核看项目目录的 .agents/skills', async () => {
@@ -615,6 +633,7 @@ describe('把第三方 Skill 装给 omp', () => {
     expect(result.output).toContain(`? ${join('~', '.agents', 'skills', 'note-taker')} 已有同名目录，要覆盖它吗？ (y/N)`);
     expect(result.commands).toEqual([]);
     expect(result.output).toMatch(/^\s+–\s+note-taker\s+omp\s+跳过\s+未同意覆盖，保持原样$/m);
+    expectOmpUntouched(result);
   });
 
   it('条目用 hosts 限定了宿主：写了 omp 的照常装给 omp，没写的不可选', async () => {
@@ -628,6 +647,7 @@ describe('把第三方 Skill 装给 omp', () => {
     expect(forOmp.commands).toEqual([soloVia('pi')]);
     expect(forOmp.output).toMatch(/^\s+✓\s+note-taker\s+omp\s+已安装$/m);
     expect(listOf(notForOmp.output)).toMatch(/^ – solo-notes\s+需要别的 AI Agent\s/m);
+    expectOmpUntouched(forOmp);
   });
 
   it('英文界面：汇总、命令和结果', async () => {
@@ -643,6 +663,7 @@ describe('把第三方 Skill 装给 omp', () => {
     expect(result.output).toMatch(/^\s+note-taker\s+omp\s+new\s+~\S+note-taker$/m);
     expect(result.output).toMatch(/^\s+✓\s+note-taker\s+omp\s+installed$/m);
     expect(result.output).not.toMatch(/[一-鿿]/);
+    expectOmpUntouched(result);
   });
 });
 
@@ -663,6 +684,7 @@ describe('同时选了共用 skill 目录的几个宿主：第三方 Skill 只�
 
     expect(result.commands).toEqual([soloVia('pi')]);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+note-taker\s+Pi、omp\s+已安装$/m);
+    expectOmpUntouched(result);
   });
 
   it('四个宿主都选了：每个 skill 两条命令、两行——Claude Code 一条带它的环境变量，共用 skill 目录一条', async () => {
@@ -686,6 +708,7 @@ describe('同时选了共用 skill 目录的几个宿主：第三方 Skill 只�
     expect(result.commands).toEqual([soloVia('pi')]);
     expect(summaryOf(result.output)).toMatch(/^\s+note-taker\s+omp\s+新装\s+~\S+note-taker$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+note-taker\s+omp\s+已安装$/m);
+    expectOmpUntouched(result);
   });
 });
 
@@ -731,6 +754,7 @@ describe('四个宿主都选了时的 80 列', () => {
     expect(summaryOf(result.output)).toMatch(/^\s+Codex、Pi、omp\s+覆盖\s+~\S+beta-pack$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+beta-pack\s+Codex、Pi、omp\s+已安装 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
+    expectOmpUntouched(result);
   });
 
   it('英文界面：宿主行、宿主选择、列表、清单、结果的每一行都不超出第 79 列', async () => {
@@ -754,9 +778,12 @@ describe('四个宿主都选了时的 80 列', () => {
     const summary = result.screen.indexOf('── Install');
     const commands = result.screen.indexOf('── ', summary + 1);
 
+    expect(summary).toBeGreaterThan(-1);
+    expect(commands).toBeGreaterThan(summary);
     expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+Pi\s+omp$/m);
     expect(result.screen).toMatch(/^\s+✓\s+beta-pack\s+Codex, Pi, omp\s+installed 2\.0 → 2\.3$/m);
     expect(widest(result.screen.slice(0, summary))).toBeLessThanOrEqual(79);
     expect(widest(result.screen.slice(commands))).toBeLessThanOrEqual(79);
+    expectOmpUntouched(result);
   });
 });
