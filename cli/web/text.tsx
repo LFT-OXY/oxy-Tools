@@ -1,6 +1,6 @@
 // 页面自己的文字：只有版式上固定的那些——栏名、按钮、空状态的话、还没连上时的那一句、
 // 几种结束画面的标题和说明（没有画面状态时也得说得出来；已完成、已改用终端界面和它们是同一种画面，放在一处），和终端界面里没有的那几句（汇总里逐项决定覆盖的、
-// 安装中的提醒、填 key 的对话框里的）。状态的词、原因、标记、数量、提醒、汇总与结果里每一行的话、结果里的下一步都随画面状态从安装器来
+// 安装中的提醒、填 key 的对话框里的、开场引导的按钮和它旁边那一句）。状态的词、原因、标记、数量、提醒、汇总与结果里每一行的话、结果里的下一步都随画面状态从安装器来
 import type { ViewState } from '../src/web-protocol.ts';
 
 export type Lang = ViewState['lang'];
@@ -18,6 +18,9 @@ export const TEXT = {
     items: (count: number) => `${count} 项`,
     installIntoOnly: (host: string) => `装进 ${host}`,
     atLeastOne: '至少留一个',
+    guideName: '开始之前',
+    startPicking: '开始挑选',
+    guideHint: '进去之后在页面顶上还能改',
     selected: '已选',
     nowUnavailable: (count: number) => `其中 ${count} 项这次不会装`,
     nothingSelected: '还没有选任何条目',
@@ -52,6 +55,9 @@ export const TEXT = {
     items: (count: number) => `${count} ${count === 1 ? 'item' : 'items'}`,
     installIntoOnly: (host: string) => `Installs into ${host}`,
     atLeastOne: 'Keep at least one',
+    guideName: 'Before you start',
+    startPicking: 'Start picking',
+    guideHint: 'You can change both later at the top of the page',
     selected: 'Selected',
     nowUnavailable: (count: number) => `${count} will not be installed this time`,
     nothingSelected: 'Nothing selected yet',

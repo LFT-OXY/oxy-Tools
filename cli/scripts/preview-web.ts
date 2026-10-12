@@ -55,10 +55,14 @@ interface Scene extends World {
   /** 打开浏览器之前把安装器驱动到要看的状态：状态在安装器这边，真实的页面一连上看到的就是它 */
   drive?: Drive;
   /**
-   * 开场动画：数字是定格在第几毫秒；skipped 是播着的时候按了一下键；reduced-motion 是系统开了「减少动态效果」，不播。
-   * 不给就是这次运行里已经播过了，页面直接出现
+   * 开场动画：数字是定格在第几毫秒；played 是让它播完；skipped 是播着的时候按了一下键；
+   * reduced-motion 是系统开了「减少动态效果」，不播。不给就是这次运行里已经播过了
    */
-  intro?: number | 'skipped' | 'reduced-motion';
+  intro?: number | 'played' | 'skipped' | 'reduced-motion';
+  /** 开场引导留着不答：页面停在它上面。不给就是这次运行里已经答过了（脚本先替页面答掉），页面直接出现 */
+  guide?: true;
+  /** 页面停在开场引导上之后替它答掉，把那一层的淡出定格在第几毫秒 */
+  leaving?: number;
   /**
    * 页面画出来之后让它走到哪种结束画面：finished 是发了「完成」，switched 是终端上按了 t 改用终端界面，
    * exited 是安装器退出、页面重连不上，denied 是拿着不对的口令打开
@@ -281,12 +285,36 @@ const WITH_TOOLS = inOrder(crowded, picking('wizard'), pickingMcp('markitdown'),
 const toolRunning = inOrder(WITH_TOOLS, reviewing, installing((run) => run.rows.some((row) => row.terminal === true)));
 
 const scenes: Scene[] = [
-  { title: '开场动画 · 敲命令', note: '第 0.6 秒：黑底上 $ npx oxy-tools 一个字一个字敲出来，行尾是光标。浅色下开场也是黑底白字', intro: 600 },
-  { title: '开场动画 · 大标志打出来', note: '第 1.5 秒：大标志一行行打出来，单色', intro: 1500 },
-  { title: '开场动画 · 版本号', note: '第 2.1 秒：五行都打完了，标志下面淡淡的一行版本号', intro: 2100 },
-  { title: '开场动画 · 淡出', note: '第 2.45 秒：开场淡出到一半，底下的卡片开始一张张浮上来', intro: 2450 },
-  { title: '开场动画 · 被跳过', note: '播着的时候按了一下键：盖着的那一层当场收掉，卡片不做浮上来的动作，所有东西直接到位', intro: 'skipped' },
-  { title: '开场动画 · 减少动态效果', note: '系统开了「减少动态效果」：这次运行第一次打开也不播，页面直接出现', intro: 'reduced-motion' },
+  { title: '开场动画 · 敲命令', note: '第 0.6 秒：黑底上 $ npx oxy-tools 一个字一个字敲出来，行尾是光标。浅色下开场也是黑底白字。下面给开场引导留着位置，所以这几样比窗口正中高一些，之后不再挪', intro: 600, guide: true },
+  { title: '开场动画 · 大标志打出来', note: '第 1.5 秒：大标志一行行打出来，单色', intro: 1500, guide: true },
+  { title: '开场动画 · 版本号', note: '第 2.1 秒：五行都打完了，标志下面淡淡的一行版本号', intro: 2100, guide: true },
+  { title: '开场引导 · 正在出现', note: '第 2.45 秒：动画不淡出，命令、大标志、版本号留在原处；下面第一行提问已经在了，第二行显到一半，按钮还没出来。这时控件还点不到', intro: 2450, guide: true },
+  {
+    title: '开场引导 · 两个宿主、全局',
+    note: '动画播完停下来的样子，也是缺省的样子：两个宿主都勾着、范围是全局；主按钮白底黑字，焦点就在它上面，按回车就进去；旁边一句淡一档的话。底下的三栏一点都看不到。用户不点就一直停着',
+    intro: 'played',
+    guide: true,
+  },
+  {
+    title: '开场引导 · 选了项目',
+    note: '去掉了 Codex、选了「项目」之后刷新：不重播动画，直接是引导静止的样子，改过的选项还在。「装到哪里」下面写明是哪个目录，写得全',
+    drive: inOrder(choosingHost('codex', false), toProject),
+    guide: true,
+  },
+  { title: '开场引导 · 只检测到 Claude Code', note: '没有可勾的宿主：写一句「装进 Claude Code」，没检测到的那个写在旁边；只有安装范围可选', ...ONE_HOST, guide: true },
+  { title: '开场引导 · 键盘焦点', note: '按了三下 Tab：焦点从「开始挑选」出去一圈再进来，落在 Codex 的勾选上，那一圈白的描边在黑底上看得见；Tab 只在这几个控件之间走，走不到底下的页面上', guide: true, tabs: 3 },
+  { title: '开场引导 · 动画被跳过', note: '动画播着的时候按了一下键：直接到引导静止的样子，和播完停下来的那一格一样；那一下没有改掉选项，也没有直接进去', intro: 'skipped', guide: true },
+  { title: '开场引导 · 减少动态效果', note: '系统开了「减少动态效果」：动画不播，开场引导照样出现，同样是静止的样子', intro: 'reduced-motion', guide: true },
+  { title: '开场引导 · 1024×768', note: '命令、大标志、版本号、两行提问、按钮都在一屏里，没有滚动条', guide: true, viewport: NARROW },
+  { title: '开场引导 · 答完了，淡出', note: '点了「开始挑选」之后第 0.25 秒：那一层淡出到一半，底下的卡片开始一张张浮上来', guide: true, leaving: 250 },
+  {
+    title: '开场动画 · 一个宿主都没检测到',
+    note: '第 2.45 秒：没有可选的，所以没有开场引导——动画照原先的样子播完淡出，底下直接是挑选的页面，卡片开始一张张浮上来',
+    ...NO_HOSTS,
+    intro: 2450,
+  },
+  { title: '开场动画 · 一个宿主都没检测到 · 被跳过', note: '播着的时候按了一下键：盖着的那一层当场收掉，卡片不做浮上来的动作，所有东西直接到位', ...NO_HOSTS, intro: 'skipped' },
+  { title: '开场动画 · 一个宿主都没检测到 · 减少动态效果', note: '系统开了「减少动态效果」：不播，也没有开场引导，页面直接出现', ...NO_HOSTS, intro: 'reduced-motion' },
   {
     title: '浏览 ·「推荐」',
     note: '页面一打开的样子：左栏第一行是「推荐」，每行 36px 高，当前项是只给它用的那一档更深的灰底。两个宿主时宿主和安装范围在标题的下一行，卡片底部每个宿主一段状态；这张列表里每一条都是推荐的，卡片上不标',
@@ -510,6 +538,15 @@ const scenes: Scene[] = [
   { title: '结束 · 已改用终端界面', note: '终端上按了 t：页面得知之后连接才断开，不改口成「安装器已退出」；同样没有任何控件', ending: 'switched' },
   { title: '结束 · 安装器已退出', note: '终端上按了 Ctrl+C，页面重连几次连不上', ending: 'exited' },
   { title: '结束 · 口令不对', note: '拿着不对的口令打开：没有画面状态，照浏览器的语言说', ending: 'denied' },
+  { title: '英文 · 开场引导', note: '两句提问是终端界面那两个提问的英文；按钮和旁边那一句是页面自己的', ...EN, guide: true },
+  {
+    title: '英文 · 开场引导 · 选了项目 · 1024×768',
+    note: '最挤的一格：提问更长，放不下时提问和它的控件上下排；目录那一行在任意处断开；没有滚动条、没有被裁掉的字',
+    ...EN,
+    drive: toProject,
+    guide: true,
+    viewport: NARROW,
+  },
   { title: '英文 · 浏览 ·「推荐」', ...EN },
   { title: '英文 · 浏览 · 条目最多的用途', note: '用途名长的折成两行，条目数留在第一行右边', ...EN, drive: crowded },
   { title: '英文 · 浏览 · 条目最多的用途 · 整张列表', ...EN, drive: crowded, whole: true },
@@ -618,14 +655,17 @@ const MARKUP_AND_VALUES = `document.documentElement.outerHTML + '\\n' + [...docu
 // 中间一栏的内容有多高：窗口拉到这么高，整张列表就都在屏幕上
 const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
 /**
- * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了。
- * 给出是哪几块。开场那一层除外：那条命令是靠裁掉来一个字一个字敲出来的
+ * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了；
+ * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）。给出是哪几块。
+ * 开场里的那条命令除外：它是靠裁掉来一个字一个字敲出来的
  */
 const OVERFLOWING = `(() => {
   const found = [];
   if (document.documentElement.scrollWidth > innerWidth) found.push('整页比窗口宽 ' + (document.documentElement.scrollWidth - innerWidth) + 'px');
+  const stage = document.querySelector('.intro-stage');
+  if (stage && stage.scrollHeight > stage.clientHeight + 1) found.push('开场那一层比窗口高 ' + (stage.scrollHeight - stage.clientHeight) + 'px');
   for (const element of document.querySelectorAll('body *')) {
-    if (element.closest('.intro')) continue;
+    if (element.closest('.intro-command')) continue;
     const { overflowX, overflowY } = getComputedStyle(element);
     const name = element.tagName.toLowerCase() + (typeof element.className === 'string' && element.className ? '.' + element.className.trim().replace(/\\s+/g, '.') : '');
     if (overflowX !== 'visible' && element.scrollWidth > element.clientWidth + 1) found.push(name + ' 里的内容比它宽 ' + (element.scrollWidth - element.clientWidth) + 'px');
@@ -717,8 +757,9 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     const tab = await chrome.newTab();
     cleanups.push(() => tab.close());
 
-    // 这次运行里开场已经播过了：页面直接出现
+    // 这次运行里开场已经播过了、开场引导已经答过了：页面直接出现
     if (scene.intro === undefined) await page.send({ type: 'intro-seen' });
+    if (!scene.guide) await page.send({ type: 'guide-answered' });
     await scene.drive?.(page);
 
     let { width, height } = scene.viewport ?? DESKTOP;
@@ -733,9 +774,18 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
       await tab.evaluate(frozenAt(scene.intro));
     }
     if (scene.intro === 'skipped') {
-      await tab.evaluate(appears('.intro'));
+      await tab.evaluate(appears('.intro.playing'));
       await tab.press('Escape');
-      await tab.evaluate(vanishes('.intro'));
+      if (!scene.guide) await tab.evaluate(vanishes('.intro'));
+    }
+    // 开场引导静止的样子：动画播完了、被跳过了，或根本不播。等到焦点进了它里面：那是它可以操作的那一刻
+    if (scene.guide && typeof scene.intro !== 'number') await tab.evaluate(appears('.intro.still :focus'));
+    if (scene.leaving !== undefined) {
+      await page.send({ type: 'guide-answered' });
+      // 卡片是在那一层开始淡出的下一拍才带上浮上来的动作的：等它们也动了再定格
+      await tab.evaluate(appears('.intro.leaving'));
+      await tab.evaluate(appears('.list.rising'));
+      await tab.evaluate(frozenAt(scene.leaving));
     }
     if (scene.ending === 'finished') await page.send({ type: 'finish' });
     if (scene.ending === 'switched') pressT();

@@ -51,6 +51,8 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
     lang: options.lang,
     stage: 'open',
     introSeen: false,
+    // 一个宿主都没检测到就没有可选的：不出开场引导
+    guideAnswered: !runtime.hosts.some((host) => host.detected),
     list: menuOf(catalog, options.lang)[0]?.id,
     // 起初和终端界面两个提问光标起始的答案一样：检测到的全部、全局
     hosts: new Set(runtime.hosts.filter((host) => host.detected).map((host) => host.id)),
@@ -161,6 +163,10 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
           case 'intro-seen':
             session.introSeen = true;
+            break;
+          case 'guide-answered':
+            // 只是记成答过：发几次都一样，不看走到哪一步
+            session.guideAnswered = true;
             break;
           case 'lang':
             // 只换说法：正在看的列表照旧（id 不随语言变）；终端上的呈现层不动
@@ -325,7 +331,7 @@ const PICKABLE: Record<PickableKind, (catalog: Catalog) => readonly Pickable[]> 
 };
 
 /**
- * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
+ * 页面上会变的那几样：页面的语言、开着还是完成了、开场动画播过没有、开场引导答过没有、正在看哪张列表（menu 里的 id，目录是空的时没有）、
  * 要装进哪些宿主（id）、装到全局还是项目、勾上了的条目（目录里的那几个对象，照勾选的先后）、
  * 含多个 skill 的第三方 Skill 里挑了哪几个（去掉条目也留着，再勾上时还在）、挑选走到哪一步、
  * 汇总里同意覆盖的那几项、上一次确认是不是因为对不上而没装、这一批的进度。
@@ -335,6 +341,7 @@ interface Session {
   lang: Lang;
   stage: ViewState['stage'];
   introSeen: boolean;
+  guideAnswered: boolean;
   list: string | undefined;
   hosts: Set<string>;
   scope: Scope;
@@ -410,6 +417,7 @@ function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Se
     stage: session.stage,
     version,
     introSeen: session.introSeen,
+    guideAnswered: session.guideAnswered,
     machine: {
       hosts: runtime.hosts.map((host) => ({ name: host.name, detected: host.detected, ...(host.detected ? {} : { status: t.notDetected }) })),
       catalog: perKind.length > 0 ? perKind : [t.noEntries],
@@ -485,7 +493,7 @@ function parseIntent(raw: unknown): Intent | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const { type, list, lang, kind, name, on, item, summary, host, scope, entry, skill, mcp, variable, value } = raw as Record<string, unknown>;
   const only = (...fields: string[]): boolean => Object.keys(raw).every((field) => field === 'type' || fields.includes(field));
-  if ((type === 'finish' || type === 'intro-seen' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
+  if ((type === 'finish' || type === 'intro-seen' || type === 'guide-answered' || type === 'review' || type === 'revise' || type === 'continue') && only()) return { type };
   if (type === 'open' && typeof list === 'string' && only('list')) return { type, list };
   if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
   if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };

@@ -18,9 +18,14 @@
   --attention-ground: #fbf3d9;
   /* 盖着面板时底下压暗的那一层 */
   --scrim: rgb(0 0 0 / 32%);
-  /* 开场动画在深色、浅色下都是黑底白字 */
+  /* 开场那一层在深色、浅色下都是黑底白字；里面的控件用的另外几样是深色那一套的值 */
   --intro-ground: #000000;
   --intro-ink: #f7f8f8;
+  --intro-raised: #1a1b1d;
+  --intro-secondary: #a2a6ad;
+  --intro-faint: #6c7078;
+  --intro-line: #202225;
+  --intro-attention: #e5c04b;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* 各栏自己的滚动条：轨道不另铺底色（深色下原生的轨道是一条亮带），滑块用最淡的文字色 */
   scrollbar-color: var(--faint) transparent;
@@ -327,7 +332,8 @@ input[type='checkbox']:checked::after {
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
-.title .directory code {
+.title .directory code,
+.intro-directory code {
   margin-left: 4px;
   font-size: 12.5px;
 }
@@ -1087,22 +1093,48 @@ progress::-moz-progress-bar {
   color: var(--secondary);
 }
 
-/* ───── 开场动画：盖在页面上面的一层，约两秒半 ─────
-   0.15–0.95 秒敲出那条命令；1.05 秒起大标志一行行打出来（每行隔 0.11 秒，行里从左到右略有先后）；
-   1.75 秒版本号；2.2–2.6 秒整层淡出；2.3 秒起底下的卡片依次浮上来，每张隔 50 毫秒。 */
+/* ───── 开场：盖在页面上面的一层。前半段是开场动画，后半段是开场引导 ─────
+   动画（.playing）：0.15–0.95 秒敲出那条命令；1.05 秒起大标志一行行打出来（每行隔 0.11 秒，行里从左到右略有先后）；
+   1.75 秒版本号。之后分两种：
+   没有开场引导（.unguided，一个宿主都没检测到）：2.2–2.6 秒整层淡出；2.3 秒起底下的卡片依次浮上来，每张隔 50 毫秒。
+   有开场引导：2.2 秒起第一行提问、第二行提问、按钮（连同目录那一行）依次出现，每样隔 0.15 秒，2.7 秒都到位、可以操作，
+   然后停着（.still）等用户答；
+   答完了（.leaving）整层 0.4 秒淡出，0.1 秒起底下的卡片依次浮上来。
+   不带 .playing 的就是静止的样子：每样东西都在它最后的位置上。 */
 .intro {
   position: fixed;
   inset: 0;
   z-index: 2;
-  background: var(--intro-ground);
-  color: var(--intro-ink);
+  /* 这一层在深色、浅色下都是黑底白字：里面的控件照深色那一套画 */
+  --ground: var(--intro-ground);
+  --ink: var(--intro-ink);
+  --raised: var(--intro-raised);
+  --secondary: var(--intro-secondary);
+  --faint: var(--intro-faint);
+  --line: var(--intro-line);
+  --attention: var(--intro-attention);
+  background: var(--ground);
+  color: var(--ink);
+  color-scheme: dark;
+}
+.intro.unguided {
   animation: intro-out 0.4s ease-in 2.2s both;
 }
+.intro.leaving {
+  animation: intro-out 0.4s ease-in both;
+}
+/* 竖着居中；窗口矮得放不下时这一层自己滚动，不把哪一样裁掉 */
 .intro-stage {
   display: grid;
   position: absolute;
   inset: 0;
-  place-content: center;
+  place-content: safe center;
+  gap: 28px;
+  padding: 24px 0;
+  overflow-y: auto;
+}
+.intro-banner {
+  display: grid;
   justify-items: start;
   gap: 20px;
   font: 15px/1.4 var(--mono);
@@ -1111,8 +1143,11 @@ progress::-moz-progress-bar {
   display: inline-block;
   width: 16ch;
   overflow: hidden;
-  border-right: 2px solid var(--intro-ink);
+  border-right: 2px solid transparent;
   white-space: nowrap;
+}
+.intro.playing .intro-command {
+  border-right-color: var(--ink);
   animation:
     intro-type 0.8s steps(16) 0.15s both,
     intro-caret 0.5s step-end infinite;
@@ -1123,17 +1158,78 @@ progress::-moz-progress-bar {
 .intro .logo {
   width: min(450px, 60vw);
 }
-.intro .logo rect {
+.intro.playing .logo rect {
   animation: appear 0.01s linear both;
   animation-delay: calc(1.05s + var(--y) * 0.11s + var(--x) * 6ms);
 }
 .intro-version {
   opacity: 0.55;
+}
+.intro.playing .intro-version {
   animation: appear 0.2s ease-out 1.75s both;
+}
+/* 开场引导：和大标志一样宽，接在它下面。两行提问像终端里的提问，行首一个淡的问号 */
+.intro-guide {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  width: min(450px, 60vw);
+}
+.intro.playing :is(.intro-guide .field, .intro-directory, .intro-actions) {
+  animation: appear 0.2s ease-out both;
+  animation-delay: calc(2.2s + var(--n) * 0.15s);
+}
+.intro-guide .target {
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+}
+.intro-guide .field {
+  --n: 0;
+}
+.intro-guide .field + .field {
+  --n: 1;
+}
+/* 行首的问号不读给读屏软件。只检测到一个宿主时那一行不是提问：没有问号，位置留着，两行的字才从同一处起 */
+.intro-guide .label::before {
+  content: '?';
+  content: '?' / '';
+  display: inline-block;
+  width: 8px;
+  margin-right: 8px;
+  color: var(--faint);
+  font-family: var(--mono);
+}
+.intro-guide p.field > .label::before {
+  content: '';
+}
+/* 说的是上面那一行「装到哪里」：贴着它、和它的字从同一处起。一直占着一行：点「项目」的时候上面的控件不跟着挪 */
+.intro-directory {
+  --n: 2;
+  min-height: 20px;
+  margin-top: -8px;
+  padding-left: 16px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.intro-actions {
+  --n: 2;
+  display: flex;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: var(--secondary);
 }
 .rising .card {
   animation: rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  animation-delay: calc(2.3s + var(--i) * 50ms);
+  animation-delay: calc(var(--rise-from) + var(--i) * 50ms);
+}
+.rising.after-intro {
+  --rise-from: 2.3s;
+}
+.rising.after-guide {
+  --rise-from: 0.1s;
 }
 /* 还没连上的那一句通常一闪而过：等一会儿还没连上才显出来 */
 @media (prefers-reduced-motion: no-preference) {

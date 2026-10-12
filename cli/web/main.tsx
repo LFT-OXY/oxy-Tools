@@ -2,8 +2,8 @@
 import { render, type ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Intent, ViewState } from '../src/web-protocol.ts';
-import { Browse } from './browse.tsx';
-import { Intro } from './intro.tsx';
+import { Browse, type Rising } from './browse.tsx';
+import { Intro, reducedMotion } from './intro.tsx';
 import { Keys } from './keys.tsx';
 import { Run, Summary } from './panel.tsx';
 import { TEXT, type Lang } from './text.tsx';
@@ -56,8 +56,8 @@ function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'connecting' });
   // 还没有画面状态时（口令不对、一直连不上）先照浏览器的语言说
   const [lang, setLang] = useState<Lang>(navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
-  // 开场动画播到哪了：playing 时它盖在页面上；rising 是底下的卡片还带着依次浮上来的动作
-  const [intro, setIntro] = useState<{ playing: boolean; rising: boolean }>({ playing: false, rising: false });
+  // 开场那一层：open 时它盖在页面上，animated 是它带着开场动画；rising 是底下的卡片还带着依次浮上来的动作
+  const [intro, setIntro] = useState<{ open: boolean; animated: boolean; rising: Rising }>({ open: false, animated: false, rising: false });
   const listed = screen.kind === 'live' ? screen.state.listing?.id : undefined;
 
   useEffect(() => {
@@ -66,11 +66,13 @@ function App() {
       let failures = 0;
       for (;;) {
         const end = await listen((state) => {
-          // 这次运行里第一次打开：播开场，并告诉安装器播过了——刷新、重连、再开一个标签页都不重播。
-          // 系统开了「减少动态效果」时不播，页面直接出现
-          if (!last && !state.introSeen) {
-            if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setIntro({ playing: true, rising: true });
-            send({ type: 'intro-seen' });
+          if (!last) {
+            // 这次运行里第一次打开：播开场，并告诉安装器播过了——刷新、重连、再开一个标签页都不重播。
+            // 系统开了「减少动态效果」时不播
+            const animated = !state.introSeen && !reducedMotion();
+            if (!state.introSeen) send({ type: 'intro-seen' });
+            // 开场引导没答过，那一层就得在：动画播过了（或不播）就直接是引导静止的样子
+            setIntro({ open: animated || !state.guideAnswered, animated, rising: animated && state.guideAnswered ? 'intro' : false });
           }
           last = state;
           failures = 0;
@@ -89,8 +91,10 @@ function App() {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
   }, [lang]);
   // 淡出完了只收掉盖着的那一层，卡片接着浮完；用户跳过的话两样一起收，所有东西直接到位
-  const introEnded = useCallback(() => setIntro((now) => ({ ...now, playing: false })), []);
-  const introSkipped = useCallback(() => setIntro({ playing: false, rising: false }), []);
+  const introEnded = useCallback(() => setIntro((now) => ({ ...now, open: false })), []);
+  const introSkipped = useCallback(() => setIntro((now) => ({ ...now, open: false, rising: false })), []);
+  // 开场引导答完了，那一层开始淡出：底下的卡片这时才依次浮上来
+  const introLeaving = useCallback(() => setIntro((now) => ({ ...now, rising: 'guide' })), []);
   // 换了一张列表：新出现的卡片不再做浮上来的动作
   useEffect(() => {
     if (listed === undefined) return;
@@ -103,14 +107,15 @@ function App() {
   if (screen.kind === 'exited') return <Ended mark="–" tone="quiet" {...t.exited} />;
   if (screen.state.stage === 'finished') return <Ended mark="✓" tone="ready" {...t.finished} />;
   if (screen.state.stage === 'terminal') return <Ended mark="–" tone="quiet" {...t.switched} />;
-  const { keys, summary, run } = screen.state;
+  const { keys, summary, run, guideAnswered } = screen.state;
   return (
     <>
-      <Browse state={screen.state} send={send} rising={intro.rising} covered={Boolean(keys ?? summary ?? run)} />
+      {/* 开场引导开着时底下的页面不可操作，也不读给读屏软件 */}
+      <Browse state={screen.state} send={send} rising={intro.rising} covered={Boolean(keys ?? summary ?? run) || !guideAnswered} />
       {keys && <Keys keys={keys} t={t} send={send} />}
       {summary && <Summary summary={summary} t={t} send={send} />}
       {run && <Run run={run} t={t} send={send} />}
-      {intro.playing && <Intro version={screen.state.version} ended={introEnded} skipped={introSkipped} />}
+      {intro.open && <Intro state={screen.state} animated={intro.animated} send={send} leaving={introLeaving} ended={introEnded} skipped={introSkipped} />}
     </>
   );
 }

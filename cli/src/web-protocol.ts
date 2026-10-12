@@ -8,6 +8,8 @@ export type Intent =
   | { type: 'open'; list: string }
   /** 页面开始播开场动画了（或决定不播）：这次运行里不再播 */
   | { type: 'intro-seen' }
+  /** 开场引导答完了（用户点了「开始挑选」）：这次运行里不再出现。选的宿主和安装范围早就经 host、scope 到了安装器这边 */
+  | { type: 'guide-answered' }
   /** 换语言：安装器按新的语言重发画面状态，别的都不变；终端上的语言不跟着变 */
   | { type: 'lang'; lang: Lang }
   /** 勾上或去掉一个条目：kind 和 name 是画面状态里那个条目的 */
@@ -53,6 +55,8 @@ export interface ViewState {
   version: string;
   /** 开场动画这次运行里播过没有：刷新、重连、再开一个标签页都不重播 */
   introSeen: boolean;
+  /** 开场引导这次运行里答过没有：答过了就不再出现；一个宿主都没检测到时没有可选的，起初就算答过 */
+  guideAnswered: boolean;
   /** 本机信息，说法和终端界面是同一份文案 */
   machine: {
     /** status 是没检测到时写在名字后面的词；检测到的没有 */

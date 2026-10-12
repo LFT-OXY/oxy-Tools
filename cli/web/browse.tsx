@@ -8,9 +8,11 @@ import { TEXT } from './text.tsx';
 type Text = (typeof TEXT)[ViewState['lang']];
 // 开场之后卡片依次浮上来，最多错开这么多张
 const STAGGERED = 9;
+/** 底下的卡片要不要依次浮上来：intro 是跟着开场动画的时刻，guide 是开场引导答完的那一刻起 */
+export type Rising = false | 'intro' | 'guide';
 
-/** rising：开场动画正在播，底下的卡片等它退场时依次浮上来；covered：上面盖着面板，这里的东西点不到、也聚焦不到 */
-export function Browse({ state, send, rising, covered }: { state: ViewState; send: (intent: Intent) => void; rising: boolean; covered: boolean }) {
+/** rising：底下的卡片等开场那一层退场时依次浮上来；covered：上面盖着面板或开场引导，这里的东西点不到、也聚焦不到 */
+export function Browse({ state, send, rising, covered }: { state: ViewState; send: (intent: Intent) => void; rising: Rising; covered: boolean }) {
   const t = TEXT[state.lang];
   const { listing } = state;
   const current = state.menu.find((row) => row.id === listing?.id);
@@ -43,22 +45,21 @@ export function Browse({ state, send, rising, covered }: { state: ViewState; sen
       </nav>
 
       {/* 这一栏自己滚动：能用键盘聚焦，方向键才滚得动 */}
-      <main class={rising ? 'list rising' : 'list'} ref={list} tabIndex={0}>
+      <main class={rising ? `list rising after-${rising}` : 'list'} ref={list} tabIndex={0}>
         {current && listing ? (
           <>
             <header class="bar">
               <div class="title">
                 <h1>{current.name}</h1>
                 <span class="faint">{t.items(current.count)}</span>
-                {/* 选了项目时写明是哪个目录：那句话和目录的写法都随画面状态来 */}
+                {/* 选了项目时写明是哪个目录 */}
                 {state.target.scope === 'project' && state.target.choices.length > 0 && (
                   <span class="directory">
-                    {state.target.project.note}
-                    <code>{state.target.project.dir}</code>
+                    <Directory project={state.target.project} />
                   </span>
                 )}
               </div>
-              <Target state={state} t={t} send={send} />
+              <Target id="target" state={state} t={t} send={send} />
             </header>
             <Components listing={listing} showsHosts={state.target.hosts.length > 1} t={t} send={send} />
             {listing.apps && <Apps {...listing.apps} />}
@@ -130,11 +131,22 @@ function Language({ state, send }: { state: ViewState; send: (intent: Intent) =>
   );
 }
 
+/** 装到项目是装到哪个目录：那句话和目录的写法都随画面状态来。顶上那一条和开场引导里各有一行 */
+export function Directory({ project }: { project: ViewState['target']['project'] }) {
+  return (
+    <>
+      {project.note}
+      <code>{project.dir}</code>
+    </>
+  );
+}
+
 /**
- * 中间一栏顶上的「装进哪些 AI Agent」和「装到哪里」。改了只告诉安装器，勾没勾上、选了哪个照画面状态画；
- * 只检测到一个宿主时没有可改的；一个宿主都没检测到时没有这一块
+ * 「装进哪些 AI Agent」和「装到哪里」：中间一栏顶上那一条里的，和开场引导里的，是这同一个。
+ * 改了只告诉安装器，勾没勾上、选了哪个照画面状态画；只检测到一个宿主时没有可改的；一个宿主都没检测到时没有这一块。
+ * id 是这一处的名字：两处同时在页面上，控件的 id 和单选的组名靠它分开
  */
-function Target({ state, t, send }: { state: ViewState; t: Text; send: (intent: Intent) => void }) {
+export function Target({ id, state, t, send }: { id: string; state: ViewState; t: Text; send: (intent: Intent) => void }) {
   const { choices, hosts, hostsLabel, scope, scopes, scopeLabel } = state.target;
   // 想把最后一个宿主也去掉：安装器不照办，这里说一句；宿主变了这句就收掉
   const [lastOne, setLastOne] = useState(false);
@@ -156,8 +168,8 @@ function Target({ state, t, send }: { state: ViewState; t: Text; send: (intent: 
             ))}
         </p>
       ) : (
-        <div class="field" role="group" aria-labelledby="target-hosts">
-          <span class="label" id="target-hosts">
+        <div class="field" role="group" aria-labelledby={`${id}-hosts`}>
+          <span class="label" id={`${id}-hosts`}>
             {hostsLabel}
           </span>
           {choices.map((choice) => (
@@ -181,15 +193,15 @@ function Target({ state, t, send }: { state: ViewState; t: Text; send: (intent: 
           )}
         </div>
       )}
-      <div class="field" role="radiogroup" aria-labelledby="target-scope">
-        <span class="label" id="target-scope">
+      <div class="field" role="radiogroup" aria-labelledby={`${id}-scope`}>
+        <span class="label" id={`${id}-scope`}>
           {scopeLabel}
         </span>
         <div class="segments">
-          {scopes.map(({ id, name }) => (
-            <label key={id}>
-              <input type="radio" name="scope" checked={scope === id} onChange={() => send({ type: 'scope', scope: id })} />
-              <span>{name}</span>
+          {scopes.map((option) => (
+            <label key={option.id}>
+              <input type="radio" name={`${id}-scope`} checked={scope === option.id} onChange={() => send({ type: 'scope', scope: option.id })} />
+              <span>{option.name}</span>
             </label>
           ))}
         </div>
