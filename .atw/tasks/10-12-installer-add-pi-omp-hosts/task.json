@@ -3,7 +3,7 @@
   "name": "installer-add-pi-omp-hosts",
   "title": "安装器新增 Pi 和 omp 两个宿主",
   "description": "让安装器除 Claude Code 和 Codex 外也能把 skill 与 MCP 装进 Pi 和 omp",
-  "status": "implement",
+  "status": "slice",
   "dev_type": null,
   "scope": null,
   "package": null,
