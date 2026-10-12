@@ -10,12 +10,15 @@ import { byName } from './listing.ts';
 import { homeRelative, planInstall, type Plan } from './plan.ts';
 import type { Prompter } from './prompter.ts';
 import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
-import { unavailableReason } from './status-text.ts';
+import { hostPresenceTexts, unavailableReason } from './status-text.ts';
 import type { Ui } from './ui.ts';
 import { asksOverwrite, decided, reportBatch, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
 import type { Intent, PickableKind, ViewState } from './web-protocol.ts';
 import { startWebServer, type WebServer } from './web-server.ts';
 import { listingView, menuOf } from './web-view.ts';
+
+// 不换行空格：浏览器不在它这里折行
+const NO_BREAK_SPACE = '\u00a0';
 
 export interface WebUiOptions {
   /** 页面起始的语言：系统语言，或 --lang 给的 */
@@ -409,7 +412,6 @@ function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Se
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
   const { hosts, scope } = targetOf(runtime, session);
-  const missing = runtime.hosts.filter((host) => !host.detected).map((host) => host.name);
   const listing = session.list === undefined ? undefined : listingView(runtime, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
   return {
     lang,
@@ -420,11 +422,12 @@ function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Se
     introSeen: session.introSeen,
     guideAnswered: session.guideAnswered,
     machine: {
-      // 和终端界面的「AI Agent」那一行同一种排法：检测到的各一项、在前；没检测到的合成一项、在后
-      hosts: [
-        ...runtime.hosts.filter((host) => host.detected).map((host) => ({ name: host.name, detected: true })),
-        ...(missing.length > 0 ? [{ name: missing.join(t.listSeparator), detected: false, status: t.notDetected }] : []),
-      ],
+      // 和终端界面的「AI Agent」那一行是同一份：检测到的各一项、在前；没检测到的合成一项、在后。
+      // 合成的那一句在窄的左栏里要折行：一个宿主的名字中间（Claude Code 的那个空格）换成不换行空格，折行就只落在名字之间
+      hosts: hostPresenceTexts(
+        t,
+        runtime.hosts.map(({ name, detected }) => ({ name: detected ? name : name.replace(/ /g, NO_BREAK_SPACE), detected })),
+      ),
       catalog: perKind.length > 0 ? perKind : [t.noEntries],
       // 和终端界面的本机信息是同一句
       ...(hosts.length === 0 ? { noHosts: t.noHosts(runtime.hosts.map((host) => host.name), counts.apps > 0) } : {}),

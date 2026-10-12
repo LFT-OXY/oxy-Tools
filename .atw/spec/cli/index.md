@@ -33,7 +33,7 @@ cli/
 │   ├── availability.ts   # 两套界面共用：列表里每个条目在所选宿主和安装范围下的状态、可不可选与原因；MCP 那几栏哪些宿主要另作说明；要不要那句共用 skill 目录的说明
 │   ├── plan.ts           # 两套界面共用：算计划——把勾选算成要装的每一项（skill 和第三方 Skill 按 skill 目录归组，共用一个目录的几个宿主是一项）
 │   ├── run-plan.ts       # 两套界面共用：执行——照计划逐项去装，把进度报给接收方
-│   ├── status-text.ts    # 两套界面共用：状态和不可选的原因写成哪个词、是什么含义
+│   ├── status-text.ts    # 两套界面共用：状态和不可选的原因写成哪个词、是什么含义；本机信息里宿主那一行分成哪几段
 │   ├── notice-text.ts    # 两套界面共用：汇总后面的提醒、列表里 MCP 那几栏的说明写成哪几句、什么先后；给用户看的一条完整命令怎么写
 │   ├── flow.ts           # 终端界面的交互流程：逐步问什么、显示什么；算和装都经上面那几块
 │   ├── web-ui.ts         # 网页界面这一边的流程：画面状态在这里，页面发来的意图在这里变成状态
@@ -125,7 +125,7 @@ cli/
 | `availability.ts` | 每个条目的状态、可不可选与原因 | 本机的事实（`Machine`）、一张列表、所选的宿主、安装范围 | `listingStatus`：状态分成哪几栏（`skillColumns`：所选的宿主按 skill 目录归的组；`mcpColumns`：所选的宿主里有 MCP 配置的）和每个组件在各栏下的状态——Skill 和第三方 Skill 一组一个，MCP 每个装得了 MCP 的宿主一个，工具只有一个；不可选的另带原因 `Unavailable`（一个宿主都没有、需要别的宿主、只能装到全局、不支持当前系统）。原因是一个种类，写成哪句话由界面照文案定。`mcpColumnHosts`：关于 MCP 要另作说明的宿主——选了项目而它的 MCP 只能装到全局的、没有 MCP 配置的（MCP 安装器不装，不出栏）、配置读不到的。`skillGroups`：所选的宿主按 skill 目录归组，算计划和列表的状态都用它。`sharedSkillsNoted`：这张列表要不要那句共用 skill 目录的说明——所选的宿主里有用共用 skill 目录的（`host.sharedSkills`），且列表里有本仓库的 skill 或第三方 Skill |
 | `plan.ts` | 算计划 | 本机的事实、所选的宿主、安装范围、勾选（含第三方 Skill 里挑了哪几个 skill）、填过的 key 的**变量名** | `planInstall`：要装的每一项——本仓库的 skill 和第三方 Skill 在每个 skill 目录下一项（所选的宿主按 skill 目录归组，共用一个目录的几个宿主合成一项，`target.hosts` 是它们的名字），MCP 在每个装得了它的宿主下一项，连同位置、状态、将执行的命令、要不要另问覆盖（`asksOverwrite`）、缺哪个必填的 key（`missingVariable`），以及汇总要提醒的事（`notices`） |
 | `run-plan.ts` | 执行 | 计划、进度的接收方（`Progress`），和执行要的外部依赖（目录来源、外部命令执行器、临时目录、中断信号、填过的 key） | `runPlan`：照本仓库的 skill、第三方 Skill、MCP、工具的先后逐项去装，每一项的开始、结局、跳过都报给接收方 |
-| `status-text.ts` | 状态和不可选的原因怎么说 | 一份文案（`Messages`）和一个状态，或一个不可选的原因 | `skillStatusText`、`thirdPartyStatusText`、`mcpStatusText`、`toolStatusText`：那个词（`text`）、它的含义（`tone`：就绪、留意、退后、不上色）、词后面不上色的一段（`rest`：版本、装了几个）；`unavailableReason`：原因的那句话。**终端界面照含义上样式码（`ui.ts` 的 `statusCell`），网页界面原样放进画面状态**——两套界面的词因此不会各说各的 |
+| `status-text.ts` | 状态和不可选的原因怎么说；本机信息里宿主在不在怎么说 | 一份文案（`Messages`）和一个状态，或一个不可选的原因，或全部宿主在不在 | `skillStatusText`、`thirdPartyStatusText`、`mcpStatusText`、`toolStatusText`：那个词（`text`）、它的含义（`tone`：就绪、留意、退后、不上色）、词后面不上色的一段（`rest`：版本、装了几个）；`unavailableReason`：原因的那句话；`hostPresenceTexts`：本机信息里宿主那一行分成哪几段——检测到的各一段在前，没检测到的合成一段在后（并列好的名字和「未检测到」那个词；任务 `10-12-installer-add-pi-omp-hosts` 工单 07）。**终端界面照含义上样式码（`ui.ts` 的 `statusCell`），网页界面原样放进画面状态**——两套界面的词因此不会各说各的 |
 | `notice-text.ts` | 汇总后面的提醒、列表里 MCP 那几栏的说明怎么说，命令怎么写成一行（共用 skill 目录的那句说明是一句固定的文案 `sharedSkillsNotice`，不经这里拼） | 一份文案和计划里的 `PlanNotices`（终端界面另给 `placeholders`）；或 `mcpColumnHosts` 给出的那三组宿主 | `noticeTexts`：提醒的那几句，照固定的先后（覆盖、第三方 Skill、占位符、明文 key、要批准、缺 key、要登录）；`mcpColumnNoticeTexts`：MCP 那几栏的说明，依次是只能装到全局的、安装器不装的（连同在那个宿主里自己添加的办法，取自 `host.manualMcp`）、配置读不到的；`commandLine`：给用户看的一条完整命令，key 的位置是占位符 |
 
 要守的几条：
@@ -285,7 +285,7 @@ export class Interrupted extends Error {}
 |----------|----------|
 | 页面用 Preact 写、esbuild 打包，都是开发依赖（访谈里说好由写规格时定） | [网页界面的契约](./web-ui-contract.md)「Signatures」末尾讲页面的源码与构建的那一段 |
 | 网页界面的预览用本机装着的 Chrome、经它自带的调试协议驱动，没有为它加依赖；只在 macOS 的 Chrome 上跑过 | [网页界面的设计](./web-ui-design.md)「用什么驱动浏览器」 |
-| 预览自己查两样，不过就不出预览：假装填的 key 哪里都没有（工单 10）；每一格在两种窗口下都没有放不下的地方（工单 14；工单 16 起开场那一层比窗口高也算一样；任务 `10-12-installer-add-pi-omp-hosts` 工单 07 起同一组的宿主勾选不在同一行也算一样） | 同上「怎么用」 |
+| 预览自己查两样，不过就不出预览：假装填的 key 哪里都没有（工单 10）；每一格在两种窗口下都没有放不下的地方（工单 14；工单 16 起开场那一层比窗口高也算一样；任务 `10-12-installer-add-pi-omp-hosts` 工单 07 起同一组的宿主勾选不在同一行、开场引导里勾选和提问同不同行不对、「未检测到」和最后一个名字拆开了也各算一样） | 同上「怎么用」 |
 | 预览里除了专看开场引导的那几格，别的场景都由脚本先替页面把开场引导答掉（发 `guide-answered`），和替它发 `intro-seen` 一样；经入口的测试不替它答——原有的网页界面的用例都是在引导没答过时跑的 | 同上「场景怎么写」的 `guide`；[网页界面的契约](./web-ui-contract.md)「开场引导答过没有」 |
 | 测试架子缺省在启动参数最前面带 `--terminal`，要网页界面的用例给 `page` 或 `web: true`；任务开始之前就有的用例一条没改 | [入口与测试](./installer-entry.md)「Tests Required」 |
 | 待命的按键由页面的脚本按（`terminal.press('t')`），不排进 `answers` | [网页界面的契约](./web-ui-contract.md) 文末的表 |
@@ -306,7 +306,7 @@ export class Interrupted extends Error {}
 | `npm run build` | 构建到 `dist/`（不提交）：`tsc` 编安装器，再把页面打成 `dist/web/` 下的静态文件 |
 | `npm run build:web` | 只把页面打一遍 |
 | `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍。**不许改画面的重构**（搬代码、拆模块）拿它当凭据：动手之前先生成一份另存，改完再生成一份，两份应当逐字节相同——预览页经入口把每个画面都走一遍，测试没断言到的字也在里面 |
-| `npm run preview:web` | 生成网页界面的预览 `cli/.preview/web/index.html`（不提交）：本机的 Chrome 把真实的页面拍下来，每个状态一格，深浅各一份；改了页面都要生成并看一遍。**它自己带两道检查**，不过就停下、不出预览：假装填的 key 哪里都不许有；每一格在拍的那种窗口和另一种标准的窗口（1280×800、1024×768）下都不许有放不下的地方（整页比窗口宽、哪一块里的内容比它宽、内容被裁掉、同一组的宿主勾选不在同一行）。开发机上要有 Chrome、Chromium 或 Edge；不进 CI。和 `npm run preview` 互不影响 |
+| `npm run preview:web` | 生成网页界面的预览 `cli/.preview/web/index.html`（不提交）：本机的 Chrome 把真实的页面拍下来，每个状态一格，深浅各一份；改了页面都要生成并看一遍。**它自己带两道检查**，不过就停下、不出预览：假装填的 key 哪里都不许有；每一格在拍的那种窗口和另一种标准的窗口（1280×800、1024×768）下都不许有放不下的地方（整页比窗口宽、哪一块里的内容比它宽、内容被裁掉、同一组的宿主勾选不在同一行、开场引导里勾选和提问同不同行不对、「未检测到」和最后一个名字拆开了）。开发机上要有 Chrome、Chromium 或 Edge；不进 CI。和 `npm run preview` 互不影响 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
 | `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
 | `npm run check-upstream -- ..` | 把目录里登记的第三方 Skill 和作者在 GitHub 上的仓库对一遍：仓库还在不在、归档或改名没有、里面的 skill 多了少了。要联网，不进 CI；录入或改动第三方 Skill 之后跑，设上 `GITHUB_TOKEN` 免得被限流 |

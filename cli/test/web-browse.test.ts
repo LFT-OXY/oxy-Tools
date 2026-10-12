@@ -334,8 +334,8 @@ describe('网页界面：不可选的条目', () => {
     });
 
     expect(state.target.hosts).toEqual([]);
-    // 四个名字并列成一项，「未检测到」只写一次
-    expect(state.machine.hosts).toEqual([{ name: 'Claude Code、Codex、Pi、omp', detected: false, status: '未检测到' }]);
+    // 四个名字并列成一项，「未检测到」只写一次；一个名字中间是不换行空格（\u00a0），页面不在那里折行
+    expect(state.machine.hosts).toEqual([{ name: 'Claude\u00a0Code、Codex、Pi、omp', detected: false, status: '未检测到' }]);
     expect(reasons(state)).toEqual({ alpha: '需要 AI Agent', 'paper-kit': '需要 AI Agent', 'docs-local': '需要 AI Agent', fetcher: '需要 AI Agent' });
     // 本机信息里有终端界面的那一句提醒
     expect(state.machine.noHosts).toBe('没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件；外部项目仍可浏览');

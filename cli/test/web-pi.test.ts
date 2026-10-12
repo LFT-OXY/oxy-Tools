@@ -119,7 +119,8 @@ describe('网页界面：检测到 Pi', () => {
 
     expect(first?.machine.hosts).toEqual([
       { name: 'Pi', detected: true },
-      { name: 'Claude Code、Codex、omp', detected: false, status: '未检测到' },
+      // 合成的那一项里一个名字中间是不换行空格（\u00a0）
+      { name: 'Claude\u00a0Code、Codex、omp', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     expect(first?.guideAnswered).toBe(false);
@@ -143,8 +144,8 @@ describe('网页界面：检测到 Pi', () => {
 
     expect(zh?.machine.noHosts).toBe('没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件');
     expect(en?.machine.noHosts).toBe('Claude Code, Codex, Pi and omp not detected; components cannot be installed');
-    expect(zh?.machine.hosts).toEqual([{ name: 'Claude Code、Codex、Pi、omp', detected: false, status: '未检测到' }]);
-    expect(en?.machine.hosts).toEqual([{ name: 'Claude Code, Codex, Pi, omp', detected: false, status: 'not detected' }]);
+    expect(zh?.machine.hosts).toEqual([{ name: 'Claude\u00a0Code、Codex、Pi、omp', detected: false, status: '未检测到' }]);
+    expect(en?.machine.hosts).toEqual([{ name: 'Claude\u00a0Code, Codex, Pi, omp', detected: false, status: 'not detected' }]);
   });
 });
 
@@ -276,7 +277,7 @@ describe('网页界面：把本仓库的 skill 装给 Pi', () => {
 
     expect(state?.machine.hosts).toEqual([
       { name: 'Pi', detected: true },
-      { name: 'Claude Code, Codex, omp', detected: false, status: 'not detected' },
+      { name: 'Claude\u00a0Code, Codex, omp', detected: false, status: 'not detected' },
     ]);
     expect(statuses(state, 'alpha')).toEqual(['Pi none']);
     expect(rows(summary)).toEqual(['beta-pack · Skill · 2.3', `  Pi | overwrite | ${join('~', SHARED_SKILLS, 'beta-pack')} | 2.0 → 2.3`]);

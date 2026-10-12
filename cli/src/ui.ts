@@ -14,6 +14,7 @@ import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, 
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
 import type { SkillStatus } from './skill-status.ts';
 import {
+  hostPresenceTexts,
   mcpStatusText,
   skillStatusText,
   thirdPartyStatusText,
@@ -524,11 +525,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         hosts.filter((host) => host.detected === detected).map((host) => host.name);
       const missing = names(false);
       const present = names(true);
-      // 检测到的各写各的、排在前面；没检测到的合成一句排在后面：名字并列，「未检测到」只写一次
-      const presence = [
-        ...present.map((name) => `${name} ${paint('green', symbols.done)}`),
-        ...(missing.length > 0 ? [`${missing.join(t.listSeparator)} ${dim(symbols.dash)} ${t.notDetected}`] : []),
-      ];
+      // 检测到的各写各的、排在前面；没检测到的合成一句排在后面：分成哪几段和网页界面是同一份
+      const presence = hostPresenceTexts(t, hosts).map(({ name, detected, status }) =>
+        detected ? `${name} ${paint('green', symbols.done)}` : `${name} ${dim(symbols.dash)} ${status}`,
+      );
       print(
         ...gapAbove(),
         ...keyValue(t.agentKey, presence.join('   ')),

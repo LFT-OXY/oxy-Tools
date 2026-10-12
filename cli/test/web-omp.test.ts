@@ -133,7 +133,8 @@ describe('网页界面：检测到 omp', () => {
 
     expect(first?.machine.hosts).toEqual([
       { name: 'omp', detected: true },
-      { name: 'Claude Code、Codex、Pi', detected: false, status: '未检测到' },
+      // 合成的那一项里一个名字中间是不换行空格（\u00a0）
+      { name: 'Claude\u00a0Code、Codex、Pi', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     expect(first?.guideAnswered).toBe(false);
@@ -172,8 +173,40 @@ describe('网页界面：本机信息里没检测到的宿主合成一项', () =
   it('只检测到 Codex：检测到的排在前面，另外三个照界面上的先后并列', async () => {
     const [zh, en] = await both(['codex']);
 
-    expect(zh).toEqual(['Codex ✓', 'Claude Code、Pi、omp 未检测到']);
-    expect(en).toEqual(['Codex ✓', 'Claude Code, Pi, omp not detected']);
+    expect(zh).toEqual(['Codex ✓', 'Claude\u00a0Code、Pi、omp 未检测到']);
+    expect(en).toEqual(['Codex ✓', 'Claude\u00a0Code, Pi, omp not detected']);
+  });
+
+  it('合成的那一项里一个宿主的名字中间是不换行空格，名字之间的仍是普通的：页面折行只会落在名字之间', async () => {
+    let zh: ViewState | undefined;
+    let en: ViewState | undefined;
+    await run({
+      onPath: ['codex'],
+      page: async (page) => {
+        zh = page.state();
+        await page.send({ type: 'lang', lang: 'en' });
+        en = await page.until((state) => state.lang === 'en');
+        await done(page);
+      },
+    });
+
+    expect(zh?.machine.hosts.at(-1)?.name).toBe('Claude\u00a0Code、Pi、omp');
+    // 英文的逗号后面是普通空格，那里可以折
+    expect(en?.machine.hosts.at(-1)?.name).toBe('Claude\u00a0Code, Pi, omp');
+  });
+
+  it('检测到的宿主的名字照原样，里面是普通空格', async () => {
+    let first: ViewState | undefined;
+    await run({
+      onPath: ['claude'],
+      page: async (page) => {
+        first = page.state();
+        await done(page);
+      },
+    });
+
+    expect(first?.machine.hosts[0]).toEqual({ name: 'Claude Code', detected: true });
+    expect(first?.target.choices).toEqual([{ id: 'claude-code', name: 'Claude Code', on: true }]);
   });
 
   it('只有一个没检测到：那一项就是它一个名字', async () => {

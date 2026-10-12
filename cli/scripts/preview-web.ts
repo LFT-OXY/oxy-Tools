@@ -398,11 +398,11 @@ const scenes: Scene[] = [
   { title: '浏览 · 装到项目 · 1024×768', note: '宿主和安装范围两样一起折到标题的下一行，目录那一行在它们上面', drive: inOrder(crowded, toProject), viewport: NARROW },
   {
     title: '浏览 · 一个宿主都没有',
-    note: '顶上那一条不写宿主、没有安装范围；组件都是不可选的画法，原因是「需要 AI Agent」；左栏的本机信息里宿主那一行是四个名字并列、后面一次「未检测到」（放不下就在名字之间折行，「未检测到」不拆开），下面多一行「注意」',
+    note: '顶上那一条不写宿主、没有安装范围；组件都是不可选的画法，原因是「需要 AI Agent」；左栏的本机信息里宿主那一行是四个名字并列、后面一次「未检测到」（放不下就在名字之间折行，最后一个名字和「未检测到」不拆开），下面多一行「注意」',
     ...NO_HOSTS,
     drive: crowded,
   },
-  { title: '浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄、那一句最长的一格：四个名字折成两行，「未检测到」跟在最后一个名字后面，没有被裁掉的字', ...NO_HOSTS, drive: crowded, viewport: NARROW },
+  { title: '浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄、那一句最长的一格：四个名字折成两行，折在名字之间，「未检测到」跟在最后一个名字后面，没有被裁掉的字', ...NO_HOSTS, drive: crowded, viewport: NARROW },
   { title: '浏览 · 用途下只有外部项目', note: '没有组件的分区，顶上那一条下面直接是外部项目：没有勾选框，名字是链接，整条网址写在下面', drive: appsOnly },
   { title: '浏览 · 用途下只有外部项目 · 一个宿主都没有', note: '外部项目不靠宿主，照常看得到、点得开', ...NO_HOSTS, drive: appsOnly },
   { title: '浏览 · 有条目被跳过', note: '目录里有一条写坏的条目：左栏的本机信息多一行「注意」', catalog: withBrokenEntry },
@@ -748,7 +748,7 @@ const scenes: Scene[] = [
     ...OMP_ONLY,
     drive: crowded,
   },
-  { title: '浏览 · 只检测到 omp · 1024×768', note: '窄的窗口里「装进 omp」和那一句、安装范围一起在标题的下一行；左栏里 omp ✓ 在前，那一句在后、完整显示', ...OMP_ONLY, drive: crowded, viewport: NARROW },
+  { title: '浏览 · 只检测到 omp · 1024×768', note: '窄的窗口里「装进 omp」和那一句、安装范围一起在标题的下一行；左栏里 omp ✓ 在前，那一句在后，折在名字之间：最后一个名字和「未检测到」在同一行', ...OMP_ONLY, drive: crowded, viewport: NARROW },
   {
     title: '汇总 · 只检测到 omp',
     note: '每个条目一行，宿主那一格写「omp」，位置在共用 skill 目录（~/.agents/skills）',
@@ -824,9 +824,9 @@ const scenes: Scene[] = [
   },
   { title: '英文 · 浏览 · 有不可选的条目', ...EN, drive: crowded, reveal: 'officecli' },
   { title: '英文 · 浏览 · 只检测到 Claude Code', note: '英文的 Installs into Claude Code 和 Codex, Pi, omp not detected 更长：和安装范围一起在标题的下一行，共两行，和加 Pi、omp 之前一样', ...EN, ...ONE_HOST, drive: crowded },
-  { title: '英文 · 浏览 · 只检测到 Claude Code · 1024×768', note: '最挤的一格：那一句和安装范围并排放不下，各占一行，连标题三行——加 Pi、omp 之前这里是两行', ...EN, ...ONE_HOST, drive: crowded, viewport: NARROW },
+  { title: '英文 · 浏览 · 只检测到 Claude Code · 1024×768', note: '最挤的一格：Installs into Claude Code 和 Codex, Pi, omp not detected 一行，Install where 另一行，连标题三行——加 Pi、omp 之前这里是两行，维护者 2026-10-12 定的是接受、画面不动。左栏里那一句折在名字之间：Codex, Pi, 一行，omp not detected 一行', ...EN, ...ONE_HOST, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 一个宿主都没有', ...EN, ...NO_HOSTS, drive: crowded },
-  { title: '英文 · 浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄的一格：四个名字并列、后面一次 not detected，放不下就在名字之间折行', ...EN, ...NO_HOSTS, drive: crowded, viewport: NARROW },
+  { title: '英文 · 浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄的一格：四个名字并列、后面一次 not detected，放不下就在名字之间折行，not detected 跟着最后一个名字', ...EN, ...NO_HOSTS, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 只检测到 Codex', ...EN, ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   { title: '英文 · 浏览 · 用途下只有外部项目', ...EN, drive: appsOnly },
   { title: '英文 · 浏览 · 已选了几个 · 1024×768', ...EN, drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
@@ -925,7 +925,8 @@ const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
  * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了；
  * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）；顶上那一条里的目录那一行在整条放得下
  * 它的时候折了行（只检测到一个宿主时标题那一格只剩两百来像素，这一行不许照它排）；宿主的几个勾选没有排在同一行里
- *（在提问旁边排不下时要整组到下一行，不许有哪一个单独掉下去）。给出是哪几块。
+ *（在提问旁边排不下时要整组到下一行，不许有哪一个单独掉下去）；开场引导里两个、三个宿主的勾选没有和提问在同一行，
+ * 或四个宿主的没有整组排到提问的下一行；没检测到的宿主合成的那一句里「未检测到」和最后一个名字拆开了。给出是哪几块。
  * 开场里的那条命令除外：它是靠裁掉来一个字一个字敲出来的
  */
 const OVERFLOWING = `(() => {
@@ -954,6 +955,21 @@ const OVERFLOWING = `(() => {
   for (const options of document.querySelectorAll('.options')) {
     const tops = new Set([...options.children].map((option) => Math.round(option.getBoundingClientRect().top)));
     if (tops.size > 1) found.push('宿主的勾选没有排在同一行里：' + options.innerText.replace(/\\s+/g, ' ') + ' 分在 ' + tops.size + ' 行');
+  }
+  // 没检测到的宿主合成的那一句折行时只许在名字之间折：「未检测到」排在一行的开头，就是它和最后一个名字拆开了
+  for (const missing of document.querySelectorAll('.missing')) {
+    const status = missing.querySelector('span').getBoundingClientRect();
+    if (Math.round(status.left) <= Math.round(missing.getBoundingClientRect().left)) found.push('没检测到的宿主那一句里，「未检测到」和最后一个名字拆开了：' + missing.innerText);
+  }
+  // 开场引导只有大标志那么宽：两个、三个宿主的勾选和提问在同一行，四个宿主的整组在提问的下一行
+  const guided = document.querySelector('.intro-guide .options');
+  if (guided) {
+    const label = guided.parentElement.querySelector('.label').getBoundingClientRect();
+    const group = guided.getBoundingClientRect();
+    const count = guided.children.length;
+    const beside = group.top < label.bottom && group.bottom > label.top;
+    if (count <= 3 && !beside) found.push('开场引导里 ' + count + ' 个宿主的勾选没有和提问在同一行');
+    if (count >= 4 && group.top < label.bottom) found.push('开场引导里 ' + count + ' 个宿主的勾选没有整组排到提问的下一行');
   }
   return found;
 })()`;

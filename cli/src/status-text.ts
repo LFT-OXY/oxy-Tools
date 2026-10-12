@@ -1,4 +1,4 @@
-// 状态和不可选的原因写成哪个词、是什么含义。两套界面共用：终端界面照含义上样式码，网页界面随画面状态发给页面。
+// 状态和不可选的原因写成哪个词、是什么含义；本机信息里宿主那一行分成哪几段。两套界面共用：终端界面照含义上样式码，网页界面随画面状态发给页面。
 import type { Unavailable } from './availability.ts';
 import type { McpStatus } from './mcp-status.ts';
 import type { Messages } from './messages.ts';
@@ -74,4 +74,25 @@ export function unavailableReason(t: Messages, unavailable: Unavailable): string
     case 'os':
       return t.unsupportedOs(unavailable.os);
   }
+}
+
+/** 本机信息里宿主在不在的一段：检测到的一个宿主，或合成一句的那几个没检测到的 */
+export interface HostPresence {
+  /** 一个宿主的名字；没检测到的那一段是几个名字照界面上的先后、用这种语言并列的写法连起来的（「Codex、Pi、omp」） */
+  name: string;
+  detected: boolean;
+  /** 没检测到的那一段后面只写一次的那个词；检测到的没有 */
+  status?: string;
+}
+
+/**
+ * 本机信息里宿主那一行分成哪几段，照显示的先后：检测到的各一段、排在前面；没检测到的合成一段、排在后面。
+ * 全都检测到时没有那一段。两套界面画的是这同一份：终端界面在段与段之间留空、给没检测到的加上短横，网页界面原样放进画面状态
+ */
+export function hostPresenceTexts(t: Messages, hosts: readonly { name: string; detected: boolean }[]): HostPresence[] {
+  const missing = hosts.filter((host) => !host.detected).map((host) => host.name);
+  return [
+    ...hosts.filter((host) => host.detected).map((host) => ({ name: host.name, detected: true })),
+    ...(missing.length > 0 ? [{ name: missing.join(t.listSeparator), detected: false, status: t.notDetected }] : []),
+  ];
 }

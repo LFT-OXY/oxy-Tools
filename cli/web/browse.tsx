@@ -76,7 +76,7 @@ export function Browse({ state, send, rising, covered }: { state: ViewState; sen
 
 /**
  * 左栏最下面的本机信息：宿主在不在、目录里各类条目的数量，和提醒（一个宿主都没检测到、有条目被跳过）。
- * 宿主那一行照画面状态一项一段：检测到的各一段，没检测到的是安装器合好的一句，页面不自己拼
+ * 宿主那一行照画面状态一项一段：检测到的各一段，没检测到的是安装器合好的一句（Missing），页面不自己拼
  */
 function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
   return (
@@ -92,9 +92,7 @@ function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
               </span>
             </span>
           ) : (
-            <span class="missing" key={host.name}>
-              {host.name} <span class="faint">{host.status}</span>
-            </span>
+            <Missing key={host.name} host={host} />
           ),
         )}
       </p>
@@ -106,6 +104,19 @@ function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
       </p>
       {[machine.noHosts, machine.skipped].map((notice) => notice !== undefined && <Notice key={notice} t={t} notice={notice} />)}
     </section>
+  );
+}
+
+/**
+ * 没检测到的宿主合成的那一句：安装器并列好的几个名字，后面是那个词。放不下时只在名字之间折行——名字中间的空格在画面状态里
+ * 已经是不换行的，最后一个名字和那个词之间这里用不换行空格接上，那个词自己不拆开。faint 是整句都用最淡的文字（顶上那一条
+ * 和开场引导里）；左栏里名字照旧，只有那个词最淡
+ */
+function Missing({ host, faint = false }: { host: ViewState['machine']['hosts'][number]; faint?: boolean }) {
+  return (
+    <span class={faint ? 'missing faint' : 'missing'}>
+      {host.name}&nbsp;<span class="faint">{host.status}</span>
+    </span>
   );
 }
 
@@ -168,9 +179,7 @@ export function Target({ id, state, t, send }: { id: string; state: ViewState; t
           {state.machine.hosts
             .filter((host) => !host.detected)
             .map((host) => (
-              <span class="faint" key={host.name}>
-                {host.name} {host.status}
-              </span>
+              <Missing key={host.name} host={host} faint />
             ))}
         </p>
       ) : (
