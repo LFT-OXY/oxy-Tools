@@ -3,7 +3,7 @@
   "name": "installer-web-ui",
   "title": "安装器的网页界面",
   "description": "安装器缺省在本机浏览器里打开网页界面完成挑选、确认和安装，打不开浏览器的机器上退回终端界面",
-  "status": "slice",
+  "status": "implement",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -23,6 +23,6 @@
   "relatedFiles": [],
   "notes": "",
   "meta": {
-    "implementation_base_sha": "1797fb59e7a9b87521ae69996fb1a6955163f6a2"
+    "implementation_base_sha": "7dce5260316b05d654950e8a15b2e4934114d4cc"
   }
 }
