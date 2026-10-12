@@ -4,7 +4,7 @@
 
 **Blocked by:** 06, 09, 10, 12
 **Status:** ready-for-agent
-**Impl:** doing
+**Impl:** done
 
 - [x] 先改规范：入口与测试（启动顺序、启动参数表加 `--terminal`、环境变量表加判断用到的那几个、拿掉临时开关、用哪个界面的判断先后）；帮助的文字。（另改了界面设计规范的「帮助」和「网页界面开着时」、终端输出的预览页场景、网页界面的契约、总览；入口与测试多了一条易错点：直接调入口的脚本不带 `--terminal` 会挂住）
 - [x] 用终端界面的情形，按这个先后判断：给了 `--terminal`；`SSH_CONNECTION`、`SSH_TTY`、`SSH_CLIENT` 任一非空；系统不是 macOS 也不是 Windows 且 `DISPLAY` 和 `WAYLAND_DISPLAY` 都为空。都不是就用网页界面。判断只看入口收到的环境变量和平台。（`installer.ts` 的 `usesTerminalUi`；`--terminal` 不带值，写成 `--terminal=1` 是无法识别的参数）
