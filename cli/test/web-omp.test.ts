@@ -119,7 +119,7 @@ describe('网页界面：检测到 omp', () => {
     expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex、Pi、omp 未装']);
   });
 
-  it('只检测到 omp：没有可改的宿主，另外三个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
+  it('只检测到 omp：没有可改的宿主，另外三个合成一句写着未检测到、排在 omp 后面；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
     let first: ViewState | undefined;
     let refused: number | undefined;
     await run({
@@ -132,16 +132,62 @@ describe('网页界面：检测到 omp', () => {
     });
 
     expect(first?.machine.hosts).toEqual([
-      { name: 'Claude Code', detected: false, status: '未检测到' },
-      { name: 'Codex', detected: false, status: '未检测到' },
-      { name: 'Pi', detected: false, status: '未检测到' },
       { name: 'omp', detected: true },
+      { name: 'Claude Code、Codex、Pi', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     expect(first?.guideAnswered).toBe(false);
     expect(first?.target).toMatchObject({ choices: [{ id: 'omp', name: 'omp', on: true }], hosts: ['omp'] });
     expect(statuses(first, 'alpha')).toEqual(['omp 未装']);
     expect(refused).toBe(400);
+  });
+});
+
+describe('网页界面：本机信息里没检测到的宿主合成一项', () => {
+  // 本机信息里宿主那几项的写法：检测到的是名字加 ✓，没检测到的是名字加那个词
+  const presence = (state: ViewState | undefined): string[] | undefined =>
+    state?.machine.hosts.map((item) => (item.detected ? `${item.name} ✓` : `${item.name} ${item.status}`));
+  const both = async (onPath: string[]): Promise<[zh: string[] | undefined, en: string[] | undefined]> => {
+    let zh: ViewState | undefined;
+    let en: ViewState | undefined;
+    await run({
+      onPath,
+      page: async (page) => {
+        zh = page.state();
+        await page.send({ type: 'lang', lang: 'en' });
+        en = await page.until((state) => state.lang === 'en');
+        await done(page);
+      },
+    });
+    return [presence(zh), presence(en)];
+  };
+
+  it('检测到 Claude Code 和 Codex：两个各一项在前，Pi 和 omp 合成一项在后；页面上换成英文后并列的写法跟着换', async () => {
+    const [zh, en] = await both(['claude', 'codex']);
+
+    expect(zh).toEqual(['Claude Code ✓', 'Codex ✓', 'Pi、omp 未检测到']);
+    expect(en).toEqual(['Claude Code ✓', 'Codex ✓', 'Pi, omp not detected']);
+  });
+
+  it('只检测到 Codex：检测到的排在前面，另外三个照界面上的先后并列', async () => {
+    const [zh, en] = await both(['codex']);
+
+    expect(zh).toEqual(['Codex ✓', 'Claude Code、Pi、omp 未检测到']);
+    expect(en).toEqual(['Codex ✓', 'Claude Code, Pi, omp not detected']);
+  });
+
+  it('只有一个没检测到：那一项就是它一个名字', async () => {
+    const [zh, en] = await both(['claude', 'codex', 'omp']);
+
+    expect(zh).toEqual(['Claude Code ✓', 'Codex ✓', 'omp ✓', 'Pi 未检测到']);
+    expect(en).toEqual(['Claude Code ✓', 'Codex ✓', 'omp ✓', 'Pi not detected']);
+  });
+
+  it('四个都检测到：没有那一项', async () => {
+    const [zh, en] = await both(ALL_HOSTS);
+
+    expect(zh).toEqual(['Claude Code ✓', 'Codex ✓', 'Pi ✓', 'omp ✓']);
+    expect(en).toEqual(['Claude Code ✓', 'Codex ✓', 'Pi ✓', 'omp ✓']);
   });
 });
 

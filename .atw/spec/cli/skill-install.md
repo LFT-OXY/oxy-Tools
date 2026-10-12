@@ -103,9 +103,9 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 | 检测到的宿主 | 主菜单上方 | 进「推荐」或一个用途之后 |
 |--------------|-----------|-------------------|
 | 全部 | 「AI Agent」一行每个宿主后面一个 `✓`，没有「注意」 | 同下一行 |
-| 不止一个、但不是全部 | 检测到的后面一个 `✓`，没检测到的写「– 未检测到」；另有一行「注意」说明哪些被跳过、组件只装进哪些 | 列表里有 skill、第三方 Skill 或 MCP 时先问「装进哪些 AI Agent」：多选，只列检测到的，默认全选，名字后面不写目录；再进混合列表。列表里只有工具和外部项目时不问 |
-| 只有一个 | 同上一行：没检测到的写「– 未检测到」，一行「注意」 | 不问，直接用它 |
-| 一个都没有 | 每个都写「– 未检测到」，一行「注意」说明暂时装不了组件 | 照常进得去，不问宿主；skill 的行不可选，状态的位置写「需要 AI Agent」，外部项目照常可选 |
+| 不止一个、但不是全部 | 检测到的各写各的、后面一个 `✓`，排在前面；没检测到的合成一句排在后面——名字并列、后面只写一次「– 未检测到」（`Claude Code ✓   Codex ✓   Pi、omp – 未检测到`；写法见 [界面设计](./ui-design.md) 的「主菜单」）；另有一行「注意」说明哪些被跳过、组件只装进哪些 | 列表里有 skill、第三方 Skill 或 MCP 时先问「装进哪些 AI Agent」：多选，只列检测到的，默认全选，名字后面不写目录；再进混合列表。列表里只有工具和外部项目时不问 |
+| 只有一个 | 同上一行：检测到的那个在前，另外三个合成一句在后（`Codex ✓   Claude Code、Pi、omp – 未检测到`），一行「注意」 | 不问，直接用它 |
+| 一个都没有 | 四个名字并列、后面一次「– 未检测到」（`Claude Code、Codex、Pi、omp – 未检测到`），一行「注意」说明暂时装不了组件 | 照常进得去，不问宿主；skill 的行不可选，状态的位置写「需要 AI Agent」，外部项目照常可选 |
 
 「注意」的两句话都从宿主的列表里取名字，不写死（`messages.ts` 的 `hostsSkipped`、`noHosts`）：
 
@@ -308,7 +308,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
   - 第三方 Skill：同样的几种组合；条目用 `hosts` 限定了宿主时，一组里有它支持的宿主就照目录写（`hosts: ['pi']`、四个宿主：Claude Code 一栏「不支持」，共用的那一栏照目录），一个都不支持的那一组写「不支持」（`hosts: ['claude-code']`：共用 skill 目录里有同名目录也不算），每一组都不支持时这一行不可选；清单（终端界面）和小格（网页界面）同样按组。
   - MCP 的栏、终端界面的标题行、80 列见 [安装 MCP](./mcp-install.md) 的「Tests Required」和 [界面设计](./ui-design.md)。
   - omp 的 MCP 那一半见 [安装 MCP](./mcp-install.md) 的「Tests Required」。
-- 宿主：`onPath` 给 `['codex']`、`['pi']`、`['omp']`、`['claude', 'codex']`、`['claude', 'codex', 'pi']`、`['claude', 'codex', 'pi', 'omp']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
+- 宿主：`onPath` 给 `['codex']`、`['pi']`、`['omp']`、`['claude', 'codex']`、`['claude', 'codex', 'pi']`、`['claude', 'codex', 'pi', 'omp']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；**「AI Agent」那一行的各种情形另有一组**（`hosts.test.ts` 的「本机信息的「AI Agent」那一行：没检测到的宿主合成一句」，工单 07）：四个都检测到、检测到三个、两个（前两个，和 Codex 加 omp——检测到的不挨着时也排在前面）、只检测到 Claude Code、Codex、omp、一个都没检测到，中英文各一遍，**整行逐字去比**（从最后留在画面上的 `result.screen` 里取那一行：`result.output` 里它前面带着擦掉加载提示时留下的回车），再量它不超出第 79 列、下一行就是「目录」那一行（没有折成两行）；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
 
 ### 7. Wrong vs Correct
 

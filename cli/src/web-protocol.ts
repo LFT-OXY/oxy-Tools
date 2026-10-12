@@ -59,7 +59,11 @@ export interface ViewState {
   guideAnswered: boolean;
   /** 本机信息，说法和终端界面是同一份文案 */
   machine: {
-    /** status 是没检测到时写在名字后面的词；检测到的没有 */
+    /**
+     * 宿主在不在，一段一项，照显示的先后：检测到的宿主各一项、在前；没检测到的合成一项、在后——name 是它们的名字照界面上的
+     * 先后、用这种语言并列的写法连起来的一段（「Codex、Pi、omp」，英文是 Codex, Pi, omp），status 是写在后面的那个词
+     * （「未检测到」，只写一次）。检测到的没有 status；全都检测到时没有那一项。页面照原样画，不自己拼
+     */
     hosts: { name: string; detected: boolean; status?: string }[];
     /** 目录里各类条目的数量，每类一段；一个条目都没有时是那一句话 */
     catalog: string[];

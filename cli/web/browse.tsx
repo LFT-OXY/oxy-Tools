@@ -74,24 +74,29 @@ export function Browse({ state, send, rising, covered }: { state: ViewState; sen
   );
 }
 
-/** 左栏最下面的本机信息：检测到的宿主、目录里各类条目的数量，和提醒（一个宿主都没检测到、有条目被跳过） */
+/**
+ * 左栏最下面的本机信息：宿主在不在、目录里各类条目的数量，和提醒（一个宿主都没检测到、有条目被跳过）。
+ * 宿主那一行照画面状态一项一段：检测到的各一段，没检测到的是安装器合好的一句，页面不自己拼
+ */
 function Machine({ machine, t }: { machine: ViewState['machine']; t: Text }) {
   return (
     <section class="machine">
       <h2>{t.machine}</h2>
       <p class="hosts">
-        {machine.hosts.map((host) => (
-          <span class="host" key={host.name}>
-            {host.name}
-            {host.detected ? (
+        {machine.hosts.map((host) =>
+          host.detected ? (
+            <span class="host" key={host.name}>
+              {host.name}
               <span class="ready" aria-hidden="true">
                 ✓
               </span>
-            ) : (
-              <span class="faint">{host.status}</span>
-            )}
-          </span>
-        ))}
+            </span>
+          ) : (
+            <span class="missing" key={host.name}>
+              {host.name} <span class="faint">{host.status}</span>
+            </span>
+          ),
+        )}
       </p>
       <p class="counts">
         <span>{t.catalog}</span>
@@ -143,7 +148,8 @@ export function Directory({ project }: { project: ViewState['target']['project']
 
 /**
  * 「装进哪些 AI Agent」和「装到哪里」：中间一栏顶上那一条里的，和开场引导里的，是这同一个。
- * 改了只告诉安装器，勾没勾上、选了哪个照画面状态画；只检测到一个宿主时没有可改的；一个宿主都没检测到时没有这一块。
+ * 改了只告诉安装器，勾没勾上、选了哪个照画面状态画；只检测到一个宿主时没有可改的，旁边写的是画面状态里合好的那一句
+ *（没检测到的几个名字并列、后面一次「未检测到」）；一个宿主都没检测到时没有这一块。
  * id 是这一处的名字：两处同时在页面上，控件的 id 和单选的组名靠它分开
  */
 export function Target({ id, state, t, send }: { id: string; state: ViewState; t: Text; send: (intent: Intent) => void }) {
@@ -172,20 +178,23 @@ export function Target({ id, state, t, send }: { id: string; state: ViewState; t
           <span class="label" id={`${id}-hosts`}>
             {hostsLabel}
           </span>
-          {choices.map((choice) => (
-            <label class="option" key={choice.id}>
-              <input
-                type="checkbox"
-                checked={choice.on}
-                onChange={(event) => {
-                  event.currentTarget.checked = choice.on;
-                  if (choice.on && hosts.length === 1) setLastOne(true);
-                  send({ type: 'host', host: choice.id, on: !choice.on });
-                }}
-              />
-              {choice.name}
-            </label>
-          ))}
+          {/* 几个勾选是一整组：在名字旁边排不下时一起到下一行 */}
+          <div class="options">
+            {choices.map((choice) => (
+              <label class="option" key={choice.id}>
+                <input
+                  type="checkbox"
+                  checked={choice.on}
+                  onChange={(event) => {
+                    event.currentTarget.checked = choice.on;
+                    if (choice.on && hosts.length === 1) setLastOne(true);
+                    send({ type: 'host', host: choice.id, on: !choice.on });
+                  }}
+                />
+                {choice.name}
+              </label>
+            ))}
+          </div>
           {lastOne && (
             <span class="attention" role="status">
               {t.atLeastOne}

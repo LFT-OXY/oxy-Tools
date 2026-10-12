@@ -520,15 +520,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       apps: number;
       skipped: number;
     }): void {
-      const presence = (host: Host): string =>
-        `${host.name} ${host.detected ? paint('green', symbols.done) : `${dim(symbols.dash)} ${t.notDetected}`}`;
       const names = (detected: boolean): string[] =>
         hosts.filter((host) => host.detected === detected).map((host) => host.name);
       const missing = names(false);
       const present = names(true);
+      // 检测到的各写各的、排在前面；没检测到的合成一句排在后面：名字并列，「未检测到」只写一次
+      const presence = [
+        ...present.map((name) => `${name} ${paint('green', symbols.done)}`),
+        ...(missing.length > 0 ? [`${missing.join(t.listSeparator)} ${dim(symbols.dash)} ${t.notDetected}`] : []),
+      ];
       print(
         ...gapAbove(),
-        ...keyValue(t.agentKey, hosts.map(presence).join('   ')),
+        ...keyValue(t.agentKey, presence.join('   ')),
         ...keyValue(t.catalogKey, t.counts({ skills, mcps, tools, apps }).join(` ${symbols.separator} `) || t.noEntries),
         ...(present.length === 0 ? keyValue(t.noticeKey, t.noHosts(missing, apps > 0), attention) : []),
         ...(present.length > 0 && missing.length > 0

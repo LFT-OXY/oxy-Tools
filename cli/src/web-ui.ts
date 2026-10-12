@@ -409,6 +409,7 @@ function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Se
   const perKind = t.counts(counts);
   const skipped = catalog.skipped.length;
   const { hosts, scope } = targetOf(runtime, session);
+  const missing = runtime.hosts.filter((host) => !host.detected).map((host) => host.name);
   const listing = session.list === undefined ? undefined : listingView(runtime, catalog, session.list, hosts, scope, lang, new Set(session.picked), session.chosen);
   return {
     lang,
@@ -419,7 +420,11 @@ function viewOf({ version, catalog, runtime, counts }: WebUiOptions, session: Se
     introSeen: session.introSeen,
     guideAnswered: session.guideAnswered,
     machine: {
-      hosts: runtime.hosts.map((host) => ({ name: host.name, detected: host.detected, ...(host.detected ? {} : { status: t.notDetected }) })),
+      // 和终端界面的「AI Agent」那一行同一种排法：检测到的各一项、在前；没检测到的合成一项、在后
+      hosts: [
+        ...runtime.hosts.filter((host) => host.detected).map((host) => ({ name: host.name, detected: true })),
+        ...(missing.length > 0 ? [{ name: missing.join(t.listSeparator), detected: false, status: t.notDetected }] : []),
+      ],
       catalog: perKind.length > 0 ? perKind : [t.noEntries],
       // 和终端界面的本机信息是同一句
       ...(hosts.length === 0 ? { noHosts: t.noHosts(runtime.hosts.map((host) => host.name), counts.apps > 0) } : {}),

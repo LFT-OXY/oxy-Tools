@@ -54,9 +54,8 @@ describe('网页界面：骨架', () => {
       machine: {
         hosts: [
           { name: 'Claude Code', detected: true },
-          { name: 'Codex', detected: false, status: '未检测到' },
-          { name: 'Pi', detected: false, status: '未检测到' },
-          { name: 'omp', detected: false, status: '未检测到' },
+          // 没检测到的合成一项：名字并列，「未检测到」只写一次
+          { name: 'Codex、Pi、omp', detected: false, status: '未检测到' },
         ],
         catalog: ['2 Skill'],
       },
@@ -111,7 +110,7 @@ describe('网页界面：骨架', () => {
     expect(result.screen).toMatch(/^\s*Web UI\s+opened in your browser$/m);
     // 按键提示只在等按键的时候在画面上，收场时擦掉了：在记下的全部输出里找
     expect(result.output).toMatch(/^\s+t use the terminal UI · Ctrl\+C quit/m);
-    expect(state).toMatchObject({ lang: 'en', machine: { hosts: [{ name: 'Claude Code' }, { name: 'Codex', status: 'not detected' }, { name: 'Pi', status: 'not detected' }, { name: 'omp', status: 'not detected' }], catalog: ['2 skills'] } });
+    expect(state).toMatchObject({ lang: 'en', machine: { hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex, Pi, omp', detected: false, status: 'not detected' }], catalog: ['2 skills'] } });
   });
 
   it('目录里有条目被跳过：页面收到的本机信息里有那一句，和终端上的是同一句', async () => {

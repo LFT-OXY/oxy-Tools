@@ -320,7 +320,7 @@ const scenes: Scene[] = [
     drive: inOrder(choosingHost('codex', false), toProject),
     guide: true,
   },
-  { title: '开场引导 · 只检测到 Claude Code', note: '没有可勾的宿主：写一句「装进 Claude Code」，没检测到的那个写在旁边；只有安装范围可选', ...ONE_HOST, guide: true },
+  { title: '开场引导 · 只检测到 Claude Code', note: '没有可勾的宿主：写一句「装进 Claude Code」，没检测到的三个合成一句写在旁边（Codex、Pi、omp 未检测到），和它在同一行里；只有安装范围可选', ...ONE_HOST, guide: true },
   { title: '开场引导 · 键盘焦点', note: '按了三下 Tab：焦点从「开始挑选」出去一圈再进来，落在 Codex 的勾选上，那一圈白的描边在黑底上看得见；Tab 只在这几个控件之间走，走不到底下的页面上', guide: true, tabs: 3 },
   { title: '开场引导 · 动画被跳过', note: '动画播着的时候按了一下键：直接到引导静止的样子，和播完停下来的那一格一样；那一下没有改掉选项，也没有直接进去', intro: 'skipped', guide: true },
   { title: '开场引导 · 减少动态效果', note: '系统开了「减少动态效果」：动画不播，开场引导照样出现，同样是静止的样子', intro: 'reduced-motion', guide: true },
@@ -373,10 +373,11 @@ const scenes: Scene[] = [
   },
   {
     title: '浏览 · 只检测到 Claude Code',
-    note: '没有可勾的宿主：写一句「装进 Claude Code」，没检测到的那个写在旁边，和标题同一行；卡片底部只有状态的词，不写宿主的名字',
+    note: '没有可勾的宿主：写一句「装进 Claude Code」，没检测到的三个合成一句写在旁边（Codex、Pi、omp 未检测到），和安装范围一起跟标题在同一行——和加 Pi、omp 之前一样是一行；左栏的本机信息里同一句在「Claude Code ✓」的下一行。卡片底部只有状态的词，不写宿主的名字',
     ...ONE_HOST,
     drive: crowded,
   },
+  { title: '浏览 · 只检测到 Claude Code · 1024×768', note: '窄的窗口里那一句和安装范围一起在标题的下一行，共两行，和加 Pi、omp 之前一样；左栏的那一句完整显示', ...ONE_HOST, drive: crowded, viewport: NARROW },
   { title: '浏览 · 只检测到 Codex', note: 'excel 只支持 Claude Code：不可选，原因是「需要别的 AI Agent」', ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   {
     title: '浏览 · 两个宿主只选一个',
@@ -397,10 +398,11 @@ const scenes: Scene[] = [
   { title: '浏览 · 装到项目 · 1024×768', note: '宿主和安装范围两样一起折到标题的下一行，目录那一行在它们上面', drive: inOrder(crowded, toProject), viewport: NARROW },
   {
     title: '浏览 · 一个宿主都没有',
-    note: '顶上那一条不写宿主、没有安装范围；组件都是不可选的画法，原因是「需要 AI Agent」；左栏的本机信息多一行「注意」',
+    note: '顶上那一条不写宿主、没有安装范围；组件都是不可选的画法，原因是「需要 AI Agent」；左栏的本机信息里宿主那一行是四个名字并列、后面一次「未检测到」（放不下就在名字之间折行，「未检测到」不拆开），下面多一行「注意」',
     ...NO_HOSTS,
     drive: crowded,
   },
+  { title: '浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄、那一句最长的一格：四个名字折成两行，「未检测到」跟在最后一个名字后面，没有被裁掉的字', ...NO_HOSTS, drive: crowded, viewport: NARROW },
   { title: '浏览 · 用途下只有外部项目', note: '没有组件的分区，顶上那一条下面直接是外部项目：没有勾选框，名字是链接，整条网址写在下面', drive: appsOnly },
   { title: '浏览 · 用途下只有外部项目 · 一个宿主都没有', note: '外部项目不靠宿主，照常看得到、点得开', ...NO_HOSTS, drive: appsOnly },
   { title: '浏览 · 有条目被跳过', note: '目录里有一条写坏的条目：左栏的本机信息多一行「注意」', catalog: withBrokenEntry },
@@ -566,7 +568,7 @@ const scenes: Scene[] = [
     guide: true,
   },
   { title: '开场引导 · 三个宿主 · 1024×768', note: '窄的窗口里三个勾选仍排得下，没有滚动条', ...THREE, guide: true, viewport: NARROW },
-  { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的三个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
+  { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的三个合成一句写在旁边（Claude Code、Codex、omp 未检测到）；只有安装范围可选', ...PI_ONLY, guide: true },
   {
     title: '浏览 · 三个宿主',
     note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi」合成一段、状态只写一份——Skill 那一区上方的「注意」说的就是这件事',
@@ -611,13 +613,13 @@ const scenes: Scene[] = [
   { title: '浏览 · 三个宿主 · MCP 那一区 · 1024×768', note: '窄的窗口里 MCP 的三段状态', ...THREE, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown', viewport: NARROW },
   {
     title: '浏览 · 只检测到 Pi',
-    note: '顶上写一句「装进 Pi」，没检测到的三个写在旁边；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
+    note: '顶上写一句「装进 Pi」，没检测到的三个合成一句写在旁边（Claude Code、Codex、omp 未检测到）；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
     ...PI_ONLY,
     ...PI_CONFIGURED,
     drive: crowded,
     reveal: 'markitdown',
   },
-  { title: '浏览 · 只检测到 Pi · 装到项目', note: '没检测到的三个写在旁边，这一行更长；目录那一行照样不折', ...PI_ONLY, ...PI_CONFIGURED, drive: inOrder(crowded, toProject) },
+  { title: '浏览 · 只检测到 Pi · 装到项目', note: '没检测到的三个合成一句写在旁边；目录那一行照样不折', ...PI_ONLY, ...PI_CONFIGURED, drive: inOrder(crowded, toProject) },
   {
     title: '汇总 · 带 key 的 MCP、装到项目 · 三个宿主',
     note: 'MCP 装进 Claude Code 和 Pi，每个宿主一行，没有 Codex 的；Pi 那边配过的 grok-search 写「覆盖」和备注。「注意」里：key 会以明文写进 .mcp.json 和 .pi/mcp.json（说变量名和文件，不说值）、两个宿主各一句要批准之后才启用、mistral-ocr 缺必填的 key 这次不装。每一句都完整显示',
@@ -689,9 +691,9 @@ const scenes: Scene[] = [
     drive: thirdPartySummarized,
   },
   { title: '汇总 · 有第三方 Skill · 三个宿主 · 1024×768', note: '窄的面板里「Codex、Pi」仍完整显示，位置放不下就在任意处断开', ...THREE, drive: thirdPartySummarized, viewport: NARROW },
-  { title: '开场引导 · 四个宿主', note: '四个宿主都检测到：第一行提问后面依次是 Claude Code、Codex、Pi、omp 四个勾选，都勾着', ...FOUR, intro: 'played', guide: true },
-  { title: '开场引导 · 四个宿主 · 1024×768', note: '窄的窗口里的四个勾选，没有滚动条', ...FOUR, guide: true, viewport: NARROW },
-  { title: '开场引导 · 只检测到 omp', note: '没有可勾的宿主：写一句「装进 omp」，没检测到的三个写在旁边；只有安装范围可选', ...OMP_ONLY, guide: true },
+  { title: '开场引导 · 四个宿主', note: '四个宿主都检测到：四个勾选在提问旁边排不下，整组到提问的下一行——依次是 Claude Code、Codex、Pi、omp，都勾着，一行排完，和提问的字从同一处起；没有哪一个单独掉下去', ...FOUR, intro: 'played', guide: true },
+  { title: '开场引导 · 四个宿主 · 1024×768', note: '窄的窗口里同样是四个勾选整组在提问的下一行，没有滚动条', ...FOUR, guide: true, viewport: NARROW },
+  { title: '开场引导 · 只检测到 omp', note: '没有可勾的宿主：写一句「装进 omp」，没检测到的三个合成一句写在旁边（Claude Code、Codex、Pi 未检测到），和它在同一行里；只有安装范围可选', ...OMP_ONLY, guide: true },
   {
     title: '浏览 · 四个宿主',
     note: '顶上那一条里四个宿主的勾选和安装范围；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi、omp」合成一段。放得下就一行（多数卡片），两段都宽时一段占一行（explanation、writing-for-agents）；段名不被截断，也不从一段中间折开',
@@ -735,7 +737,7 @@ const scenes: Scene[] = [
   },
   {
     title: '浏览 · 只检测到 omp',
-    note: '顶上写一句「装进 omp」，没检测到的三个写在旁边；Skill 和第三方 Skill 的卡片照常勾得上；MCP 的卡片都是不可选的画法，原因是「需要别的 AI Agent」，出路在那一区上方的「注意」里',
+    note: '顶上写一句「装进 omp」，没检测到的三个合成一句写在旁边（Claude Code、Codex、Pi 未检测到），和标题同一行；Skill 和第三方 Skill 的卡片照常勾得上；MCP 的卡片都是不可选的画法，原因是「需要别的 AI Agent」，出路在那一区上方的「注意」里',
     ...OMP_ONLY,
     drive: crowded,
     reveal: 'markitdown',
@@ -746,6 +748,7 @@ const scenes: Scene[] = [
     ...OMP_ONLY,
     drive: crowded,
   },
+  { title: '浏览 · 只检测到 omp · 1024×768', note: '窄的窗口里「装进 omp」和那一句、安装范围一起在标题的下一行；左栏里 omp ✓ 在前，那一句在后、完整显示', ...OMP_ONLY, drive: crowded, viewport: NARROW },
   {
     title: '汇总 · 只检测到 omp',
     note: '每个条目一行，宿主那一格写「omp」，位置在共用 skill 目录（~/.agents/skills）',
@@ -790,8 +793,9 @@ const scenes: Scene[] = [
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主', note: '英文的提醒更长：三句都完整显示', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI },
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄的面板、四条提醒', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI, viewport: NARROW },
   { title: '英文 · 结果 · 有 MCP · 三个宿主', ...EN, ...THREE, catalog: withKeyed, commands: 'succeed', drive: inOrder(crowded, pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished) },
-  { title: '英文 · 开场引导 · 四个宿主', note: '英文的提问更长：四个勾选和提问一行放不下，照「放不下时」上下排', ...EN, ...FOUR, guide: true },
-  { title: '英文 · 开场引导 · 四个宿主 · 1024×768', ...EN, ...FOUR, guide: true, viewport: NARROW },
+  { title: '英文 · 开场引导 · 四个宿主', note: '英文的提问更长：四个勾选整组在提问的下一行，一行排完', ...EN, ...FOUR, guide: true },
+  { title: '英文 · 开场引导 · 四个宿主 · 1024×768', note: '窄的窗口里同样是整组在下一行', ...EN, ...FOUR, guide: true, viewport: NARROW },
+  { title: '英文 · 开场引导 · 只检测到 omp', note: '英文里最长的那一句：Installs into omp 旁边是 Claude Code, Codex, Pi not detected，在同一行里、完整显示', ...EN, ...OMP_ONLY, guide: true },
   { title: '英文 · 浏览 · 四个宿主', ...EN, ...FOUR, drive: crowded },
   { title: '英文 · 浏览 · 四个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、四个宿主', ...EN, ...FOUR, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 四个宿主 · MCP 那一区', ...EN, ...FOUR, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
@@ -799,6 +803,7 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 四个宿主 · 第三方 Skill 那一区 · 1024×768', note: '最挤的一格：英文、窄窗口、小格里的两段状态', ...EN, ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills', viewport: NARROW },
   { title: '英文 · 汇总 · 四个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi, omp，完整显示', ...EN, ...FOUR, drive: summarized },
   { title: '英文 · 浏览 · 只检测到 omp', ...EN, ...OMP_ONLY, drive: crowded, reveal: 'markitdown' },
+  { title: '英文 · 浏览 · 只检测到 omp · 1024×768', note: '最挤的一格：Installs into omp 和 Claude Code, Codex, Pi not detected 一行，Install where 另一行', ...EN, ...OMP_ONLY, drive: crowded, viewport: NARROW },
   {
     title: '英文 · 开场引导 · 选了项目 · 1024×768',
     note: '最挤的一格：提问更长，放不下时提问和它的控件上下排；目录那一行在任意处断开；没有滚动条、没有被裁掉的字',
@@ -818,8 +823,10 @@ const scenes: Scene[] = [
     viewport: NARROW,
   },
   { title: '英文 · 浏览 · 有不可选的条目', ...EN, drive: crowded, reveal: 'officecli' },
-  { title: '英文 · 浏览 · 只检测到 Claude Code', ...EN, ...ONE_HOST, drive: crowded },
+  { title: '英文 · 浏览 · 只检测到 Claude Code', note: '英文的 Installs into Claude Code 和 Codex, Pi, omp not detected 更长：和安装范围一起在标题的下一行，共两行，和加 Pi、omp 之前一样', ...EN, ...ONE_HOST, drive: crowded },
+  { title: '英文 · 浏览 · 只检测到 Claude Code · 1024×768', note: '最挤的一格：那一句和安装范围并排放不下，各占一行，连标题三行——加 Pi、omp 之前这里是两行', ...EN, ...ONE_HOST, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 一个宿主都没有', ...EN, ...NO_HOSTS, drive: crowded },
+  { title: '英文 · 浏览 · 一个宿主都没有 · 1024×768', note: '左栏最窄的一格：四个名字并列、后面一次 not detected，放不下就在名字之间折行', ...EN, ...NO_HOSTS, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 只检测到 Codex', ...EN, ...CODEX_ONLY, drive: crowded, reveal: 'excel' },
   { title: '英文 · 浏览 · 用途下只有外部项目', ...EN, drive: appsOnly },
   { title: '英文 · 浏览 · 已选了几个 · 1024×768', ...EN, drive: inOrder(crowded, MIXED_PICKS), viewport: NARROW },
@@ -917,7 +924,8 @@ const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
 /**
  * 页面上放不下的地方：整页比窗口宽；自己滚动的一块里的内容比它宽（会冒出横向滚动条）；不滚动的一块把内容裁掉了；
  * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）；顶上那一条里的目录那一行在整条放得下
- * 它的时候折了行（只检测到一个宿主时标题那一格只剩两百来像素，这一行不许照它排）。给出是哪几块。
+ * 它的时候折了行（只检测到一个宿主时标题那一格只剩两百来像素，这一行不许照它排）；宿主的几个勾选没有排在同一行里
+ *（在提问旁边排不下时要整组到下一行，不许有哪一个单独掉下去）。给出是哪几块。
  * 开场里的那条命令除外：它是靠裁掉来一个字一个字敲出来的
  */
 const OVERFLOWING = `(() => {
@@ -942,6 +950,10 @@ const OVERFLOWING = `(() => {
     unwrapped.remove();
     const room = directory.closest('.bar').clientWidth;
     if (natural.width <= room && directory.getBoundingClientRect().height > natural.height + 1) found.push('顶上那一条里的目录那一行折了行：它要 ' + Math.ceil(natural.width) + 'px，整条有 ' + room + 'px');
+  }
+  for (const options of document.querySelectorAll('.options')) {
+    const tops = new Set([...options.children].map((option) => Math.round(option.getBoundingClientRect().top)));
+    if (tops.size > 1) found.push('宿主的勾选没有排在同一行里：' + options.innerText.replace(/\\s+/g, ' ') + ' 分在 ' + tops.size + ' 行');
   }
   return found;
 })()`;

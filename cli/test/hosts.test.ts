@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run } from './harness.ts';
+import { displayWidth } from '../src/text.ts';
 
 const claudeSkills = (home: string): string => join(home, '.claude', 'skills');
 const codexSkills = (home: string): string => join(home, '.agents', 'skills');
@@ -19,7 +20,7 @@ describe('只检测到 Codex', () => {
   it('可执行路径上有 codex 命令时算检测到，skill 装进用户主目录的 .agents/skills', async () => {
     const result = await run({ onPath: ['codex'], answers: installAlpha });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex ✓\s+Pi – 未检测到\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Codex ✓ {3}Claude Code、Pi、omp – 未检测到$/m);
     expect(read(codexSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
     expect(marker(codexSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -43,7 +44,7 @@ describe('只检测到 Pi', () => {
   it('可执行路径上有 pi 命令时算检测到，排在 Claude Code、Codex 之后；skill 装进用户主目录的 .agents/skills，带安装标记', async () => {
     const result = await run({ onPath: ['pi'], answers: installAlpha });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi ✓\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Pi ✓ {3}Claude Code、Codex、omp – 未检测到$/m);
     expect(read(sharedSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
     expect(marker(sharedSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -69,7 +70,7 @@ describe('只检测到 omp', () => {
   it('可执行路径上有 omp 命令时算检测到，排在最后；skill 装进用户主目录的 .agents/skills，带安装标记', async () => {
     const result = await run({ onPath: ['omp'], answers: installAlpha });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi – 未检测到\s+omp ✓$/m);
+    expect(result.output).toMatch(/^ {2}AI Agent {2}omp ✓ {3}Claude Code、Codex、Pi – 未检测到$/m);
     expect(read(sharedSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
     expect(marker(sharedSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -95,7 +96,7 @@ describe('只检测到一个宿主', () => {
       answers: [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex – 未检测到\s+Pi – 未检测到\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Claude Code ✓ {3}Codex、Pi、omp – 未检测到$/m);
     expect(result.output).toMatch(/^\s+注意\s+没有检测到 Codex、Pi、omp，已跳过；组件只装进 Claude Code$/m);
     expect(result.output).not.toContain('装进哪些 AI Agent');
     expect(readdirSync(result.home)).toEqual(['.claude']);
@@ -116,8 +117,7 @@ describe('只检测到一个宿主', () => {
   it('英文界面下同样说明', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: ['claude'], answers: [choose('Exit')] });
 
-    // 四个宿主里三个写着 not detected 时这一行比 80 列长，照键值行的规矩折到下一行
-    expect(flat(result.output)).toContain(' AI Agent Claude Code ✓ Codex – not detected Pi – not detected omp – not detected ');
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Claude Code ✓ {3}Codex, Pi, omp – not detected$/m);
     // 这一句在 80 列里放不下，照「注意」的规矩折成两行
     expect(flat(result.output)).toContain(' Notice Codex, Pi, omp not detected, skipped; components go into Claude Code only ');
   });
@@ -125,15 +125,14 @@ describe('只检测到一个宿主', () => {
   it('英文界面下只有 Pi', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: ['pi'], answers: [choose('Exit')] });
 
-    expect(flat(result.output)).toContain(' AI Agent Claude Code – not detected Codex – not detected Pi ✓ omp – not detected ');
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Pi ✓ {3}Claude Code, Codex, omp – not detected$/m);
     expect(flat(result.output)).toContain(' Notice Claude Code, Codex, omp not detected, skipped; components go into Pi only ');
   });
 
   it('名字只是相近的命令不算数', async () => {
     const result = await run({ onPath: ['claude-helper', 'codex-helper', 'pi-helper', 'pip', 'omp-helper', 'bomp'], answers: [choose('退出')] });
 
-    // 四个都写着未检测到时这一行比 80 列长，照键值行的规矩折到下一行
-    expect(flat(result.output)).toContain(' AI Agent Claude Code – 未检测到 Codex – 未检测到 Pi – 未检测到 omp – 未检测到 ');
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Claude Code、Codex、Pi、omp – 未检测到$/m);
   });
 });
 
@@ -144,7 +143,7 @@ describe('检测到两个宿主', () => {
   it('进入「推荐」后先问装进哪些宿主：两项都默认勾选，名字后面不写目录', async () => {
     const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi – 未检测到\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Claude Code ✓ {3}Codex ✓ {3}Pi、omp – 未检测到$/m);
     expect(result.output).toMatch(/^\s+注意\s+没有检测到 Pi、omp，已跳过；组件只装进 Claude Code、Codex$/m);
     expect(result.output).toContain('装进哪些 AI Agent');
     expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex$/m);
@@ -351,11 +350,10 @@ describe('检测到四个宿主', () => {
 });
 
 describe('一个宿主都没检测到', () => {
-  it('主菜单上方说明原因，每个宿主都写明未检测到', async () => {
+  it('主菜单上方说明原因，四个宿主的名字并列、后面写一次未检测到', async () => {
     const result = await run({ onPath: [], answers: [choose('退出')] });
 
-    // 四个都写着未检测到时这一行比 80 列长，照键值行的规矩折到下一行
-    expect(flat(result.output)).toContain(' AI Agent Claude Code – 未检测到 Codex – 未检测到 Pi – 未检测到 omp – 未检测到 ');
+    expect(result.output).toMatch(/^ {2}AI Agent {2}Claude Code、Codex、Pi、omp – 未检测到$/m);
     expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件$/m);
     expect(result.exitCode).toBe(0);
   });
@@ -396,5 +394,44 @@ describe('一个宿主都没检测到', () => {
 
     expect(flat(result.output)).toContain(' Notice Claude Code, Codex, Pi and omp not detected; components cannot be installed ');
     expect(result.output).toMatch(/^ – beta-pack\s+needs an AI Agent\s+The second sample skill$/m);
+  });
+});
+
+describe('本机信息的「AI Agent」那一行：没检测到的宿主合成一句', () => {
+  // 检测到的各写各的、排在前面；没检测到的名字并列、后面只写一次「未检测到」，排在后面
+  const rows: [what: string, onPath: string[], zh: string, en: string][] = [
+    ['四个都检测到', ['claude', 'codex', 'pi', 'omp'], 'Claude Code ✓   Codex ✓   Pi ✓   omp ✓', 'Claude Code ✓   Codex ✓   Pi ✓   omp ✓'],
+    ['检测到三个', ['claude', 'codex', 'pi'], 'Claude Code ✓   Codex ✓   Pi ✓   omp – 未检测到', 'Claude Code ✓   Codex ✓   Pi ✓   omp – not detected'],
+    ['检测到 Claude Code 和 Codex', ['claude', 'codex'], 'Claude Code ✓   Codex ✓   Pi、omp – 未检测到', 'Claude Code ✓   Codex ✓   Pi, omp – not detected'],
+    ['检测到 Codex 和 omp', ['codex', 'omp'], 'Codex ✓   omp ✓   Claude Code、Pi – 未检测到', 'Codex ✓   omp ✓   Claude Code, Pi – not detected'],
+    ['只检测到 Claude Code', ['claude'], 'Claude Code ✓   Codex、Pi、omp – 未检测到', 'Claude Code ✓   Codex, Pi, omp – not detected'],
+    ['只检测到 Codex', ['codex'], 'Codex ✓   Claude Code、Pi、omp – 未检测到', 'Codex ✓   Claude Code, Pi, omp – not detected'],
+    ['只检测到 omp', ['omp'], 'omp ✓   Claude Code、Codex、Pi – 未检测到', 'omp ✓   Claude Code, Codex, Pi – not detected'],
+    ['一个都没检测到', [], 'Claude Code、Codex、Pi、omp – 未检测到', 'Claude Code, Codex, Pi, omp – not detected'],
+  ];
+  // 「AI Agent」那一行，和紧接着的下一行：这一行没有折开时，下一行就是「目录」那一行
+  const agentRow = (screen: string): [row: string, next: string] => {
+    const lines = screen.split('\n');
+    const at = lines.findIndex((line) => line.startsWith('  AI Agent  '));
+    expect(at).toBeGreaterThan(-1);
+    return [lines[at] ?? '', lines[at + 1] ?? ''];
+  };
+
+  it.each(rows)('%s', async (_what, onPath, zh) => {
+    const result = await run({ onPath, answers: [choose('退出')] });
+
+    const [row, next] = agentRow(result.screen);
+    expect(row).toBe(`  AI Agent  ${zh}`);
+    expect(displayWidth(row)).toBeLessThanOrEqual(79);
+    expect(next).toMatch(/^ {2}目录 {6}\S/);
+  });
+
+  it.each(rows)('英文界面：%s', async (_what, onPath, _zh, en) => {
+    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Exit')] });
+
+    const [row, next] = agentRow(result.screen);
+    expect(row).toBe(`  AI Agent  ${en}`);
+    expect(displayWidth(row)).toBeLessThanOrEqual(79);
+    expect(next).toMatch(/^ {2}Catalog {3}\S/);
   });
 });

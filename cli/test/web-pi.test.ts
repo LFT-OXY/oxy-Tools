@@ -105,7 +105,7 @@ describe('网页界面：检测到 Pi', () => {
     expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex、Pi 未装']);
   });
 
-  it('只检测到 Pi：没有可改的宿主，另外三个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
+  it('只检测到 Pi：没有可改的宿主，另外三个合成一句写着未检测到、排在 Pi 后面；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
     let first: ViewState | undefined;
     let refused: number | undefined;
     await run({
@@ -118,10 +118,8 @@ describe('网页界面：检测到 Pi', () => {
     });
 
     expect(first?.machine.hosts).toEqual([
-      { name: 'Claude Code', detected: false, status: '未检测到' },
-      { name: 'Codex', detected: false, status: '未检测到' },
       { name: 'Pi', detected: true },
-      { name: 'omp', detected: false, status: '未检测到' },
+      { name: 'Claude Code、Codex、omp', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     expect(first?.guideAnswered).toBe(false);
@@ -145,12 +143,8 @@ describe('网页界面：检测到 Pi', () => {
 
     expect(zh?.machine.noHosts).toBe('没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件');
     expect(en?.machine.noHosts).toBe('Claude Code, Codex, Pi and omp not detected; components cannot be installed');
-    expect(en?.machine.hosts).toEqual([
-      { name: 'Claude Code', detected: false, status: 'not detected' },
-      { name: 'Codex', detected: false, status: 'not detected' },
-      { name: 'Pi', detected: false, status: 'not detected' },
-      { name: 'omp', detected: false, status: 'not detected' },
-    ]);
+    expect(zh?.machine.hosts).toEqual([{ name: 'Claude Code、Codex、Pi、omp', detected: false, status: '未检测到' }]);
+    expect(en?.machine.hosts).toEqual([{ name: 'Claude Code, Codex, Pi, omp', detected: false, status: 'not detected' }]);
   });
 });
 
@@ -281,10 +275,8 @@ describe('网页界面：把本仓库的 skill 装给 Pi', () => {
     });
 
     expect(state?.machine.hosts).toEqual([
-      { name: 'Claude Code', detected: false, status: 'not detected' },
-      { name: 'Codex', detected: false, status: 'not detected' },
       { name: 'Pi', detected: true },
-      { name: 'omp', detected: false, status: 'not detected' },
+      { name: 'Claude Code, Codex, omp', detected: false, status: 'not detected' },
     ]);
     expect(statuses(state, 'alpha')).toEqual(['Pi none']);
     expect(rows(summary)).toEqual(['beta-pack · Skill · 2.3', `  Pi | overwrite | ${join('~', SHARED_SKILLS, 'beta-pack')} | 2.0 → 2.3`]);

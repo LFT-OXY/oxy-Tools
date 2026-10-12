@@ -285,7 +285,7 @@ export class Interrupted extends Error {}
 |----------|----------|
 | 页面用 Preact 写、esbuild 打包，都是开发依赖（访谈里说好由写规格时定） | [网页界面的契约](./web-ui-contract.md)「Signatures」末尾讲页面的源码与构建的那一段 |
 | 网页界面的预览用本机装着的 Chrome、经它自带的调试协议驱动，没有为它加依赖；只在 macOS 的 Chrome 上跑过 | [网页界面的设计](./web-ui-design.md)「用什么驱动浏览器」 |
-| 预览自己查两样，不过就不出预览：假装填的 key 哪里都没有（工单 10）；每一格在两种窗口下都没有放不下的地方（工单 14；工单 16 起开场那一层比窗口高也算一样） | 同上「怎么用」 |
+| 预览自己查两样，不过就不出预览：假装填的 key 哪里都没有（工单 10）；每一格在两种窗口下都没有放不下的地方（工单 14；工单 16 起开场那一层比窗口高也算一样；任务 `10-12-installer-add-pi-omp-hosts` 工单 07 起同一组的宿主勾选不在同一行也算一样） | 同上「怎么用」 |
 | 预览里除了专看开场引导的那几格，别的场景都由脚本先替页面把开场引导答掉（发 `guide-answered`），和替它发 `intro-seen` 一样；经入口的测试不替它答——原有的网页界面的用例都是在引导没答过时跑的 | 同上「场景怎么写」的 `guide`；[网页界面的契约](./web-ui-contract.md)「开场引导答过没有」 |
 | 测试架子缺省在启动参数最前面带 `--terminal`，要网页界面的用例给 `page` 或 `web: true`；任务开始之前就有的用例一条没改 | [入口与测试](./installer-entry.md)「Tests Required」 |
 | 待命的按键由页面的脚本按（`terminal.press('t')`），不排进 `answers` | [网页界面的契约](./web-ui-contract.md) 文末的表 |
@@ -306,7 +306,7 @@ export class Interrupted extends Error {}
 | `npm run build` | 构建到 `dist/`（不提交）：`tsc` 编安装器，再把页面打成 `dist/web/` 下的静态文件 |
 | `npm run build:web` | 只把页面打一遍 |
 | `npm run preview` | 生成界面预览页 `cli/.preview/index.html`（不提交）；改了任何画面都要生成并看一遍。**不许改画面的重构**（搬代码、拆模块）拿它当凭据：动手之前先生成一份另存，改完再生成一份，两份应当逐字节相同——预览页经入口把每个画面都走一遍，测试没断言到的字也在里面 |
-| `npm run preview:web` | 生成网页界面的预览 `cli/.preview/web/index.html`（不提交）：本机的 Chrome 把真实的页面拍下来，每个状态一格，深浅各一份；改了页面都要生成并看一遍。**它自己带两道检查**，不过就停下、不出预览：假装填的 key 哪里都不许有；每一格在拍的那种窗口和另一种标准的窗口（1280×800、1024×768）下都不许有放不下的地方（整页比窗口宽、哪一块里的内容比它宽、内容被裁掉）。开发机上要有 Chrome、Chromium 或 Edge；不进 CI。和 `npm run preview` 互不影响 |
+| `npm run preview:web` | 生成网页界面的预览 `cli/.preview/web/index.html`（不提交）：本机的 Chrome 把真实的页面拍下来，每个状态一格，深浅各一份；改了页面都要生成并看一遍。**它自己带两道检查**，不过就停下、不出预览：假装填的 key 哪里都不许有；每一格在拍的那种窗口和另一种标准的窗口（1280×800、1024×768）下都不许有放不下的地方（整页比窗口宽、哪一块里的内容比它宽、内容被裁掉、同一组的宿主勾选不在同一行）。开发机上要有 Chrome、Chromium 或 Edge；不进 CI。和 `npm run preview` 互不影响 |
 | `OXY_TOOLS_CATALOG=<仓库根> npm start` | 构建后在本机启动，读本地的目录数据 |
 | `npm run validate-catalog -- ..` | 用安装器自己的校验逻辑检查仓库根的 `index.json` 和 `catalog.json`；改了这两个文件或校验规则都要跑 |
 | `npm run check-upstream -- ..` | 把目录里登记的第三方 Skill 和作者在 GitHub 上的仓库对一遍：仓库还在不在、归档或改名没有、里面的 skill 多了少了。要联网，不进 CI；录入或改动第三方 Skill 之后跑，设上 `GITHUB_TOKEN` 免得被限流 |

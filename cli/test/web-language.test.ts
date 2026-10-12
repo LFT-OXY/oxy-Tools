@@ -75,7 +75,7 @@ describe('网页界面：页面上换语言', () => {
       tracker: '需要别的 AI Agent',
       apps: { title: '外部项目', note: '只给链接，不安装', about: SAMPLE_APPS[1]?.description.zh },
       machine: {
-        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: '未检测到' }, { name: 'Pi', detected: false, status: '未检测到' }, { name: 'omp', detected: false, status: '未检测到' }],
+        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex、Pi、omp', detected: false, status: '未检测到' }],
         catalog: ['3 Skill', '2 MCP', '2 外部项目'],
       },
       target: { hostsLabel: '装进哪些 AI Agent', scopeLabel: '装到哪里', scopes: ['全局', '项目'] },
@@ -92,7 +92,7 @@ describe('网页界面：页面上换语言', () => {
       tracker: 'needs another AI Agent',
       apps: { title: 'External projects', note: 'links only, nothing is installed', about: SAMPLE_APPS[1]?.description.en },
       machine: {
-        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: 'not detected' }, { name: 'Pi', detected: false, status: 'not detected' }, { name: 'omp', detected: false, status: 'not detected' }],
+        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex, Pi, omp', detected: false, status: 'not detected' }],
         catalog: ['3 skills', '2 MCP', '2 external'],
       },
       target: { hostsLabel: 'Install into which AI Agents', scopeLabel: 'Install where', scopes: ['Global', 'Project'] },
