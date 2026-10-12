@@ -941,11 +941,16 @@ progress::-moz-progress-bar {
 }
 .entry li {
   display: grid;
-  /* 宿主和操作两栏的宽是定死的：各段的位置才上下对得齐；英文的 overwrite 也放得下 */
-  grid-template-columns: 96px 72px minmax(0, 1fr);
+  /* 宿主和操作两栏的宽是定死的：各段的位置才上下对得齐。宿主一栏照最长的一格「Codex、Pi、omp」定（它是 102.6px，留一点余量）；
+     英文的 overwrite 也放得下 */
+  grid-template-columns: 112px 72px minmax(0, 1fr);
   align-items: baseline;
   gap: 0 12px;
   padding: 3px 0;
+}
+/* 宿主那一格是安装器连好的几个名字，不许从中间折开：比这一栏宽时预览的机械检查会报 */
+.entry li > .quiet {
+  white-space: nowrap;
 }
 .where {
   display: grid;

@@ -207,6 +207,29 @@ const withHostLimitedThirdParty = catalogOf(
     tools: DOCUMENT_TOOLS,
   },
 );
+// 名字最长的样例：在 withFiveKinds 之上多一条名字 27 列的第三方 Skill（名字取自真实目录里只含一个 skill 的条目中最长的那一个，
+// 说明是为预览写的）。汇总里它那几行连位置放不下一行
+const LONGEST_NAME = 'nuyoah-image-reverse-prompt';
+const LONGEST_NAME_ABOUT = { zh: '把一张图反推成生成它的提示词', en: 'Work out the prompt that would generate a given image' };
+const withLongestName = catalogOf(
+  { version: 1, skills: SHOWCASE_SKILLS },
+  {
+    ...MIXED_CATALOG,
+    thirdPartySkills: [
+      ...DOCUMENT_THIRD_PARTY,
+      {
+        name: LONGEST_NAME,
+        source: `nuyoah-ai-works/${LONGEST_NAME}`,
+        description: LONGEST_NAME_ABOUT,
+        url: `https://github.com/nuyoah-ai-works/${LONGEST_NAME}`,
+        purpose: 'documents',
+        skills: [{ name: LONGEST_NAME, description: LONGEST_NAME_ABOUT }],
+      },
+    ],
+    mcps: DOCUMENT_MCPS,
+    tools: DOCUMENT_TOOLS,
+  },
+);
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -415,6 +438,15 @@ const PROJECT_WITH_PI: Pick<Scene, 'project' | 'answersScope'> = {
 const FOUR_HOSTS_FIVE_KINDS = { ...THREE_HOSTS_FIVE_KINDS, onPath: [...FOUR_HOSTS, 'pandoc'] };
 // 只检测到 omp：不问装进哪个宿主
 const OMP_ONLY_FIVE_KINDS = { ...THREE_HOSTS_FIVE_KINDS, onPath: ['omp', 'pandoc'] };
+// 名字最长的那份样例、四个宿主：guizang-ppt-skill 在 Claude Code 下已有同名目录——位置另起一行的行上也有备注
+const LONGEST_NAMES = {
+  ...FOUR_HOSTS_FIVE_KINDS,
+  catalog: withLongestName,
+  home: { ...FOUR_HOSTS_FIVE_KINDS.home, [`${CLAUDE_SKILLS}/guizang-ppt-skill/SKILL.md`]: '# guizang-ppt-skill\n' },
+};
+// withLongestName 的「文档处理」里第三方 Skill 依次是 drawio-skill、guizang-ppt-skill、nuyoah-image-reverse-prompt、paper-craft-skills：
+// 勾上 pr（名字短，中文界面里它的行放得下）、guizang-ppt-skill 和 nuyoah-image-reverse-prompt，确认就到汇总（没勾含多个 skill 的那一条，不出清单）
+const toLongestNamesSummary = [...down(2), KEY.space, ...down(2), KEY.space, KEY.down, KEY.space, KEY.enter];
 // Pi 的用户级配置写坏了，读不出里面有哪些 MCP
 const PI_UNREADABLE = { '.pi/agent/mcp.json': '{ "mcpServers": ' };
 // 假装执行命令：pi 这个命令起不来，别的都成功
@@ -624,7 +656,7 @@ const scenes: Scene[] = [
   { title: '结果 · 含覆盖项 · 四个宿主', note: '按 skill 目录分别列出：Claude Code 一行，「Codex、Pi、omp」一行，各有各的结果；合计按行算', onPath: FOUR_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
   { title: '混合列表 · 五种类型 · 四个宿主', note: '表头是 Skill 的两栏：「Claude Code」「Codex、Pi、omp」。MCP 的三栏（Claude Code、Codex、Pi）写在它那一段的标题行上，和下面的状态对齐，这一段不写说明一栏；没有 omp 的那一栏——安装器不装 omp 的 MCP，列表上方的第二行「注意」说明原因和出路', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
   { title: '第三方 Skill 的清单 · 四个宿主', note: '每个 skill 一行，栏和列表一样按 skill 目录归组：「Claude Code」「Codex、Pi、omp」两栏', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
-  { title: '汇总确认 · 含第三方 Skill · 四个宿主', note: '第三方 Skill 每个 skill 两行、两条命令：Claude Code 的一条，共用 skill 目录的一条（--agent codex），那一行写「Codex、Pi、omp」；MCP 每个装得了的宿主一行，没有 omp 的行，也没有 omp 的命令', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
+  { title: '汇总确认 · 含第三方 Skill · 四个宿主', note: '第三方 Skill 每个 skill 两行、两条命令：Claude Code 的一条，共用 skill 目录的一条（--agent codex），那一行写「Codex、Pi、omp」；guizang-ppt-skill 的两行连位置放不下，位置另起一行，与「操作」一栏的左缘对齐。MCP 每个装得了的宿主一行，没有 omp 的行，也没有 omp 的命令', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
   { title: '结果 · 含第三方 Skill · 四个宿主', note: '第三方 Skill 的「Codex、Pi、omp」是一行；MCP 的结果里没有 omp', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '汇总确认 · 带 key 的 MCP · 四个宿主', note: 'MCP 装进 Claude Code、Codex、Pi 三个宿主，小表和命令里都没有 omp；key 只问一次', ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toMcpSummary] },
   { title: '混合列表 · 装到项目 · 四个宿主', note: '三行「注意」挨着：共用 skill 目录、Codex 的 MCP 只能装到全局、安装器装不了 omp 的 MCP。MCP 仍是 Claude Code、Codex、Pi 三栏，栏名在它那一段的标题行上：Codex 那一栏都写不支持，行仍可选，装进 Claude Code 和 Pi；Skill 的两栏看的是项目目录下的 skill 目录', ...FOUR_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...intoProject, ...down(6)] },
@@ -639,6 +671,8 @@ const scenes: Scene[] = [
   { title: '汇总与结果 · 只检测到 omp', note: '汇总和结果里宿主写的是 omp，位置在共用 skill 目录', onPath: ['omp'], keys: install },
   { title: '汇总与结果 · 第三方 Skill · 只检测到 omp', note: 'skills CLI 不认识 omp：展示和执行的命令里 agent 名借用 pi（--agent pi），它落的正是共用 skill 目录', ...OMP_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...down(4), KEY.space, KEY.down, KEY.space, KEY.enter, KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter] },
   { title: '汇总与结果 · Codex、Pi、omp 合成一行', note: '三个宿主用的是同一个共用 skill 目录：每个 skill 只有一行，宿主那一格写「Codex、Pi、omp」；合计按行算', onPath: SHARED_THREE, keys: twoHosts(install) },
+  { title: '汇总确认 · 位置另起一行 · 四个宿主', note: '一行连位置超出第 79 列时，这一行到操作为止，位置在下一行整条写出，这一行的备注再排在它下面；放得下的行（pr 的两行）照旧，备注仍在它的位置下面。名字 27 列时另起的几行与「AI Agent」一栏的左缘对齐', ...LONGEST_NAMES, keys: [...toMixedDocuments(true), ...toLongestNamesSummary] },
+  { title: '汇总确认 · 位置另起一行 · 只检测到 Claude Code', note: '只有一个宿主时同一个画法：名字长的两行位置另起一行，pr 那一行放得下、照旧', ...LONGEST_NAMES, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...toLongestNamesSummary] },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
   { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面。只装一个工具时不重复「结果」分区', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
@@ -673,7 +707,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 选择宿主', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, keys: toRecommended },
   { title: '英文界面 · 选择安装范围', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toScope },
   { title: '英文界面 · 装到项目的列表', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: [...intoProject, ...down(6)] },
-  { title: '英文界面 · 装到项目的汇总', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
+  { title: '英文界面 · 装到项目的汇总', note: '装到项目时位置是相对路径，短两列：只有 guizang-ppt-skill 的两行放不下、位置另起一行', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectSummary },
   { title: '英文界面 · 装到项目 · 只选了 Codex', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: intoProjectCodexOnly },
   { title: '英文界面 · 装到项目 · 带 key 的 MCP 的汇总', argv: ['--lang', 'en'], ...FIVE_KINDS, ...PROJECT, keys: toProjectMcpSummary },
   { title: '英文界面 · 两个宿主的汇总与结果', argv: ['--lang', 'en'], onPath: BOTH_HOSTS, catalog: oneFails, keys: twoHosts(install) },
@@ -700,11 +734,11 @@ const scenes: Scene[] = [
   { title: '英文界面 · 混合列表 · 四种类型', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...pickFourKinds] },
   { title: '英文界面 · 混合列表 · 光标在不可选的工具上', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7)] },
   { title: '英文界面 · 第三方 Skill 的清单', argv: ['--lang', 'en'], ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
-  { title: '英文界面 · 含第三方 Skill 的汇总与结果', argv: ['--lang', 'en'], ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 含第三方 Skill 的汇总与结果', note: '名字长的四行位置另起一行，paper-analyzer 的备注排在它的位置下面；paper-comic 的两行放得下、照旧', argv: ['--lang', 'en'], ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '英文界面 · 主菜单 · 只检测到 Pi', note: '「注意」那一句比一行长，照规矩折行', argv: ['--lang', 'en'], onPath: ['pi'] },
   { title: '英文界面 · 选择宿主 · 检测到三个', argv: ['--lang', 'en'], onPath: THREE_HOSTS, keys: toRecommended },
   { title: '英文界面 · 混合列表 · 五种类型 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
-  { title: '英文界面 · 三个宿主的汇总与结果', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 三个宿主的汇总与结果', note: '和两个宿主时一样：名字长的四行位置另起一行', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '英文界面 · 混合列表 · 只检测到 Pi', argv: ['--lang', 'en'], ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...down(6)] },
   { title: '英文界面 · 混合列表 · 装到项目 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...intoProject, ...down(6)] },
   { title: '英文界面 · 汇总确认 · 装到项目 · 带 key 的 MCP · 三个宿主', note: '英文的提醒更长，照规矩折行，每一行都不折出第 80 列', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: toProjectMcpSummary },
@@ -716,7 +750,9 @@ const scenes: Scene[] = [
   { title: '英文界面 · 选择宿主 · 检测到四个', argv: ['--lang', 'en'], onPath: FOUR_HOSTS, keys: toRecommended },
   { title: '英文界面 · skill 多选列表 · 四种状态并存 · 四个宿主', argv: ['--lang', 'en'], onPath: FOUR_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 混合列表 · 五种类型 · 四个宿主', note: '那句关于 omp 的 MCP 的说明连行首的键一行放得下', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
-  { title: '英文界面 · 四个宿主的汇总与结果', note: '宿主那一格用英文的并列写法 Codex, Pi, omp', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 四个宿主的汇总与结果', note: '宿主那一格用英文的并列写法 Codex, Pi, omp；第三方 Skill 的六行连位置都放不下，位置各另起一行', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 汇总确认 · 位置另起一行 · 四个宿主', note: '英文的栏更宽，放不下的行更多：pr 的两行也另起了，这一格里每一行的位置都在下一行', argv: ['--lang', 'en'], ...LONGEST_NAMES, keys: [...toMixedDocuments(true), ...toLongestNamesSummary] },
+  { title: '英文界面 · 含第三方 Skill 的汇总 · 只检测到 Claude Code', note: 'guizang-ppt-skill、paper-analyzer 两行连位置放不下：位置另起一行，与 Action 一栏的左缘对齐；paper-comic 那一行放得下、照旧', argv: ['--lang', 'en'], ...FIVE_KINDS, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...toThirdPartySummary] },
   { title: '英文界面 · 第三方 Skill 的清单 · 四个宿主', note: '栏名用英文的并列写法 Codex, Pi, omp', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
   { title: '英文界面 · 混合列表 · 五种类型 · 选了 Codex 和 Pi', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, onPath: [...CODEX_AND_PI, 'pandoc'], keys: [...toMixedDocuments(true), ...down(6)] },
   { title: '英文界面 · 混合列表 · 五种类型 · 选了 Claude Code 和 omp', note: 'MCP 那一段照表头排，About 一栏仍在', argv: ['--lang', 'en'], ...FIVE_KINDS, onPath: ['claude', 'omp', 'pandoc'], keys: [...toMixedDocuments(true), ...down(6)] },

@@ -228,7 +228,7 @@ export interface ConfirmQuestion {
 | 栏 | 宽度 |
 |----|------|
 | 条目（表头是类型的名字，取混合列表段标题的那个词）、AI Agent、操作 | 整个分区里这一栏最长的一格加栏间隔，各张小表对齐 |
-| 位置 | 只有 skill 的小表有；按这一栏最长的一格定 |
+| 位置 | 只有 skill 和第三方 Skill 的小表有；按这一栏最长的一格定。**一行一个放法**：这一行连位置超出第 79 列时位置另起一行，见下 |
 | 备注 | 见下 |
 
 备注**整个分区一个放法**：
@@ -237,6 +237,15 @@ export interface ConfirmQuestion {
 |------|------|
 | 每一格备注（连同表头）接在行尾都不超过 79 列。**只看有备注的行**：没有备注的行后面什么都不写，它的位置再长也不算放不下 | 备注成一栏：skill 的小表里在「位置」后面，MCP 的小表里紧跟「操作」。有备注的小表表头写它，没有的不写 |
 | 有一格放不下 | 整个分区的备注全部另起一行，缩进到「位置」的左缘（MCP 的小表没有这一栏，也从同一列起）；表头都不写这一栏。从那里起连最长的一格都放不下时，所有备注一起往左挪到刚好放得下，不让终端来折 |
+
+位置**一行一个放法**（任务 `10-12-installer-add-pi-omp-hosts` 工单 08；维护者 2026-10-12 定的，见该任务规格「四个宿主时的版式」第 4 条）：
+
+| 情况 | 画法 |
+|------|------|
+| 这一行连位置不超过 79 列 | 位置接在「操作」后面，和工单 08 之前一字不差；它的备注照上面那张表 |
+| 这一行连位置超出第 79 列 | 这一行到「操作」为止；位置在下一行**整条写出**，不截断、不拆开；这一行有备注的话，备注再排在位置的下一行。另起的位置和跟着它的备注**同一个左缘，整个分区一个**：从「位置」往左数，第一个它们当中最长的一格放得下的栏的左缘——先「操作」，再「AI Agent」，都放不下就是条目一栏的左缘（缩进两格）。连那里都放不下的是路径本身比一行长：仍从缩进两格起整条写在一行上，照「网址和路径整条写在一行上」由终端去折 |
+
+位置另起了一行的那一行，备注**跟着它的位置**，不照上面那张表的缩进；别的行的备注照旧——所以放得下的行连同它的备注和工单 08 之前一字不差。有位置另起一行的分区里，skill 和第三方 Skill 的小表只要有备注，备注就都是另起一行的：「位置」一栏的宽度仍照最长的一格算，另起了一行的那一格也在内，备注接在它后面必然放不下（这两张小表都没有备注、只有 MCP 的小表有时，MCP 的备注放得下仍成一栏——`mixed.test.ts` 的「备注放不放得下只看有备注的行」）。表头照旧写「位置」，哪怕这张小表里每一行的位置都另起了一行。MCP 和工具的小表没有位置，不受影响。
 
 表头永远只有一行。同一个条目装进几个 skill 目录（MCP 是几个宿主）就有几行，名字只写在第一行。**宿主那一格可以是几个名字**：共用一个 skill 目录的几个所选宿主（Codex、Pi、omp）在算计划时合成一项，`InstallTarget.hosts`、`ThirdPartyTarget.hosts` 是它们的名字，呈现层用文案的 `listSeparator` 连起来（`ui.ts` 的 `hostCell`：「Codex、Pi、omp」，英文 `Codex, Pi, omp`——最长的一格是 14 列，比「Claude Code」宽 3 列）；`McpTarget` 仍是一个 `host`。汇总的小表、进行中的那一行、结果行用的是同一个 `hostCell`，宿主一栏照连起来之后的宽度定宽。
 
@@ -586,6 +595,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 要画出带 key 的 MCP，场景用 `...KEYED`（`withKeyedMcps`：在那四条之外，`context7` 有一个可选的 key，多一条 key 必填的 `exa`）；`toExaKey` 停在必填 key 的提问上，`toTwoKeys` 停在可选的那个上，`PASTED_KEY` 是假装粘贴的值。**生成之后在 `cli/.preview/index.html` 里搜这个值，应当一处都没有。**
 - 要画出 MCP，场景用 `catalog: withMcps`（四条为预览编的样例，两种连接方式都有，其中一条只支持 Codex）；`MCP_STATES` 是只有 Claude Code、其中两条已配置，`MCP_TWO_HOSTS` 是两个宿主、Codex 的配置读不了；名字长的样例在 `withLongNameMcp`。两个宿主时按键用 `mcpTwoHosts(keys)`（这四条样例都在「联网搜索与文档检索」下，主菜单上它紧跟在「推荐」后面，`toMcps` 下移一行进去；`twoHosts` 是给「推荐」用的）。外部命令是假的：缺省都成功，`commands` 给一个假的执行器让某条失败或一直跑不完。预览页从不真的执行命令。
 - 要画出状态栏按 skill 目录归组的各种样子（任务 `10-12-installer-add-pi-omp-hosts` 工单 06），换 `onPath` 就行：`CODEX_AND_PI`（Skill 一栏、MCP 两栏）、`THREE_HOSTS`、`FOUR_HOSTS`（Skill 两栏、MCP 三栏）、`['claude', 'omp']`（Skill 两栏、MCP 一栏）、`['omp']`（MCP 一栏都没有）；五种类型同表用 `THREE_HOSTS_FIVE_KINDS` / `FOUR_HOSTS_FIVE_KINDS` 再盖掉 `onPath`，只有 MCP 的列表用 `catalog: withMcps` 加 `PI_CONTEXT7_CONFIGURED`（Pi 的用户级配置里配过 context7，三栏才各不一样）。
+- 要画出汇总里位置另起一行（工单 08），名字要够长：五种类型的样例里 `guizang-ppt-skill`（17 列）在中文四个宿主下、英文只检测到 Claude Code 或选了两个以上宿主时就放不下，照 `...FOUR_HOSTS_FIVE_KINDS`（英文的加 `argv: ['--lang', 'en']`）加 `toThirdPartySummary` 走到汇总就看得到（另起的位置对着「操作」一栏）；要更长的名字给 `...LONGEST_NAMES`（样例目录 `withLongestName` 多一条 27 列的第三方 Skill，`guizang-ppt-skill` 在 Claude Code 下已有同名目录），按键是 `toLongestNamesSummary`（勾上 `pr` 和两条第三方 Skill，不出清单）：另起的位置对着「AI Agent」一栏，另起了位置的行上也有备注。
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。`...PROJECT` 的项目目录里还有一份配过 `markitdown` 的 `.mcp.json`（全局配过的是 `excel`），MCP 的状态按范围读才看得出来；`toProjectMcpSummary` 勾上 `markitdown` 和带 key 的 `mistral-ocr` 停在汇总上（明文和批准的两行提醒），`intoProjectCodexOnly` 在宿主选择上去掉 Claude Code 再进项目范围的列表（MCP 不可选）。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。

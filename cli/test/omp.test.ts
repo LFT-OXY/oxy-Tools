@@ -762,7 +762,7 @@ describe('四个宿主都选了时的 80 列', () => {
     expectOmpUntouched(result);
   });
 
-  it('英文界面：宿主行、宿主选择、列表、清单、结果的每一行都不超出第 79 列', async () => {
+  it('英文界面：宿主行、宿主选择、列表、清单、汇总、结果的每一行都不超出第 79 列', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: everything(),
@@ -778,18 +778,13 @@ describe('四个宿主都选了时的 80 列', () => {
         choose('Exit'),
       ],
     });
-    // 汇总的小表不在这里量：英文下「位置」一栏的路径长了会超出一行，是加 omp 之前就记着的问题（规范「界面设计」文末），
-    // 版式由维护者定
-    const summary = result.screen.indexOf('── Install');
-    const commands = result.screen.indexOf('── ', summary + 1);
 
-    expect(summary).toBeGreaterThan(-1);
-    expect(commands).toBeGreaterThan(summary);
     expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex, Pi, omp\s+About$/m);
     expect(result.output).toMatch(/^\s+── MCP\s+Claude Code\s+Codex\s+Pi$/m);
+    // 汇总里位置放不下的行，位置另起了一行（工单 08 之前这几行超出一行，不在这里量）
+    expect(result.screen).toMatch(/^ +Codex, Pi, omp +new\n +~\S+paper-reader$/m);
     expect(result.screen).toMatch(/^\s+✓\s+beta-pack\s+Codex, Pi, omp\s+installed 2\.0 → 2\.3$/m);
-    expect(widest(result.screen.slice(0, summary))).toBeLessThanOrEqual(79);
-    expect(widest(result.screen.slice(commands))).toBeLessThanOrEqual(79);
+    expect(widest(result.screen)).toBeLessThanOrEqual(79);
     expectOmpUntouched(result);
   });
 });

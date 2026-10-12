@@ -240,7 +240,7 @@ describe('汇总里的提醒', () => {
   });
 
   it('备注放不放得下只看有备注的行：skill 的位置再长，MCP 的备注放得下就仍在行尾', async () => {
-    // skill 那张小表的位置一栏已经超出一行，但它没有备注
+    // skill 那张小表的位置一行放不下、另起了一行，但它没有备注
     const name = 'a-skill-with-a-very-long-name-xx';
     const result = await run({
       catalog: catalogDir({
@@ -253,7 +253,7 @@ describe('汇总里的提醒', () => {
     });
     const summary = summaryOf(result.output);
 
-    expect(summary).toMatch(new RegExp(`^\\s+${name}\\s+Claude Code\\s+新装\\s+~\\S+${name}$`, 'm'));
+    expect(summary).toMatch(new RegExp(`^ +${name} +Claude Code +新装\\n +~\\S+${name}$`, 'm'));
     expect(summary).toMatch(/^\s+MCP\s+AI Agent\s+操作\s+备注$/m);
     expect(summary).toMatch(/^\s+docs-local\s+Claude Code\s+覆盖\s+已配置，先移除再添加$/m);
   });

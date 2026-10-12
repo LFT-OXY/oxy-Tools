@@ -757,15 +757,15 @@ const scenes: Scene[] = [
   },
   {
     title: '汇总 · 四个宿主',
-    note: '每个条目一段，段里两行：Claude Code 一行，共用 skill 目录的「Codex、Pi、omp」一行——三个名字完整显示，不被截断',
+    note: '每个条目一段，段里两行：Claude Code 一行，共用 skill 目录的「Codex、Pi、omp」一行——宿主那一栏照这一格定宽，三个名字在一行里，不折行、不被截断',
     ...FOUR,
     drive: summarized,
   },
-  { title: '汇总 · 四个宿主 · 1024×768', note: '窄的面板里「Codex、Pi、omp」仍完整显示', ...FOUR, drive: summarized, viewport: NARROW },
+  { title: '汇总 · 四个宿主 · 1024×768', note: '面板和 1280 宽时一样宽：「Codex、Pi、omp」同样一行放得下', ...FOUR, drive: summarized, viewport: NARROW },
   { title: '结果 · 四个宿主', note: '每个条目两行：Claude Code 一行，「Codex、Pi、omp」一行；合计按行算', ...FOUR, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
   {
     title: '汇总 · 有第三方 Skill · 四个宿主',
-    note: '第三方 Skill 的每个 skill 两行：Claude Code 一行，「Codex、Pi、omp」一行',
+    note: '第三方 Skill 的每个 skill 两行：Claude Code 一行，「Codex、Pi、omp」一行，那一格不折行',
     ...FOUR,
     drive: thirdPartySummarized,
   },
@@ -801,7 +801,8 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 四个宿主 · MCP 那一区', ...EN, ...FOUR, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
   { title: '英文 · 浏览 · 四个宿主 · 第三方 Skill 那一区', note: '段名用英文的并列写法 Codex, Pi, omp', ...EN, ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills' },
   { title: '英文 · 浏览 · 四个宿主 · 第三方 Skill 那一区 · 1024×768', note: '最挤的一格：英文、窄窗口、小格里的两段状态', ...EN, ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills', viewport: NARROW },
-  { title: '英文 · 汇总 · 四个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi, omp，完整显示', ...EN, ...FOUR, drive: summarized },
+  { title: '英文 · 汇总 · 四个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi, omp，一行放得下', ...EN, ...FOUR, drive: summarized },
+  { title: '英文 · 汇总 · 四个宿主 · 1024×768', note: '面板和 1280 宽时一样宽：Codex, Pi, omp 同样一行放得下，overwrite 和位置都在', ...EN, ...FOUR, drive: summarized, viewport: NARROW },
   { title: '英文 · 浏览 · 只检测到 omp', ...EN, ...OMP_ONLY, drive: crowded, reveal: 'markitdown' },
   { title: '英文 · 浏览 · 只检测到 omp · 1024×768', note: '最挤的一格：Installs into omp 和 Claude Code, Codex, Pi not detected 一行，Install where 另一行', ...EN, ...OMP_ONLY, drive: crowded, viewport: NARROW },
   {
@@ -926,7 +927,8 @@ const LIST_HEIGHT = `document.querySelector('.list').scrollHeight`;
  * 开场那一层比窗口高（它放不下时会自己滚动，可在要看的这两种窗口里不该滚）；顶上那一条里的目录那一行在整条放得下
  * 它的时候折了行（只检测到一个宿主时标题那一格只剩两百来像素，这一行不许照它排）；宿主的几个勾选没有排在同一行里
  *（在提问旁边排不下时要整组到下一行，不许有哪一个单独掉下去）；开场引导里两个、三个宿主的勾选没有和提问在同一行，
- * 或四个宿主的没有整组排到提问的下一行；没检测到的宿主合成的那一句里「未检测到」和最后一个名字拆开了。给出是哪几块。
+ * 或四个宿主的没有整组排到提问的下一行；没检测到的宿主合成的那一句里「未检测到」和最后一个名字拆开了；汇总里宿主那一格
+ * 比它那一栏宽（那一格不折行，宽了就伸进旁边的「操作」一栏）。给出是哪几块。
  * 开场里的那条命令除外：它是靠裁掉来一个字一个字敲出来的
  */
 const OVERFLOWING = `(() => {
@@ -960,6 +962,10 @@ const OVERFLOWING = `(() => {
   for (const missing of document.querySelectorAll('.missing')) {
     const status = missing.querySelector('span').getBoundingClientRect();
     if (Math.round(status.left) <= Math.round(missing.getBoundingClientRect().left)) found.push('没检测到的宿主那一句里，「未检测到」和最后一个名字拆开了：' + missing.innerText);
+  }
+  // 汇总里宿主那一栏的宽是定死的，那一格又不折行：最长的一格（「Codex、Pi、omp」）要放得下
+  for (const host of document.querySelectorAll('.entry li > .quiet')) {
+    if (host.scrollWidth > host.clientWidth) found.push('汇总里宿主那一格「' + host.innerText + '」要 ' + host.scrollWidth + 'px，那一栏只有 ' + host.clientWidth + 'px');
   }
   // 开场引导只有大标志那么宽：两个、三个宿主的勾选和提问在同一行，四个宿主的整组在提问的下一行
   const guided = document.querySelector('.intro-guide .options');

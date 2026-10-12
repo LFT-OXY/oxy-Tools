@@ -281,6 +281,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - 装一个、装多个：断言主目录里的文件内容、标记的四个字段、主目录里没有多出别的东西、`result.tmp` 是空的。
 - 整体替换：主目录里事先放一个同名目录，断言旧文件不在了。
 - 汇总：每个 skill 将装到的目录；取消什么都不装；返回修改后之前勾的还在；一个都不勾回主菜单。
+- 汇总里位置放不下时另起一行（任务 `10-12-installer-add-pi-omp-hosts` 工单 08；`cli/test/summary-location.test.ts`）：一行连位置超出第 79 列时这一行到操作为止、位置在下一行整条写出，同一张小表里放得下的行照旧；有备注的行位置在前、备注在后；中文、英文各一遍；四个宿主都选了、名字取真实目录里最长的几个时小表里没有一行超出第 79 列；路径本身比一行长时仍整条写在一行上。断言拿「这一行」「下一行」连着比（正则里行与行之间写 `\n`，栏与栏之间写 ` +`——写 `\s+` 会跨行，位置另没另起一行都通过），不写死缩进了几格、对着哪一栏；量宽度只量小表里的行，量之前先有一条断言证明切到了。
 - 默认来源：`fakeGitHub()` 的 `queries()` 正好是那两个请求（装两轮也只有一轮）、`downloads()` 只有勾选的 skill 的文件且都以提交号开头；带和不带 `GITHUB_TOKEN` 时接口请求的 `authorization`；下载请求从不带。
 - **下载中途失败后目标位置保持原样**：事先放好同名目录，让其中一个文件 503，断言那个目录的文件清单和内容都没变、其余项装上了、`result.tmp` 是空的。
 - 中断：在某个文件的请求里触发 `interrupt`，**当场**读临时目录断言已经空了（事后再读分不出是同步清的还是 `finally` 清的），再断言目标没变、退出状态 130。
@@ -302,7 +303,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
   - 只检测到 omp：装到全局和项目的位置与安装标记、四种状态、另问与缺省不覆盖、omp 自己的目录（`~/.omp/agent/skills`）不读不写、列表上方共用 skill 目录的那句说明；第三方 Skill 的那一条命令是**字面值**——`--agent pi`，全局的带 `--global`，项目的不带、`cwd` 是项目目录——展示的就是它，装完复核通过；命令把它装到了别处时判失败；条目的 `hosts` 写了 `omp` 的照常装、没写的不可选。
   - 归组：Codex、Pi、omp 都选了时汇总、进行中、结果各一行「Codex、Pi、omp」（英文 `Codex, Pi, omp`），合计「1 成功」，只写一份；Pi 加 omp 是「Pi、omp」；四个宿主时每个 skill 两行、两个目录各有标记；Claude Code 加 omp 各一行；不是本工具装的同名 skill 三个宿主只问一次；装到项目时同样归组；列表里的状态是「Claude Code」「Codex、Pi、omp」两栏。第三方 Skill：三个共用的宿主一条 `--agent codex`，Pi 加 omp 一条 `--agent pi`，四个宿主两条；条目只支持 omp、四个宿主都选了时一条 `--agent pi`、宿主那一格只写「omp」。
   - **从头到尾没有碰 omp**：每一条走到安装的用例最后都断言记录到的命令里没有一条的命令名是 `omp`，主目录和项目目录下都没有出现 `.omp`（`expectOmpUntouched`）。主目录里本来就该有 `.omp` 的三条除外（事先放着 omp 自己的配置文件、事先放着 omp 自己的 skill 目录、假装的命令把 skill 装到了 omp 自己的目录）：它们断言记录到的命令逐条相等，前两条另断言那里的文件原样留着。只逛列表、没有走到安装的用例不过它。
-  - 四个宿主都选了时的 80 列：中文的宿主行、宿主选择、列表、清单、汇总、结果每一行都不超出第 79 列；英文的不量汇总的小表（「位置」一栏的路径会超，见 [界面设计](./ui-design.md) 文末）。这一组用的是样例里的短名字；名字长（27 列的组件、32 列的外部项目）、状态又都宽时的列表在下一条的 `status-columns.test.ts` 里量。
+  - 四个宿主都选了时的 80 列：中文、英文的宿主行、宿主选择、列表、清单、汇总、结果每一行都不超出第 79 列（英文的汇总里 `paper-reader`、`paper-comic` 的那几行连位置放不下，位置另起了一行——工单 08 之前这几行超出一行，那时不量）。这一组用的是样例里的短名字；名字长（27 列的组件、32 列的外部项目）、状态又都宽时的列表在下一条的 `status-columns.test.ts` 里量，汇总里名字取真实目录里最长的几个时在 `summary-location.test.ts` 里量。
 - 列表的状态按 skill 目录归组（工单 06；`cli/test/status-columns.test.ts`，网页界面那一边在 `cli/test/web-status-columns.test.ts`）：
   - Skill：选了 Codex 和 Pi 是一栏「Codex、Pi」、状态只写一份；三个宿主是「Claude Code」「Codex、Pi」；四个是「Claude Code」「Codex、Pi、omp」；四个里只留 Pi 和 omp 是「Pi、omp」，只留 Claude Code 和 omp 是各一栏；只选 Claude Code、选了 Claude Code 和 Codex 和原来一样。一栏里的四种状态看的是那个目录；装到项目时看项目目录下的那一个，全局装过的不算；英文的栏名 `Codex, Pi, omp`。断言栏名时**拿表头整行去比**（到「说明」为止），断言状态时后面跟上说明的开头——只写到第二栏状态就停的正则，改动前的四栏也能通过。
   - 第三方 Skill：同样的几种组合；条目用 `hosts` 限定了宿主时，一组里有它支持的宿主就照目录写（`hosts: ['pi']`、四个宿主：Claude Code 一栏「不支持」，共用的那一栏照目录），一个都不支持的那一组写「不支持」（`hosts: ['claude-code']`：共用 skill 目录里有同名目录也不算），每一组都不支持时这一行不可选；清单（终端界面）和小格（网页界面）同样按组。

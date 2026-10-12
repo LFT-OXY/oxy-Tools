@@ -206,7 +206,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   // 汇总里按类型分的几张小表，合起来排：条目（表头是类型的名字）、宿主、操作三栏各张表对齐，located 的表多一栏位置。
   // actionOnly 的表（工具）只有条目和操作两栏，操作紧跟在条目后面：条目一栏和别的表同宽，别的栏宽不看它。
   // 表头暗淡，哪一栏都不截断。备注整个分区一个放法：每一格都放得下才成一栏；有一格放不下就都另起一行，与位置的
-  // 左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），表头不写这一栏。一格备注都没有的表也不写
+  // 左缘对齐（那里也放不下最长的一格时，一起往左挪到放得下），表头不写这一栏。一格备注都没有的表也不写。
+  // 位置一行一个放法：这一行连位置超出一行的宽度时，位置另起一行整条写出，这一行的备注再排在它下面；放得下的行照旧。
+  // 另起的位置和跟着它的备注同一个左缘，整个分区一个：往左数第一个它们都放得下的栏的左缘——操作、宿主、条目；
+  // 连条目一栏的左缘都放不下的路径也从那里起，整条写在一行上
   const summaryTables = (
     tables: readonly {
       title: string;
@@ -236,11 +239,19 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     );
     const longestNote = Math.max(...tables.flatMap((table) => table.rows.map((row) => displayWidth(row.note))));
     const indent = Math.max(2, Math.min(noteStart, USABLE - longestNote));
+    const overflows = (table: Table, row: Table['rows'][number]): boolean => table.located && noteStart + displayWidth(row.location) > USABLE;
+    const longestMoved = Math.max(
+      ...tables.flatMap((table) => table.rows.filter((row) => overflows(table, row)).flatMap((row) => [displayWidth(row.location), displayWidth(row.note)])),
+    );
+    const movedIndent = [2 + nameWidth + hostWidth, 2 + nameWidth].find((edge) => edge + longestMoved <= USABLE) ?? 2;
     return tables.flatMap((table, index) => [
       // 小表之间空一行
       ...(index === 0 ? [] : ['']),
       dim(`${start(table, [table.title, t.agentColumn, t.actionColumn], t.locationColumn)}${inline ? noteHeader(table) : ''}`.trimEnd()),
       ...table.rows.flatMap((row) => {
+        if (overflows(table, row)) {
+          return [start(table, row.cells, '').trimEnd(), ...[row.location, row.note].filter((cell) => cell !== '').map((cell) => `${' '.repeat(movedIndent)}${cell}`)];
+        }
         const line = start(table, row.cells, row.location);
         if (inline) return [`${line}${row.note}`.trimEnd()];
         return [line.trimEnd(), ...(row.note === '' ? [] : [`${' '.repeat(indent)}${row.note}`])];
