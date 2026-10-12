@@ -345,7 +345,7 @@ describe('网页界面：别的网站和别的机器发来的请求', () => {
 
 describe('网页界面：用不了时退回终端界面', () => {
   it('浏览器打不开：终端上说明一句原因，然后从语言提问接着走终端界面；那个网址已经连不上', async () => {
-    const result = await run({ env: { OXY_TOOLS_WEB: '1' }, browserOpens: false, answers: [choose('退出')] });
+    const result = await run({ web: true, browserOpens: false, answers: [choose('退出')] });
 
     expect(result.exitCode).toBe(0);
     expect(result.opened).toHaveLength(1);
@@ -362,7 +362,7 @@ describe('网页界面：用不了时退回终端界面', () => {
 
   it('本机的网页起不来：终端上说明一句原因，没有去打开浏览器，接着是终端界面', async () => {
     const result = await run({
-      env: { OXY_TOOLS_WEB: '1' },
+      web: true,
       webDir: join(tempDir('web'), 'missing'),
       answers: [choose('退出')],
     });
@@ -375,14 +375,14 @@ describe('网页界面：用不了时退回终端界面', () => {
   });
 
   it('退回之后带了 --lang 就不问语言，原因用那种语言说', async () => {
-    const result = await run({ argv: ['--lang', 'en'], env: { OXY_TOOLS_WEB: '1' }, browserOpens: false, answers: [choose('Exit')] });
+    const result = await run({ argv: ['--lang', 'en'], web: true, browserOpens: false, answers: [choose('Exit')] });
 
     expect(result.stdout).toMatch(/^\s*Notice\s+Could not open a browser; using the terminal UI instead$/m);
     expect(result.output).not.toContain(LANGUAGE_QUESTION);
   });
 
   it('目录读不了：照旧在终端上出错并以 1 退出，没有打开浏览器', async () => {
-    const result = await run({ env: { OXY_TOOLS_WEB: '1' }, catalog: catalogDir({ index: '{ 坏的 JSON' }) });
+    const result = await run({ web: true, catalog: catalogDir({ index: '{ 坏的 JSON' }) });
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('出错：目录格式有误');
@@ -390,7 +390,7 @@ describe('网页界面：用不了时退回终端界面', () => {
     expect(result.output).not.toContain(LANGUAGE_QUESTION);
   });
 
-  it('不带临时开关：和以前一样是终端界面，没有打开浏览器', async () => {
+  it('架子缺省带着 --terminal：和以前一样是终端界面，没有打开浏览器', async () => {
     const result = await run({ answers: [choose('退出')] });
 
     expect(result.output).toContain(LANGUAGE_QUESTION);

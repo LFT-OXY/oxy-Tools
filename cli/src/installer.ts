@@ -103,8 +103,8 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
     const askLanguage = async (): Promise<void> => {
       if (args.lang === undefined) ui = speaking(await options.prompter.select(ui.languageQuestion()), true);
     };
-    // 开发期间的临时开关：非空时用网页界面。网页界面不在终端上问语言
-    const web = Boolean(env['OXY_TOOLS_WEB']);
+    // 缺省是网页界面，它不在终端上问语言
+    const web = !usesTerminalUi(args, env, options.platform);
     if (!web) await askLanguage();
     const loading = ui.loading('catalog');
     // 维护者预览用：环境变量把目录来源改为本地目录
@@ -164,19 +164,23 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
 
 interface Arguments {
   lang?: Lang;
+  /** 给了 --terminal：用终端界面，不打开浏览器 */
+  terminal: boolean;
   help: boolean;
   version: boolean;
   invalid?: Failure;
 }
 
 function parseArguments(argv: readonly string[]): Arguments {
-  const args: Arguments = { help: false, version: false };
+  const args: Arguments = { terminal: false, help: false, version: false };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index] ?? '';
     if (arg === '-h' || arg === '--help') {
       args.help = true;
     } else if (arg === '-v' || arg === '--version') {
       args.version = true;
+    } else if (arg === '--terminal') {
+      args.terminal = true;
     } else if (arg === '--lang' || arg.startsWith('--lang=')) {
       const value = arg === '--lang' ? argv[++index] : arg.slice('--lang='.length);
       if (value !== 'zh' && value !== 'en') return { ...args, invalid: { kind: 'bad-language', value } };
@@ -186,6 +190,14 @@ function parseArguments(argv: readonly string[]): Arguments {
     }
   }
   return args;
+}
+
+// 直接用终端界面的三种情形：用户要的、远程连接、没有桌面。只看启动参数、环境变量和平台，不去试着打开什么
+function usesTerminalUi(args: Arguments, env: Environment, platform: NodeJS.Platform): boolean {
+  if (args.terminal) return true;
+  if (env['SSH_CONNECTION'] || env['SSH_TTY'] || env['SSH_CLIENT']) return true;
+  // macOS 和 Windows 的桌面不靠环境变量；别的系统上要有图形会话
+  return platform !== 'darwin' && platform !== 'win32' && !env['DISPLAY'] && !env['WAYLAND_DISPLAY'];
 }
 
 function detectLang(env: Environment, systemLocale: string): Lang {

@@ -469,7 +469,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 
 ### 5. Good/Base/Bad Cases
 
-- Good：带着 `OXY_TOOLS_WEB=1` 运行 → 终端上没有语言提问，本机信息之后是「网页界面开着」的块；页面连上收到本机信息；点「完成」→ 页面收到 `finished`，安装器以 0 退出。
+- Good：在有桌面的机器上不带参数运行 → 终端上没有语言提问，本机信息之后是「网页界面开着」的块；页面连上收到本机信息；点「完成」→ 页面收到 `finished`，安装器以 0 退出。
 - Base：拿着同一个网址再开一个标签页 → 两个标签页的画面状态相同。
 - Good：页面发 `{"type":"open","list":"purpose:web-search"}` → 204，所有连着的页面收到新的画面状态，`listing.id` 是它，`menu` 不变。
 - Base：页面第一次打开收到 `introSeen: false`，发 `intro-seen`；刷新后收到的是 `true`。

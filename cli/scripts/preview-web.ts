@@ -652,7 +652,7 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
   let switched = false;
   const exited = runInstaller({
     argv: ['--lang', lang],
-    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, OXY_TOOLS_WEB: '1' },
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin },
     platform: 'darwin',
     systemLocale: 'zh-CN',
     stdout: quiet,

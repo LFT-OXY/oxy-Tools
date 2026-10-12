@@ -55,7 +55,7 @@ describe('网页界面：页面关了', () => {
     const controller = new AbortController();
     // 链接打开器兑现了，却没有页面来连（浏览器没有弹出来）
     setTimeout(() => controller.abort(), PAST_GRACE);
-    const result = await run({ env: { OXY_TOOLS_WEB: '1' }, pageGraceMs: 30, interrupt: controller.signal });
+    const result = await run({ web: true, pageGraceMs: 30, interrupt: controller.signal });
 
     // 是被这里的 Ctrl+C 结束的，不是自己退出的：自己退出的话是 0，终端上有那一行说明
     expect(result.exitCode).toBe(130);

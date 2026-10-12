@@ -270,8 +270,14 @@ export interface RunOptions {
   /** 终端的行数，缺省 40 */
   rows?: number;
   /**
-   * 在页面上做什么。给了它就走网页界面（架子打开临时开关）：架子拿着链接打开器记下的网址，经真实的本机 HTTP
-   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给就走终端界面。
+   * 让安装器自己定用哪个界面：架子不在启动参数前面带 --terminal，环境变量里有桌面（DISPLAY），没有别的缘故就是
+   * 网页界面。缺省不是（架子带上 --terminal，走终端界面）；给了 page 就是。要网页界面却没有页面去连（浏览器
+   * 打不开、本机的网页起不来、没人来连），或专门测用哪个界面的用例才自己给
+   */
+  web?: boolean;
+  /**
+   * 在页面上做什么。给了它就走网页界面：架子拿着链接打开器记下的网址，经真实的本机 HTTP
+   * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给也没给 web 就走终端界面。
    * world 是这次运行的主目录和项目目录（页面开着的时候要改机器上的东西就往那里写），和用户面前的终端
    */
   page?: (page: Page, world: { home: string; project: string; terminal: Terminal }) => Promise<void>;
@@ -464,9 +470,11 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
   };
 
+  const web = options.web ?? Boolean(options.page);
   const installer: Promise<number> = runInstaller({
-    argv: options.argv ?? [],
-    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(options.page ? { OXY_TOOLS_WEB: '1' } : {}), ...options.env },
+    argv: web ? (options.argv ?? []) : ['--terminal', ...(options.argv ?? [])],
+    // 架子的平台缺省是 linux：有 DISPLAY 才算有桌面
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(web ? { DISPLAY: ':0' } : {}), ...options.env },
     platform: options.platform ?? 'linux',
     systemLocale: options.systemLocale ?? 'en-US',
     stdout: { isTTY: tty.stdout ?? true, rows, columns: options.columns, write: record('stdout') },

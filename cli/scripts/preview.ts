@@ -73,7 +73,7 @@ interface Scene extends World {
   /** 终端只有这么多行，画面只取还在屏幕上的部分；缺省是够高的终端，连同滚上去的都取 */
   rows?: number;
   /**
-   * 走网页界面（打开临时开关）：opens 是浏览器打开了，画面停在终端上的那个块（keys 里给 t 就是改用终端界面）；
+   * 走网页界面（不带 --terminal）：opens 是浏览器打开了，画面停在终端上的那个块（keys 里给 t 就是改用终端界面）；
    * finished 是页面连上之后点了「完成」，closed 是页面连上之后关了，closed-installing 是页面勾了两个 skill、
    * 确认安装之后关了——这三种由脚本拿着网址扮演页面，安装器自己退出；installs 是页面勾了 picks 那几个、确认安装，
    * 页面一直开着，画面停在这一批装完（或轮到的工具的命令还在跑）的时候；no-browser 是链接打开器拒绝，
@@ -568,7 +568,7 @@ const scenes: Scene[] = [
   { title: '出错 · 没有交互式终端', note: 'npx oxy-tools | cat · 不打印大标志；出错说明走标准错误，所以仍然看得到', tty: false },
   { title: '出错 · 无法识别的参数', note: 'npx oxy-tools --frobnicate', argv: ['--frobnicate'] },
   { title: '帮助', note: 'npx oxy-tools --help', argv: ['--help'] },
-  { title: '网页界面 · 已在浏览器打开', note: '带着临时开关 OXY_TOOLS_WEB：终端上不问语言，本机信息下面多一个块——已在浏览器打开、整条写在一行上的网址、按键提示。网址是样例：真实的每次运行各有各的端口和口令', web: 'opens' },
+  { title: '网页界面 · 已在浏览器打开', note: '不带参数运行：终端上不问语言，本机信息下面多一个块——已在浏览器打开、整条写在一行上的网址、按键提示。网址是样例：真实的每次运行各有各的端口和口令', web: 'opens' },
   { title: '网页界面 · 已在浏览器打开 · 检测到两个宿主、有条目被跳过', note: '本机信息照旧，那个块接在通栏横线下面', web: 'opens', onPath: BOTH_HOSTS, catalog: withBrokenEntry },
   { title: '网页界面 · 点了「完成」', note: '按键提示那一行收掉了，原处是一行说明；安装器随后退出', web: 'finished' },
   { title: '网页界面 · 页面关了', note: '页面全都断开满了时限（正式运行是 5 秒）：同一个画法，另一句话', web: 'closed' },
@@ -751,8 +751,9 @@ async function play(scene: Scene): Promise<Cell[][]> {
   // 网页界面正在装的时候不在提问里：收场除了按 Ctrl+C 还靠这个信号
   const interrupt = new AbortController();
   const finished = runInstaller({
-    argv: scene.argv ?? [],
-    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...(scene.web ? { OXY_TOOLS_WEB: '1' } : {}), ...scene.env },
+    // 没给 web 的场景拍的是终端界面：带上 --terminal，和测试架子一样
+    argv: scene.web ? (scene.argv ?? []) : ['--terminal', ...(scene.argv ?? [])],
+    env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, ...scene.env },
     platform: scene.platform ?? 'darwin',
     systemLocale: 'zh-CN',
     stdout: { isTTY: tty, rows, columns: COLUMNS, write },
@@ -791,7 +792,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
       return { exitCode: run.exitCode ?? 0 };
     },
     prompter,
-    // 预览页从不真的打开浏览器：网页界面的场景里它只是兑现或拒绝；走终端界面的场景不带临时开关，它不会被调用
+    // 预览页从不真的打开浏览器：网页界面的场景里它只是兑现或拒绝；走终端界面的场景带着 --terminal，它不会被调用
     openLink: async (url) => {
       if (scene.web === undefined || scene.web.startsWith('no-')) throw new Error('the installer must not open a browser');
       if (scene.web !== 'opens') {
