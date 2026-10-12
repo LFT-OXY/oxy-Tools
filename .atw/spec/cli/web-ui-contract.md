@@ -163,7 +163,7 @@ export function listingView(machine: Machine, catalog: Catalog, id: string, host
 export function sharedSkillsNoted(hosts: readonly Host[], listing: Pick<Listing, 'skills' | 'thirdParty'>): boolean;
 
 // cli/src/availability.ts、cli/src/notice-text.ts —— 列表里 MCP 那几栏的说明，两套界面共用：前一个数出是哪几个宿主，后一个写成那几句（只能装到全局、安装器不装、读不到配置，照这个先后）
-export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps']): { globalOnly: Host[]; noConfig: Host[]; unreadable: Host[] };
+export function mcpColumnHosts(hosts: readonly Host[], status: Pick<ListingStatus, 'mcpColumns' | 'mcps'>): { globalOnly: Host[]; noConfig: Host[]; unreadable: Host[] };
 // McpColumnHosts：{ globalOnly: { name }[]; noConfig: { name; manualMcp? }[]; unreadable: { name }[] }
 export function mcpColumnNoticeTexts(t: Messages, hosts: McpColumnHosts): string[];
 
