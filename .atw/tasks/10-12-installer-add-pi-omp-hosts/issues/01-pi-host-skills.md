@@ -8,7 +8,7 @@
 
 **Blocked by:** None — can start immediately
 **Status:** ready-for-agent
-**Impl:** ready
+**Impl:** done
 
 - [ ] 先改规范：`.atw/spec/cli/` 里宿主与 skill 目录的对照表加上 Pi；写明宿主可以没有 MCP 配置，以及那时 MCP 的状态和计划怎么处理。
 - [ ] 可执行路径上有 `pi` 时检测到 Pi；没有时它标着「未检测到」、不能选。宿主的先后是 Claude Code、Codex、Pi。
