@@ -694,7 +694,7 @@ const scenes: Scene[] = [
   { title: '开场引导 · 只检测到 omp', note: '没有可勾的宿主：写一句「装进 omp」，没检测到的三个写在旁边；只有安装范围可选', ...OMP_ONLY, guide: true },
   {
     title: '浏览 · 四个宿主',
-    note: '顶上那一条里四个宿主的勾选和安装范围；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi、omp」合成一段，一行放得下，段名不被截断',
+    note: '顶上那一条里四个宿主的勾选和安装范围；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi、omp」合成一段。放得下就一行（多数卡片），两段都宽时一段占一行（explanation、writing-for-agents）；段名不被截断，也不从一段中间折开',
     ...FOUR,
     drive: crowded,
   },

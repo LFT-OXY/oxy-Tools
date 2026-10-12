@@ -1,6 +1,7 @@
 // 列表的状态栏按 skill 目录归组（任务 10-12-installer-add-pi-omp-hosts 工单 06）：Skill 和第三方 Skill 一组一栏，共用同一个
-// skill 目录的几个宿主合成一栏、状态只写一份；MCP 仍是每个宿主一栏，MCP 安装器不装的宿主（omp）不出栏，MCP 的栏和表头不同时
-// 栏名写在 MCP 那一段的标题行上。网页界面那一边在 web-status-columns.test.ts
+// skill 目录的几个宿主合成一栏、状态只写一份；MCP 仍是每个宿主一栏，MCP 安装器不装的宿主（omp）不出栏。表头写 Skill 的栏：
+// MCP 的栏不是表头最前面的那几栏时，栏名写在 MCP 那一段的标题行上、那一段不写说明；是的时候照表头排。
+// 网页界面那一边在 web-status-columns.test.ts
 import { describe, expect, it } from 'vitest';
 import { displayWidth } from '../src/text.ts';
 import { EMPTY_CATALOG, KEY, SAMPLE_APPS, SAMPLE_MCPS, SAMPLE_SKILLS, SAMPLE_THIRD_PARTY, SAMPLE_TOOLS, accept, catalogDir, choose, pick, run, underWebSearch } from './harness.ts';
@@ -157,21 +158,71 @@ describe('MCP 每个宿主一栏，omp 不出栏', () => {
     expect(rowOf(list, 'tracker-remote')).toMatch(/^ □ tracker-remote\s+未配置\s+未配置\s+未配置\s+远程地址方式的样例 MCP$/);
   });
 
-  it('选了 Claude Code 和 omp：MCP 只有 Claude Code 一栏', async () => {
-    const mixed = await run({ catalog: skillsAndMcps(), onPath: ['claude', 'omp'], answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
-    const only = await run({ catalog: withMcps(), onPath: ['claude', 'omp'], answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
+  it('选了 Claude Code 和 omp、列表里只有 MCP：表头直接是 Claude Code 一栏，说明照旧', async () => {
+    const result = await run({ catalog: withMcps(), onPath: ['claude', 'omp'], answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
+    const list = listOf(result.output);
 
-    expect(headerOf(listOf(mixed.output))).toMatch(/^\s+名称\s+Claude Code\s+omp\s+说明$/);
-    expect(mcpTitleOf(listOf(mixed.output))).toMatch(/^\s+── MCP\s+Claude Code$/);
-    expect(rowOf(listOf(mixed.output), 'docs-local')).toMatch(/^ □ docs-local\s+未配置$/);
-    expect(headerOf(listOf(only.output))).toMatch(/^\s+名称\s+Claude Code\s+说明$/);
-    expect(mcpTitleOf(listOf(only.output))).toMatch(/^\s+── MCP$/);
-    expect(rowOf(listOf(only.output), 'docs-local')).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/);
-    // 那句说明照旧
-    // MCP 的那一栏和表头的第一栏同宽
-    expect(startOf(mcpTitleOf(listOf(mixed.output)), 'Claude Code')).toBe(startOf(headerOf(listOf(mixed.output)), 'Claude Code'));
-    expect(mixed.output).toMatch(new RegExp(`^\\s+注意\\s+${OMP_MCP_NOTICE}$`, 'm'));
-    expect(only.output).toMatch(new RegExp(`^\\s+注意\\s+${OMP_MCP_NOTICE}$`, 'm'));
+    expect(headerOf(list)).toMatch(/^\s+名称\s+Claude Code\s+说明$/);
+    expect(mcpTitleOf(list)).toMatch(/^\s+── MCP$/);
+    expect(rowOf(list, 'docs-local')).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/);
+    expect(result.output).toMatch(new RegExp(`^\\s+注意\\s+${OMP_MCP_NOTICE}$`, 'm'));
+  });
+
+  it('MCP 的栏是表头最前面的那几栏（选了 Claude Code 和 omp）：照表头排，状态落在 Claude Code 那一栏，标题行上不另写，说明一栏仍在', async () => {
+    const result = await run({ catalog: skillsAndMcps(), onPath: ['claude', 'omp'], answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')] });
+    const list = listOf(result.output);
+
+    expect(headerOf(list)).toMatch(/^\s+名称\s+Claude Code\s+omp\s+说明$/);
+    expect(mcpTitleOf(list)).toMatch(/^\s+── MCP$/);
+    // 只有 Claude Code 那一栏有状态，omp 那一栏空着；说明和 Skill 的行从同一列起
+    expect(rowOf(list, 'docs-local')).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/);
+    expect(rowOf(list, 'tracker-remote')).toMatch(/^ □ tracker-remote\s+未配置\s+远程地址方式的样例 MCP$/);
+    expect(startOf(rowOf(list, 'docs-local'), '未配置')).toBe(startOf(headerOf(list), 'Claude Code'));
+    expect(startOf(rowOf(list, 'docs-local'), '本地进程')).toBe(startOf(headerOf(list), '说明'));
+    expect(startOf(rowOf(list, 'alpha'), '推荐 · 第一个样例')).toBe(startOf(headerOf(list), '说明'));
+    expect(rowOf(list, 'alpha')).toMatch(/^ □ alpha\s+未装\s+未装\s+推荐 · 第一个样例 skill/);
+    expect(Math.max(...linesOf(list).slice(0, 7).map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
+    expect(result.output).toMatch(new RegExp(`^\\s+注意\\s+${OMP_MCP_NOTICE}$`, 'm'));
+  });
+
+  it('选了 Claude Code 和 omp、条目只支持 Codex：这一行不可选，原因写在状态的位置，说明照旧', async () => {
+    const result = await run({
+      catalog: skillsAndMcps({ mcps: underWebSearch(SAMPLE_MCPS[0], { ...SAMPLE_MCPS[1], hosts: ['codex'] }) }),
+      onPath: ['claude', 'omp'],
+      answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')],
+    });
+    const list = listOf(result.output);
+
+    expect(mcpTitleOf(list)).toMatch(/^\s+── MCP$/);
+    expect(rowOf(list, 'tracker-remote')).toMatch(/^ – tracker-remote\s+需要别的 AI Agent\s+远程地址方式的样例 MCP$/);
+    expect(startOf(rowOf(list, 'tracker-remote'), '需要别的')).toBe(startOf(headerOf(list), 'Claude Code'));
+    expect(startOf(rowOf(list, 'tracker-remote'), '远程地址')).toBe(startOf(rowOf(list, 'docs-local'), '本地进程'));
+  });
+
+  it('英文界面，选了 Claude Code 和 omp：同样照表头排，About 一栏仍在', async () => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: skillsAndMcps(),
+      onPath: ['claude', 'omp'],
+      answers: [choose(WEB_SEARCH_EN), accept(), pick(), pick(), choose('Exit')],
+    });
+    const list = listOf(result.output, LIST_EN);
+
+    expect(headerOf(list)).toMatch(/^\s+Name\s+Claude Code\s+omp\s+About$/);
+    expect(mcpTitleOf(list)).toMatch(/^\s+── MCP$/);
+    expect(rowOf(list, 'docs-local')).toMatch(/^ □ docs-local\s+none\s+A sample MCP run as a local process/);
+    expect(startOf(rowOf(list, 'docs-local'), 'A sample MCP')).toBe(startOf(headerOf(list), 'About'));
+    expect(Math.max(...linesOf(list).slice(0, 7).map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
+    expect(result.output).not.toMatch(/[一-鿿]/);
+  });
+
+  it('选了 Claude Code、Pi、omp：MCP 的第二栏 Pi 不是表头的第二栏「Pi、omp」——仍是自己排，栏名在标题行上，不写说明', async () => {
+    const result = await run({ catalog: skillsAndMcps(), onPath: ALL_HOSTS, home: PI_CONFIGURED, answers: [choose(WEB_SEARCH), pick('Claude Code', 'Pi', 'omp'), pick(), pick(), choose('退出')] });
+    const list = listOf(result.output);
+
+    expect(headerOf(list)).toMatch(/^\s+名称\s+Claude Code\s+Pi、omp\s+说明$/);
+    expect(mcpTitleOf(list)).toMatch(/^\s+── MCP\s+Claude Code\s+Pi$/);
+    expect(rowOf(list, 'docs-local')).toMatch(/^ □ docs-local\s+未配置\s+已配置$/);
   });
 
   it('选了 Codex 和 Pi：Skill 合成一栏，MCP 仍是各一栏，栏名写在标题行上', async () => {
@@ -427,6 +478,35 @@ describe('工具和外部项目两段照旧', () => {
     expect(startOf(rowOf(list, 'fetcher'), '未安装')).toBe(startOf(headerOf(list), 'Claude Code'));
     expect(startOf(rowOf(list, 'fetcher'), '第一个样例工具')).toBe(startOf(headerOf(list), '说明'));
     expect(startOf(rowOf(list, 'atlas'), '第一个样例外部项目')).toBe(startOf(headerOf(list), 'Claude Code'));
+  });
+
+  it('只检测到 omp、列表里只有工具：不问宿主，状态只有一栏「状态」——和归组之前一样', async () => {
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, tools: underWebSearch(...SAMPLE_TOOLS) } }),
+      onPath: ['omp'],
+      answers: [choose(WEB_SEARCH), pick(), choose('退出')],
+    });
+    const list = listOf(result.output);
+
+    expect(headerOf(list)).toMatch(/^\s+名称\s+状态\s+说明$/);
+    expect(rowOf(list, 'fetcher')).toMatch(/^ □ fetcher\s+未安装\s+第一个样例工具/);
+    expect(startOf(rowOf(list, 'fetcher'), '未安装')).toBe(startOf(headerOf(list), '状态'));
+  });
+
+  it('只检测到 omp、列表里有 MCP 和工具：omp 不出 MCP 的栏，表头是「状态」；MCP 的原因和工具的状态都写在那一栏', async () => {
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), tools: underWebSearch(...SAMPLE_TOOLS) } }),
+      onPath: ['omp'],
+      answers: [choose(WEB_SEARCH), pick(), choose('退出')],
+    });
+    const list = listOf(result.output);
+
+    expect(headerOf(list)).toMatch(/^\s+名称\s+状态\s+说明$/);
+    expect(rowOf(list, 'docs-local')).toMatch(/^ – docs-local\s+需要别的 AI Agent\s+本地进程方式的样例 MCP/);
+    expect(rowOf(list, 'fetcher')).toMatch(/^ □ fetcher\s+未安装\s+第一个样例工具/);
+    expect(startOf(rowOf(list, 'docs-local'), '需要别的')).toBe(startOf(headerOf(list), '状态'));
+    expect(startOf(rowOf(list, 'fetcher'), '未安装')).toBe(startOf(headerOf(list), '状态'));
+    expect(startOf(rowOf(list, 'fetcher'), '第一个样例工具')).toBe(startOf(headerOf(list), '说明'));
   });
 
   it('列表里只有 MCP 和工具：表头是 MCP 的栏，工具的状态写在第一栏的位置', async () => {

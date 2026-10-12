@@ -645,8 +645,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、第三方
      * Skill、MCP、工具）：skill 和第三方 Skill 的状态一组宿主一栏（skillColumns 是所选的宿主按 skill 目录归的组，statuses
      * 与它一一对应），MCP 的每个装得了 MCP 的宿主一栏（mcpColumns，statuses 与它一一对应）；工具只有一个状态，与宿主
-     * 无关，写在第一栏的位置；外部项目在下，没有状态。表头写 skill 的栏；MCP 的栏和它不同时，栏名写在 MCP 那一段的
-     * 标题行上，那一段不写说明一栏。列表里没有 skill 和第三方 Skill 时表头直接写 MCP 的栏。一栏都没有时状态只有一栏
+     * 无关，写在第一栏的位置；外部项目在下，没有状态。表头写 skill 的栏；MCP 的栏不是表头最前面的那几栏时，栏名写在
+     * MCP 那一段的标题行上，那一段不写说明一栏。列表里没有 skill 和第三方 Skill 时表头直接写 MCP 的栏。一栏都没有时状态只有一栏
      *（一个宿主都没有，或所选的宿主都不出这种栏）。带着 unavailable 的行不可选，原因写在状态的位置：哪些行不可选、
      * 为什么，由调用方照共用的规矩给。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
@@ -737,8 +737,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const mcpNames = mcpColumns.map((host) => host.name);
       // 表头写 skill 的栏；列表里没有 skill 和第三方 Skill 时直接写 MCP 的栏
       const headNames = skills.length + thirdParty.length > 0 ? skillNames : mcpNames;
-      // MCP 的栏和表头的不同：那一段自己排，栏名写在它的标题行上。它一栏都没有时没有可写的，行照表头的栏排
-      const ownMcp = mcpSection.rows.length > 0 && mcpNames.length > 0 && mcpNames.join('\n') !== headNames.join('\n');
+      // MCP 的栏不是表头最前面的那几栏：那一段自己排，栏名写在它的标题行上。逐个等于表头最前面那几栏的（两者相同、
+      // 只比表头少了后面的栏、一栏都没有）照表头排，状态就落在表头的那几栏里
+      const ownMcp = mcpSection.rows.length > 0 && !mcpNames.every((name, at) => name === headNames[at]);
       // 一个组件都没有时没有状态栏；一栏都没有时状态只有一栏
       const columns = components.length === 0 ? [] : headNames.length === 0 ? [t.statusColumn] : headNames;
       const nameWidth = Math.max(displayWidth(t.nameColumn), ...[...components, ...apps].map((entry) => displayWidth(entry.name))) + GUTTER;
@@ -757,8 +758,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       // 这样排超出一行时各栏照自己最长的一格定
       const ownWidths = widthsOf(mcpNames, mcpSection.rows);
       const differs = mcpNames.findIndex((name, at) => name !== columns[at]);
-      const leading = differs === -1 ? mcpNames.length : differs;
-      const alignedWidths = ownWidths.map((width, at) => (at < leading ? Math.max(width, statusWidths[at] ?? 0) : width));
+      const alignedWidths = ownWidths.map((width, at) => (at < differs ? Math.max(width, statusWidths[at] ?? 0) : width));
       const fits = lead + nameWidth + alignedWidths.reduce((sum, width) => sum + width, 0) - GUTTER <= USABLE;
       const mcpWidths = fits ? alignedWidths : ownWidths;
       // 外部项目没有状态，说明从第一栏状态的位置写起
