@@ -8,7 +8,7 @@ omp 的 MCP 安装器不装：不为 omp 出 MCP 的安装项；选了 omp 且�
 
 **Blocked by:** 03
 **Status:** ready-for-agent
-**Impl:** doing
+**Impl:** done
 
 - [ ] 先改规范：`.atw/spec/cli/` 里宿主的对照表加上 omp（借用 `pi` 这个 agent 名和理由）；安装 MCP 的那一份写明 omp 没有 MCP 配置、那句说明什么时候显示和排在哪（「只能装到全局」之后、「读不到配置」之前）。四个宿主时排不下的几处如实记在规范里。
 - [ ] 可执行路径上有 `omp` 时检测到 omp；宿主的先后是 Claude Code、Codex、Pi、omp。一个都没检测到、只检测到一部分时的那两句说明把四个名字都处理对。

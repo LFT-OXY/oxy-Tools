@@ -467,6 +467,16 @@ expect(result.output).toMatch(/ beta-pack\s+第二个样例 skill$/m);
 
 **Fix**：只量要卡的那几行——表里的行（`/^ [□–] /`）、某一行「注意」和它的续行、汇总到提问之间去掉横线的行（工单 11 的写法在 `scope.test.ts` 的 `textLines` 和「Codex 的 MCP 装不到项目」的英文用例）；要量整屏就用 `keys` 加 `screenLines`，再把含 `──` 的行去掉。
 
+### 按标题切出一段再断言「里面没有」，标题却找不到
+
+**Symptom**：`const fromSummary = output.slice(output.indexOf('── Will install')); expect(fromSummary).not.toMatch(/\bomp\b/)` 永远通过——把被测的功能改坏了它也通过（工单 04：英文汇总的标题是 `Install N items`，没有 `Will install`）。
+
+**Cause**：标题找不到时 `indexOf` 是 -1，`slice(-1)` 只剩最后一个字符；「里面没有 X」对一段几乎是空的字自然成立。中文标题改对了、英文照着猜一个，最容易出这种事。
+
+**Fix**：切完先断言**切到了该有的东西**，再断言没有的——`expect(fromSummary).toMatch(/^\s+docs-local\s+Claude Code\s+new$/m)` 在前，`not.toMatch` 在后。标题的原文到 `messages.ts` 里看，不凭印象写。
+
+**Prevention**：只含 `not.` 断言的一段都照这个查一遍：把被测的功能在心里删掉，用例还通过，就是空转。
+
 ### 替用户按的键按早了，或按到了别的提问上
 
 **Symptom**：用 `keys` 的测试卡在语言提问上直到超时；或脚本的第一个键落在语言提问上，界面成了另一种语言、后面的键全部错位。

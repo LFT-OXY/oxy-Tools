@@ -11,4 +11,3 @@
 {"file": "docs/adr/0001-installer-lives-in-skill-repo.md", "reason": "cli/ 自成一体的三条规矩"}
 {"file": "GLOSSARY.md", "reason": "术语：宿主、共用 skill 目录、安装范围、全局、项目、第三方 Skill、MCP"}
 {"file": ".atw/tasks/10-12-installer-add-pi-omp-hosts/research/pi-omp-host-facts.md", "reason": "Pi 与 omp 的事实（命令、配置文件、skill 目录、skills CLI 认不认识）和维护者定下的十一条决定"}
-{"file": ".atw/tasks/10-12-installer-add-pi-omp-hosts/issues/04-omp-host.md", "reason": "ATW current ticket"}
