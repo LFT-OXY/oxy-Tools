@@ -1,6 +1,6 @@
 {
   "name": "oxy-tools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Curated AI toolchain installer: pick skills, MCP servers and tools from the oxy-Tools catalog and install them into Claude Code or Codex",
   "license": "MIT",
   "repository": {
