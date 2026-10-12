@@ -3,9 +3,10 @@
 import { createHash } from 'node:crypto';
 import type { McpInstallProblem } from './install-mcp.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
+import type { ToolResult } from './install-tool.ts';
 import type { Failure, Messages } from './messages.ts';
 import { noticeTexts } from './notice-text.ts';
-import type { InstallTarget, McpTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget } from './plan.ts';
+import type { InstallTarget, McpTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { InstallOutcome, Progress } from './run-plan.ts';
 import { versionChange } from './status-text.ts';
 import type { Ui } from './ui.ts';
@@ -103,6 +104,8 @@ export function summaryView(t: Messages, plan: Plan): SummaryView {
     if (last?.type === t.kinds.mcp && last.name === target.name) last.rows.push(row);
     else entries.push({ name: target.name, type: t.kinds.mcp, rows: [row] });
   }
+  // 工具一个条目一段，只有一行：没有宿主、位置和版本，只写要做什么。那一行命令不到这里来
+  for (const { target } of plan.toolJobs) entries.push({ name: target.name, type: t.kinds.tool, rows: [{ action: t.toolAction }] });
   return {
     id: summaryId(plan),
     title: t.installSummary(entries.length),
@@ -133,8 +136,13 @@ type RowState =
   | { state: 'failed'; problem: McpInstallProblem }
   | { state: 'skipped'; missing?: string };
 
-/** 一批里的一项：本仓库的 skill、第三方 Skill 里的一个 skill，或一个 MCP，各在一个宿主下 */
-type Row = { now: RowState } & ({ kind: 'skill'; target: InstallTarget } | { kind: 'thirdParty'; target: ThirdPartyTarget } | { kind: 'mcp'; target: McpTarget });
+/** 工具那一行的结局：成功与否看复核（tool.available），没有跳过这回事 */
+type ToolState = { state: 'waiting' } | { state: 'running' } | { state: 'succeeded' | 'failed'; tool: ToolResult };
+
+/** 一批里的一项：本仓库的 skill、第三方 Skill 里的一个 skill，或一个 MCP，各在一个宿主下；工具不装进宿主，一个一项 */
+type Row =
+  | ({ now: RowState } & ({ kind: 'skill'; target: InstallTarget } | { kind: 'thirdParty'; target: ThirdPartyTarget } | { kind: 'mcp'; target: McpTarget }))
+  | { kind: 'tool'; target: ToolTarget; now: ToolState };
 
 /** 一批的进度：每一项走到哪了。画面状态从它现算 */
 export interface Batch {
@@ -148,19 +156,29 @@ export interface Batch {
 
 /**
  * 一批的进度，和把它记下来的那个接收方：交给共用的「执行」。每变一次调一次 changed。
- * 起初每一项都在等待
+ * 起初每一项都在等待。工具的命令直接接在终端上：轮到它时，它的分区经 ui 照终端界面的样子打在那里
  */
-export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; progress: Progress } {
-  const waiting = (skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[]): Row[] => [
+export function trackBatch(plan: Plan, changed: () => void, ui: Pick<Ui, 'toolSections'>): { batch: Batch; progress: Progress } {
+  const waiting = (skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[]): Row[] => [
     ...skills.map((target) => ({ kind: 'skill' as const, target, now: { state: 'waiting' as const } })),
     ...thirdParty.map((target) => ({ kind: 'thirdParty' as const, target, now: { state: 'waiting' as const } })),
     ...mcps.map((target) => ({ kind: 'mcp' as const, target, now: { state: 'waiting' as const } })),
+    ...tools.map((target) => ({ kind: 'tool' as const, target, now: { state: 'waiting' as const } })),
   ];
   const targets = <Job extends { target: unknown }>(jobs: readonly Job[]): Job['target'][] => jobs.map((job) => job.target);
-  const batch: Batch = { rows: waiting(targets(plan.jobs), targets(plan.thirdPartyJobs), targets(plan.mcpJobs)), loading: false, done: false };
+  const batch: Batch = {
+    rows: waiting(targets(plan.jobs), targets(plan.thirdPartyJobs), targets(plan.mcpJobs), targets(plan.toolJobs)),
+    loading: false,
+    done: false,
+  };
   const set = (target: Row['target'], now: RowState): void => {
     const row = batch.rows.find((candidate) => candidate.target === target);
-    if (row) row.now = now;
+    if (row && row.kind !== 'tool') row.now = now;
+    changed();
+  };
+  const setTool = (target: ToolTarget, now: ToolState): void => {
+    const row = batch.rows.find((candidate) => candidate.target === target);
+    if (row?.kind === 'tool') row.now = now;
     changed();
   };
   const progress: Progress = {
@@ -180,9 +198,11 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
       batch.rows = [];
       changed();
     },
-    installation: (skills, thirdParty, mcps) => {
-      batch.rows = waiting(skills, thirdParty, mcps);
+    installation: (skills, thirdParty, mcps, tools) => {
+      batch.rows = waiting(skills, thirdParty, mcps, tools);
       changed();
+      // 终端上只有工具的分区：别的行、「结果」和合计都在页面上，不在终端上重复
+      const terminal = ui.toolSections(tools);
       return {
         skill: {
           begin: (target) => {
@@ -212,9 +232,18 @@ export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; pro
           },
           skip: (target, missing) => set(target, { state: 'skipped', missing }),
         },
-        // 工具还进不了网页界面的计划
-        tool: { begin: () => () => {} },
-        finish: () => {},
+        tool: {
+          begin: (target) => {
+            const conclude = terminal.begin(target);
+            setTool(target, { state: 'running' });
+            // 成功与否看复核，不看命令的退出状态
+            return (result) => {
+              conclude(result);
+              setTool(target, { state: result.available ? 'succeeded' : 'failed', tool: result });
+            };
+          },
+        },
+        finish: terminal.done,
       };
     },
   };
@@ -240,10 +269,16 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
     batch.rows.flatMap((row) => (row.kind === 'skill' ? [row.target] : [])),
     batch.rows.flatMap((row) => (row.kind === 'thirdParty' ? [row.target] : [])),
     batch.rows.flatMap((row) => (row.kind === 'mcp' ? [row.target] : [])),
-    [],
+    batch.rows.flatMap((row) => (row.kind === 'tool' ? [row.target] : [])),
     true,
   );
-  for (const { kind, target, now } of batch.rows) {
+  for (const row of batch.rows) {
+    if (row.kind === 'tool') {
+      // 一批结束后留下的工具行都有结论
+      if ('tool' in row.now) report.tool.begin(row.target)(row.now.tool);
+      continue;
+    }
+    const { kind, target, now } = row;
     if (kind === 'skill') {
       if ('version' in now) report.skill.begin(target)({ ok: true, version: now.version });
       else if ('outcome' in now) report.skill.begin(target)(now.outcome);
@@ -265,9 +300,19 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
     const text = t.thirdPartyResult(result).replace(/^[;；]\s*/, '');
     return text === '' ? {} : { rest: text };
   };
-  // 进行中的词照终端界面：本仓库的 skill 是在下载，第三方 Skill 是在装，MCP 是在配置
-  const running = { skill: t.downloading, thirdParty: t.installingOne, mcp: t.configuring };
-  const row = ({ kind, target, now }: Row): RunRowView => {
+  // 进行中的词照终端界面：本仓库的 skill 是在下载，第三方 Skill 是在装，MCP 是在配置；工具的命令在终端里跑，页面只说去哪看
+  const running = { skill: t.downloading, thirdParty: t.installingOne, mcp: t.configuring, tool: t.toolInTerminal };
+  // 工具不装进宿主，它的行没有宿主。结论在终端界面是接在「已可用」后面的一句，开头带着逗号（英文是冒号）；网页界面另成一段，去掉它
+  const toolRow = (target: ToolTarget, now: ToolState): RunRowView => {
+    const lead = { name: target.name, state: now.state };
+    if (now.state === 'waiting') return { ...lead, text: t.waiting };
+    if (!('tool' in now)) return { ...lead, text: running.tool, terminal: true };
+    const text = t.toolResult(now.tool, target.evidence);
+    return now.tool.available ? { ...lead, text: t.toolAvailable, rest: text.replace(/^[，:]\s*/, '') } : { ...lead, text: t.failed, rest: text };
+  };
+  const row = (one: Row): RunRowView => {
+    if (one.kind === 'tool') return toolRow(one.target, one.now);
+    const { kind, target, now } = one;
     const lead = { name: target.name, host: target.host, state: now.state };
     switch (now.state) {
       case 'waiting':
@@ -290,9 +335,14 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
     }
   };
   const count = (state: RowState['state']): number => batch.rows.filter(({ now }) => now.state === state).length;
-  // 有没装上的才有「下一步」：skill 没装上是原有的东西没动；MCP 另说一句，它先移除再添加，不能这样保证
+  // 有没装上的才有「下一步」：skill 没装上是原有的东西没动；MCP 另说一句，它先移除再添加，不能这样保证；
+  // 工具也另说一句，它的命令跑过了，原因在终端里它自己的输出里
   const failed = batch.rows.filter(({ now }) => now.state === 'failed');
-  const next = [...(failed.some(({ kind }) => kind !== 'mcp') ? [t.afterFailures] : []), ...(failed.some(({ kind }) => kind === 'mcp') ? [t.afterMcpFailures] : [])];
+  const next = [
+    ...(failed.some(({ kind }) => kind === 'skill' || kind === 'thirdParty') ? [t.afterFailures] : []),
+    ...(failed.some(({ kind }) => kind === 'mcp') ? [t.afterMcpFailures] : []),
+    ...(failed.some(({ kind }) => kind === 'tool') ? [t.afterToolFailures] : []),
+  ];
   return {
     title: batch.done ? t.results : t.installing,
     done: batch.done,

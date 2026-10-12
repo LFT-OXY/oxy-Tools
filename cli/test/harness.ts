@@ -209,6 +209,9 @@ export interface Terminal {
   raw(): string;
 }
 
+/** 预设的一条外部命令的结局：盖过缺省结果的字段、没能起来的错，或什么都不给（缺省的结果） */
+type CommandPreset = Partial<CommandResult> | Error | undefined;
+
 interface Streams {
   stdin?: boolean;
   stdout?: boolean;
@@ -239,14 +242,15 @@ export interface RunOptions {
   /**
    * 预设外部命令的结果：命令照样记下来，不执行。返回的字段盖过缺省的结果（退出状态 0）；
    * 返回一个 Error 表示这条命令没能起来；什么都不返回就是缺省的结果。
-   * 它自己抛出则表示执行器当场抛出、连承诺都没返回
+   * 它自己抛出则表示执行器当场抛出、连承诺都没返回。
+   * 返回一个承诺表示这条命令还在跑，它兑现成上面那几种之一时才结束：用来停在一条命令跑到一半的地方
    */
   commandResult?: (
     command: string,
     args: readonly string[],
     /** cwd 是这条命令被指定在哪个目录下运行，没指定时没有 */
     context: { home: string; cwd?: string },
-  ) => Partial<CommandResult> | Error | undefined;
+  ) => CommandPreset | Promise<CommandPreset>;
   /** 主目录的初始状态：相对路径 → 文件内容 */
   home?: Record<string, string>;
   /** 项目目录（运行安装器时所在的目录）的初始状态：相对路径 → 文件内容 */
@@ -483,8 +487,10 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
         ...(runOptions?.shell ? { shell: true as const } : runOptions?.env ? { env: runOptions.env } : {}),
         ...(cwd === undefined ? {} : { cwd }),
       });
+      const ended = (preset: CommandPreset): Promise<CommandResult> =>
+        preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
       const preset = options.commandResult?.(command, args, { home, ...(cwd === undefined ? {} : { cwd }) });
-      return preset instanceof Error ? Promise.reject(preset) : Promise.resolve({ exitCode: 0, ...preset });
+      return preset instanceof Promise ? preset.then(ended) : ended(preset);
     },
     prompter: options.keys ? interactive : scripted,
     openLink: async (url) => {

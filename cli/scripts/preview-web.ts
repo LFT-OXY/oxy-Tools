@@ -73,8 +73,11 @@ interface Scene extends World {
    * 拍完再让它失去焦点、等这一行换成「已填」，然后才查假装的 key 有没有留在页面上
    */
   typing?: true;
-  /** 外部命令的结局：缺省是没能运行（预览不执行命令）；succeed 是假装它们都正常结束了——同样什么都不执行 */
-  commands?: 'succeed';
+  /**
+   * 外部命令的结局：缺省是没能运行（预览不执行命令）；succeed 是假装它们都正常结束了；tool-running 是别的都正常结束、
+   * 轮到工具的那一行命令一直不结束（停在它在终端里跑的时候）——同样什么都不执行
+   */
+  commands?: 'succeed' | 'tool-running';
   /** 窗口多大，缺省 1280×800 */
   viewport?: Viewport;
   /** 窗口拉到列表那么高：一张比窗口高的列表从头到尾都在这一格里 */
@@ -183,7 +186,7 @@ const picking =
   };
 /** 勾上这一类里的这几个条目 */
 const pickingOf =
-  (kind: 'thirdParty' | 'mcp') =>
+  (kind: 'thirdParty' | 'mcp' | 'tool') =>
   (...names: string[]): Drive =>
   async (page) => {
     for (const name of names) await page.send({ type: 'pick', kind, name, on: true });
@@ -191,6 +194,7 @@ const pickingOf =
   };
 const pickingThirdParty = pickingOf('thirdParty');
 const pickingMcp = pickingOf('mcp');
+const pickingTool = pickingOf('tool');
 /** 含多个 skill 的第三方 Skill 里挑这几个 */
 const choosing =
   (entry: string, ...skills: string[]): Drive =>
@@ -272,6 +276,10 @@ const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
 const THIRD_PARTY_PICKS = inOrder(picking('wizard'), pickingThirdParty('drawio-skill', 'paper-craft-skills'), choosing('paper-craft-skills', 'paper-analyzer', 'paper-comic'));
 const thirdPartySummarized = inOrder(crowded, THIRD_PARTY_PICKS, reviewing);
 
+// 一个本仓库的 skill、一个 MCP、两个工具：docling 没装着，pandoc 已经在可执行路径上
+const WITH_TOOLS = inOrder(crowded, picking('wizard'), pickingMcp('markitdown'), pickingTool('docling', 'pandoc'));
+const toolRunning = inOrder(WITH_TOOLS, reviewing, installing((run) => run.rows.some((row) => row.terminal === true)));
+
 const scenes: Scene[] = [
   { title: '开场动画 · 敲命令', note: '第 0.6 秒：黑底上 $ npx oxy-tools 一个字一个字敲出来，行尾是光标。浅色下开场也是黑底白字', intro: 600 },
   { title: '开场动画 · 大标志打出来', note: '第 1.5 秒：大标志一行行打出来，单色', intro: 1500 },
@@ -308,6 +316,12 @@ const scenes: Scene[] = [
     title: '浏览 · 有不可选的条目',
     note: 'officecli 不支持这个系统：虚线的边、虚线的勾选框，原因直接写在状态的位置，不靠鼠标悬停；名字和说明退一档，不用最淡的文字',
     drive: crowded,
+    reveal: 'officecli',
+  },
+  {
+    title: '浏览 · 勾了工具',
+    note: '工具勾得上了：docling、pandoc 是选中的画法，右栏里类型写「工具」。工具只有一段状态、不写宿主的名字，已安装的照样勾得上；officecli 不支持这个系统，仍是不可选的画法',
+    drive: WITH_TOOLS,
     reveal: 'officecli',
   },
   {
@@ -455,6 +469,24 @@ const scenes: Scene[] = [
     drive: inOrder(summarized, outdated),
   },
   {
+    title: '汇总 · 有工具',
+    note: '工具一段没有版本，段里只有一行「执行安装命令」：没有宿主、没有位置，也不列那一行命令。排在 MCP 之后',
+    drive: inOrder(WITH_TOOLS, reviewing),
+  },
+  {
+    title: '安装中 · 轮到工具',
+    note: '前面的都装完了，轮到 docling：它的命令在终端里跑，这一行是留意底色的一条，粗体写着「正在终端里安装，请看终端」，和别的「正在装」分得开；pandoc 还在等待。工具的行没有宿主',
+    commands: 'tool-running',
+    drive: toolRunning,
+  },
+  { title: '安装中 · 轮到工具 · 1024×768', note: '面板收窄：那一句放得下，底部的提醒和「完成」看得见', commands: 'tool-running', drive: toolRunning, viewport: NARROW },
+  {
+    title: '结果 · 有工具',
+    note: 'pandoc 复核通过：就绪色的「已可用」，后面是查到了什么；docling 的命令正常结束了但在可执行路径上找不到它：失败，原因折成两行。「下一步」里是工具的那一句：原因看终端里那条命令自己的输出',
+    commands: 'succeed',
+    drive: inOrder(WITH_TOOLS, reviewing, finished),
+  },
+  {
     title: '安装中',
     note: '标题旁边是装完了几项、一共几项，下面一条进度条。装好了的是就绪色的 ✓；onetake 正在下载（转动的小圆环），后面的在等待，名字不加粗。底部一句提醒，「完成」点不了',
     catalog: neverFinishes,
@@ -507,6 +539,9 @@ const scenes: Scene[] = [
   { title: '英文 · 汇总 · 有第三方 Skill · 1024×768', ...EN, drive: thirdPartySummarized, viewport: NARROW },
   { title: '英文 · 汇总 · 新的一份 · 1024×768', ...EN, drive: inOrder(summarized, outdated), viewport: NARROW },
   { title: '英文 · 安装中', ...EN, catalog: neverFinishes, drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))) },
+  { title: '英文 · 汇总 · 有工具', ...EN, drive: inOrder(WITH_TOOLS, reviewing) },
+  { title: '英文 · 安装中 · 轮到工具 · 1024×768', note: '最挤的一格：英文的那一句长，在窄的面板里折成两行也读得通', ...EN, commands: 'tool-running', drive: toolRunning, viewport: NARROW },
+  { title: '英文 · 结果 · 有工具', ...EN, commands: 'succeed', drive: inOrder(WITH_TOOLS, reviewing, finished) },
   { title: '英文 · 结果 · 有没装上的、有跳过的', ...EN, catalog: oneFails, drive: inOrder(summarized, finished) },
   { title: '英文 · 结果 · 向 GitHub 查询失败', ...EN, catalog: queryLimited, drive: inOrder(summarized, finished) },
   { title: '英文 · 填 key', note: '英文的词长：必填的后果那一句折成两行也读得通', ...EN, catalog: withKeyed, drive: KEYS_FILLED },
@@ -632,7 +667,12 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     pageGraceMs: 5000,
     interrupt: interrupt.signal,
     // 预览从不真的执行命令，也不真的打开浏览器：链接打开器只记下网页界面的网址
-    runCommand: () => (scene.commands === 'succeed' ? Promise.resolve({ exitCode: 0 }) : Promise.reject(new Error('网页界面的预览不执行命令'))),
+    runCommand: (_command, _args, how) =>
+      scene.commands === undefined
+        ? Promise.reject(new Error('网页界面的预览不执行命令'))
+        : scene.commands === 'tool-running' && how?.shell
+          ? new Promise(() => {})
+          : Promise.resolve({ exitCode: 0 }),
     prompter: {
       // 改用了终端界面之后的第一问（主菜单）上按 Ctrl+C：页面已经得知了，安装器到此为止
       select: () => (switched ? Promise.reject(new PromptAborted()) : refuse()),

@@ -34,8 +34,8 @@ export type Intent =
   /** 装到全局还是项目 */
   | { type: 'scope'; scope: Scope };
 
-/** 现在勾得上的类型 */
-export type PickableKind = 'skill' | 'thirdParty' | 'mcp';
+/** 勾得上的类型：四种组件。外部项目不在里面 */
+export type PickableKind = 'skill' | 'thirdParty' | 'mcp' | 'tool';
 
 export type Lang = 'zh' | 'en';
 
@@ -238,21 +238,22 @@ export interface SummaryEntryView {
   name: string;
   /** 类型写出来的词 */
   type: string;
-  /** 要装的版本；第三方 Skill（装的是作者当时的最新版）和 MCP 没有 */
+  /** 要装的版本；第三方 Skill（装的是作者当时的最新版）、MCP 和工具没有 */
   version?: string;
-  /** 每个宿主一行；第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行 */
+  /** 每个宿主一行；第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行，工具只有一行 */
   rows: SummaryRowView[];
 }
 
 export interface SummaryRowView {
   /** 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组 */
   skill?: string;
-  host: string;
-  /** 操作：新装、覆盖；MCP 的状态未知时是添加 */
+  /** 工具的行没有：它不装进宿主 */
+  host?: string;
+  /** 操作：新装、覆盖；MCP 的状态未知时是添加；工具是执行安装命令 */
   action: string;
   /** 这一行会覆盖已有的东西 */
   overwrites?: true;
-  /** 给用户看的位置；MCP 的行没有 */
+  /** 给用户看的位置；MCP 和工具的行没有 */
   location?: string;
   note?: string;
   /** 要逐项决定覆盖不覆盖的才有：id 放进 overwrite 意图，缺省没同意 */
@@ -278,12 +279,18 @@ export interface RunView {
 
 export interface RunRowView {
   name: string;
-  host: string;
+  /** 工具的行没有：它不装进宿主 */
+  host?: string;
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
-  /** 这一行的词：等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、正在配置（MCP）、已安装、已配置（MCP）、失败、跳过 */
+  /**
+   * 这一行的词：等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、正在配置（MCP）、正在终端里安装，请看终端（工具）、
+   * 已安装、已配置（MCP）、已可用（工具）、失败、跳过
+   */
   text: string;
-  /** 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局 */
+  /** 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局；工具是查到了什么和命令的结局 */
   rest?: string;
+  /** 这一项正在终端里装（工具）：命令的输入输出接在终端上，页面写明请看终端 */
+  terminal?: true;
 }
 
 export interface TotalView {

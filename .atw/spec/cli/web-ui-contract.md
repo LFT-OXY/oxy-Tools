@@ -1,7 +1,7 @@
 # 网页界面的契约
 
 > 网页界面的页面与安装器之间说什么（意图、画面状态）、本机的那个网页守哪几道、它什么时候起来什么时候关。页面该长什么样见 [网页界面的设计](./web-ui-design.md)；入口怎么定下用哪个界面、测试架子怎么扮演浏览器，见 [入口与测试](./installer-entry.md)。
-> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 11 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；页面上选装进哪些宿主、装到全局还是项目；第三方 Skill 和本仓库的 skill 一起勾、一起确认、一起装（含多个 skill 的当场挑其中哪几个）；MCP 也一起勾、一起装，要 key 的在页面上填；页面关了、刷新、终端上按 `t` 改用终端界面（「生命周期」）。工具还勾不上（工单 12）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
+> **逐张工单补全**（任务 `10-11-installer-web-ui`）：现在写的是工单 12 之后的样子——骨架（起得来、连得上、守得住、退得出）、逛目录（左栏的「推荐」和各个用途、当前那张列表里的条目和它们的状态、开场动画播过没有、页面上换语言），第一条完整的线：勾选本仓库的 skill、已选、汇总、确认、进度、结果、继续挑选；页面上选装进哪些宿主、装到全局还是项目；第三方 Skill 和本仓库的 skill 一起勾、一起确认、一起装（含多个 skill 的当场挑其中哪几个）；MCP 也一起勾、一起装，要 key 的在页面上填；页面关了、刷新、终端上按 `t` 改用终端界面（「生命周期」）；工具也勾得上，轮到它时命令在终端里跑（「工具」）。后面的工单每加一种意图、画面状态里每多一块，先改这里。
 
 ---
 
@@ -31,7 +31,7 @@ export type Intent =
   | { type: 'continue' }             // 装完之后继续挑选
   | { type: 'host'; host: string; on: boolean }  // 装进（或不装进）一个宿主：host 是 target.choices 里那一项的 id
   | { type: 'scope'; scope: Scope }; // 装到全局还是项目
-export type PickableKind = 'skill' | 'thirdParty' | 'mcp';  // 现在勾得上的类型；工具到工单 12 往里加
+export type PickableKind = 'skill' | 'thirdParty' | 'mcp' | 'tool';  // 勾得上的类型：四种组件
 export type Lang = 'zh' | 'en';
 export interface ViewState {
   lang: Lang;                       // 页面现在的语言：起初是系统语言或 --lang 的，之后是页面上换过的
@@ -86,7 +86,7 @@ export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
 export interface SelectedView {
   kind: PickableKind; name: string;
-  type: string;                     // 类型写出来的词（Skill、第三方 Skill、MCP）
+  type: string;                     // 类型写出来的词（Skill、第三方 Skill、MCP、工具）
   detail?: string;                  // 含多个 skill 的第三方 Skill 挑了几个：「3 个 skill 里挑了 2 个」
   key?: { text: string; tone: Tone }; // 要 key 的 MCP：必填的还有没填的是「要填 key」（留意），填过了是「key 已填」（就绪）；只有可选的、一个都没填时没有
   unavailable?: string;             // 这一项现在不进汇总的原因：在现在所选的宿主和范围下装不了（和卡片上的是同一句），或含多个 skill 而一个都没挑（「一个 skill 都没挑，这一条不装」）
@@ -110,13 +110,13 @@ export interface SummaryView {
   revise: string; install: string;  // 两个按钮上的字：终端界面那一问里的「返回修改」「开始安装」
   renewed?: true;                   // 上一次确认没有照办（状态变了，或带的是旧标识）：这是新的一份，要再确认
 }
-export interface SummaryEntryView { name: string; type: string; version?: string; rows: SummaryRowView[] } // version 是要装的版本，第三方 Skill 和 MCP 没有；rows 每个宿主一行，第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行
+export interface SummaryEntryView { name: string; type: string; version?: string; rows: SummaryRowView[] } // version 是要装的版本，第三方 Skill、MCP 和工具没有；rows 每个宿主一行，第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行，工具只有一行
 export interface SummaryRowView {
   skill?: string;                   // 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组
-  host: string;
-  action: string;                   // 新装、覆盖；MCP 的状态未知时是添加
+  host?: string;                    // 工具的行没有：它不装进宿主
+  action: string;                   // 新装、覆盖；MCP 的状态未知时是添加；工具是执行安装命令
   overwrites?: true;                // 这一行会覆盖已有的东西
-  location?: string;                // 给用户看的位置；MCP 的行没有（和终端界面 MCP 的小表一样没有「位置」）
+  location?: string;                // 给用户看的位置；MCP 和工具的行没有（和终端界面那两张小表一样没有「位置」）
   note?: string;                    // 备注：重装 1.0.0、1.0.0 → 1.0.1、非本工具安装、已有同名目录、已配置先移除再添加、状态未知先尝试移除同名配置
   overwrite?: { id: string; agreed: boolean }; // 要逐项决定覆盖不覆盖的才有；缺省没同意
 }
@@ -130,10 +130,11 @@ export interface RunView {
   next?: { label: string; lines: string[] }; // 装完之后有没装上的才有：「下一步」和它下面的话
 }
 export interface RunRowView {
-  name: string; host: string;
+  name: string; host?: string;      // 工具的行没有 host
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
-  text: string;                     // 等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、正在配置（MCP）、已安装、已配置（MCP）、失败、跳过
-  rest?: string;                    // 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局（「安装命令退出状态 1」）；MCP 装上了没有
+  text: string;                     // 等待、正在下载（本仓库的 skill）、正在安装（第三方 Skill）、正在配置（MCP）、这一项正在终端里安装，请看终端（工具）、已安装、已配置（MCP）、已可用（工具）、失败、跳过
+  rest?: string;                    // 词后面的话：版本、原因；第三方 Skill 装上了而命令没有正常结束时是命令的结局（「安装命令退出状态 1」）；MCP 装上了没有；工具是查到了什么和命令的结局
+  terminal?: true;                  // 这一项正在终端里装（工具）：命令的输入输出接在终端上，页面把它和别的「正在装」画得分得开
 }
 export interface TotalView { count: number; word: string }
 export interface FailureView {      // 出错说明，和终端界面是同一份话、同一个结构
@@ -179,7 +180,7 @@ export function decided(plan: Plan, agreed: ReadonlySet<string>): Plan; // 要�
 export function summaryId(plan: Plan): string;                          // 一份标过决定的计划的标识：取摘要，与语言无关
 export function summaryView(t: Messages, plan: Plan): SummaryView;      // 把标过决定的计划写成汇总
 export interface Batch { rows: …; loading: boolean; failure?: Failure; done: boolean } // 一批的进度：画面状态从它现算
-export function trackBatch(plan: Plan, changed: () => void): { batch: Batch; progress: Progress }; // progress 交给共用的「执行」，每变一次调一次 changed
+export function trackBatch(plan: Plan, changed: () => void, ui: Pick<Ui, 'toolSections'>): { batch: Batch; progress: Progress }; // progress 交给共用的「执行」，每变一次调一次 changed；轮到工具时它的分区经 ui 打在终端上
 export function settleBatch(batch: Batch, failure?: Failure): void;     // 这一批结束了；failure 是执行中出的意料之外的错
 export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): RunView;
 export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation'>): void; // 把装完的一批的结局照先后重报给呈现层：安装中页面关了，结果打在终端上
@@ -271,11 +272,33 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - 执行在第三方 Skill 之后（共用的「执行」定的）。`run.rows` 里 MCP 每个宿主一行：进行中是「正在配置」（`configuring`），成了是「已配置」（`mcpStatus.configured`，没有 `rest`），没成是「失败」加原因（`mcpInstallProblem`：「添加命令退出状态 1」「移除命令退出状态 3；未执行添加」「添加命令没能运行（ENOENT）」——原因里只有哪一步、退出状态或错误码，**没有 key 的值**），缺 key 的是「跳过 未填写必填的 <变量>」。有没配置上的 MCP 时 `run.next` 里是 `afterMcpFailures` 那一句，见「安装与结果」。
 - `summary.id` 把 MCP 的各项（条目、宿主、状态、缺哪个变量）也算进去：看汇总的时候宿主的配置变了再拿旧标识确认，不装。
 
-**勾选与已选**（工单 07；现在本仓库的 skill、第三方 Skill 和 MCP 勾得上）
+**工具**（工单 12）
+
+- 勾得上的类型多了 `tool`：`pick` 的 `kind` 是它、`name` 是条目的名字。可不可选仍由 `availability.ts` 定（`toolUnavailable`），原因是那三种：一个宿主都没检测到是「需要 AI Agent」，当前系统不支持是「不支持 macOS」这一类，它要的宿主一个都没检测到是「需要别的 AI Agent」。**看的是检测到的宿主，不是这一轮所选的**：页面上改了宿主、选了项目，工具的卡片不变，已选里的工具也不会因此带上 `unavailable`。
+- 卡片上的 `statuses` 只有一段、没有 `host`：已安装（`ready`）、未安装（`faint`）。已安装的照样勾得上，再装一次就是再执行一遍命令。
+- 已选里工具一项（`type` 是「工具」），没有 `detail`、`key`。
+- 汇总里每个工具一段（`type` 是「工具」，**没有 `version`**），照名字排在 MCP 之后；段里只有一行，**没有 `host`、`location`、`note`**，`action` 是「执行安装命令」（文案 `toolAction`，终端界面汇总里工具那张小表的同一个词）。`title` 的 N 算上它。工具没有要逐项决定的覆盖，`notices` 不因为它多出什么。
+- **那一行命令不出安装器**：汇总、已选、进度、结果里都没有它，画面状态的任何地方都没有（`curl`、`| sh` 这些搜不到）。执行的是目录里的那一整行（`ToolTarget.command`），整行交给 shell——和终端界面装同一个工具时记录到的命令一字不差。规矩在 [安装工具](./tool-install.md)。
+- 执行在最后（共用的「执行」定的）。轮到一个工具时：
+  - `run.rows` 里它那一行（**没有 `host`**）是 `state: 'running'`、带 `terminal: true`，`text` 是「这一项正在终端里安装，请看终端」（文案 `toolInTerminal`）。页面照 `terminal` 把它和别的「正在装」画得分得开。
+  - 终端上是它自己的分区，和终端界面同一个画法：标题是它的名字，`$ <命令>`，命令自己的输出，空一行，一行结论。这期间终端上没有待命的提问（一批安装开始时就收回了）。
+- 命令结束后那一行换成结论，**成功与否看复核，不看命令的退出状态**。词和后面的话是 [安装工具](./tool-install.md) 结论矩阵里的那几句（`toolAvailable`、`toolResult`），分成两段：
+
+  | 复核 | `state` | `text` | `rest` |
+  |------|---------|--------|--------|
+  | 通过 | `succeeded` | 已可用 | 查到了什么（「在 PATH 中找到 fetcher」「~/.linter/bin/linter 已存在」）；命令没有正常结束时接着是它的结局（「…；命令退出状态 1」「…；命令没能运行（ENOENT）」）——`toolResult` 那句去掉开头的逗号 |
+  | 不通过 | `failed` | 失败 | `toolResult` 的整句（「命令退出状态 3；在 PATH 中找不到 fetcher」「命令已正常结束，但在 PATH 中找不到 fetcher；可能要重开终端才找得到」） |
+
+- 有没装上的工具时 `run.next` 里另说一句（`afterToolFailures`）：原因看终端里那条命令自己的输出。`afterFailures` 说的「没有改动原有的东西」对工具不成立——命令跑过了，改了什么只有它自己知道。三种都有时先后是 skill 的、MCP 的、工具的。
+- 一批里的工具都跑完、这一批结束后，待命的提问回到终端上（和没有工具的一批一样，见「生命周期」）。页面开着时终端上**没有「结果」分区、没有合计**。
+- **安装中页面关了**而这一批里有工具：工具的分区照样打在终端上、命令照样跑完；补打的「结果」分区里工具的结论和别的行排在一起（不再打一遍它的分区），合计算上它。**这一批只有一个工具时也照样有「结果」分区**（一行加合计）。
+- `summary.id` 把工具的各项（名字、那一行命令、查什么）也算进去；它本来就在里面，标识仍只在安装器这边算、页面不去解读。
+
+**勾选与已选**（工单 07；现在四种组件都勾得上）
 
 - 勾选是意图 `pick`，**状态在安装器这边**：`kind`、`name` 是画面状态里那个条目的类型和名字，`on` 是勾上还是去掉。勾上的记在 `Session` 里，与正在看哪张列表无关——换一张列表看，之前勾的还在；一个条目同时在「推荐」和它的用途下，两处是同一个条目，一处勾了另一处的 `picked` 也是 `true`。
 - `selected` 是已选，**照勾选的先后**：每项带 `kind`、`name`（去掉它时原样放进 `pick`）和类型写出来的词（文案里的 `kinds`）。已选了几个，页面数它的长度。
-- **勾不上的不照办**（400，已选不变）：名字不在它那一类的目录里；`kind` 不是现在勾得上的（`PickableKind`）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
+- **勾不上的不照办**（400，已选不变）：名字不在它那一类的目录里；`kind` 不是勾得上的（`PickableKind`：外部项目不在里面）；这个条目现在不可选（带着 `unavailable`——哪些不可选仍由 `availability.ts` 定）。去掉一个没勾的条目照办，什么都不变。
 - 换语言不动勾选。
 - 这几种意图只在浏览的时候照办：填 key、汇总开着、正在装、结果还没收掉时 `pick` 都是 400，`review` 只在浏览和填 key 时照办——页面上那时盖着对话框或面板，本来也点不到。
 
@@ -422,7 +445,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 | `/api/` 下不带口令、口令不对 | 403，正文空 |
 | `/api/intent` 的正文不是 JSON、不是认得的意图 | 400，正文空 |
 | 意图 `open` 的 `list` 不是字符串，或不在 `menu` 里（包括目录里有、但下面没有条目的用途） | 400，正文空；正在看的列表不变 |
-| 意图 `pick` 的条目不在目录里、类型现在勾不上、条目不可选 | 400，已选不变 |
+| 意图 `pick` 的条目不在目录里、`kind` 不是四种组件之一（外部项目勾不上）、条目不可选 | 400，已选不变 |
 | 意图 `choose` 的 `entry` 不是勾上了的第三方 Skill、只含一个 skill、`skill` 不在它里面；浏览之外的 `choose` | 400，挑的不变 |
 | **任何一种意图里多带了它不该有的东西**（`command`、`path`、`args` 之类）：每种意图认得的字段是定死的，多一个就整个不照办 | 400，什么都不变 |
 | 意图 `review` 而已选为空，或已选里一个会装的都没有（装不了的、含多个 skill 而一个都没挑的）；`overwrite` 的 `item` 不在这份汇总里；`install` 的 `summary` 不是字符串 | 400 |
@@ -471,6 +494,9 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - Base：装完点「继续挑选」，再勾 `search-keyed`、`review` → `keys` 里那个变量已经是「已填」；直接 `review` 去汇总就装得了。再发一次 `key` 就是换一个：命令里是新的值。
 - Base：两个宿主、选了项目 → MCP 那一区有一条「Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令」，卡片上 Codex「不支持」，只装进 Claude Code：命令带 `--scope project`、在项目目录下运行，提醒里有明文写入和要批准的两条。只选 Codex 时卡片不可选，原因「只能装到全局」；全局时勾上再改成项目 → 它留在已选里带着这句原因、不进汇总，改回全局恢复。
 - Bad：浏览时发 `{"type":"key",…}`、给没勾上的 MCP 填、`value` 是空白 → 都是 400，正文是空的。
+- Good：勾工具 `fetcher`，`review` → 汇总一段「fetcher · 工具」、一行只有「执行安装命令」；确认后记录到的命令是 `{ command: 'curl -LsSf https://example.com/fetcher/install.sh | sh', args: [], shell: true }`；命令跑着的时候那一行是 `running`、`terminal: true`、「这一项正在终端里安装，请看终端」，终端上有「── fetcher」的分区和 `$ curl …`，没有按键提示；跑完是「已可用 在 PATH 中找到 fetcher」，按键提示回来。从头到尾收到的东西里搜不到 `curl`。
+- Base：命令以 3 退出而 `fetcher` 已经在可执行路径上 → 「已可用 在 PATH 中找到 fetcher；命令退出状态 3」，计入成功；命令以 0 退出而路径上没有它 → 「失败 命令已正常结束，但在 PATH 中找不到 fetcher；可能要重开终端才找得到」，「下一步」里是工具的那一句。
+- Base：`linter` 的 `hosts` 是 `["codex"]`，只检测到 Claude Code → 卡片带「需要别的 AI Agent」，`pick` 是 400；检测到两个、页面上去掉 Codex → 卡片照常可选（看的是检测到的）。
 - Base：链接打开器拒绝 → 终端上一行「注意」，接着是语言提问和主菜单；那个网址已经连不上。
 - Good：页面连上之后关掉 → 5 秒后终端上「网页界面  页面已关闭，安装器退出」，以 0 退出；按键提示那一行不在了。
 - Base：页面刷新（断开不到 5 秒又连上）→ 安装器照常开着，新连上的拿到的画面状态和刷新前一样（勾选、正在看的列表、汇总都在）。
@@ -572,6 +598,17 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - 换语言后填过的 key 还在，`keys` 里的话换成新的语言。
 - 画面状态的 JSON 里没有 `mcp add`、`--scope`、`--env`、`--transport`，也没有条目的启动命令。
 
+装工具的在 `cli/test/web-tools.test.ts`，同样经主接缝（要停在命令跑到一半的地方，`commandResult` 返回一个还没兑现的承诺，见 [入口与测试](./installer-entry.md)）：
+
+- 一个工具的正常路径：卡片的状态（一段、没有宿主）、已选里的类型、汇总的段与行（没有版本、宿主、位置）、记录到的命令是**字面值**（整行、`shell: true`、`args: []`）、命令跑着时那一行的 `terminal` 和那句话、结论；终端上有它的分区、`$` 和那一行命令、结论，没有「结果」分区和合计；和终端界面装同一个工具时记录到的命令逐条比一遍。
+- 结论：非零退出但复核通过（成功，带退出状态）；以 0 退出但复核不通过（失败、「下一步」是工具的那一句）；没能起来（`ENOENT`，错误消息不出现在任何地方）；检查方式是路径的那一种。
+- 不可选的三种原因各一条：卡片上的原因、`pick` 是 400；页面上去掉了它要的宿主、选了项目，工具照常可选、已选里不带原因。
+- 和本仓库的 skill、第三方 Skill、MCP 混在一批里：行的先后和命令的先后都是工具在最后；两个工具按名字。
+- **那一行命令不出安装器**：这一页收到的全部东西（`page.received()`）里搜不到命令里的词；意图里多带了 `command` 的不照办。
+- 待命：命令跑着时画面上没有按键提示、`terminal.press` 没有人接；跑完回来。
+- 安装中页面关了：这一批装完，终端上补打的「结果」分区里有工具的那一行，合计算上它，它的分区只打了一遍；这一批只有一个工具时照样有「结果」分区。
+- 换语言后勾着的工具还在，类型、状态、汇总里的操作、进度里的那句话都是新的语言。
+
 **经入口的测试断不到的**（页面只把画面状态画出来）：三栏的版式、开场动画怎么演、键盘与焦点、链接是不是在新标签页打开——这些在真实的浏览器里看：版式、开场的定格和键盘焦点在网页界面的预览里各有一格（`npm run preview:web`，见 [网页界面的设计](./web-ui-design.md) 的「网页界面的预览」），其余的手动核对。
 
 ### 7. Wrong vs Correct
@@ -609,6 +646,15 @@ runPlan(runtime, session.plan, progress); // install 的时候
 
 // 丢掉意图里多带的东西、照办剩下的：规格说的是带了命令、路径一律不认
 const { type, kind, name, on } = raw;     // command、path 悄悄没了，意图照办
+
+// 工具的那一行命令也一样：汇总里写了「执行安装命令」就想把命令带上，或让页面把名字发回来时顺手带着命令
+entries.push({ name: target.name, type: t.kinds.tool, rows: [{ action: t.toolAction, command: target.command }] });
+
+// 把工具的命令的输出收起来发给页面：它要接管终端的输入输出（sudo 的密码只有终端答得了），规格明说不搬
+runCommand(target.command, [], { shell: true, capture: (chunk) => push(chunk) });
+
+// 页面开着时把这一批的「结果」和合计也打在终端上：页面上已经有了，终端上只该有工具的分区
+const terminal = ui.installation(skills, thirdParty, mcps, tools);   // 该是 ui.toolSections(tools)
 
 // 把将执行的命令放进画面状态「反正页面不画」：页面用不上的东西不出安装器
 summary: { entries, commands: plan.thirdPartyJobs.map((job) => job.command) }
@@ -692,6 +738,12 @@ sending = sending.then(() => fetch('/api/intent', { … })).catch(() => undefine
 grace = setTimeout(() => { deserted = true; if (session.step !== 'installing') end('closed'); }, options.pageGraceMs);
 grace.unref();
 
+// 工具：页面上只有名字和要做什么；轮到它时终端上是它的分区，页面上那一行说去哪看，跑完两边各有结论
+for (const { target } of plan.toolJobs) entries.push({ name: target.name, type: t.kinds.tool, rows: [{ action: t.toolAction }] });   // summaryView
+const conclude = terminal.begin(target);          // trackBatch：terminal 是 ui.toolSections(tools)
+setTool(target, { state: 'running' });            // 画面状态里这一行带 terminal: true
+return (result) => { conclude(result); setTool(target, { state: result.available ? 'succeeded' : 'failed', tool: result }); };
+
 // 这一批的结果没有页面看到，就打在终端上，再说退出
 if (how === 'closed' && unseen && session.batch) {
   options.ui.webEnded('closedUnseen');
@@ -760,4 +812,11 @@ if (how === 'closed' && unseen && session.batch) {
 | 待命画出来的头 100 毫秒里收到的键不算数（工单 11，审查之后加的） | 审查指出、在伪终端里实测证实：安装进行中敲的 `t` 会在装完的那一刻被重新画出来的待命读走。见 [终端输出](./terminal-output.md) 的「待命的提问」 |
 | 收场之后任何意图都不照办（400）（工单 11） | 本机的网页那时正在关；点了「完成」和按 `t` 同时到时只认先到的那一个 |
 | 按 `t` 之后这次运行里填过的 key 还在（工单 11） | 规格说「页面上的勾选丢弃」。key 记在两套界面共用的 `Runtime.keys` 里，「同一次运行里填过的不用再填」对换了界面同样成立 |
+| 工具正在终端里装的那一行是 `state: 'running'` 加一个 `terminal: true`，不另立一种 `state`（工单 12） | 规格只说页面要写明「这一项正在终端里安装，请看终端」。它仍是「正在装」（进度条不算它装完、行不被当成结局），多出来的只是「去哪看」；另立一种状态的话，页面和测试里凡是数「还没有结局」的地方都要多认一种 |
+| 工具的结论分成词（「已可用」「失败」）和后面的话，后面的话是 `toolResult` 那句去掉开头的逗号（英文是冒号）（工单 12） | 和第三方 Skill 的那一条同一个道理：那句话在终端界面是接在「已可用」后面的。文案一改这处要跟着看 |
+| 有没装上的工具时「下一步」另说一句（`afterToolFailures`），话是实现者写的（工单 12） | 规格只说「失败的写明原因和下一步」。`afterFailures` 说没装上的没有改动原有的东西，对工具不成立；工具的原因只有退出状态和查了什么，真正的原因在终端里那条命令自己的输出里 |
+| 页面开着时，工具的结论也打在终端上（它的分区的最后一行），但没有「结果」分区和合计（工单 12） | 规格说「工具的分区照现在的样子打在终端上」「除此之外终端上不重复页面上的内容」。分区照现在的样子就带着那一行结论——用户那一刻正看着终端；再列一遍和合计是「重复页面上的内容」 |
+| 安装中页面关了、这一批只有一个工具：补打的仍是一个完整的「结果」分区（工单 12） | 规格说「这一批的结果照终端界面「结果」分区的样子打在终端上」。终端界面里只装一个工具时不重复「结果」分区（结论就在它的输出下面，接着是合计）；这里没有照搬：那一句说明写的是「结果如下」，下面就得有结果，别的类型的一批也都是这个样子。代价是这一行结论在终端上出现两次（分区里一次，「结果」里一次）。**维护者没有就这一条表过态** |
+| 页面上改了宿主、选了项目，工具不受影响（工单 12） | 规格的「不分宿主、不受安装范围影响」。可不可选看的是检测到的宿主，和终端界面一样 |
+| 一批里的工具跨用途时按名字排（工单 12） | 和别的三种一样；终端界面的列表里是「带推荐的在前、其余按名字」，跨用途时没有现成的先后 |
 | 第三方 Skill 装上了而命令没有正常结束时，`rest` 是 `thirdPartyResult` 那句去掉开头的分号（工单 09） | 那句话在终端界面是接在「已安装」后面的，带着分号；网页界面的词和后面的话分成两段，分号多余。文案一改这处要跟着看 |

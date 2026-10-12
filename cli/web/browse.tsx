@@ -245,15 +245,13 @@ function Card({
 }) {
   const unavailable = entry.unavailable !== undefined;
   const picked = entry.picked === true;
-  // 现在勾得上的是本仓库的 skill、第三方 Skill 和 MCP；工具的勾选框先是点不了的。
-  // 点了只告诉安装器，勾选框自己先不变：勾没勾上等画面状态来了才算
-  const pickable = kind !== 'tool' && !unavailable ? kind : undefined;
-  const toggle = pickable
-    ? (event: { currentTarget: HTMLInputElement }): void => {
+  // 四种组件都勾得上，不可选的除外。点了只告诉安装器，勾选框自己先不变：勾没勾上等画面状态来了才算
+  const toggle = unavailable
+    ? undefined
+    : (event: { currentTarget: HTMLInputElement }): void => {
         event.currentTarget.checked = picked;
-        send({ type: 'pick', kind: pickable, name: entry.name, on: !picked });
-      }
-    : undefined;
+        send({ type: 'pick', kind, name: entry.name, on: !picked });
+      };
   // 含多个 skill 的第三方 Skill 勾上之后占一整行，底下是挑 skill 的清单
   const choosing = picked && entry.skills !== undefined;
   return (

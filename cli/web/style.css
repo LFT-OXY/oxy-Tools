@@ -918,6 +918,10 @@ progress::-moz-progress-bar {
   display: grid;
   font-size: 12px;
 }
+/* 工具的那一行只有要做什么：没有宿主和位置，占满三栏 */
+.entry .sole {
+  grid-column: 1 / -1;
+}
 /* 备注说的是这一项会怎样（重装、版本、非本工具安装），不用最淡的文字 */
 .where small {
   color: var(--secondary);
@@ -988,6 +992,18 @@ progress::-moz-progress-bar {
   font-size: 12px;
 }
 .rows .name {
+  font-weight: 600;
+}
+/* 正在终端里装的那一行（工具）：留意底色的一条，和别的「正在装」分得开——这时要看的是终端。字不往里缩，和上下的行对齐；
+   往上多盖一像素：上一行的底线只有内容那么宽，露在这一条的上缘会像半截描边 */
+.rows .elsewhere {
+  margin: -1px -10px 0;
+  padding: 7px 10px 6px;
+  border-bottom-color: transparent;
+  border-radius: 6px;
+  background: var(--attention-ground);
+}
+.rows .elsewhere strong {
   font-weight: 600;
 }
 /* 没有名字和宿主的那一行（正在向 GitHub 查询）：话占满符号后面的三格 */

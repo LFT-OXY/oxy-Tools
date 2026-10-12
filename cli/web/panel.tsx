@@ -58,7 +58,7 @@ function grouped(rows: SummaryRowView[]): { skill?: string; rows: SummaryRowView
   return groups;
 }
 
-/** 汇总：将安装的每一项——装进哪个宿主、装到哪（MCP 没有）、是新装还是覆盖；要逐项决定的覆盖就在那一行下面。不列将执行的命令 */
+/** 汇总：将安装的每一项——装进哪个宿主、装到哪（MCP 没有）、是新装还是覆盖；工具只写要做什么。要逐项决定的覆盖就在那一行下面。不列将执行的命令 */
 export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; send: Send }) {
   const revise = (): void => send({ type: 'revise' });
   return (
@@ -98,18 +98,25 @@ export function Summary({ summary, t, send }: { summary: SummaryView; t: Text; s
               {/* 第三方 Skill 里每个要装的 skill 一小组，写出它的名字；只有一组、名字又和条目相同时不重复写 */}
               {group.skill !== undefined && !(groups.length === 1 && group.skill === entry.name) && <h4 class="mono">{group.skill}</h4>}
               <ul>
-                {group.rows.map((row) => (
-                  <li key={row.host}>
-                    <span class="quiet">{row.host}</span>
-                    <span class={row.overwrites ? 'attention' : undefined}>{row.action}</span>
-                    {/* MCP 的行没有位置，只有备注 */}
-                    <span class="where">
-                      {row.location !== undefined && <span class="mono">{row.location}</span>}
-                      {row.note !== undefined && <small>{row.note}</small>}
-                    </span>
-                    {row.overwrite && <Decide overwrite={row.overwrite} t={t} send={send} />}
-                  </li>
-                ))}
+                {group.rows.map((row) =>
+                  row.host === undefined ? (
+                    // 工具不装进宿主：这一行只有要做什么，占满三栏
+                    <li key="">
+                      <span class="sole">{row.action}</span>
+                    </li>
+                  ) : (
+                    <li key={row.host}>
+                      <span class="quiet">{row.host}</span>
+                      <span class={row.overwrites ? 'attention' : undefined}>{row.action}</span>
+                      {/* MCP 的行没有位置，只有备注 */}
+                      <span class="where">
+                        {row.location !== undefined && <span class="mono">{row.location}</span>}
+                        {row.note !== undefined && <small>{row.note}</small>}
+                      </span>
+                      {row.overwrite && <Decide overwrite={row.overwrite} t={t} send={send} />}
+                    </li>
+                  ),
+                )}
               </ul>
             </div>
           ))}
@@ -217,7 +224,8 @@ export function Run({ run, t, send }: { run: RunView; t: Text; send: Send }) {
           </li>
         )}
         {run.rows.map((row) => (
-          <li key={`${row.name} ${row.host}`}>
+          // 工具的行没有宿主，那一格空着：各行的词才上下对得齐
+          <li key={`${row.name} ${row.host ?? ''}`} class={row.terminal ? 'elsewhere' : undefined}>
             <Mark state={row.state} />
             <span class={row.state === 'waiting' ? 'mono' : 'mono name'}>{row.name}</span>
             <span class="quiet">{row.host}</span>
@@ -250,9 +258,10 @@ function Mark({ state }: { state: RunRowView['state'] }) {
   );
 }
 
-/** 这一行的词和它后面的话：词照结局上色，后面的话用前景色 */
+/** 这一行的词和它后面的话：词照结局上色，后面的话用前景色。正在终端里装的那一行是一整句话，说的是去哪看，加粗、不带省略号 */
 function Verdict({ row }: { row: RunRowView }) {
   if (row.state === 'waiting') return <span class="faint">{row.text}</span>;
+  if (row.terminal) return <strong>{row.text}</strong>;
   if (row.state === 'running') return <>{row.text}…</>;
   return (
     <>

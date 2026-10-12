@@ -2,7 +2,7 @@
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
 import { listingStatus, type Machine, type Unavailable } from './availability.ts';
-import type { Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill } from './catalog.ts';
+import type { Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import type { LinkOpener } from './installer.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type Messages, type WebUnavailable } from './messages.ts';
@@ -119,7 +119,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
 
   // 照计划去装，进度每变一次推一次画面状态。它不往外抛：意料之外的错变成这一批的出错说明
   const install = async (plan: Plan): Promise<void> => {
-    const { batch, progress } = trackBatch(plan, push);
+    const { batch, progress } = trackBatch(plan, push, options.ui);
     session.batch = batch;
     // 安装进行中终端上没有待命的提问：工具的安装命令要接管终端的输入输出
     await withdrawStandby();
@@ -309,17 +309,19 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   }
 }
 
-/** 现在勾得上的条目 */
-type Pickable = Skill | ThirdPartySkill | Mcp;
+/** 勾得上的条目：四种组件 */
+type Pickable = Skill | ThirdPartySkill | Mcp | Tool;
 const isThirdParty = (entry: Pickable): entry is ThirdPartySkill => 'source' in entry;
 const isMcp = (entry: Pickable): entry is Mcp => 'server' in entry;
-const isSkill = (entry: Pickable): entry is Skill => !isThirdParty(entry) && !isMcp(entry);
-const kindOf = (entry: Pickable): PickableKind => (isThirdParty(entry) ? 'thirdParty' : isMcp(entry) ? 'mcp' : 'skill');
+const isTool = (entry: Pickable): entry is Tool => 'install' in entry;
+const isSkill = (entry: Pickable): entry is Skill => !isThirdParty(entry) && !isMcp(entry) && !isTool(entry);
+const kindOf = (entry: Pickable): PickableKind => (isThirdParty(entry) ? 'thirdParty' : isMcp(entry) ? 'mcp' : isTool(entry) ? 'tool' : 'skill');
 // 每种勾得上的类型在目录里的那一类条目
 const PICKABLE: Record<PickableKind, (catalog: Catalog) => readonly Pickable[]> = {
   skill: (catalog) => catalog.skills,
   thirdParty: (catalog) => catalog.thirdPartySkills,
   mcp: (catalog) => catalog.mcps,
+  tool: (catalog) => catalog.tools,
 };
 
 /**
@@ -352,9 +354,9 @@ function targetOf(machine: Machine, session: Session): { hosts: Host[]; scope: S
 // 这个条目在现在所选的宿主和范围下装不了的原因；可不可选由两套界面共用的那一块定
 function unavailableOf(machine: Machine, session: Session, entry: Pickable): Unavailable | undefined {
   const { hosts, scope } = targetOf(machine, session);
-  const only = { skills: isSkill(entry) ? [entry] : [], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: isMcp(entry) ? [entry] : [], tools: [] };
+  const only = { skills: isSkill(entry) ? [entry] : [], thirdParty: isThirdParty(entry) ? [entry] : [], mcps: isMcp(entry) ? [entry] : [], tools: isTool(entry) ? [entry] : [] };
   const status = listingStatus(machine, only, hosts, scope);
-  return (status.skills[0] ?? status.thirdParty[0] ?? status.mcps[0])?.unavailable;
+  return (status.skills[0] ?? status.thirdParty[0] ?? status.mcps[0] ?? status.tools[0])?.unavailable;
 }
 
 // 这个条目现在勾不勾得上
@@ -388,7 +390,7 @@ function planOf(runtime: Runtime, session: Session): Plan {
     skills: byName(picked.filter(isSkill)),
     thirdParty: byName(picked.filter(isThirdParty)).map((entry) => ({ entry, wanted: wantedOf(session, entry) })),
     mcps: byName(picked.filter(isMcp)),
-    tools: [],
+    tools: byName(picked.filter(isTool)),
     filledKeys: new Map([...runtime.keys].map(([mcp, known]) => [mcp, new Set(known.keys())])),
   };
   return decided(planInstall(runtime, selection), session.agreed);
@@ -488,7 +490,7 @@ function parseIntent(raw: unknown): Intent | undefined {
   if (type === 'lang' && (lang === 'zh' || lang === 'en') && only('lang')) return { type, lang };
   if (type === 'host' && typeof host === 'string' && typeof on === 'boolean' && only('host', 'on')) return { type, host, on };
   if (type === 'scope' && (scope === 'global' || scope === 'project') && only('scope')) return { type, scope };
-  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty' || kind === 'mcp') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
+  if (type === 'pick' && (kind === 'skill' || kind === 'thirdParty' || kind === 'mcp' || kind === 'tool') && typeof name === 'string' && typeof on === 'boolean' && only('kind', 'name', 'on')) {
     return { type, kind, name, on };
   }
   if (type === 'choose' && typeof entry === 'string' && typeof skill === 'string' && typeof on === 'boolean' && only('entry', 'skill', 'on')) return { type, entry, skill, on };

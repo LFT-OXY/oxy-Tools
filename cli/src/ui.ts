@@ -404,7 +404,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       settled.push(rows);
       print(...rows);
     };
-    if (targets.length > 0) print(...heading(recap ? t.results : t.installing));
+    // 补打结果时工具的结论也在这个分区里：只有工具的一批同样要有标题
+    if (targets.length > 0 || (recap && asides.length > 0)) print(...heading(recap ? t.results : t.installing));
     return {
       begin(target: Target, doing: string): (result?: Result) => void {
         const erase = recap ? (): void => {} : spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
@@ -419,6 +420,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       },
       // 它自己的输出原样接在 intro 下面，不经过这里；交出结果时上方空一行。没有转动符号：行首重写会和它的输出撞车
       aside(name: string, intro: readonly string[]): (result: Result) => void {
+        // 补打结果时它的分区早就打过了：只把结论和别的行排在一起
+        if (recap) return (result) => settle(rowsOf(lead(name), result));
         print(...heading(name), ...intro);
         return (result) => {
           const rows = rowsOf(lead(name), result);
@@ -427,10 +430,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         };
       },
       finish(): void {
+        // 补打结果时行都已经在「结果」这个标题下面了，只差合计
+        if (recap) return print(...results.total());
         if (asides.length > 0) {
           // 前面的结果早被它们的输出顶出屏幕了：不止一行时集中再列一遍。标题不回头改写——不知道那些输出占了几行
           if (settled.length > 1) print(...heading(t.results), ...settled.flat());
-        } else if (!recap) {
+        } else {
           // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
           const up = lines + 1;
           if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
@@ -441,6 +446,17 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       },
     };
   };
+
+  // 轮到一个工具：打出以它名字为标题的分区和要执行的那一行，命令自己的输出随后原样接在下面；用返回的函数交出结论
+  const toolSection =
+    (rows: ReturnType<typeof progress>) =>
+    (target: ToolTarget): ((result: ToolResult) => void) => {
+      const settle = rows.aside(target.name, hanging('  ', `${dim('$')} `, target.command));
+      return (result) => {
+        const text = t.toolResult(result, target.evidence);
+        settle(result.available ? { ok: true, verdict: paint('green', t.toolAvailable), text } : { ok: false, reason: text });
+      };
+    };
 
   return {
     line(text: string): void {
@@ -1054,17 +1070,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           },
           skip: (target: McpTarget, missingVariable: string): void => rows.skip(target, t.keyMissing(missingVariable)),
         },
-        tool: {
-          begin(target: ToolTarget): (result: ToolResult) => void {
-            const settle = rows.aside(target.name, hanging('  ', `${dim('$')} `, target.command));
-            return (result) => {
-              const text = t.toolResult(result, target.evidence);
-              settle(result.available ? { ok: true, verdict: paint('green', t.toolAvailable), text } : { ok: false, reason: text });
-            };
-          },
-        },
+        tool: { begin: toolSection(rows) },
         finish: rows.finish,
       };
+    },
+
+    /**
+     * 网页界面开着时轮到工具：终端上只有它们各自的分区，和上面 installation 里工具的分区同一个画法；别的行、「结果」
+     * 和合计都在页面上，这里不打。都跑完后 done 在下面空一行：待命的提问随后画回来，和它上面的块隔开。
+     * 这一批里没有工具时什么都不打。
+     */
+    toolSections(tools: readonly ToolTarget[]): { begin(target: ToolTarget): (result: ToolResult) => void; done(): void } {
+      return { begin: toolSection(progress([], tools.map((target) => target.name))), done: tools.length > 0 ? gap : (): void => {} };
     },
 
     /**

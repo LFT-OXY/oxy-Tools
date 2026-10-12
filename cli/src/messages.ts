@@ -221,6 +221,10 @@ export interface Messages {
   afterFailures: string;
   /** 同上，没配置上的是 MCP 时的那一句：不说原有的东西没动——已配置的是先移除再添加，添加失败时原先的那份已经不在了 */
   afterMcpFailures: string;
+  /** 同上，没装上的是工具时的那一句：命令跑过了，原因在终端里它自己的输出里 */
+  afterToolFailures: string;
+  /** 网页界面的进度里工具进行中的那一行：它的命令在终端里跑，输入输出都在那边 */
+  toolInTerminal: string;
   downloading: string;
   configuring: string;
   /** 第三方 Skill 进行中的那一行 */
@@ -387,6 +391,8 @@ const zh: Messages = {
   waiting: '等待',
   afterFailures: '没装上的各项没有改动原有的东西。排除原因后点「继续挑选」，重新勾选再装一次。',
   afterMcpFailures: '没配置上的 MCP：排除原因后点「继续挑选」，重新勾选再装一次。原因里写着「此前已执行移除」的，原先的那份配置已经不在了。',
+  afterToolFailures: '没装上的工具：原因看终端里那条命令自己的输出。排除后点「继续挑选」，重新勾选再装一次。',
+  toolInTerminal: '这一项正在终端里安装，请看终端',
   downloading: '正在下载',
   configuring: '正在配置',
   installingOne: '正在安装',
@@ -683,6 +689,8 @@ const en: Messages = {
   afterFailures: 'Items that failed left what was there untouched. Fix the cause, choose “Pick more”, then select and install them again.',
   afterMcpFailures:
     'MCP servers that failed: fix the cause, choose “Pick more”, then select and install them again. Where the reason says the remove command had already run, the earlier configuration is gone.',
+  afterToolFailures: 'Tools that failed: the cause is in the command’s own output in your terminal. Fix it, choose “Pick more”, then select and install them again.',
+  toolInTerminal: 'this item is installing in your terminal; watch it there',
   downloading: 'downloading',
   configuring: 'configuring',
   installingOne: 'installing',

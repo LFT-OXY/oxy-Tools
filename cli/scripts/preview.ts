@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
 import { CatalogError, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller, type CommandRunner } from '../src/installer.ts';
+import type { PickableKind } from '../src/web-protocol.ts';
 import { openPage } from '../test/browser.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 import { buildWeb } from './build-web.ts';
@@ -74,10 +75,13 @@ interface Scene extends World {
   /**
    * 走网页界面（打开临时开关）：opens 是浏览器打开了，画面停在终端上的那个块（keys 里给 t 就是改用终端界面）；
    * finished 是页面连上之后点了「完成」，closed 是页面连上之后关了，closed-installing 是页面勾了两个 skill、
-   * 确认安装之后关了——这三种由脚本拿着网址扮演页面，安装器自己退出；no-browser 是链接打开器拒绝，
+   * 确认安装之后关了——这三种由脚本拿着网址扮演页面，安装器自己退出；installs 是页面勾了 picks 那几个、确认安装，
+   * 页面一直开着，画面停在这一批装完（或轮到的工具的命令还在跑）的时候；no-browser 是链接打开器拒绝，
    * no-server 是页面的静态文件读不到——这两种退回终端界面。不给就是终端界面，链接打开器不会被调用
    */
-  web?: 'opens' | 'finished' | 'closed' | 'closed-installing' | 'no-browser' | 'no-server';
+  web?: 'opens' | 'finished' | 'closed' | 'closed-installing' | 'installs' | 'no-browser' | 'no-server';
+  /** 扮演页面时（closed-installing、installs）勾哪几个条目：缺省是 archify 和 wizard 两个 skill */
+  picks?: readonly (readonly [kind: PickableKind, name: string])[];
 }
 
 /** 一条假装执行的工具安装命令 */
@@ -346,6 +350,8 @@ const FOUR_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'>
   onPath: [...BOTH_HOSTS, 'pandoc'],
   shell: installsDocling,
 };
+// 网页界面的场景里在页面上勾的：一个 skill、一个 MCP、一个工具
+const WEB_PICKS = [['skill', 'explanation'], ['mcp', 'markitdown'], ['tool', 'docling']] as const;
 // 加上第三方 Skill 一段：主目录照 FOUR_KINDS，另外 drawio-skill 两个宿主下都装过，paper-analyzer 只在 Claude Code 下装过
 const FIVE_KINDS: Pick<Scene, 'catalog' | 'home' | 'links' | 'onPath' | 'shell'> = {
   ...FOUR_KINDS,
@@ -567,6 +573,9 @@ const scenes: Scene[] = [
   { title: '网页界面 · 点了「完成」', note: '按键提示那一行收掉了，原处是一行说明；安装器随后退出', web: 'finished' },
   { title: '网页界面 · 页面关了', note: '页面全都断开满了时限（正式运行是 5 秒）：同一个画法，另一句话', web: 'closed' },
   { title: '网页界面 · 安装中页面关了', note: '这一批照样装完：一行说明，然后是「结果」分区——和终端界面装完之后的是同一份结果行和合计，标题直接是「结果」', web: 'closed-installing', catalog: oneFails },
+  { title: '网页界面 · 轮到工具 · 命令在跑', note: '页面上勾了一个 skill、一个 MCP、一个工具并确认：skill 和 MCP 的进度只在页面上，终端上不重复；轮到工具时终端上是它自己的分区——和终端界面的同一个画法，命令的输出原样接在下面。按键提示收掉了：命令要接管终端的输入输出', ...FOUR_KINDS, shell: doclingStillRunning, web: 'installs', picks: WEB_PICKS },
+  { title: '网页界面 · 工具装完', note: '每个工具一个分区，结论紧跟在各自的输出后面；没有「结果」分区和合计——那些在页面上。都跑完后空一行，按键提示画回来', ...TOOLS, web: 'installs', picks: [['tool', 'uv'], ['tool', 'openspec']] },
+  { title: '网页界面 · 安装中页面关了 · 有工具', note: '工具的分区照样打出来、命令照样跑完；补打的「结果」分区里工具的结论和别的行排在一起，不再打一遍它的分区，合计算上它', ...FOUR_KINDS, web: 'closed-installing', picks: WEB_PICKS },
   { title: '网页界面 · 按 t 改用终端界面', note: '一行说明，下面空一行，然后从语言提问接着走终端界面；本机信息不重打', web: 'opens', keys: ['t'] },
   { title: '退回终端界面 · 浏览器打不开', note: '链接打开器拒绝：一行「注意」说明原因，下面空一行，然后从语言提问接着走终端界面；本机信息不重打', web: 'no-browser' },
   { title: '退回终端界面 · 本机的网页起不来', note: '页面的静态文件读不到：同一个画法，另一句原因；没有去打开浏览器', web: 'no-server' },
@@ -574,6 +583,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en · 给了 --lang 就不问语言', argv: ['--lang', 'en'] },
   { title: '英文界面 · 网页界面 · 已在浏览器打开', argv: ['--lang', 'en'], web: 'opens' },
   { title: '英文界面 · 网页界面 · 安装中页面关了', argv: ['--lang', 'en'], web: 'closed-installing', catalog: oneFails },
+  { title: '英文界面 · 网页界面 · 工具装完', argv: ['--lang', 'en'], ...TOOLS, web: 'installs', picks: [['tool', 'uv'], ['tool', 'openspec']] },
   { title: '英文界面 · 网页界面 · 按 t 改用终端界面', note: '给了 --lang 就不问语言：说明下面空一行直接是主菜单', argv: ['--lang', 'en'], web: 'opens', keys: ['t'] },
   { title: '英文界面 · 退回终端界面', note: '给了 --lang 就不问语言：「注意」下面空一行直接是主菜单', argv: ['--lang', 'en'], web: 'no-browser' },
   { title: '英文界面 · 退回终端界面 · 本机的网页起不来', argv: ['--lang', 'en'], web: 'no-server' },
@@ -716,20 +726,24 @@ async function play(scene: Scene): Promise<Cell[][]> {
   const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage, scene.answersScope);
   // 扮演页面的那几种场景：连上之后在页面上做什么，然后页面关掉（点了「完成」的是安装器把它关掉的）
   let visit: Promise<void> | undefined;
+  let visitor: { dispose(): void } | undefined;
   const visiting = async (url: string): Promise<void> => {
     const page = await openPage(url);
+    visitor = page;
     try {
       // 等待命的那一行按键提示画出来再动：它被收掉的样子才是真的
       await settle();
       if (scene.web === 'finished') await page.send({ type: 'finish' });
-      if (scene.web === 'closed-installing') {
-        for (const name of ['archify', 'wizard']) await page.send({ type: 'pick', kind: 'skill', name, on: true });
+      if (scene.web === 'closed-installing' || scene.web === 'installs') {
+        for (const [kind, name] of scene.picks ?? [['skill', 'archify'], ['skill', 'wizard']] as const) await page.send({ type: 'pick', kind, name, on: true });
         await page.send({ type: 'review' });
         const { summary } = await page.until((state) => state.summary !== undefined);
         await page.send({ type: 'install', summary: summary?.id ?? '' });
       }
+      // 页面一直开着：等这一批装完，或轮到的工具的命令跑起来（场景让它一直不结束）
+      if (scene.web === 'installs') await page.until((state) => state.run !== undefined && (state.run.done || state.run.rows.some((row) => row.terminal === true)));
     } finally {
-      page.dispose();
+      if (scene.web !== 'installs') page.dispose();
     }
   };
   const tty = scene.tty ?? true;
@@ -796,6 +810,13 @@ async function play(scene: Scene): Promise<Cell[][]> {
     const exited = await Promise.race([Promise.all([visit, finished]).then(() => true), sleep(5000).then(() => false)]);
     if (!exited) throw new Error(`「${scene.title}」：页面收场之后安装器一直没有退出`);
   }
+  // 页面开着装的场景：等页面那边看到这一批走到了要停的地方，终端上的也就画完了
+  if (scene.web === 'installs') {
+    const deadline = Date.now() + 5000;
+    while (!visit && Date.now() < deadline) await sleep(10);
+    await visit;
+    await settle();
+  }
   // 待命刚画出来的那一小会儿不认按键：等它过去再按
   if (scene.web === 'opens' && scene.keys) await sleep(150);
   for (const key of scene.keys ?? []) {
@@ -807,6 +828,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
   // 收掉还开着的提问和本机的网页；一直在加载的场景不会结束，由进程退出时一并了结
   keyboard.write(KEY.ctrlC);
   interrupt.abort();
+  visitor?.dispose();
   await Promise.race([finished, sleep(200)]);
   return cells;
 }
