@@ -12,4 +12,3 @@
 {"file": ".atw/spec/cli/web-ui-design.md", "reason": "网页界面的设计规范：选定的方向「利落」、颜色与字号、各个画面的版式、不可选的画法、汇总里不列命令、开场动画、还没经维护者看过的画法"}
 {"file": ".atw/tasks/10-11-installer-web-ui/ui-direction.md", "reason": "工单 01 的结论：选定的方向、维护者的原话与喜欢不喜欢、没选的十二个候选、设计说明与验收重点、对比页上没画照着推的"}
 {"file": ".atw/tasks/10-11-installer-web-ui/research/acceptance-feedback.md", "reason": "验收时维护者提的两处修改：原话、说定的与顺着推的——开场引导和左栏的行高、当前的用途"}
-{"file": ".atw/tasks/10-11-installer-web-ui/issues/15-side-menu-row-height-and-current.md", "reason": "ATW current ticket"}
