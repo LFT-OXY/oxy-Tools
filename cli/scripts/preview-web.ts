@@ -23,6 +23,7 @@ import {
   SHOWCASE_PURPOSES,
   SHOWCASE_SKILLS,
   THIRD_PARTY_INSTALLED,
+  THREE_HOSTS,
   catalogOf,
   downloads,
   keyed,
@@ -100,6 +101,9 @@ const LIVED_IN: World = {
 const ONE_HOST = { onPath: ['claude', 'pandoc'] };
 const CODEX_ONLY = { onPath: ['codex', 'pandoc'] };
 const NO_HOSTS = { onPath: ['pandoc'] };
+// 三个宿主都检测到；只检测到 Pi。主目录照 LIVED_IN：Codex 和 Pi 看的是同一个共用 skill 目录
+const THREE = { onPath: [...THREE_HOSTS, 'pandoc'] };
+const PI_ONLY = { onPath: ['pi', 'pandoc'] };
 
 // 最坏的内容：「文档处理」下二十多条，四种组件加外部项目都有；样例里名字最长的两条（一个 MCP、一个外部项目）、
 // 链接最长的那一条也归到它下面。「联网搜索与文档检索」因此空了，左栏里不出现。
@@ -533,12 +537,53 @@ const scenes: Scene[] = [
     catalog: queryLimited,
     drive: inOrder(summarized, finished),
   },
+  {
+    title: '开场引导 · 三个宿主',
+    note: '三个宿主都检测到：第一行提问后面依次是 Claude Code、Codex、Pi 三个勾选，都勾着，和提问在同一行里、不换行挤压',
+    ...THREE,
+    intro: 'played',
+    guide: true,
+  },
+  { title: '开场引导 · 三个宿主 · 1024×768', note: '窄的窗口里三个勾选仍排得下，没有滚动条', ...THREE, guide: true, viewport: NARROW },
+  { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的两个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
+  {
+    title: '浏览 · 三个宿主',
+    note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；每张卡片底部三段状态，各带宿主的名字。Codex 和 Pi 两段写的一样：它们的 skill 装在同一个目录里',
+    ...THREE,
+    drive: crowded,
+  },
+  {
+    title: '浏览 · 三个宿主 · MCP 那一区',
+    note: 'Pi 的 MCP 安装器不装：卡片上 Pi 那一段是「不支持」，仍然勾得上；那一区上方没有为它多一句提醒',
+    ...THREE,
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  { title: '浏览 · 三个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的三段状态都放得下，没有横向滚动条', ...THREE, drive: crowded, viewport: NARROW },
+  {
+    title: '浏览 · 只检测到 Pi',
+    note: '顶上写一句「装进 Pi」，没检测到的两个写在旁边；MCP 的卡片是不可选的画法，原因是「需要别的 AI Agent」',
+    ...PI_ONLY,
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  {
+    title: '汇总 · 三个宿主',
+    note: '每个条目一段，段里每个宿主一行：Claude Code、Codex、Pi。Codex 和 Pi 的位置是同一个共用 skill 目录',
+    ...THREE,
+    drive: summarized,
+  },
+  { title: '结果 · 三个宿主', note: '每个条目每个宿主一行，宿主那一格写得下', ...THREE, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
   { title: '键盘焦点', note: '按了三下 Tab：焦点是一圈 2px 的前景色描边，离元素 2px，深浅色下都看得见', tabs: 3 },
   { title: '结束 · 已完成', note: '点了「完成」：一个标题、一句说明，没有任何控件；彩色只落在行首的符号上', ending: 'finished' },
   { title: '结束 · 已改用终端界面', note: '终端上按了 t：页面得知之后连接才断开，不改口成「安装器已退出」；同样没有任何控件', ending: 'switched' },
   { title: '结束 · 安装器已退出', note: '终端上按了 Ctrl+C，页面重连几次连不上', ending: 'exited' },
   { title: '结束 · 口令不对', note: '拿着不对的口令打开：没有画面状态，照浏览器的语言说', ending: 'denied' },
   { title: '英文 · 开场引导', note: '两句提问是终端界面那两个提问的英文；按钮和旁边那一句是页面自己的', ...EN, guide: true },
+  { title: '英文 · 开场引导 · 三个宿主', note: '英文的提问更长：看三个勾选排不排得下', ...EN, ...THREE, guide: true },
+  { title: '英文 · 浏览 · 三个宿主', ...EN, ...THREE, drive: crowded },
+  { title: '英文 · 浏览 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、三个宿主', ...EN, ...THREE, drive: crowded, viewport: NARROW },
+  { title: '英文 · 浏览 · 只检测到 Pi', ...EN, ...PI_ONLY, drive: crowded, reveal: 'markitdown' },
   {
     title: '英文 · 开场引导 · 选了项目 · 1024×768',
     note: '最挤的一格：提问更长，放不下时提问和它的控件上下排；目录那一行在任意处断开；没有滚动条、没有被裁掉的字',

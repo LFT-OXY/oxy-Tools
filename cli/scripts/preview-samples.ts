@@ -6,6 +6,7 @@ import { githubCatalogSource, type CatalogSource } from '../src/catalog.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 
 export const BOTH_HOSTS = ['claude', 'codex'];
+export const THREE_HOSTS = [...BOTH_HOSTS, 'pi'];
 
 // ── 样例目录 ──────────────────────────────────────────────────────────────────
 

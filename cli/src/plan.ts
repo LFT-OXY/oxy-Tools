@@ -184,7 +184,7 @@ export function planInstall(machine: Machine, { hosts, scope, skills, thirdParty
     for (const [column, host] of hosts.entries()) {
       const status = statuses[row]?.[column];
       const config = mcpConfigOf(host, scope);
-      if (!config || status === undefined || status === 'unsupported' || status === 'global-only') continue;
+      if (!config || status === undefined || status === 'unsupported' || status === 'no-config' || status === 'global-only') continue;
       const target = { name: mcp.name, host: host.name, status };
       if ('missing' in keys) mcpJobs.push({ mcp, host, config, target, steps: [], missingVariable: keys.missing });
       else mcpJobs.push({ mcp, host, config, target, steps: mcpSteps(mcp, config, status, keys.variables) });

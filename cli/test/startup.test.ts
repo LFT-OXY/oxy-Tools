@@ -72,7 +72,8 @@ describe('启动', () => {
   });
 
   it('标志下面不画通栏横线，本机信息下方的那一条还在', async () => {
-    const result = await run({ onPath: ['claude', 'codex'], answers: [choose('退出')] });
+    // 每个宿主都检测到：本机信息里没有「注意」，横线上面那一行就是「目录」
+    const result = await run({ onPath: ['claude', 'codex', 'pi'], answers: [choose('退出')] });
 
     const lines = result.screen.split('\n');
     const rules = lines.flatMap((line, index) => (line === '─'.repeat(WIDTH) ? [index] : []));

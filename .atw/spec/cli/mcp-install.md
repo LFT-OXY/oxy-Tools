@@ -49,16 +49,18 @@ export interface ProjectMcpConfig extends McpConfig {
   cwd: string;       // 宿主把配置写进它的运行目录，所以命令要在项目目录下运行
   approval?: string; // 有它表示写进去的 MCP 要用户在宿主里批准之后才启用；值是启动宿主的命令（claude），启动时它会问
 }
-export interface Host extends McpConfig {                  // 宿主自己的那三问答的是用户级（全局）的配置
+export interface Host {                                    // 不再继承 McpConfig：宿主可以没有 MCP 配置
+  mcp?: McpConfig;                                         // 用户级（全局）的配置；没有它表示这个宿主的 MCP 安装器不装（现在的 Pi）
   id: string;                                              // 目录里指代它的名字：claude-code、codex
   // …name、detected、skillsDir 见「安装 skill」
-  projectMcp?: ProjectMcpConfig;                           // 没有它表示这个宿主的 MCP 只能装到全局（Codex）
+  projectMcp?: ProjectMcpConfig;                           // 有 mcp 而没有它表示这个宿主的 MCP 只能装到全局（Codex）
   remoteMcpLogin?: Command;                                // 见「宿主添加远程地址时会当场登录」
 }
-// host 在 scope 下的那一份：全局是宿主自己，项目是它的 projectMcp（没有就是 undefined）。状态探测和流程都经它取，两边看的是同一份
+// host 在 scope 下的那一份：全局是它的 mcp，项目是它的 projectMcp（没有就是 undefined）。状态探测和流程都经它取，两边看的是同一份
 export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined;
 
 // cli/src/mcp-status.ts
+// no-config：这个宿主没有 MCP 配置，它的 MCP 安装器不装，哪个安装范围都一样
 // global-only：这个宿主的 MCP 只能装到全局，而这一轮选的是项目
 export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported' | 'global-only';
 export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'global-only'>;
@@ -165,6 +167,7 @@ export function systemCommandRunner(): CommandRunner;
 | 情况 | 状态 | 列表里的写法 |
 |------|------|--------------|
 | 条目写了 `hosts` 且不含这个宿主的 `id` | `unsupported` | `不支持`（暗淡） |
+| 这个宿主没有 MCP 配置（适配里没有 `mcp`；条目本身支持它） | `no-config` | `不支持`（暗淡），见下面「宿主可以没有 MCP 配置」 |
 | 选了项目，而这个宿主没有 `projectMcp`（条目本身支持它） | `global-only` | `不支持`（暗淡），列表上方另有一行说明，见「装到项目」 |
 | 配置文件不存在（宿主还没写过配置） | `none` | `未配置`（暗淡） |
 | 读得出来，那张表里没有这个名字（包括整张表都没有） | `none` | `未配置` |
@@ -181,12 +184,12 @@ export function systemCommandRunner(): CommandRunner;
 | `none` | 添加 | 新装 | 空 |
 | `configured` | 移除，再添加 | 覆盖（黄色粗体） | `已配置，先移除再添加` |
 | `unknown` | 移除（`tolerated`：失败了也接着做），再添加 | 添加 | `状态未知，先尝试移除同名配置` |
-| `unsupported` | 不装，汇总、命令、结果里都没有它 | — | — |
+| `unsupported`、`no-config`、`global-only` | 不装，汇总、命令、结果里都没有它 | — | — |
 
 - 汇总（「将安装 N 项」里 MCP 的那张小表）之后是「将执行 N 条命令」：每条完整命令编号列出，确认了才执行。**任何外部命令都不许在这之前跑**，状态探测因此只读文件。
 - 不另问“要不要覆盖”：MCP 没有“是不是本工具装的”这个概念，再装一次就是覆盖。
 - 每个 MCP 在每个**支持它的**所选宿主下各是一项，各有一行结果，互不影响；一项失败不影响其余项，退出状态不变。
-- 所选宿主一个都装不了的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写在状态的位置、占满各个状态栏：各栏里有 `global-only` 的写「只能装到全局」（换成全局就装得了），全是 `unsupported` 的写「需要别的 AI Agent」。只有一部分装不了的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
+- 所选宿主一个都装不了的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写在状态的位置、占满各个状态栏：各栏里有 `global-only` 的写「只能装到全局」（换成全局就装得了），其余的（全是 `unsupported`、`no-config`）写「需要别的 AI Agent」。只有一部分装不了的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
 
 **装到项目**（任务 `10-10-catalog-purpose-categories` 工单 11；2026-10-11 用 claude 2.1.295、codex 0.162.0 在临时目录里实测并对照官方文档，记录在该任务的 `research/project-mcp-trial-record.md`）
 
@@ -209,6 +212,19 @@ export function systemCommandRunner(): CommandRunner;
   - **这一轮有带着 key 的 MCP 要装到项目**（命令里有占位符的那些）：「注意  `<变量名…>` 会以明文写进 `.mcp.json`，不要提交，也不要发给别人」。写的是变量名和文件名（`projectMcp.file`），**没有值**。可选的 key 留空的不带变量，不算。
   - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。
 - 规格里「Codex 只对受信任的项目读这份配置」那一行随 Codex 不支持而没有做；哪天给 Codex 补上 `projectMcp`，这一行要一起补（那条事实已经实测过，在试通记录里）。
+
+**宿主可以没有 MCP 配置**（任务 `10-12-installer-add-pi-omp-hosts` 工单 01）
+
+宿主的适配里没有 `mcp`，就是这个宿主的 MCP 安装器不装。**现在是 Pi**——它的 MCP 在同一个任务的工单 02 接上，那时 Pi 的适配补上 `mcp` 和 `projectMcp`，下面这几条对它不再成立；工单 04 的 omp 用的是同一个口子，并且一直这样。
+
+| 哪里 | 怎么办 |
+|------|--------|
+| 状态（`mcpStatuses`） | 条目本身支持这个宿主时是 `no-config`，**全局和项目两个安装范围都一样**（不是 `global-only`：换成全局也装不进它）。条目的 `hosts` 里没有它时仍是 `unsupported`，先看这一条 |
+| 列表里那一栏 | 现有的词「不支持」（暗淡），和 `unsupported`、`global-only` 是同一个词。内部分三种是因为说明不同：`global-only` 在列表上方有一句「只能装到全局」，`no-config` 没有 |
+| 可不可选（`listingStatus`） | 所选的宿主都装不了它时不可选。原因照原来的规则：各栏里有 `global-only` 的是「只能装到全局」，否则是「需要别的 AI Agent」。只选了没有 MCP 配置的宿主时落在后一种；它和 Codex 一起选、安装范围是项目时落在前一种 |
+| 算计划（`planInstall`） | 不为这样的宿主出 MCP 的项：汇总、将执行的命令、结果里都没有它；key 仍只问一次，用于别的宿主 |
+| 提醒 | 它不进 `mcpColumnHosts` 的两组（只能装到全局的、配置读不到的），列表上方不为它多一句；`notices` 里的明文 key、要批准、要登录也都没有它 |
+| 外部命令与配置文件 | **不执行这个宿主的任何命令，不读也不写它的配置文件**——它自己的配置（Pi 的 `~/.pi/agent/mcp.json`）写坏了也不提 |
 
 **在混合列表里（终端界面的提问在 `flow.ts` 的 `planEntries`；算成要装的各项在 `plan.ts` 的 `planInstall`，执行在 `run-plan.ts` 的 `runPlan`）**
 
@@ -290,6 +306,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - Good（装到项目）：只检测到 Claude Code，选了项目，勾了一个带必填 key 的 → 一条 `claude mcp add --scope project …`，在项目目录下运行；汇总下方有明文写入和要批准的两行提醒；主目录下的用户级配置没有变化。
 - Base（装到项目）：两个宿主都选了 → Codex 那一栏都是「不支持」，列表上方一行「注意」；勾上的 MCP 只装进 Claude Code，汇总、命令、结果里没有 Codex。
 - Base（装到项目）：只检测到 Codex → MCP 的行都不可选，原因「只能装到全局」；同一张列表里的 skill 照常装到项目。
+- Base（没有 MCP 配置的宿主）：只检测到 Pi → MCP 的行都不可选，原因「需要别的 AI Agent」，选全局选项目都是这一句；同一张列表里的 skill 照常装给 Pi。选了 Claude Code 和 Pi → Pi 那一栏都是「不支持」，勾上的 MCP 只装进 Claude Code，记录到的命令里没有一条是 `pi`。
 
 ### 6. Tests Required
 
@@ -311,6 +328,7 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 - `mixed.test.ts`：三种类型同表（段的先后、两种类型的状态落在各自宿主那一栏、原因比状态栏宽时各行的说明仍从同一列起、读不到配置的提示只在列表里有 MCP 时出现）；一次勾 skill、MCP、外部项目（汇总的小表、命令只有 MCP 的、skill 的各行排在 MCP 之前、取消什么都不做、返回修改勾选都在、三种失败互不影响、向 GitHub 查询失败时 MCP 照常装）；汇总里的提醒（先后、几行挨着、没填 key 的不算进 N、只剩 skill 时没有命令分区、全被跳过时直接是结果再是外部项目）。
 
+- 没有 MCP 配置的宿主在 `cli/test/pi.test.ts` 的「Pi 的 MCP 安装器不装」和 `cli/test/web-pi.test.ts` 的同名一组：只选它时不可选与原因（全局、项目各一条）、和别的宿主一起选时那一栏的「不支持」、只装进别的宿主、没有它的命令、它的配置文件不读不写、英文。工单 02 给 Pi 接上 MCP 之后这一组要改写（或挪给 omp 用）。
 - 装到项目的在 `cli/test/scope.test.ts` 的「把 MCP 装到项目」几组（列表上方两行「注意」上下的空行在 `spacing.test.ts`）：Claude Code 的添加（两种连接方式、带 key）与移除命令是**字面值**且 `cwd` 是 `result.project`；汇总里展示的就是那几条；状态按范围读（项目里配过而全局没有、反过来、`.mcp.json` 写坏、用户级配置写坏不提）；装完再进列表看到新状态（`commandResult` 照真的来：往 `cwd` 的 `.mcp.json` 里写）；明文写入的提醒在「开始安装吗」之前、有变量名和文件名而没有值，可选的 key 留空时没有，选全局时没有；要批准的提醒；Codex 那一栏的「不支持」、列表上方的说明（列表里的 MCP 本来就都不支持它时没有）、只装进 Claude Code、没有登录的提醒；只有 Codex 时不可选与原因；`hosts` 只含一个宿主的条目在两种原因之间怎么选；英文界面与 79 列；真实的画面里在不可选的行上按空格勾不上。
 
 测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，**它自己抛出**表示执行器当场抛出、连承诺都没返回，什么都不返回就是成功；命令照样进 `result.commands`（里面是代入了值的字符串参数）。`secret(值)`、`blank()` 回答隐藏输入。

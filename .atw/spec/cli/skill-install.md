@@ -1,6 +1,6 @@
 # 安装 skill
 
-> 宿主探测（`cli/src/hosts.ts`）、状态探测（`cli/src/skill-status.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）四段的契约，以及终端界面的流程（`cli/src/flow.ts`）怎么决定装进哪些宿主、两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）怎么定状态、哪些要先问过才覆盖、怎么逐项去装。目前有 Claude Code 和 Codex 两个宿主。
+> 宿主探测（`cli/src/hosts.ts`）、状态探测（`cli/src/skill-status.ts`）、钉住来源与下载（`cli/src/catalog.ts`）、落盘（`cli/src/install-skill.ts`）四段的契约，以及终端界面的流程（`cli/src/flow.ts`）怎么决定装进哪些宿主、两套界面共用的那几块（`availability.ts`、`plan.ts`、`run-plan.ts`）怎么定状态、哪些要先问过才覆盖、怎么逐项去装。目前有 Claude Code、Codex 和 Pi 三个宿主（Pi 是任务 `10-12-installer-add-pi-omp-hosts` 工单 01 加的）。
 
 ---
 
@@ -15,12 +15,12 @@
 ```ts
 // cli/src/hosts.ts
 export interface Host {
-  id: string;         // 目录里指代它的名字：claude-code、codex
+  id: string;         // 目录里指代它的名字：claude-code、codex、pi
   name: string;       // 界面上显示的名字
   detected: boolean;
   skillsDir: string;         // 全局的 skill 目录（用户级），装在这里对所有项目生效
   projectSkillsDir: string;  // 项目范围的 skill 目录：项目目录下的那一个，装在这里只对这个项目生效
-  // …关于 MCP 的几样（configuredMcps、addMcp、removeMcp、remoteMcpLogin）见「安装 MCP」
+  // …关于 MCP 的几样（mcp、projectMcp、remoteMcpLogin）见「安装 MCP」；宿主可以没有 MCP 配置
 }
 // 安装器认识的全部宿主，检测到的和没检测到的都在；顺序就是界面上的顺序
 export function detectHosts(env: Environment, homeDir: string, projectDir: string): Host[];
@@ -70,10 +70,15 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 **宿主在不在**
 
-| 宿主 | 判断 | skill 目录 |
-|------|------|-----------|
-| Claude Code | 可执行路径上有 `claude` 命令 | `<主目录>/.claude/skills` |
-| Codex | 可执行路径上有 `codex` 命令 | `<主目录>/.agents/skills`（它自己的 `.codex/skills` 已被标为废弃） |
+| 宿主 | 标识（`id`） | 判断 | 全局的 skill 目录 | 项目范围的 skill 目录 | 交给 skills CLI 的 agent 名与环境变量 |
+|------|--------------|------|-------------------|-----------------------|--------------------------------------|
+| Claude Code | `claude-code` | 可执行路径上有 `claude` 命令 | `<主目录>/.claude/skills` | `<项目目录>/.claude/skills` | `claude-code`，`{ CLAUDE_CONFIG_DIR: '' }` |
+| Codex | `codex` | 可执行路径上有 `codex` 命令 | `<主目录>/.agents/skills`（它自己的 `.codex/skills` 已被标为废弃） | `<项目目录>/.agents/skills` | `codex`，不另带 |
+| Pi | `pi` | 可执行路径上有 `pi` 命令 | `<主目录>/.agents/skills` | `<项目目录>/.agents/skills` | `pi`，不另带 |
+
+- 这几行的先后就是界面上的先后：Claude Code、Codex、Pi。
+- **`.agents/skills` 是共用 skill 目录**（术语见仓库根的 `GLOSSARY.md`）：Pi 的 skill 装进 Codex 已经在用的那一个，不用它自己的 `~/.pi/agent/skills`。理由见 [ADR-0005](../../../docs/adr/0005-pi-and-omp-skills-go-to-shared-skill-directory.md)：skills CLI 给 Pi 只装到这里，本仓库的 skill 和第三方 Skill 才在同一处。Pi 自己的目录安装器不读也不写——那里有同名的 skill 不算已装，也不会被问要不要覆盖。
+- **Pi 的 MCP 安装器还不装**（适配里没有 `mcp`，见 [安装 MCP](./mcp-install.md) 的「宿主可以没有 MCP 配置」；工单 02 接上）。
 
 每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量、主目录和项目目录，交出一个 `Host`），都回答同样的问题（关于 MCP 的那几问见 [安装 MCP](./mcp-install.md)）；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
 
@@ -83,12 +88,20 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 | 检测到的宿主 | 主菜单上方 | 进「推荐」或一个用途之后 |
 |--------------|-----------|-------------------|
-| 两个及以上 | 「AI Agent」一行每个宿主后面一个 `✓` | 列表里有 skill、第三方 Skill 或 MCP 时先问「装进哪些 AI Agent」：多选，默认全选，名字后面不写目录；再进混合列表。列表里只有工具和外部项目时不问 |
-| 只有一个 | 没检测到的写「– 未检测到」，另有一行「注意」说明它被跳过、组件只装进检测到的那个 | 不问，直接用它 |
+| 全部 | 「AI Agent」一行每个宿主后面一个 `✓`，没有「注意」 | 同下一行 |
+| 不止一个、但不是全部 | 检测到的后面一个 `✓`，没检测到的写「– 未检测到」；另有一行「注意」说明哪些被跳过、组件只装进哪些 | 列表里有 skill、第三方 Skill 或 MCP 时先问「装进哪些 AI Agent」：多选，只列检测到的，默认全选，名字后面不写目录；再进混合列表。列表里只有工具和外部项目时不问 |
+| 只有一个 | 同上一行：没检测到的写「– 未检测到」，一行「注意」 | 不问，直接用它 |
 | 一个都没有 | 每个都写「– 未检测到」，一行「注意」说明暂时装不了组件 | 照常进得去，不问宿主；skill 的行不可选，状态的位置写「需要 AI Agent」，外部项目照常可选 |
 
-- **装到哪个目录由安装范围定**（任务 `10-10-catalog-purpose-categories` 工单 10 起）：全局是 `host.skillsDir`，项目是 `host.projectSkillsDir`。两个宿主项目范围的目录与 skills CLI 不带全局选项时落的位置一致（2026-10-11 实测，记录在任务 `10-10-catalog-purpose-categories` 的 `research/project-scope-trial-record.md`）——Claude Code 是 `<项目目录>/.claude/skills`，Codex 是 `<项目目录>/.agents/skills`。`installSkill`、`skillStatus` 只认交给它的那个目录，所以**装到项目时的状态判断、版本对比、不是本工具装的目录另问且缺省不覆盖，做法与全局时一字不差**，只是换了目录；选了项目就不读也不写全局的那个目录。汇总和另问里的位置：全局的以 `~` 开头，项目的写成相对项目目录的路径（`.claude/skills/alpha`）。在主目录里运行安装器又选了项目时两个目录重合，不特别处理。
+「注意」的两句话都从宿主的列表里取名字，不写死（`messages.ts` 的 `hostsSkipped`、`noHosts`）：
+
+- 只检测到一部分：「没有检测到 Codex、Pi，已跳过；组件只装进 Claude Code」——没检测到的、检测到的各照界面上的先后，用并列的写法连起来（中文顿号，英文逗号：`Codex, Pi not detected, skipped; components go into Claude Code only`）。
+- 一个都没有：「没有检测到 Claude Code、Codex 或 Pi，暂时装不了组件」，英文 `Claude Code, Codex and Pi not detected; components cannot be installed`——前面的用并列的标点隔开，最后一个前面是「或」/ `and`。
+- 英文的这两句比 80 列长时照「注意」的规矩折行（续行与话的左缘对齐）。
+
+- **装到哪个目录由安装范围定**（任务 `10-10-catalog-purpose-categories` 工单 10 起）：全局是 `host.skillsDir`，项目是 `host.projectSkillsDir`。Claude Code 和 Codex 项目范围的目录与 skills CLI 不带全局选项时落的位置一致（2026-10-11 实测，记录在任务 `10-10-catalog-purpose-categories` 的 `research/project-scope-trial-record.md`）——Claude Code 是 `<项目目录>/.claude/skills`，Codex 是 `<项目目录>/.agents/skills`。Pi 的也是 `<项目目录>/.agents/skills`：读 skills CLI 1.7.2 的源码确认的（`pi` 这个 agent 的 `skillsDir` 是 `.agents/skills`），**没有用真实的 Pi 实测**，留在发布前虚拟机里的走查清单上（任务 `10-12-installer-add-pi-omp-hosts` 的 `prd.md`「Further Notes」第 7 条）。`installSkill`、`skillStatus` 只认交给它的那个目录，所以**装到项目时的状态判断、版本对比、不是本工具装的目录另问且缺省不覆盖，做法与全局时一字不差**，只是换了目录；选了项目就不读也不写全局的那个目录。汇总和另问里的位置：全局的以 `~` 开头，项目的写成相对项目目录的路径（`.claude/skills/alpha`）。在主目录里运行安装器又选了项目时两个目录重合，不特别处理。
 - **每个 skill 在每个所选宿主下各是一项**：各调一次 `installSkill(skill, <按安装范围定的那个目录>, …)`，各下载一次、各写自己的安装标记、各有一行结果，互不影响。汇总里同一个 skill 的后续行不重复名字，标题数的是 skill 的个数；结果每行都写名字，合计数的是项数。
+- **同时选了 Codex 和 Pi 时，同一个 skill 现在仍出两项、对同一个共用 skill 目录装两次**（后一次整目录替换前一次，结果是同一份内容，无害；汇总、结果里各两行）。按 skill 目录归组、一组只出一项，是任务 `10-12-installer-add-pi-omp-hosts` 工单 03 的事，做完之后改这里。
 - 钉住的来源整次运行共用，不因宿主多而多查询。
 - 问不问宿主、勾完之后怎么返回，都在 `flow.ts` 的 `withHosts` 里；这一问同时管 skill 和 MCP。
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；混合列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，不重问宿主。
@@ -209,6 +222,8 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - Base：`~/.claude/skills/alpha` 是指向 `~/my-skills/alpha` 的符号链接，同意覆盖 → 那里变成装好的真目录，`~/my-skills/alpha` 的文件清单和内容都没变。
 - Bad：查询被限流 → 打出「出错：GitHub 限流」和两条出路，什么都没装，回到主菜单；同一次运行里再装一次会重新查询。
 - Bad：一个宿主都没检测到 → 「推荐」进得去，skill 的行都不可选，主目录里什么都不多。
+- Good：只检测到 Pi，勾了 `alpha` → 不问装进哪个，`~/.agents/skills/alpha` 里有内容和安装标记，汇总和结果里宿主写的是「Pi」；主目录下只多出 `.agents`，`.pi` 不出现。
+- Base：只检测到 Pi，`~/.pi/agent/skills/alpha` 是用户自己放的、`~/.agents/skills` 里没有 → 列表里写「未装」，不另问；装完后 Pi 自己目录里的那一份原样留着。
 - Good：安装范围选了项目，勾了 `alpha` → `<项目目录>/.claude/skills/alpha` 里有内容和安装标记，汇总里位置写 `.claude/skills/alpha`；主目录下一个文件都没多、原有的一个字节都没变。
 - Base：全局装过 `alpha` 1.0.0，项目里没有，选了项目 → 列表里写「未装」，汇总是「新装」，不另问；全局那一份原样留着。
 - Base：项目里的 `.claude/skills/alpha` 是用户自己放的，选了项目 → 另问的是 `.claude/skills/alpha 不是本工具装的，要覆盖它吗？`，直接回车就不动它；全局有没有同名目录都不影响这一问。
@@ -229,6 +244,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - 不是本工具装的：`accept()` 证明缺省是不覆盖；`no()` 断言目录的文件清单和内容都没变、其余项装上了、结果里的「跳过」和合计；`yes()` 断言整目录替换并有了标记；两个宿主各问各的；全都没同意时 `fakeGitHub().queries()` 是空的；在这个提问上 `interrupt()` 以 130 退出、什么都没动。
 - 符号链接：同意后 `lstatSync(目标).isSymbolicLink()` 为假、里面是新内容和标记，**链接原先指向的目录的文件清单和内容都没变**；不同意时链接还在。
 - 下载失败与中断那两条用的是「用户自己放的目录 + `yes()`」：同意覆盖之后才失败，用户的东西也必须原样留着。
+- Pi：检测、「AI Agent」一行、那两句「注意」、三个宿主时的宿主选择在 `hosts.test.ts`（`onPath` 给 `['pi']`、`['claude', 'codex', 'pi']`）；装到全局和项目的位置、四种状态、另问与缺省不覆盖、Pi 自己的目录不读不写、第三方 Skill 的那一条命令（**字面值**，`--agent pi`）与复核、MCP 写「不支持」与不可选的原因、三个宿主都选了时每一行不超出 79 列，在 `cli/test/pi.test.ts`；网页界面那一边在 `cli/test/web-pi.test.ts`。**不要写「同时选了 Codex 和 Pi 时出两行」的断言**：那是工单 03 要改掉的中间状态；要两个不同的目录就选 Claude Code 和 Pi。
 - 宿主：`onPath` 给 `['codex']`、`['claude', 'codex']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
 
 ### 7. Wrong vs Correct
@@ -408,7 +424,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 | 在哪个目录下运行 | 装到全局：不指定（进程自己的当前目录，它不影响全局的落点）。装到项目：项目目录。展示的命令里不写目录——项目目录就是用户运行安装器时所在的目录，照着敲落在同一处 |
 | 列在哪 | 终端界面：「将执行的命令」里，排在 MCP 和工具的前面，完整展示，环境变量不写在里面。网页界面的汇总不列命令 |
 
-`skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 是空的。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：终端界面的汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
+`skillsCli.env`：Claude Code 是 `{ CLAUDE_CONFIG_DIR: '' }`，Codex 和 Pi 是空的。Pi 的 agent 名是 `pi`：skills CLI 1.7.2 认识它，全局装到 `~/.agents/skills`、不带全局选项时装到运行目录下的 `.agents/skills`（读它的源码确认的，记在任务 `10-12-installer-add-pi-omp-hosts` 的 `research/pi-omp-host-facts.md`），正是 Pi 的适配里那两个 skill 目录，所以不用另带环境变量。skills CLI 给 Claude Code 装全局 skill 时认 `CLAUDE_CONFIG_DIR`（装到 `<那个目录>/skills`；2026-10-10 实测），而本安装器的 skill 目录不认它（见 [安装 MCP](./mcp-install.md) 记的那处不一致）。不把它清空的话，设了这个变量的机器上命令会装到别处：复核判失败，而那边的同名目录没经询问就被覆盖了。**代价**：终端界面的汇总里展示的命令不带这个变量，设了它的用户照着自己跑一遍，会装到 `<CLAUDE_CONFIG_DIR>/skills`，和安装器装的不是一处。实现时定的，维护者 2026-10-11 确认。
 
 > **Warning**：skills CLI 另外会往用户的状态目录里写一个 `skills/.skill-lock.json`（`XDG_STATE_HOME` 下，记着装了哪些 skill、来源和时间）。安装器不读它，也不清它；手动核对时要把 `XDG_*` 也指到临时目录。**装到项目时它不写那一个，改在项目目录的最上层写一个 `skills-lock.json`**（和 `.claude`、`.agents` 并排；2026-10-11 实测）。安装器同样不读、不清，汇总里也不提它——用户的项目里会多出这个文件，要不要在画面上交代一句，维护者还没有定。
 

@@ -337,10 +337,11 @@ describe('网页界面：不可选的条目', () => {
     expect(state.machine.hosts).toEqual([
       { name: 'Claude Code', detected: false, status: '未检测到' },
       { name: 'Codex', detected: false, status: '未检测到' },
+      { name: 'Pi', detected: false, status: '未检测到' },
     ]);
     expect(reasons(state)).toEqual({ alpha: '需要 AI Agent', 'paper-kit': '需要 AI Agent', 'docs-local': '需要 AI Agent', fetcher: '需要 AI Agent' });
     // 本机信息里有终端界面的那一句提醒
-    expect(state.machine.noHosts).toBe('没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览');
+    expect(state.machine.noHosts).toBe('没有检测到 Claude Code、Codex 或 Pi，暂时装不了组件；外部项目仍可浏览');
     // 没有宿主就没有按宿主分的状态
     expect(entry(state, 'alpha').statuses).toEqual([]);
     expect(state.listing?.apps?.entries.map((app) => app.name)).toEqual(['borealis']);

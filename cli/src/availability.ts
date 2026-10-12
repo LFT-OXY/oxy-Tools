@@ -77,7 +77,7 @@ export function listingStatus(
     mcps: listing.mcps.map((mcp, at) => {
       const row = statuses[at] ?? [];
       // 所选的宿主一个都装不了它：有哪个只是装不到所选的范围，原因就是只能装到全局——换成全局就装得了
-      const unsupported: { unavailable?: Unavailable } = row.every((status) => status === 'unsupported' || status === 'global-only')
+      const unsupported: { unavailable?: Unavailable } = row.every((status) => status === 'unsupported' || status === 'no-config' || status === 'global-only')
         ? { unavailable: { kind: row.includes('global-only') ? 'global-only' : 'hosts' } }
         : {};
       return { mcp, statuses: row, ...unsupported, ...hostless };

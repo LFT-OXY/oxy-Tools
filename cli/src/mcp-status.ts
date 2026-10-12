@@ -9,11 +9,13 @@ export type McpStatus =
   | 'unknown'
   /** 这个条目不支持这个宿主 */
   | 'unsupported'
+  /** 这个宿主没有 MCP 配置：它的 MCP 安装器不装，哪个安装范围都一样 */
+  | 'no-config'
   /** 这个宿主的 MCP 只能装到全局，而这一轮选的是项目 */
   | 'global-only';
 
 /** 装得了的那几种状态 */
-export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'global-only'>;
+export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'no-config' | 'global-only'>;
 
 /**
  * 每个 MCP 在每个宿主下的状态，与 mcps、hosts 一一对应。看的是 scope 这个安装范围下的那份配置：全局是宿主的用户级
@@ -25,6 +27,7 @@ export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[], scope:
   return mcps.map((mcp) =>
     hosts.map((host, column) => {
       if (mcp.hosts && !mcp.hosts.includes(host.id)) return 'unsupported';
+      if (!host.mcp) return 'no-config';
       if (!configs[column]) return 'global-only';
       const names = configured[column];
       if (!names) return 'unknown';

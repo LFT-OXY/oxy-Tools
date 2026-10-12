@@ -369,7 +369,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - 条目带着 `unavailable` 就是不可选，值是那句原因（需要 AI Agent、需要别的 AI Agent、只能装到全局、不支持 macOS）：哪些不可选、为什么，由 `availability.ts` 定，写成哪句话由 `status-text.ts` 的 `unavailableReason` 定。一个宿主都没检测到时 `target.hosts` 是空的，skill、第三方 Skill、MCP 的 `statuses` 也是空的，每个组件都带「需要 AI Agent」。
 - `listing.apps` 是外部项目，和组件分开：只有名字、完整的说明、链接和「推荐」的标记，**没有状态、没有可不可选**——页面上它们没有勾选框。链接是目录读取时验过的 `https` 网址；页面把它画成普通的链接，在新标签页打开，带 `rel="noopener noreferrer"`。列表里没有外部项目时没有这一块。
 - `target` 是装进哪些宿主、装到哪里，页面上能改，见下面「宿主与安装范围」。`hostsLabel`、`scopeLabel` 和 `scopes` 里的名字是终端界面那两个提问的文案（`pickHosts`、`pickScope`、`scopes.*.name`）。
-- 一个宿主都没检测到时 `machine.noHosts` 是终端界面本机信息里的那一句（「没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览」，目录里没有外部项目时没有后半句）；检测到了任何一个就没有这个字段。
+- 一个宿主都没检测到时 `machine.noHosts` 是终端界面本机信息里的那一句（「没有检测到 Claude Code、Codex 或 Pi，暂时装不了组件；外部项目仍可浏览」，目录里没有外部项目时没有后半句）；检测到了任何一个就没有这个字段。
 - 意图 `open`：`list` 必须是 `menu` 里某一行的 `id`，否则不照办（400）；照办之后把 `listing` 换成那一张，推给所有页面。
 
 **开场动画播过没有**
@@ -506,6 +506,8 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - Bad：`{"type":"lang","lang":"fr"}` → 400，语言不变。
 - Base：只检测到 Claude Code，目录里有一个只支持 Codex 的 MCP → 它在列表里，带 `unavailable: "需要别的 AI Agent"`，`statuses` 是 `[{ host: "Claude Code", text: "不支持", tone: "faint" }]`。
 - Good：两个宿主都检测到，发 `{"type":"host","host":"codex","on":false}` → 204，`target.hosts` 是 `["Claude Code"]`，每张卡片只剩 Claude Code 那一段状态；勾了 `alpha` 去装，只有 `~/.claude/skills/alpha`，`~/.agents` 不存在。
+- Good：三个宿主都检测到（任务 `10-12-installer-add-pi-omp-hosts` 工单 01）→ `machine.hosts`、`target.choices` 依次是 Claude Code、Codex、Pi（`id` 是 `claude-code`、`codex`、`pi`），都勾着；每张卡片三段状态。去掉前两个只留 Pi、勾了 `alpha` 去装 → 汇总和结果里 `host` 是 `"Pi"`，位置是 `~/.agents/skills/alpha`，主目录下只多出 `.agents`。画面状态的形状没有因为多一个宿主而变。
+- Base：只检测到 Pi，目录里有 MCP → 卡片带 `unavailable: "需要别的 AI Agent"`，`statuses` 是 `[{ host: "Pi", text: "不支持", tone: "faint" }]`，选全局选项目都一样，`pick` 是 400，那一区没有 `notices`；留着 Claude Code 和 Pi 时 Pi 那一段「不支持」、卡片可选，汇总和结果里只有 Claude Code 的行，记录到的命令里没有 `pi`（Pi 的 MCP 安装器还不装，见 [安装 MCP](./mcp-install.md) 的「宿主可以没有 MCP 配置」）。
 - Bad：只剩 Claude Code 时再发 `{"type":"host","host":"claude-code","on":false}` → 400，`target.hosts` 不变。
 - Good：发 `{"type":"scope","scope":"project"}` → 204，`target.scope` 是 `project`；全局装过的 `alpha` 这时写「未装」；汇总里位置是 `.claude/skills/alpha`；装完 `<项目目录>/.claude/skills/alpha` 里有东西，主目录里每个文件和装之前一字不差。
 - Base：只检测到一个宿主，`choices` 只有一项、`on: true`；页面上写「装进 Claude Code」，没有勾选框。一个都没检测到时 `choices` 是空的，`host`、`scope` 都是 400。
@@ -597,6 +599,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 
 - 起初是检测到的全部宿主、全局；`choices` 的 `id`、名字、先后；只检测到一个时 `choices` 只有一项；一个都没有时是空的。
 - 两个宿主只选一个：`target.hosts` 和每张卡片的 `statuses` 只剩它；装的东西只进它的目录，另一个宿主的目录不存在。
+- Pi（`cli/test/web-pi.test.ts`）：三个宿主时本机信息与 `target` 的先后和缺省、只检测到 Pi、一个都没检测到时那一句的中英文；只留 Pi 时装到全局和项目的位置与安装标记、四种状态、逐项决定的覆盖；第三方 Skill 的命令与终端界面逐条相同（`--agent pi`）、装到项目、复核没过；MCP 不可选与原因、和 Claude Code 一起时只装进 Claude Code；英文。
 - 去掉最后一个宿主不照办（400），`target.hosts` 不变；不是检测到的宿主的 `id` 不照办；一个都没检测到时 `host`、`scope` 都不照办。
 - 装到项目：`target.project` 的那句话和目录（架子的项目目录不在主目录里，是全路径）；全局装过的在项目里写「未装」；汇总里位置是相对项目目录的路径；装完落在项目目录下各宿主项目范围的 skill 目录里，主目录里每个文件的内容和装之前相同；改回全局之后状态是全局的。
 - 换语言后这两个选择不变；刷新后还是改过的。

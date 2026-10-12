@@ -178,7 +178,8 @@ describe('一个宿主都没检测到时的外部项目', () => {
       answers: [accept(), pick(), choose(WEB_SEARCH), pick(), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code 或 Codex，暂时装不了组件；外部项目仍可浏览$/m);
+    // 这一句比一行长，会折成两行：中文可以在任意两字之间折，比之前把空白全部去掉
+    expect(result.output.replace(/\s+/g, '')).toContain('注意没有检测到ClaudeCode、Codex或Pi，暂时装不了组件；外部项目仍可浏览');
     // 单选里不可选的行以短横开头
     expect(result.output).not.toMatch(/^- /m);
     // 第一个应答进的是「推荐」：它下面是本仓库的 skill
@@ -344,7 +345,7 @@ describe('英文界面下的外部项目', () => {
 
     // 这一句比一行长，会折成两行
     expect(result.output.replace(/\n\s+/g, ' ')).toContain(
-      'Notice    Claude Code and Codex not detected; components cannot be installed; external projects can still be browsed',
+      'Notice    Claude Code, Codex and Pi not detected; components cannot be installed; external projects can still be browsed',
     );
   });
 

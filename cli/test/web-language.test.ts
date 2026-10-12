@@ -74,7 +74,10 @@ describe('网页界面：页面上换语言', () => {
       docsLocal: { about: DOCS_LOCAL.description.zh, mark: '推荐', statuses: [{ host: 'Claude Code', text: '未配置', tone: 'faint' }] },
       tracker: '需要别的 AI Agent',
       apps: { title: '外部项目', note: '只给链接，不安装', about: SAMPLE_APPS[1]?.description.zh },
-      machine: { hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: '未检测到' }], catalog: ['3 Skill', '2 MCP', '2 外部项目'] },
+      machine: {
+        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: '未检测到' }, { name: 'Pi', detected: false, status: '未检测到' }],
+        catalog: ['3 Skill', '2 MCP', '2 外部项目'],
+      },
       target: { hostsLabel: '装进哪些 AI Agent', scopeLabel: '装到哪里', scopes: ['全局', '项目'] },
     });
     expect(wording(after)).toEqual({
@@ -88,7 +91,10 @@ describe('网页界面：页面上换语言', () => {
       docsLocal: { about: DOCS_LOCAL.description.en, mark: 'pick', statuses: [{ host: 'Claude Code', text: 'none', tone: 'faint' }] },
       tracker: 'needs another AI Agent',
       apps: { title: 'External projects', note: 'links only, nothing is installed', about: SAMPLE_APPS[1]?.description.en },
-      machine: { hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: 'not detected' }], catalog: ['3 skills', '2 MCP', '2 external'] },
+      machine: {
+        hosts: [{ name: 'Claude Code', detected: true }, { name: 'Codex', detected: false, status: 'not detected' }, { name: 'Pi', detected: false, status: 'not detected' }],
+        catalog: ['3 skills', '2 MCP', '2 external'],
+      },
       target: { hostsLabel: 'Install into which AI Agents', scopeLabel: 'Install where', scopes: ['Global', 'Project'] },
     });
     // 换语言只换说法：正在看哪张列表、左栏各行的标识、开场动画播过没有、走到哪一步都不变

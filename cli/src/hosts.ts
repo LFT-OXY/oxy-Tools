@@ -1,5 +1,5 @@
 // 宿主适配：宿主在不在、skill 装到哪个目录、通用的 skill 安装程序怎么称呼它、怎么拼出添加和移除 MCP 的命令、去哪看某个 MCP 是否已配置；
-// 后两问全局和项目范围各答一遍。
+// 后两问全局和项目范围各答一遍——宿主也可以没有 MCP 配置，那就是它的 MCP 安装器不装。
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
@@ -44,8 +44,7 @@ export interface ProjectMcpConfig extends McpConfig {
   approval?: string;
 }
 
-/** 宿主自己的那三问（configuredMcps、addMcp、removeMcp）答的是用户级配置，装在那里对所有项目生效 */
-export interface Host extends McpConfig {
+export interface Host {
   /** 目录里指代这个宿主的名字（MCP 条目的 hosts） */
   id: string;
   /** 界面上显示的名字 */
@@ -60,7 +59,9 @@ export interface Host extends McpConfig {
    * env 是要另外带上的环境变量——带上了它才把全局的 skill 装到 skillsDir
    */
   skillsCli: { agent: string; env: Readonly<Record<string, string>> };
-  /** 项目范围的 MCP 配置；没有它表示这个宿主的 MCP 只能装到全局 */
+  /** 用户级的 MCP 配置，装在那里对所有项目生效；没有它表示这个宿主的 MCP 安装器不装 */
+  mcp?: McpConfig;
+  /** 项目范围的 MCP 配置；有 mcp 而没有它表示这个宿主的 MCP 只能装到全局 */
   projectMcp?: ProjectMcpConfig;
   /**
    * 有它表示：这个宿主的添加命令遇到远程地址的 MCP，可能当场打开浏览器登录并等登录完成才结束。
@@ -87,8 +88,10 @@ const claudeCode: HostAdapter = (env, homeDir, projectDir) => ({
   projectSkillsDir: join(projectDir, '.claude', 'skills'),
   // skills CLI 认 CLAUDE_CONFIG_DIR（装到它下面的 skills），本安装器的 skill 目录不认：清空它，两边才是同一个目录
   skillsCli: { agent: 'claude-code', env: { CLAUDE_CONFIG_DIR: '' } },
-  configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
-  ...claudeMcpCommands('user'),
+  mcp: {
+    configuredMcps: () => namesIn(join(env['CLAUDE_CONFIG_DIR'] || homeDir, '.claude.json'), JSON.parse, 'mcpServers'),
+    ...claudeMcpCommands('user'),
+  },
   projectMcp: {
     file: CLAUDE_PROJECT_MCP_FILE,
     cwd: projectDir,
@@ -134,29 +137,48 @@ const codex: HostAdapter = (env, homeDir, projectDir) => ({
   skillsDir: join(homeDir, '.agents', 'skills'),
   projectSkillsDir: join(projectDir, '.agents', 'skills'),
   skillsCli: { agent: 'codex', env: {} },
-  configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
-  addMcp: ({ name, server }, variables) => ({
-    command: 'codex',
-    args: [
-      'mcp',
-      'add',
-      name,
-      ...('url' in server
-        ? ['--url', server.url]
-        : [...variables.flatMap((variable) => ['--env', { variable }]), '--', server.command, ...server.args]),
-    ],
-  }),
-  removeMcp: (name) => ({ command: 'codex', args: ['mcp', 'remove', name] }),
+  mcp: {
+    configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
+    addMcp: ({ name, server }, variables) => ({
+      command: 'codex',
+      args: [
+        'mcp',
+        'add',
+        name,
+        ...('url' in server
+          ? ['--url', server.url]
+          : [...variables.flatMap((variable) => ['--env', { variable }]), '--', server.command, ...server.args]),
+      ],
+    }),
+    removeMcp: (name) => ({ command: 'codex', args: ['mcp', 'remove', name] }),
+  },
   remoteMcpLogin: { command: 'codex', args: ['mcp', 'login'] },
 });
 
-/** host 在 scope 这个安装范围下的 MCP 配置：全局是它的用户级配置，项目是它项目范围的那一份——没有就是装不到项目 */
+/**
+ * Pi：以 pi 命令是否可用判断在不在。skill 装进共用 skill 目录（.agents/skills，Codex 已经在用的那一个），不用它自己的
+ * ~/.pi/agent/skills：skills CLI 给它只装到这里，本仓库的 skill 和第三方 Skill 才在同一处（ADR-0005）。
+ * 它的 MCP 安装器还不装：没有 mcp。
+ */
+const pi: HostAdapter = (env, homeDir, projectDir) => ({
+  id: 'pi',
+  name: 'Pi',
+  detected: isOnPath('pi', env),
+  skillsDir: join(homeDir, '.agents', 'skills'),
+  projectSkillsDir: join(projectDir, '.agents', 'skills'),
+  skillsCli: { agent: 'pi', env: {} },
+});
+
+/**
+ * host 在 scope 这个安装范围下的 MCP 配置：全局是它的用户级配置，项目是它项目范围的那一份——没有就是装不到这个范围；
+ * 没有 MCP 配置的宿主两个范围都没有
+ */
 export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined {
-  return scope === 'project' ? host.projectMcp : host;
+  return scope === 'project' ? host.projectMcp : host.mcp;
 }
 
 // 顺序就是界面上的顺序；加一个宿主就在这里追加一份适配
-const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex];
+const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex, pi];
 
 /** 安装器认识的全部宿主，各自在不在。 */
 export function detectHosts(env: Environment, homeDir: string, projectDir: string): Host[] {

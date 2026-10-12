@@ -40,6 +40,10 @@ export type KeyOutcome = 'entered' | 'blank' | 'reused';
 
 const OS_NAMES: Record<ToolOs, string> = { macos: 'macOS', linux: 'Linux', windows: 'Windows' };
 
+// 几个名字连成一串：前面的用 separator 隔开，最后一个前面是 last（「A、B 或 C」「A, B and C」）
+const listed = (names: readonly string[], separator: string, last: string): string =>
+  names.length < 2 ? names.join('') : `${names.slice(0, -1).join(separator)}${last}${names.at(-1)}`;
+
 type Totals = { succeeded: number; failed: number; skipped: number };
 // 合计的三段：数写在词前面
 const tallied =
@@ -99,8 +103,8 @@ export interface Messages {
   /** skill 在某个宿主下的状态；版本不同时不用词，直接写两个版本号。第三方 Skill 的未装、已装也用这两个词 */
   skillStatus: { none: string; installed: string; unmanaged: string };
   /**
-   * MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主，或这个宿主的 MCP 装不到所选的安装范围，
-   * 第三方 Skill 也用这个词
+   * MCP 在某个宿主下的状态；unsupported 是这个条目不支持这个宿主，这个宿主的 MCP 安装器不装，或它的 MCP 装不到
+   * 所选的安装范围，第三方 Skill 也用这个词
    */
   mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
   /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
@@ -275,7 +279,7 @@ const zh: Messages = {
   agentKey: 'AI Agent',
   notDetected: '未检测到',
   noHosts: (hosts, appsBrowsable) =>
-    `没有检测到 ${hosts.join(' 或 ')}，暂时装不了组件${appsBrowsable ? '；外部项目仍可浏览' : ''}`,
+    `没有检测到 ${listed(hosts, '、', ' 或 ')}，暂时装不了组件${appsBrowsable ? '；外部项目仍可浏览' : ''}`,
   hostsSkipped: (missing, present) => `没有检测到 ${missing}，已跳过；组件只装进 ${present}`,
   catalogKey: '目录',
   noticeKey: '注意',
@@ -566,7 +570,7 @@ const en: Messages = {
   agentKey: 'AI Agent',
   notDetected: 'not detected',
   noHosts: (hosts, appsBrowsable) =>
-    `${hosts.join(' and ')} not detected; components cannot be installed${appsBrowsable ? '; external projects can still be browsed' : ''}`,
+    `${listed(hosts, ', ', ' and ')} not detected; components cannot be installed${appsBrowsable ? '; external projects can still be browsed' : ''}`,
   hostsSkipped: (missing, present) => `${missing} not detected, skipped; components go into ${present} only`,
   catalogKey: 'Catalog',
   noticeKey: 'Notice',

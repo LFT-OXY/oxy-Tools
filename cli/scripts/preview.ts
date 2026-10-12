@@ -16,6 +16,7 @@ import {
   BOTH_HOSTS,
   CLAUDE_SKILLS,
   CODEX_SKILLS,
+  THREE_HOSTS,
   DOCUMENT_MCPS,
   DOCUMENT_THIRD_PARTY,
   DOCUMENT_TOOLS,
@@ -393,6 +394,8 @@ const toProjectMcpSummary = [...intoProject, ...down(6), KEY.space, ...down(2), 
 const intoProjectCodexOnly = [...down(5), KEY.enter, KEY.space, KEY.enter, KEY.down, KEY.enter, ...down(6)];
 // guizang-ppt-skill 装进 Claude Code 的那条命令以 1 退出
 const GUIZANG_FAILS = { thirdPartyFails: ['guizang-ppt-skill@claude-code'] };
+// 三个宿主都检测到：五种类型同表的样例照 FIVE_KINDS，可执行路径上多一个 pi
+const THREE_HOSTS_FIVE_KINDS = { ...FIVE_KINDS, onPath: [...THREE_HOSTS, 'pandoc'] };
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -402,7 +405,7 @@ const scenes: Scene[] = [
   { title: '语言提问 · 系统语言是中文', note: '大标志之后的第一问：光标停在「中文」上，按键提示是中文；提问和两个选项不随界面语言变', answersLanguage: true },
   { title: '语言提问 · 系统语言不是中文', note: 'LANG=en_US.UTF-8：光标停在 English 上，按键提示是英文', env: { LANG: 'en_US.UTF-8' }, answersLanguage: true },
   { title: '语言提问 · 选了与系统语言不同的一项', note: '下移到 English 再回车：收成一行，之后的画面都是选定的语言', answersLanguage: true, keys: [KEY.down, KEY.enter] },
-  { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明 Codex 被跳过；catalog.json 三个数组为空，只有「推荐」和退出' },
+  { title: '主菜单', note: '语言提问收成一行，留在本机信息上方。只检测到 Claude Code：说明另外的宿主被跳过；catalog.json 三个数组为空，只有「推荐」和退出' },
   { title: '主菜单 · 有条目被跳过', note: '目录里有一条写坏的条目', catalog: withBrokenEntry },
   { title: 'skill 多选列表', note: '空格勾选；说明过长则截断，光标所在行的全文在列表下方', keys: pickTwo },
   {
@@ -430,8 +433,8 @@ const scenes: Scene[] = [
     catalog: queryFails({ kind: 'skill-files-unlisted', problem: 'unreachable', detail: 'ENOTFOUND', where: COMMITS_QUERY, badToken: false }),
     keys: install,
   },
-  { title: '主菜单 · 检测到两个宿主', note: '可执行路径上有 claude 和 codex 两个命令', onPath: BOTH_HOSTS },
-  { title: '主菜单 · 只检测到 Codex', note: '另一个宿主没有检测到：说明它被跳过，组件只装进检测到的那个', onPath: ['codex'] },
+  { title: '主菜单 · 检测到两个宿主', note: '可执行路径上有 claude 和 codex 两个命令；Pi 没有检测到：它写在最后，「注意」说明组件只装进另外两个', onPath: BOTH_HOSTS },
+  { title: '主菜单 · 只检测到 Codex', note: '另外的宿主没有检测到：说明它们被跳过，组件只装进检测到的那个', onPath: ['codex'] },
   { title: '选择宿主 · 检测到两个', note: '进「推荐」后先问装进哪些宿主：两项都默认勾选，名字后面不写目录', onPath: BOTH_HOSTS, keys: toRecommended },
   { title: '选择宿主 · 去掉一个', note: '空格去掉 Claude Code 的勾，光标移到 Codex', onPath: BOTH_HOSTS, keys: [...toRecommended, KEY.space, KEY.down] },
   { title: 'skill 多选列表 · 两个宿主', note: '上面两行是已回答的提问', onPath: BOTH_HOSTS, keys: twoHosts(pickTwo) },
@@ -558,6 +561,18 @@ const scenes: Scene[] = [
   { title: '正在安装 · 第三方 Skill', note: '进行中的那一行写「正在安装」；安装程序自己的输出不上屏，画面上只有这一行', ...FIVE_KINDS, commands: () => new Promise<never>(() => {}), keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '结果 · 第三方 Skill 一项失败、一项没同意覆盖而跳过', note: '失败的那一行只说哪一步、退出状态几；没同意覆盖的跳过；其余照常。成功的写「已安装」，没有版本号。工具排在最后', ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
   { title: '执行工具的安装命令 · 只有工具 · 进行中', note: '这一轮只有工具时没有「正在安装」分区', ...TOOLS, shell: firstStillRunning, keys: [...pickUv, KEY.enter, KEY.enter] },
+  { title: '主菜单 · 检测到三个宿主', note: '可执行路径上有 claude、codex 和 pi 三个命令：「AI Agent」一行依次是 Claude Code、Codex、Pi，都打勾，没有「注意」', onPath: THREE_HOSTS },
+  { title: '主菜单 · 只检测到 Pi', note: '另外两个宿主没有检测到：说明它们被跳过，组件只装进 Pi', onPath: ['pi'] },
+  { title: '选择宿主 · 检测到三个', note: '三项都默认勾选，先后和「AI Agent」一行相同', onPath: THREE_HOSTS, keys: toRecommended },
+  { title: 'skill 多选列表 · 四种状态并存 · 三个宿主', note: '每个宿主一栏。Codex 和 Pi 两栏写的一样：它们的 skill 装在同一个目录里', onPath: THREE_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
+  { title: '汇总确认 · 含覆盖项 · 三个宿主', note: '每个 skill 在每个宿主下各一行，名字只写在第一行；每一行都不折行', onPath: THREE_HOSTS, ...MIXED, keys: twoHosts(toMixedSummary) },
+  { title: '结果 · 含覆盖项 · 三个宿主', note: '按宿主分别列出，各有各的结果', onPath: THREE_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
+  { title: '混合列表 · 五种类型 · 三个宿主', note: '三栏状态之后说明一栏仍放得下。Pi 的 MCP 安装器不装：它那一栏每个 MCP 都写不支持，行仍可选，只装进另外的宿主', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
+  { title: '第三方 Skill 的清单 · 三个宿主', note: '每个 skill 一行，三个宿主各一栏状态', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
+  { title: '汇总确认 · 含第三方 Skill · 三个宿主', note: '第三方 Skill 每个 skill、每个宿主一行，装给 Pi 的那条命令是 --agent pi；MCP 只有装进 Claude Code 和 Codex 的行，没有 Pi 的', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
+  { title: '结果 · 含第三方 Skill · 三个宿主', note: '每一行都不折行；MCP 的结果里没有 Pi', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '混合列表 · 只检测到 Pi', note: '不问装进哪个宿主。skill 和第三方 Skill 照常可选，状态看的是共用 skill 目录；MCP 的行不可选，原因是「需要别的 AI Agent」', ...FIVE_KINDS, onPath: ['pi', 'pandoc'], keys: [...toMixedDocuments(), ...down(6)] },
+  { title: '汇总与结果 · 只检测到 Pi', note: '汇总和结果里宿主写的是 Pi，位置在共用 skill 目录', onPath: ['pi'], keys: install },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
   { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面。只装一个工具时不重复「结果」分区', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
@@ -620,6 +635,11 @@ const scenes: Scene[] = [
   { title: '英文界面 · 混合列表 · 光标在不可选的工具上', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...down(7)] },
   { title: '英文界面 · 第三方 Skill 的清单', argv: ['--lang', 'en'], ...FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
   { title: '英文界面 · 含第三方 Skill 的汇总与结果', argv: ['--lang', 'en'], ...FIVE_KINDS, ...GUIZANG_FAILS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 主菜单 · 只检测到 Pi', note: '「注意」那一句比一行长，照规矩折行', argv: ['--lang', 'en'], onPath: ['pi'] },
+  { title: '英文界面 · 选择宿主 · 检测到三个', argv: ['--lang', 'en'], onPath: THREE_HOSTS, keys: toRecommended },
+  { title: '英文界面 · 混合列表 · 五种类型 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
+  { title: '英文界面 · 三个宿主的汇总与结果', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '英文界面 · 混合列表 · 只检测到 Pi', argv: ['--lang', 'en'], ...FIVE_KINDS, onPath: ['pi', 'pandoc'], keys: [...toMixedDocuments(), ...down(6)] },
   { title: '英文界面 · 四种类型的汇总与结果', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '英文界面 · 混合列表 · 只有工具', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
@@ -774,7 +794,8 @@ async function play(scene: Scene): Promise<Cell[][]> {
         const skill = args[args.indexOf('--skill') + 1] ?? '';
         const agent = args[args.indexOf('--agent') + 1] ?? '';
         if (scene.thirdPartyFails?.includes(`${skill}@${agent}`)) return { exitCode: 1 };
-        const target = join(options?.cwd ?? home, agent === 'codex' ? CODEX_SKILLS : CLAUDE_SKILLS, skill, 'SKILL.md');
+        // 只有 Claude Code 有自己的目录，别的宿主都落在共用 skill 目录
+        const target = join(options?.cwd ?? home, agent === 'claude-code' ? CLAUDE_SKILLS : CODEX_SKILLS, skill, 'SKILL.md');
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, `# ${skill}\n`);
         return ok;
