@@ -1,5 +1,5 @@
-// Pi 这个宿主：本仓库的 skill 和第三方 Skill 装进共用 skill 目录（.agents/skills，ADR-0005），MCP 安装器还不装。
-// 检测到没有、「AI Agent」一行和宿主选择在 hosts.test.ts。
+// Pi 这个宿主：本仓库的 skill 和第三方 Skill 装进共用 skill 目录（.agents/skills，ADR-0005）。
+// 检测到没有、「AI Agent」一行和宿主选择在 hosts.test.ts；它的 MCP 在 pi-mcp.test.ts。
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -305,100 +305,6 @@ describe('把第三方 Skill 装给 Pi', () => {
     expect(result.output).toMatch(/^\s+note-taker\s+Pi\s+new\s+~\S+note-taker$/m);
     expect(result.output).toMatch(/^\s+✓\s+note-taker\s+Pi\s+installed$/m);
     expect(result.output).not.toMatch(/[一-鿿]/);
-  });
-});
-
-// 样例的两个 MCP 在同一个用途下
-const withMcps = (mcps: unknown[] = SAMPLE_MCPS): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...mcps) } });
-const CLAUDE_ADD_LOCAL = { command: 'claude', args: ['mcp', 'add', '--scope', 'user', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'] };
-
-// Pi 的适配还没有 MCP 配置：它的 MCP 安装器不装
-describe('Pi 的 MCP 安装器不装', () => {
-  it('只检测到 Pi：MCP 的行不可选，原因是需要别的 AI Agent；一条命令都不执行', async () => {
-    const result = await run({ catalog: withMcps(), onPath: ONLY_PI, answers: [choose(WEB_SEARCH), pick(), choose('退出')] });
-
-    expect(listOf(result.output)).toMatch(/^ – docs-local\s+需要别的 AI Agent\s/m);
-    expect(listOf(result.output)).toMatch(/^ – tracker-remote\s+需要别的 AI Agent\s/m);
-    expect(result.output).not.toContain('只能装到全局');
-    expect(result.commands).toEqual([]);
-  });
-
-  it('只检测到 Pi、选了项目：原因仍是需要别的 AI Agent——换成全局也装不进它；列表上方没有说明', async () => {
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ONLY_PI,
-      answersScope: true,
-      answers: [choose(WEB_SEARCH), choose('项目'), pick(), choose('退出')],
-    });
-
-    expect(listOf(result.output)).toMatch(/^ – docs-local\s+需要别的 AI Agent\s/m);
-    expect(result.output).not.toContain('只能装到全局');
-    expect(result.output).not.toContain('读不到');
-  });
-
-  it('同一张列表里的 skill 照常装给 Pi，MCP 仍不可选', async () => {
-    const result = await run({
-      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search' } } }),
-      onPath: ONLY_PI,
-      answers: [choose(WEB_SEARCH), pick('alpha'), choose('开始安装'), choose('退出')],
-    });
-
-    expect(listOf(result.output)).toMatch(/^ – docs-local\s+需要别的 AI Agent\s/m);
-    expect(existsSync(join(result.home, '.agents', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
-    expect(result.commands).toEqual([]);
-  });
-
-  it('选了 Claude Code 和 Pi：Pi 那一栏每个 MCP 都写不支持，Claude Code 那一栏照常；行仍可选', async () => {
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ALL_HOSTS,
-      answers: [choose(WEB_SEARCH), pick('Claude Code', 'Pi'), pick(), pick(), choose('退出')],
-    });
-
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Pi\s+说明$/m);
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持\s/m);
-    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s+不支持\s/m);
-    expect(result.output).not.toContain('只能装到全局');
-  });
-
-  it('勾上的 MCP 只装进 Claude Code：汇总、命令、结果里都没有 Pi，没有一条 pi 命令', async () => {
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ALL_HOSTS,
-      answers: [choose(WEB_SEARCH), pick('Claude Code', 'Pi'), pick('docs-local'), choose('开始安装'), choose('退出')],
-    });
-    const fromSummary = result.output.slice(result.output.indexOf('── 将安装'));
-
-    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
-    expect(fromSummary).toMatch(/^\s+docs-local\s+Claude Code\s+新装$/m);
-    expect(fromSummary).toMatch(/^── 将执行 1 条命令 ─+$/m);
-    expect(fromSummary).toMatch(/^\s+✓\s+docs-local\s+Claude Code\s+已配置$/m);
-    expect(fromSummary).toMatch(/^\s+合计\s+1 成功 · 0 失败 · 0 跳过$/m);
-    expect(fromSummary).not.toMatch(/\bPi\b/);
-  });
-
-  it('Pi 的配置文件不读也不写：里面写坏了也不提，装完没有多出 .pi', async () => {
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ONLY_PI,
-      home: { '.pi/agent/mcp.json': '{ 写坏了' },
-      answers: [choose(WEB_SEARCH), pick(), choose('退出')],
-    });
-    const clean = await run({ catalog: withMcps(), onPath: ONLY_PI, answers: [choose(WEB_SEARCH), pick(), choose('退出')] });
-
-    expect(result.output).not.toContain('读不到');
-    expect(read(result.home, '.pi', 'agent', 'mcp.json')).toBe('{ 写坏了');
-    expect(filesUnder(clean.home)).toEqual([]);
-    expect(filesUnder(clean.project)).toEqual([]);
-  });
-
-  it('英文界面：那一栏和不可选的原因都是英文', async () => {
-    const en = { argv: ['--lang', 'en'], catalog: withMcps() };
-    const both = await run({ ...en, onPath: ALL_HOSTS, answers: [choose('Web search & docs retrieval'), pick('Claude Code', 'Pi'), pick(), pick(), choose('Exit')] });
-    const onlyPi = await run({ ...en, onPath: ONLY_PI, answers: [choose('Web search & docs retrieval'), pick(), choose('Exit')] });
-
-    expect(both.output).toMatch(/^ □ docs-local\s+none\s+unsupported\s/m);
-    expect(onlyPi.output).toMatch(/^ – docs-local\s+needs another AI Agent\s/m);
   });
 });
 

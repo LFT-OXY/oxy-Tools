@@ -78,7 +78,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 - 这几行的先后就是界面上的先后：Claude Code、Codex、Pi。
 - **`.agents/skills` 是共用 skill 目录**（术语见仓库根的 `GLOSSARY.md`）：Pi 的 skill 装进 Codex 已经在用的那一个，不用它自己的 `~/.pi/agent/skills`。理由见 [ADR-0005](../../../docs/adr/0005-pi-and-omp-skills-go-to-shared-skill-directory.md)：skills CLI 给 Pi 只装到这里，本仓库的 skill 和第三方 Skill 才在同一处。Pi 自己的目录安装器不读也不写——那里有同名的 skill 不算已装，也不会被问要不要覆盖。
-- **Pi 的 MCP 安装器还不装**（适配里没有 `mcp`，见 [安装 MCP](./mcp-install.md) 的「宿主可以没有 MCP 配置」；工单 02 接上）。
+- **Pi 的 MCP 装到全局和项目都行**（工单 02）：用它自己的 `pi mcp add`、`pi mcp remove`，命令、两份配置在哪、项目范围的提醒见 [安装 MCP](./mcp-install.md)。它的 MCP 配置认 `PI_CODING_AGENT_DIR`，skill 目录不认（共用 skill 目录不在 Pi 的配置目录里）。
 
 每个宿主是 `hosts.ts` 里的一份适配（`HostAdapter`：给环境变量、主目录和项目目录，交出一个 `Host`），都回答同样的问题（关于 MCP 的那几问见 [安装 MCP](./mcp-install.md)）；`detectHosts` 按 `ADAPTERS` 的顺序逐个问。**加一个宿主就是往 `ADAPTERS` 里追加一份适配**，流程和呈现层都按列表走，不认具体是哪个宿主——文案里也不写死宿主的名字，名字从列表里取。
 
@@ -244,7 +244,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - 不是本工具装的：`accept()` 证明缺省是不覆盖；`no()` 断言目录的文件清单和内容都没变、其余项装上了、结果里的「跳过」和合计；`yes()` 断言整目录替换并有了标记；两个宿主各问各的；全都没同意时 `fakeGitHub().queries()` 是空的；在这个提问上 `interrupt()` 以 130 退出、什么都没动。
 - 符号链接：同意后 `lstatSync(目标).isSymbolicLink()` 为假、里面是新内容和标记，**链接原先指向的目录的文件清单和内容都没变**；不同意时链接还在。
 - 下载失败与中断那两条用的是「用户自己放的目录 + `yes()`」：同意覆盖之后才失败，用户的东西也必须原样留着。
-- Pi：检测、「AI Agent」一行、那两句「注意」、三个宿主时的宿主选择在 `hosts.test.ts`（`onPath` 给 `['pi']`、`['claude', 'codex', 'pi']`）；装到全局和项目的位置、四种状态、另问与缺省不覆盖、Pi 自己的目录不读不写、第三方 Skill 的那一条命令（**字面值**，`--agent pi`）与复核、MCP 写「不支持」与不可选的原因、三个宿主都选了时每一行不超出 79 列，在 `cli/test/pi.test.ts`；网页界面那一边在 `cli/test/web-pi.test.ts`。**不要写「同时选了 Codex 和 Pi 时出两行」的断言**：那是工单 03 要改掉的中间状态；要两个不同的目录就选 Claude Code 和 Pi。
+- Pi：检测、「AI Agent」一行、那两句「注意」、三个宿主时的宿主选择在 `hosts.test.ts`（`onPath` 给 `['pi']`、`['claude', 'codex', 'pi']`）；装到全局和项目的位置、四种状态、另问与缺省不覆盖、Pi 自己的目录不读不写、第三方 Skill 的那一条命令（**字面值**，`--agent pi`）与复核、三个宿主都选了时每一行不超出 79 列，在 `cli/test/pi.test.ts`；网页界面那一边在 `cli/test/web-pi.test.ts`。Pi 的 MCP 另在 `cli/test/pi-mcp.test.ts`、`cli/test/web-pi-mcp.test.ts`（见 [安装 MCP](./mcp-install.md)）。**不要写「同时选了 Codex 和 Pi 时出两行」的断言**：那是工单 03 要改掉的中间状态；要两个不同的目录就选 Claude Code 和 Pi。
 - 宿主：`onPath` 给 `['codex']`、`['claude', 'codex']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
 
 ### 7. Wrong vs Correct

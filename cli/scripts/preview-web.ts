@@ -18,6 +18,7 @@ import {
   DOCUMENT_TOOLS,
   EXCEL_CONFIGURED,
   LONG_NAME_MCP,
+  PI_MARKITDOWN_CONFIGURED,
   MIXED,
   MIXED_CATALOG,
   SHOWCASE_PURPOSES,
@@ -104,6 +105,8 @@ const NO_HOSTS = { onPath: ['pandoc'] };
 // 三个宿主都检测到；只检测到 Pi。主目录照 LIVED_IN：Codex 和 Pi 看的是同一个共用 skill 目录
 const THREE = { onPath: [...THREE_HOSTS, 'pandoc'] };
 const PI_ONLY = { onPath: ['pi', 'pandoc'] };
+// Pi 的用户级配置里配过 markitdown：MCP 的卡片上 Pi 那一段各看各的配置
+const PI_CONFIGURED = { home: { ...LIVED_IN.home, ...PI_MARKITDOWN_CONFIGURED } };
 
 // 最坏的内容：「文档处理」下二十多条，四种组件加外部项目都有；样例里名字最长的两条（一个 MCP、一个外部项目）、
 // 链接最长的那一条也归到它下面。「联网搜索与文档检索」因此空了，左栏里不出现。
@@ -276,6 +279,11 @@ const KEYED_TO_PROJECT = {
   drive: inOrder(crowded, toProject, picking('wizard'), pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing),
 };
 // 四种状态各一个，外加一个另一个用途下的（onetake 在「UI 设计、图像与视频」下，这张列表里看不到它）
+// 同一批东西、三个宿主：项目里 Pi 那边配过 grok-search（它的 .pi/mcp.json）
+const KEYED_TO_PROJECT_WITH_PI = {
+  ...KEYED_TO_PROJECT,
+  project: { ...KEYED_TO_PROJECT.project, '.pi/mcp.json': JSON.stringify({ mcpServers: { 'grok-search': { command: 'npx' } } }) },
+};
 const MIXED_PICKS = picking('archify', 'explanation', 'pr', 'writing-for-agents', 'onetake');
 const summarized = inOrder(crowded, MIXED_PICKS, reviewing);
 // 两条第三方 Skill：只含一个 skill 的 drawio-skill（两个宿主下都装过了）和含三个的 paper-craft-skills，挑其中两个
@@ -554,18 +562,65 @@ const scenes: Scene[] = [
   },
   {
     title: '浏览 · 三个宿主 · MCP 那一区',
-    note: 'Pi 的 MCP 安装器不装：卡片上 Pi 那一段是「不支持」，仍然勾得上；那一区上方没有为它多一句提醒',
+    note: '卡片上每个宿主一段，各看各的配置：markitdown 在 Pi 里配过，是就绪色的「已配置」；excel 只支持 Claude Code，另外两段是「不支持」。那一区上方没有提醒',
     ...THREE,
+    ...PI_CONFIGURED,
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  {
+    title: '浏览 · 三个宿主 · 装到项目 · MCP 那一区',
+    note: '选了「项目」：Pi 那一段看的是项目里的 .pi/mcp.json（全局配过的 markitdown 在这里是未配置，grok-search 是已配置）；Codex 那一段是「不支持」，那一区上方一行「注意」写明原因。仍然勾得上，装进 Claude Code 和 Pi',
+    ...THREE,
+    ...PI_CONFIGURED,
+    catalog: withKeyed,
+    project: KEYED_TO_PROJECT_WITH_PI.project,
+    drive: inOrder(crowded, toProject, pickingMcp('markitdown')),
+    reveal: 'markitdown',
+  },
+  {
+    title: '浏览 · 读不到 Pi 的配置',
+    note: 'Pi 的 mcp.json 写坏了：MCP 那一区上方一行「注意」，卡片上 Pi 那一段是不上色的「未知」，另外两段照常',
+    ...THREE,
+    home: { ...LIVED_IN.home, '.pi/agent/mcp.json': '{ "mcpServers": ' },
     drive: crowded,
     reveal: 'markitdown',
   },
   { title: '浏览 · 三个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的三段状态都放得下，没有横向滚动条', ...THREE, drive: crowded, viewport: NARROW },
   {
     title: '浏览 · 只检测到 Pi',
-    note: '顶上写一句「装进 Pi」，没检测到的两个写在旁边；MCP 的卡片是不可选的画法，原因是「需要别的 AI Agent」',
+    note: '顶上写一句「装进 Pi」，没检测到的两个写在旁边；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
     ...PI_ONLY,
+    ...PI_CONFIGURED,
     drive: crowded,
     reveal: 'markitdown',
+  },
+  {
+    title: '汇总 · 带 key 的 MCP、装到项目 · 三个宿主',
+    note: 'MCP 装进 Claude Code 和 Pi，每个宿主一行，没有 Codex 的；Pi 那边配过的 grok-search 写「覆盖」和备注。「注意」里：key 会以明文写进 .mcp.json 和 .pi/mcp.json（说变量名和文件，不说值）、两个宿主各一句要批准之后才启用、mistral-ocr 缺必填的 key 这次不装。每一句都完整显示',
+    ...THREE,
+    ...KEYED_TO_PROJECT_WITH_PI,
+  },
+  {
+    title: '汇总 · 带 key 的 MCP、装到项目 · 只检测到 Pi',
+    note: '提醒里的文件是 .pi/mcp.json，启动命令是 pi；没有登录的提醒',
+    ...PI_ONLY,
+    ...KEYED_TO_PROJECT_WITH_PI,
+  },
+  {
+    title: '结果 · 有 MCP · 三个宿主',
+    note: '全局：一个 MCP 在三个宿主下各装一次，三行结果，就绪色的「已配置」；mistral-ocr 缺必填的 key，每个宿主一行「跳过」和原因',
+    ...THREE,
+    catalog: withKeyed,
+    commands: 'succeed',
+    drive: inOrder(crowded, pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished),
+  },
+  {
+    title: '结果 · MCP 的命令没能运行 · 只检测到 Pi',
+    note: 'pi 这个命令没能起来：失败色的 ✗ 和粗体的「失败」，原因里只有哪一步，没有命令、没有 key',
+    ...PI_ONLY,
+    catalog: withKeyed,
+    drive: inOrder(crowded, pickingMcp('markitdown', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished),
   },
   {
     title: '汇总 · 三个宿主',
@@ -583,7 +638,11 @@ const scenes: Scene[] = [
   { title: '英文 · 开场引导 · 三个宿主', note: '英文的提问更长：看三个勾选排不排得下', ...EN, ...THREE, guide: true },
   { title: '英文 · 浏览 · 三个宿主', ...EN, ...THREE, drive: crowded },
   { title: '英文 · 浏览 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、三个宿主', ...EN, ...THREE, drive: crowded, viewport: NARROW },
-  { title: '英文 · 浏览 · 只检测到 Pi', ...EN, ...PI_ONLY, drive: crowded, reveal: 'markitdown' },
+  { title: '英文 · 浏览 · 只检测到 Pi', ...EN, ...PI_ONLY, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
+  { title: '英文 · 浏览 · 三个宿主 · 装到项目 · MCP 那一区', ...EN, ...THREE, ...PI_CONFIGURED, catalog: withKeyed, project: KEYED_TO_PROJECT_WITH_PI.project, drive: inOrder(crowded, toProject, pickingMcp('markitdown')), reveal: 'markitdown' },
+  { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主', note: '英文的提醒更长：三句都完整显示', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI },
+  { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄的面板、四条提醒', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI, viewport: NARROW },
+  { title: '英文 · 结果 · 有 MCP · 三个宿主', ...EN, ...THREE, catalog: withKeyed, commands: 'succeed', drive: inOrder(crowded, pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished) },
   {
     title: '英文 · 开场引导 · 选了项目 · 1024×768',
     note: '最挤的一格：提问更长，放不下时提问和它的控件上下排；目录那一行在任意处断开；没有滚动条、没有被裁掉的字',

@@ -197,6 +197,8 @@ export const MIXED: Pick<World, 'home' | 'links'> = {
 };
 // Claude Code 的用户级配置里已有 excel 这个 MCP
 export const EXCEL_CONFIGURED = { '.claude.json': JSON.stringify({ mcpServers: { excel: { command: 'uvx' } } }) };
+// Pi 的用户级配置里已有 markitdown 这个 MCP
+export const PI_MARKITDOWN_CONFIGURED = { '.pi/agent/mcp.json': JSON.stringify({ mcpServers: { markitdown: { command: 'uvx', args: ['markitdown-mcp'] } } }) };
 // 第三方 Skill 装过的样子：drawio-skill 两个宿主下都装过，paper-analyzer 只在 Claude Code 下装过
 export const THIRD_PARTY_INSTALLED = {
   [`${CLAUDE_SKILLS}/drawio-skill/SKILL.md`]: '# drawio-skill\n',

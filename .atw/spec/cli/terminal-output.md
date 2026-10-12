@@ -572,7 +572,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 
 `cli/scripts/preview.ts` 经 `runInstaller` 按场景表驱动安装器：提问由真实的交互库渲染，按键是脚本发的，输出喂给无头终端（`@xterm/headless`），再把字符格连同样式转成 HTML，每个画面一格，深色和浅色终端各一份。它是视觉评审对照 [界面设计](./ui-design.md) 时用的画面证据；什么时候生成、拿它核对什么，见那份文档的「界面预览页」。下面是场景怎么写。
 
-- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`（Claude Code 和 Codex；Pi 写着未检测到），三个都检测到的给 `onPath: THREE_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。
+- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`（Claude Code 和 Codex；Pi 写着未检测到），三个都检测到的给 `onPath: THREE_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。五种类型同表、三个宿主的用 `THREE_HOSTS_FIVE_KINDS`（Pi 的用户级配置里配过 markitdown），只检测到 Pi 的用 `PI_ONLY_FIVE_KINDS`；三个宿主装到项目再加 `PROJECT_WITH_PI`（项目里 Pi 的 `.pi/mcp.json` 配过 mistral-ocr）。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。例外是「光标停在不可选的行上」：它要按了键才看得到，变体也各拍一个。出错和帮助同样要有英文的变体。
 - **场景缺省替用户在语言提问上按回车**（`cli/test/terminal.ts` 的假键盘做的：等语言提问画出来再按，接受光标起始所在的那一项），`keys` 里不用写它。场景的系统语言是中文，所以缺省得到中文界面，标题区下面留着 `✓ Language / 语言 · 中文`。要拍语言提问本身，给 `answersLanguage: true`，这时它由 `keys` 来按：不给 `keys` 就停在提问上。带 `--lang` 的场景不问语言。语言提问的场景有五个：系统语言是中文、不是中文（它就是英文的变体：按键提示是英文）、选了与系统语言不同的一项、不显示颜色、没有 Unicode。
 - **场景的环境里缺省没有 `COLORTERM`**，大标志走的是洋红那一档；要看渐变给 `env: TRUECOLOR`。标题区的三档各有一个场景（「标题区 · 渐变」「标题区 · 洋红（没有 COLORTERM）」「标题区 · 不显示颜色」——最后一个同时给了 `COLORTERM`，画的是 `NO_COLOR` 压过它）。测试架子同样缺省没有 `COLORTERM`。

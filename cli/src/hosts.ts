@@ -158,7 +158,9 @@ const codex: HostAdapter = (env, homeDir, projectDir) => ({
 /**
  * Pi：以 pi 命令是否可用判断在不在。skill 装进共用 skill 目录（.agents/skills，Codex 已经在用的那一个），不用它自己的
  * ~/.pi/agent/skills：skills CLI 给它只装到这里，本仓库的 skill 和第三方 Skill 才在同一处（ADR-0005）。
- * 它的 MCP 安装器还不装：没有 mcp。
+ * 用户级的 MCP 记在配置目录下 mcp.json 顶层的 mcpServers 里，配置目录缺省是主目录的 .pi/agent，可由 PI_CODING_AGENT_DIR
+ * 改到别处。项目范围的记在项目目录的 .pi/mcp.json 里：添加和移除带上 -l，它就写运行目录下的这个文件；写进去的要用户
+ * 在这个目录下启动它并信任这个项目之后才读。它的添加命令只写配置、不连接服务器，所以远程地址的 MCP 不会当场登录。
  */
 const pi: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'pi',
@@ -167,7 +169,40 @@ const pi: HostAdapter = (env, homeDir, projectDir) => ({
   skillsDir: join(homeDir, '.agents', 'skills'),
   projectSkillsDir: join(projectDir, '.agents', 'skills'),
   skillsCli: { agent: 'pi', env: {} },
+  mcp: {
+    configuredMcps: () => namesIn(join(env['PI_CODING_AGENT_DIR'] || join(homeDir, '.pi', 'agent'), 'mcp.json'), JSON.parse, 'mcpServers'),
+    ...piMcpCommands([]),
+  },
+  projectMcp: {
+    file: PI_PROJECT_MCP_FILE,
+    cwd: projectDir,
+    approval: 'pi',
+    configuredMcps: () => namesIn(join(projectDir, PI_PROJECT_MCP_FILE), JSON.parse, 'mcpServers'),
+    ...piMcpCommands(['-l']),
+  },
 });
+
+// Pi 项目范围的 MCP 配置文件，相对项目目录
+const PI_PROJECT_MCP_FILE = join('.pi', 'mcp.json');
+
+// Pi 添加和移除 MCP 的命令；range 是指定范围的选项：用户级的不带，项目范围的是 -l。选项都跟在名字后面、-- 前面
+function piMcpCommands(range: readonly string[]): Pick<McpConfig, 'addMcp' | 'removeMcp'> {
+  return {
+    addMcp: ({ name, server }, variables) => ({
+      command: 'pi',
+      args: [
+        'mcp',
+        'add',
+        name,
+        ...range,
+        ...('url' in server
+          ? ['--url', server.url]
+          : [...variables.flatMap((variable) => ['--env', { variable }]), '--', server.command, ...server.args]),
+      ],
+    }),
+    removeMcp: (name) => ({ command: 'pi', args: ['mcp', 'remove', name, ...range] }),
+  };
+}
 
 /**
  * host 在 scope 这个安装范围下的 MCP 配置：全局是它的用户级配置，项目是它项目范围的那一份——没有就是装不到这个范围；

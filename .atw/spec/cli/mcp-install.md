@@ -45,12 +45,12 @@ export interface McpConfig {
 }
 // 项目范围的那一份：写在项目目录里，只对这个项目生效
 export interface ProjectMcpConfig extends McpConfig {
-  file: string;      // 配置文件，相对项目目录的写法（.mcp.json）：带 key 的 MCP 的值会以明文写进它
+  file: string;      // 配置文件，相对项目目录的写法（.mcp.json、.pi/mcp.json）：带 key 的 MCP 的值会以明文写进它
   cwd: string;       // 宿主把配置写进它的运行目录，所以命令要在项目目录下运行
-  approval?: string; // 有它表示写进去的 MCP 要用户在宿主里批准之后才启用；值是启动宿主的命令（claude），启动时它会问
+  approval?: string; // 有它表示写进去的 MCP 要用户在宿主里批准之后才启用；值是启动宿主的命令（claude、pi），启动时它会问
 }
 export interface Host {                                    // 不再继承 McpConfig：宿主可以没有 MCP 配置
-  mcp?: McpConfig;                                         // 用户级（全局）的配置；没有它表示这个宿主的 MCP 安装器不装（现在的 Pi）
+  mcp?: McpConfig;                                         // 用户级（全局）的配置；没有它表示这个宿主的 MCP 安装器不装（现在没有这样的宿主，留给 omp）
   id: string;                                              // 目录里指代它的名字：claude-code、codex、pi
   // …name、detected、skillsDir 见「安装 skill」
   projectMcp?: ProjectMcpConfig;                           // 有 mcp 而没有它表示这个宿主的 MCP 只能装到全局（Codex）
@@ -142,23 +142,24 @@ export function systemCommandRunner(): CommandRunner;
 
 `command` 和 `args` 收得这么紧，是因为它们有三个去处：原样打到终端上让用户确认、交给宿主的命令、被宿主记进配置之后每次启动都执行。规则保证里面没有空白、引号和任何 shell 会另作解释的字符，所以展示出来的那一行没有歧义，Windows 上经 `cmd.exe` 起 `.cmd` 时也不必转义引号。代价是带空格的参数、带查询串的网址参数、Windows 路径都写不进目录。这条规则是工单 08 的实现者定的，**维护者尚未确认**；要放宽先改这里和 `catalog.ts` 的 `COMMAND_WORD`，并重新核对 `notice-text.ts` 里展示命令时加引号的判断（`PLAIN_ARGUMENT`）。
 
-**两个宿主的命令与配置文件**（2026-10-09 对照官方文档，并在本机用 claude 2.1.295、codex 0.162.0 在临时配置目录里实测）
+**三个宿主的命令与配置文件**（Claude Code 和 Codex：2026-10-09 对照官方文档，并在本机用 claude 2.1.295、codex 0.162.0 在临时配置目录里实测。Pi：2026-10-12 对照本机 pi 1.1.0 随包的 `docs/cli.md`、`docs/mcp.md`、`docs/environment-variables.md`，并读了它解析 `mcp` 子命令的源码 `dist/extensions/mcp/cli.js`——**只读，没有执行过**，真机走查由维护者在虚拟机里做）
 
-| | Claude Code | Codex |
-|---|---|---|
-| 添加本地进程 | `claude mcp add --scope user <名字> -- <命令> <参数…>` | `codex mcp add <名字> -- <命令> <参数…>` |
-| 添加远程地址 | `claude mcp add --scope user --transport http <名字> <网址>` | `codex mcp add <名字> --url <网址>` |
-| 添加带环境变量的本地进程 | `claude mcp add --scope user <名字> -e <变量>=<值> -- <命令> <参数…>` | `codex mcp add <名字> --env <变量>=<值> -- <命令> <参数…>` |
-| 移除 | `claude mcp remove --scope user <名字>` | `codex mcp remove <名字>` |
-| 同名已存在时再添加 | **失败**，退出状态 1（`already exists in user config`） | 直接覆盖，退出状态 0 |
-| 移除一个不存在的 | 失败，退出状态 1 | 成功，退出状态 0 |
-| 用户级配置 | `<配置目录>/.claude.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是主目录，`CLAUDE_CONFIG_DIR` 非空时用它 | `<CODEX_HOME>/config.toml` 的 `mcp_servers` 表；`CODEX_HOME` 缺省是 `<主目录>/.codex` |
+| | Claude Code | Codex | Pi |
+|---|---|---|---|
+| 添加本地进程 | `claude mcp add --scope user <名字> -- <命令> <参数…>` | `codex mcp add <名字> -- <命令> <参数…>` | `pi mcp add <名字> -- <命令> <参数…>` |
+| 添加远程地址 | `claude mcp add --scope user --transport http <名字> <网址>` | `codex mcp add <名字> --url <网址>` | `pi mcp add <名字> --url <网址>` |
+| 添加带环境变量的本地进程 | `claude mcp add --scope user <名字> -e <变量>=<值> -- <命令> <参数…>` | `codex mcp add <名字> --env <变量>=<值> -- <命令> <参数…>` | `pi mcp add <名字> --env <变量>=<值> -- <命令> <参数…>` |
+| 移除 | `claude mcp remove --scope user <名字>` | `codex mcp remove <名字>` | `pi mcp remove <名字>` |
+| 同名已存在时再添加 | **失败**，退出状态 1（`already exists in user config`） | 直接覆盖，退出状态 0 | 直接替换，退出状态 0 |
+| 移除一个不存在的 | 失败，退出状态 1 | 成功，退出状态 0 | 失败，退出状态 1 |
+| 用户级配置 | `<配置目录>/.claude.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是主目录，`CLAUDE_CONFIG_DIR` 非空时用它 | `<CODEX_HOME>/config.toml` 的 `mcp_servers` 表；`CODEX_HOME` 缺省是 `<主目录>/.codex` | `<配置目录>/mcp.json` 顶层的 `mcpServers`（JSON 对象，键是名字）；配置目录缺省是 `<主目录>/.pi/agent`，`PI_CODING_AGENT_DIR` 非空时用它 |
 
 - 远程地址只有一种：可流式的 HTTP。SSE、请求头鉴权都不在范围内。
-- 环境变量一个变量一个 `-e` / `--env`，照目录里的顺序，**跟在名字后面、`--` 前面**。Claude Code 的 `-e` 能连收几个值，放在名字前面会把名字也收进去。两个宿主都把值原样记进配置里这个 MCP 的 `env`（实测过带 `=`、`&`、`+`、`/` 的值），添加命令自己的输出里不回显值。Codex 对 `--url` 加 `--env` 直接报错（`command is required`），这是“环境变量只适用于本地进程”在宿主那边的依据。
+- **Pi 的选项都跟在名字后面、`--` 前面**：它的解析是名字之后遇到 `--`（或凑够两个位置参数）就把剩下的原样当作启动命令，所以 `--env`、项目范围的 `-l` 放在这之前才被它认。它的添加命令**只写配置、不连接服务器**（`docs/cli.md`：does not connect），不事先检查版本：没有 `pi mcp` 的旧版 Pi 下这条命令非零退出，照普通的失败报告。Pi 把只差 `-` 和 `_` 的名字当成同一个服务器，状态探测按名字原样比，不管这一条（目录里现有的 MCP 名字没有只差这两个字符的）。
+- 环境变量一个变量一个 `-e` / `--env`，照目录里的顺序，**跟在名字后面、`--` 前面**。Claude Code 的 `-e` 能连收几个值，放在名字前面会把名字也收进去。Claude Code 和 Codex 都把值原样记进配置里这个 MCP 的 `env`（实测过带 `=`、`&`、`+`、`/` 的值），添加命令自己的输出里不回显值。Pi 也是从第一个 `=` 处切开、把后面的原样记进 `env`（读源码确认的），输出里同样不回显；但 **Pi 读配置时会展开值里的 `${名字}`，整个值以 `!` 开头时当作命令去执行**（它的 `docs/mcp.md`）——key 的值长成这样的话到了 Pi 那里就不是原样了。安装器不为此改写或拒绝值，这是已知的出入，要不要处理由维护者定。Codex 对 `--url` 加 `--env` 直接报错（`command is required`），这是“环境变量只适用于本地进程”在宿主那边的依据。
 - **各系统上命令相同，原生 Windows 上也不给本地进程包 `cmd /c`**。Claude Code 的旧文档要求过（否则 `npx` 这类 `.cmd` 起不来，报 Connection closed）；它的更新日志 2.1.119 写明移除了那条“需要 cmd /c 包装”的警告（称其为误报），现行的 MCP 文档里也已经没有这条说明；Codex 的文档从未要求过。2.1.119 之前的 Claude Code 不在支持之列。这个结论来自文档和更新日志，**没有在 Windows 真机上实测**；`mcp.test.ts` 里有一条 `platform: 'win32'` 的测试守着“不包”这个决定。
 - 上表是全局（用户级）的写法；装到项目的见下面「装到项目」。
-- 两个环境变量是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。它在第三方 Skill 上有后果：skills CLI 认这个变量，所以安装器调用它时把这个变量清空，让它也装到 `<主目录>/.claude/skills`（见 [安装 skill](./skill-install.md)）；哪天 skill 目录改成认它，那一处清空要一起拿掉。
+- 三个环境变量（`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`PI_CODING_AGENT_DIR`）是照着“命令会写到哪，就去哪看”定的：宿主的命令继承同一份环境。**skill 目录不认 `CLAUDE_CONFIG_DIR`**（仍是 `<主目录>/.claude/skills`），同一份适配里两套口径，这是已知的不一致，要不要改由维护者定。它在第三方 Skill 上有后果：skills CLI 认这个变量，所以安装器调用它时把这个变量清空，让它也装到 `<主目录>/.claude/skills`（见 [安装 skill](./skill-install.md)）；哪天 skill 目录改成认它，那一处清空要一起拿掉。
 
 **状态（`mcpStatuses`）**
 
@@ -193,29 +194,30 @@ export function systemCommandRunner(): CommandRunner;
 
 **装到项目**（任务 `10-10-catalog-purpose-categories` 工单 11；2026-10-11 用 claude 2.1.295、codex 0.162.0 在临时目录里实测并对照官方文档，记录在该任务的 `research/project-mcp-trial-record.md`）
 
-| | Claude Code | Codex |
-|---|---|---|
-| 能不能 | 能 | **不能**：没有 `projectMcp`，见下面的 Design Decision |
-| 添加本地进程 | `claude mcp add --scope project <名字> -- <命令> <参数…>` | — |
-| 添加远程地址 | `claude mcp add --scope project --transport http <名字> <网址>` | — |
-| 添加带环境变量的本地进程 | `claude mcp add --scope project <名字> -e <变量>=<值> -- <命令> <参数…>` | — |
-| 移除 | `claude mcp remove --scope project <名字>` | — |
-| 在哪运行 | **项目目录**（`{ cwd }`）：它把配置写进运行目录的 `.mcp.json`，在 git 仓库的子目录里也是写子目录，不找仓库根 | — |
-| 同名已存在时再添加 / 移除一个不存在的 | 都失败，退出状态 1——和用户级一样 | — |
-| 已配置的从哪看 | `<项目目录>/.mcp.json` 顶层的 `mcpServers`；不认 `CLAUDE_CONFIG_DIR` | — |
-| 写进去之后 | **要用户批准才启用**：在这个目录下启动 `claude` 时它会问（`claude mcp get` 显示 `Pending approval`） | — |
+| | Claude Code | Codex | Pi（任务 `10-12-installer-add-pi-omp-hosts` 工单 02；出处同上面那张表，没有执行过） |
+|---|---|---|---|
+| 能不能 | 能 | **不能**：没有 `projectMcp`，见下面的 Design Decision | 能 |
+| 添加本地进程 | `claude mcp add --scope project <名字> -- <命令> <参数…>` | — | `pi mcp add <名字> -l -- <命令> <参数…>` |
+| 添加远程地址 | `claude mcp add --scope project --transport http <名字> <网址>` | — | `pi mcp add <名字> -l --url <网址>` |
+| 添加带环境变量的本地进程 | `claude mcp add --scope project <名字> -e <变量>=<值> -- <命令> <参数…>` | — | `pi mcp add <名字> -l --env <变量>=<值> -- <命令> <参数…>` |
+| 移除 | `claude mcp remove --scope project <名字>` | — | `pi mcp remove <名字> -l` |
+| 在哪运行 | **项目目录**（`{ cwd }`）：它把配置写进运行目录的 `.mcp.json`，在 git 仓库的子目录里也是写子目录，不找仓库根 | — | **项目目录**（`{ cwd }`）：带 `-l`（`--local`）时它写的是运行目录下的 `.pi/mcp.json` |
+| 同名已存在时再添加 / 移除一个不存在的 | 都失败，退出状态 1——和用户级一样 | — | 添加是替换；移除失败，退出状态 1——和用户级一样 |
+| 已配置的从哪看 | `<项目目录>/.mcp.json` 顶层的 `mcpServers`；不认 `CLAUDE_CONFIG_DIR` | — | `<项目目录>/.pi/mcp.json` 顶层的 `mcpServers`；不认 `PI_CODING_AGENT_DIR` |
+| 写进去之后 | **要用户批准才启用**：在这个目录下启动 `claude` 时它会问（`claude mcp get` 显示 `Pending approval`） | — | **要用户信任这个项目才读**：在这个目录下启动 `pi` 时它会问（它的添加命令自己也说 `ignored until you start pi in the project and trust it`） |
 
 - 与全局只差上表这几处：先移除再添加、状态未知时先尝试移除、每个宿主各一项、一项失败不影响其余项、key 怎么问怎么传、失败原因的写法，都一样。全局的行为一个字不变（全局的命令仍然不给 `options`）。
 - 用户级配置这时**不读也不写**：它写坏了不出「读不到配置」那一行；装完之后用户级配置里没有这一条。反过来选全局时不读项目里的 `.mcp.json`。
 - **Codex 那一栏每个 MCP 都是「不支持」**，不产生安装项，汇总、命令、结果里都没有它；远程地址的 MCP 也就没有登录的提醒。**那一栏里有 `global-only` 时**（列表里至少有一个条目本身支持这个宿主），列表上方有一行写明原因的「注意  Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令」（`ui.mcpColumnNotices` 的 `globalOnly`；和「读不到配置」那一行同一个画法、挨着排，它在前）。列表里的 MCP 本来就都不支持它时（全是 `unsupported`）没有这一行：换成全局也装不进它。所选的宿主里只有它时 MCP 的行不可选，原因「只能装到全局」。
 - 汇总下方多两行提醒，都在「开始安装吗」之前，排在「key 以占位符显示」之后、「必填的 key 没填」之前：
-  - **这一轮有带着 key 的 MCP 要装到项目**（命令里有占位符的那些）：「注意  `<变量名…>` 会以明文写进 `.mcp.json`，不要提交，也不要发给别人」。写的是变量名和文件名（`projectMcp.file`），**没有值**。可选的 key 留空的不带变量，不算。
-  - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。
+  - **这一轮有带着 key 的 MCP 要装到项目**（命令里有占位符的那些）：「注意  `<变量名…>` 会以明文写进 `.mcp.json`，不要提交，也不要发给别人」。写的是变量名和文件名（`projectMcp.file`），**没有值**。可选的 key 留空的不带变量，不算。装进了几个宿主就把几个文件都点到，照宿主的先后用并列的写法连起来（「…会以明文写进 .mcp.json、.pi/mcp.json，…」）。
+  - **这一轮有 MCP 要装进带 `approval` 的宿主**：「注意  Claude Code 的 MCP 写进当前目录的 .mcp.json，要你批准之后才启用：在这个目录下启动 claude 时它会问」。MCP 的小表没有「位置」一栏，装到项目时写进了哪个文件就靠这一行交代——不带 key 的也有它。**每个这样的宿主各一句**，照宿主的先后：Pi 的是「注意  Pi 的 MCP 写进当前目录的 .pi/mcp.json，要你批准之后才启用：在这个目录下启动 pi 时它会问」——Pi 那边叫「信任这个项目」，文案和 Claude Code 用的是同一句（`mcpApprovalNotice`），没有另写。
+  - Pi 的配置文件写成 `join('.pi', 'mcp.json')`：Windows 上显示成 `.pi\mcp.json`，和汇总里 skill 的位置一样跟着系统的分隔符走。
 - 规格里「Codex 只对受信任的项目读这份配置」那一行随 Codex 不支持而没有做；哪天给 Codex 补上 `projectMcp`，这一行要一起补（那条事实已经实测过，在试通记录里）。
 
 **宿主可以没有 MCP 配置**（任务 `10-12-installer-add-pi-omp-hosts` 工单 01）
 
-宿主的适配里没有 `mcp`，就是这个宿主的 MCP 安装器不装。**现在是 Pi**——它的 MCP 在同一个任务的工单 02 接上，那时 Pi 的适配补上 `mcp` 和 `projectMcp`，下面这几条对它不再成立；工单 04 的 omp 用的是同一个口子，并且一直这样。
+宿主的适配里没有 `mcp`，就是这个宿主的 MCP 安装器不装。工单 01 时是 Pi；**工单 02 给 Pi 补上了 `mcp` 和 `projectMcp`，现在三个宿主都有 MCP 配置，这个口子没有宿主在用**——它留给工单 04 的 omp，那时下面这几条重新有了对象。口子本身（`no-config` 这个状态、算计划时跳过）没有动，但**此刻没有经入口的测试守着它**：工单 01 为 Pi 写的那一组随 Pi 接上 MCP 删掉了，工单 04 要照下面这张表为 omp 重写。
 
 | 哪里 | 怎么办 |
 |------|--------|
@@ -224,7 +226,7 @@ export function systemCommandRunner(): CommandRunner;
 | 可不可选（`listingStatus`） | 所选的宿主都装不了它时不可选。原因照原来的规则：各栏里有 `global-only` 的是「只能装到全局」，否则是「需要别的 AI Agent」。只选了没有 MCP 配置的宿主时落在后一种；它和 Codex 一起选、安装范围是项目时落在前一种 |
 | 算计划（`planInstall`） | 不为这样的宿主出 MCP 的项：汇总、将执行的命令、结果里都没有它；key 仍只问一次，用于别的宿主 |
 | 提醒 | 它不进 `mcpColumnHosts` 的两组（只能装到全局的、配置读不到的），列表上方不为它多一句；`notices` 里的明文 key、要批准、要登录也都没有它 |
-| 外部命令与配置文件 | **不执行这个宿主的任何命令，不读也不写它的配置文件**——它自己的配置（Pi 的 `~/.pi/agent/mcp.json`）写坏了也不提 |
+| 外部命令与配置文件 | **不执行这个宿主的任何命令，不读也不写它的配置文件**——它自己的配置写坏了也不提 |
 
 **在混合列表里（终端界面的提问在 `flow.ts` 的 `planEntries`；算成要装的各项在 `plan.ts` 的 `planInstall`，执行在 `run-plan.ts` 的 `runPlan`）**
 
@@ -271,7 +273,7 @@ MCP 没有自己的入口：它和本仓库的 skill、外部项目在同一张�
 
 **宿主添加远程地址时会当场登录**
 
-Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth，会**当场打开浏览器登录并等到登录完成才结束**，授权网址打在它自己的标准输出上（读它的源码 `codex-rs/cli/src/mcp_cmd.rs` 确认的）。安装器不显示宿主命令的输出，所以事先说：适配里有 `remoteMcpLogin`（值是事后补登录的命令，Codex 是 `codex mcp login`）的宿主，只要这一轮有远程地址的 MCP 要装进它，「将执行的命令」下面就多一行「注意」，写明可能当场打开浏览器、浏览器打不开时按 Ctrl+C、之后执行 `<补登录的命令> <名称>`。Claude Code 的添加命令不登录，没有这个字段。
+Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth，会**当场打开浏览器登录并等到登录完成才结束**，授权网址打在它自己的标准输出上（读它的源码 `codex-rs/cli/src/mcp_cmd.rs` 确认的）。安装器不显示宿主命令的输出，所以事先说：适配里有 `remoteMcpLogin`（值是事后补登录的命令，Codex 是 `codex mcp login`）的宿主，只要这一轮有远程地址的 MCP 要装进它，「将执行的命令」下面就多一行「注意」，写明可能当场打开浏览器、浏览器打不开时按 Ctrl+C、之后执行 `<补登录的命令> <名称>`。Claude Code 的添加命令不登录，没有这个字段。**Pi 也没有**：`pi mcp add` 只写配置、不连接服务器（它的 `docs/cli.md` 写明 `does not connect`，源码里添加之后只打一句「需要登录的话执行 `pi mcp login <名字>`」），远程地址的 MCP 装进 Pi 时不会当场开浏览器，所以不提醒；要 OAuth 的服务器由用户之后在 Pi 里登录，安装器不替它登录。
 
 这是维护者在三个方案里选的（2026-10-09）；另两个是把宿主命令的输出透传到屏幕上、留作已知问题另开工单。远程终端里仍然看不到授权网址，这一项会一直显示进行中，直到用户按 Ctrl+C（配置这时已经写入）。
 
@@ -306,7 +308,11 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - Good（装到项目）：只检测到 Claude Code，选了项目，勾了一个带必填 key 的 → 一条 `claude mcp add --scope project …`，在项目目录下运行；汇总下方有明文写入和要批准的两行提醒；主目录下的用户级配置没有变化。
 - Base（装到项目）：两个宿主都选了 → Codex 那一栏都是「不支持」，列表上方一行「注意」；勾上的 MCP 只装进 Claude Code，汇总、命令、结果里没有 Codex。
 - Base（装到项目）：只检测到 Codex → MCP 的行都不可选，原因「只能装到全局」；同一张列表里的 skill 照常装到项目。
-- Base（没有 MCP 配置的宿主）：只检测到 Pi → MCP 的行都不可选，原因「需要别的 AI Agent」，选全局选项目都是这一句；同一张列表里的 skill 照常装给 Pi。选了 Claude Code 和 Pi → Pi 那一栏都是「不支持」，勾上的 MCP 只装进 Claude Code，记录到的命令里没有一条是 `pi`。
+- Good（Pi，装到全局）：只检测到 Pi，勾了一个本地进程的和一个远程地址的 → 两条 `pi mcp add …`，不指定运行目录，没有登录的提醒，结果两行「已配置」。设了 `PI_CODING_AGENT_DIR` 时状态看的是那个目录里的 `mcp.json`。
+- Good（Pi，装到项目）：只检测到 Pi，选了项目，勾了一个带必填 key 的 → 一条 `pi mcp add <名字> -l --env <变量>=<值> -- …`，在项目目录下运行；汇总下方有明文写进 `.pi/mcp.json` 和要批准（启动命令 `pi`）的两行提醒；主目录下什么都不多。
+- Base（三个宿主）：都选了、装到全局 → 一个 MCP 各装一次，三条命令、三行结果；key 只问一次。装到项目 → Codex 那一栏「不支持」并说明原因，装进 Claude Code 和 Pi，明文的提醒点到两个文件，两个宿主各一句要批准。
+- Base（Pi 的配置写坏了）：列表上方一行「注意  读不到 Pi 的配置…」，Pi 那一栏都是「未知」；装的时候先 `pi mcp remove`（失败了也接着做）再 `pi mcp add`。
+- Bad（旧版 Pi 没有 `pi mcp`，或 `pi` 起不来）：这一行「失败 添加命令退出状态 1」/「失败 添加命令没能运行（ENOENT）」，别的宿主、别的项照常，安装器不退出。
 
 ### 6. Tests Required
 
@@ -328,7 +334,8 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 - `mixed.test.ts`：三种类型同表（段的先后、两种类型的状态落在各自宿主那一栏、原因比状态栏宽时各行的说明仍从同一列起、读不到配置的提示只在列表里有 MCP 时出现）；一次勾 skill、MCP、外部项目（汇总的小表、命令只有 MCP 的、skill 的各行排在 MCP 之前、取消什么都不做、返回修改勾选都在、三种失败互不影响、向 GitHub 查询失败时 MCP 照常装）；汇总里的提醒（先后、几行挨着、没填 key 的不算进 N、只剩 skill 时没有命令分区、全被跳过时直接是结果再是外部项目）。
 
-- 没有 MCP 配置的宿主在 `cli/test/pi.test.ts` 的「Pi 的 MCP 安装器不装」和 `cli/test/web-pi.test.ts` 的同名一组：只选它时不可选与原因（全局、项目各一条）、和别的宿主一起选时那一栏的「不支持」、只装进别的宿主、没有它的命令、它的配置文件不读不写、英文。工单 02 给 Pi 接上 MCP 之后这一组要改写（或挪给 omp 用）。
+- Pi 的 MCP 在 `cli/test/pi-mcp.test.ts`，网页界面那一边在 `cli/test/web-pi-mcp.test.ts`：全局和项目的添加（两种连接方式、带 key）与移除命令是**字面值**（项目的带 `-l`、`cwd` 是 `result.project`）；汇总里展示的就是那几条、key 的位置是占位符；状态按范围读（用户级、`PI_CODING_AGENT_DIR`、项目里的 `.pi/mcp.json`、每一种读不了、另一个范围的那一份写坏了不提）；已配置的先移除再添加、状态未知的先尝试移除；装完再进列表看到新状态；非零退出与没能起来（别的宿主照常）；三个宿主时三栏状态、三条命令、三行结果、key 只问一次、值不出现在终端和任何文件里、必填的没填每个宿主一行跳过；装到项目的两句提醒（文件名、启动命令、先后、选全局时没有）、三个宿主时两个文件与两句要批准；没有登录的提醒（和 Codex 一起选时只说 Codex）；中英文与 79 列。
+- **没有 MCP 配置的宿主此刻没有测试**：工单 01 写在 `pi.test.ts`、`web-pi.test.ts` 里的「Pi 的 MCP 安装器不装」两组随 Pi 接上 MCP 删掉了。工单 04 为 omp 重写时要盖住的：只选它时不可选与原因（全局、项目各一条）、和别的宿主一起选时那一栏的「不支持」、只装进别的宿主、没有它的命令、它的配置文件不读不写、英文。
 - 装到项目的在 `cli/test/scope.test.ts` 的「把 MCP 装到项目」几组（列表上方两行「注意」上下的空行在 `spacing.test.ts`）：Claude Code 的添加（两种连接方式、带 key）与移除命令是**字面值**且 `cwd` 是 `result.project`；汇总里展示的就是那几条；状态按范围读（项目里配过而全局没有、反过来、`.mcp.json` 写坏、用户级配置写坏不提）；装完再进列表看到新状态（`commandResult` 照真的来：往 `cwd` 的 `.mcp.json` 里写）；明文写入的提醒在「开始安装吗」之前、有变量名和文件名而没有值，可选的 key 留空时没有，选全局时没有；要批准的提醒；Codex 那一栏的「不支持」、列表上方的说明（列表里的 MCP 本来就都不支持它时没有）、只装进 Claude Code、没有登录的提醒；只有 Codex 时不可选与原因；`hosts` 只含一个宿主的条目在两种原因之间怎么选；英文界面与 79 列；真实的画面里在不可选的行上按空格勾不上。
 
 测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，**它自己抛出**表示执行器当场抛出、连承诺都没返回，什么都不返回就是成功；命令照样进 `result.commands`（里面是代入了值的字符串参数）。`secret(值)`、`blank()` 回答隐藏输入。

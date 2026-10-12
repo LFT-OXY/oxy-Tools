@@ -1,9 +1,9 @@
-// 网页界面里的 Pi：都经主接缝，架子扮演浏览器。装到哪、执行哪条命令、MCP 怎么说，和终端界面是同一份（pi.test.ts）
+// 网页界面里的 Pi：都经主接缝，架子扮演浏览器。装到哪、执行哪条命令，和终端界面是同一份（pi.test.ts）；它的 MCP 在 web-pi-mcp.test.ts
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ComponentView, RunView, Scope, SummaryView, ViewState } from '../src/web-protocol.ts';
-import { EMPTY_CATALOG, SAMPLE_MCPS, SAMPLE_THIRD_PARTY, catalogDir, choose, pick, run, underWebSearch, writeTree, type Page } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_THIRD_PARTY, catalogDir, choose, pick, run, writeTree, type Page } from './harness.ts';
 
 const WEB_SEARCH = '联网搜索与文档检索';
 const ONLY_PI = ['pi'];
@@ -375,74 +375,5 @@ describe('网页界面：把第三方 Skill 装给 Pi', () => {
     });
 
     expect(outcomes(batch)).toEqual(['note-taker Pi 失败 安装命令已结束，但目标位置没有 SKILL.md']);
-  });
-});
-
-// 样例的两个 MCP 在同一个用途下
-const withMcps = (): string => catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS) } });
-const CLAUDE_ADD_LOCAL = { command: 'claude', args: ['mcp', 'add', '--scope', 'user', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'] };
-
-// Pi 的适配还没有 MCP 配置：它的 MCP 安装器不装
-describe('网页界面：Pi 的 MCP 安装器不装', () => {
-  it('只检测到 Pi：MCP 不可选，原因是「需要别的 AI Agent」，勾不上；选了项目也是这一句；那一区没有提醒', async () => {
-    let listed: ViewState | undefined;
-    let inProject: ViewState | undefined;
-    let refused: number | undefined;
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ONLY_PI,
-      page: async (page) => {
-        listed = await open(page, WEB_SEARCH);
-        refused = await post(page, { type: 'pick', kind: 'mcp', name: 'docs-local', on: true });
-        inProject = await scope(page, 'project');
-        await done(page);
-      },
-    });
-
-    expect(card(listed, 'docs-local')).toMatchObject({ unavailable: '需要别的 AI Agent', statuses: [{ host: 'Pi', text: '不支持', tone: 'faint' }] });
-    expect(card(inProject, 'docs-local')).toMatchObject({ unavailable: '需要别的 AI Agent', statuses: [{ host: 'Pi', text: '不支持', tone: 'faint' }] });
-    expect(JSON.stringify([listed, inProject])).not.toContain('只能装到全局');
-    expect(refused).toBe(400);
-    expect(result.commands).toEqual([]);
-  });
-
-  it('留着 Claude Code 和 Pi：Pi 那一段是「不支持」，照常勾得上；只装进 Claude Code，汇总和结果里没有 Pi，没有一条 pi 命令', async () => {
-    let listed: ViewState | undefined;
-    let summary: SummaryView | undefined;
-    let batch: RunView | undefined;
-    const result = await run({
-      catalog: withMcps(),
-      onPath: ALL_HOSTS,
-      page: async (page) => {
-        await open(page, WEB_SEARCH);
-        listed = await host(page, 'codex', false);
-        await tick(page, 'mcp', 'docs-local');
-        summary = await review(page);
-        batch = await install(page, summary);
-        await done(page);
-      },
-    });
-
-    expect(statuses(listed, 'docs-local')).toEqual(['Claude Code 未配置', 'Pi 不支持']);
-    expect(card(listed, 'docs-local')?.unavailable).toBeUndefined();
-    expect(rows(summary)).toEqual(['docs-local · MCP', '  Claude Code | 新装']);
-    expect(outcomes(batch)).toEqual(['docs-local Claude Code 已配置']);
-    expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
-    expect(filesUnder(result.home)).toEqual([]);
-  });
-
-  it('英文界面：那一段和不可选的原因都是英文', async () => {
-    let listed: ViewState | undefined;
-    await run({
-      argv: ['--lang', 'en'],
-      catalog: withMcps(),
-      onPath: ONLY_PI,
-      page: async (page) => {
-        listed = await open(page, 'Web search & docs retrieval');
-        await done(page);
-      },
-    });
-
-    expect(card(listed, 'docs-local')).toMatchObject({ unavailable: 'needs another AI Agent', statuses: [{ host: 'Pi', text: 'unsupported', tone: 'faint' }] });
   });
 });

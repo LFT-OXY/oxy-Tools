@@ -17,6 +17,7 @@ import {
   CLAUDE_SKILLS,
   CODEX_SKILLS,
   THREE_HOSTS,
+  PI_MARKITDOWN_CONFIGURED,
   DOCUMENT_MCPS,
   DOCUMENT_THIRD_PARTY,
   DOCUMENT_TOOLS,
@@ -394,8 +395,24 @@ const toProjectMcpSummary = [...intoProject, ...down(6), KEY.space, ...down(2), 
 const intoProjectCodexOnly = [...down(5), KEY.enter, KEY.space, KEY.enter, KEY.down, KEY.enter, ...down(6)];
 // guizang-ppt-skill 装进 Claude Code 的那条命令以 1 退出
 const GUIZANG_FAILS = { thirdPartyFails: ['guizang-ppt-skill@claude-code'] };
-// 三个宿主都检测到：五种类型同表的样例照 FIVE_KINDS，可执行路径上多一个 pi
-const THREE_HOSTS_FIVE_KINDS = { ...FIVE_KINDS, onPath: [...THREE_HOSTS, 'pandoc'] };
+// 三个宿主都检测到：五种类型同表的样例照 FIVE_KINDS，可执行路径上多一个 pi；Pi 的用户级配置里配过 markitdown
+const THREE_HOSTS_FIVE_KINDS = { ...FIVE_KINDS, onPath: [...THREE_HOSTS, 'pandoc'], home: { ...FIVE_KINDS.home, ...PI_MARKITDOWN_CONFIGURED } };
+// 只检测到 Pi：不问装进哪个宿主；主目录照上面那一份
+const PI_ONLY_FIVE_KINDS = { ...THREE_HOSTS_FIVE_KINDS, onPath: ['pi', 'pandoc'] };
+// 勾上 markitdown 和 mistral-ocr（key 必填），填好 key，停在汇总确认上；光标先下移六行到第一个 MCP
+const toMcpSummary = [...down(6), KEY.space, ...down(2), KEY.space, KEY.enter, PASTED_KEY, KEY.enter];
+// 三个宿主装到项目：项目里 Claude Code 配过 markitdown（照 PROJECT），Pi 配过 mistral-ocr
+const PROJECT_WITH_PI: Pick<Scene, 'project' | 'answersScope'> = {
+  ...PROJECT,
+  project: { ...PROJECT.project, '.pi/mcp.json': JSON.stringify({ mcpServers: { 'mistral-ocr': { command: 'npx', args: ['-y', 'mistral-ocr-mcp'] } } }) },
+};
+// Pi 的用户级配置写坏了，读不出里面有哪些 MCP
+const PI_UNREADABLE = { '.pi/agent/mcp.json': '{ "mcpServers": ' };
+// 假装执行命令：pi 这个命令起不来，别的都成功
+const piCannotStart: CommandRunner = async (command) => {
+  if (command === 'pi') throw Object.assign(new Error('spawn pi ENOENT'), { code: 'ENOENT' });
+  return ok;
+};
 
 const scenes: Scene[] = [
   { title: '启动与加载', note: 'npx oxy-tools · 最先打出 OXY 大标志；读取目录时行首的符号转动', catalog: neverLoads },
@@ -567,12 +584,20 @@ const scenes: Scene[] = [
   { title: 'skill 多选列表 · 四种状态并存 · 三个宿主', note: '每个宿主一栏。Codex 和 Pi 两栏写的一样：它们的 skill 装在同一个目录里', onPath: THREE_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '汇总确认 · 含覆盖项 · 三个宿主', note: '每个 skill 在每个宿主下各一行，名字只写在第一行；每一行都不折行', onPath: THREE_HOSTS, ...MIXED, keys: twoHosts(toMixedSummary) },
   { title: '结果 · 含覆盖项 · 三个宿主', note: '按宿主分别列出，各有各的结果', onPath: THREE_HOSTS, ...MIXED, catalog: oneFails, keys: twoHosts(declineOverwrite) },
-  { title: '混合列表 · 五种类型 · 三个宿主', note: '三栏状态之后说明一栏仍放得下。Pi 的 MCP 安装器不装：它那一栏每个 MCP 都写不支持，行仍可选，只装进另外的宿主', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
+  { title: '混合列表 · 五种类型 · 三个宿主', note: '三栏状态之后说明一栏仍放得下。MCP 在每个宿主那一栏各看各的配置：markitdown 在 Pi 里配过；excel 只支持 Claude Code，另外两栏写不支持', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
   { title: '第三方 Skill 的清单 · 三个宿主', note: '每个 skill 一行，三个宿主各一栏状态', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
-  { title: '汇总确认 · 含第三方 Skill · 三个宿主', note: '第三方 Skill 每个 skill、每个宿主一行，装给 Pi 的那条命令是 --agent pi；MCP 只有装进 Claude Code 和 Codex 的行，没有 Pi 的', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
-  { title: '结果 · 含第三方 Skill · 三个宿主', note: '每一行都不折行；MCP 的结果里没有 Pi', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
-  { title: '混合列表 · 只检测到 Pi', note: '不问装进哪个宿主。skill 和第三方 Skill 照常可选，状态看的是共用 skill 目录；MCP 的行不可选，原因是「需要别的 AI Agent」', ...FIVE_KINDS, onPath: ['pi', 'pandoc'], keys: [...toMixedDocuments(), ...down(6)] },
+  { title: '汇总确认 · 含第三方 Skill · 三个宿主', note: '第三方 Skill 每个 skill、每个宿主一行，装给 Pi 的那条命令是 --agent pi；MCP 每个宿主一行：markitdown 在 Pi 里配过，那一行是覆盖，先 pi mcp remove 再 pi mcp add', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...toThirdPartySummary] },
+  { title: '结果 · 含第三方 Skill · 三个宿主', note: '每一行都不折行；MCP 每个宿主一行结果', ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
+  { title: '混合列表 · 只检测到 Pi', note: '不问装进哪个宿主。skill 和第三方 Skill 的状态看的是共用 skill 目录；MCP 的状态看的是 Pi 的用户级配置（markitdown 配过）；excel 只支持 Claude Code，不可选，原因是「需要别的 AI Agent」', ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...down(6)] },
   { title: '汇总与结果 · 只检测到 Pi', note: '汇总和结果里宿主写的是 Pi，位置在共用 skill 目录', onPath: ['pi'], keys: install },
+  { title: '汇总确认 · 带 key 的 MCP · 只检测到 Pi', note: '执行的是 Pi 自己的命令：已配置的先 pi mcp remove 再 pi mcp add；环境变量用 --env 带上，key 的位置是占位符。远程地址的也不提醒登录——Pi 的添加命令只写配置', ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...toMcpSummary] },
+  { title: '结果 · MCP · 只检测到 Pi', note: '每个 MCP 一行，宿主写的是 Pi；结果里没有 key 的值', ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...toMcpSummary, KEY.enter] },
+  { title: '混合列表 · MCP · Pi 的配置读不了', note: 'Pi 的 mcp.json 写坏了：列表上方说明，它那一栏都是「未知」，没有报错；另外两栏照常', ...THREE_HOSTS_FIVE_KINDS, home: { ...FIVE_KINDS.home, ...PI_UNREADABLE }, keys: [...toMixedDocuments(true), ...down(6)] },
+  { title: '混合列表 · 装到项目 · 三个宿主', note: 'MCP 在 Claude Code 那一栏看项目里的 .mcp.json，在 Pi 那一栏看项目里的 .pi/mcp.json（全局配过的 markitdown 在这里是未配置，mistral-ocr 是已配置）；Codex 的 MCP 装不到项目：它那一栏都写不支持，列表上方说明原因', ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...intoProject, ...down(6)] },
+  { title: '汇总确认 · 装到项目 · 带 key 的 MCP · 三个宿主', note: '装进 Claude Code 和 Pi，没有 Codex：Pi 的两条命令都带 -l。提醒在提问的上方：key 会以明文写进两个文件（写的是变量名和文件名，没有值）；两个宿主各一句要在这个目录下启动它批准之后才启用。每一行都不折出第 80 列', ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: toProjectMcpSummary },
+  { title: '结果 · 装到项目的 MCP · 三个宿主', note: '每个 MCP 有 Claude Code 和 Pi 两行；结果里同样没有 key 的值', ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...toProjectMcpSummary, KEY.enter] },
+  { title: '汇总确认 · 装到项目 · 带 key 的 MCP · 只检测到 Pi', note: '不问装进哪个宿主。命令带 -l；提醒里的文件是 .pi/mcp.json，启动命令是 pi', ...PI_ONLY_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...toMixedDocuments(), KEY.down, KEY.enter, ...toMcpSummary] },
+  { title: '结果 · MCP · Pi 的命令没能运行', note: 'pi 这个命令起不来（或是没有 pi mcp 的旧版，那时是「添加命令退出状态 1」）：Pi 的那一行是失败和原因，别的宿主照常', ...THREE_HOSTS_FIVE_KINDS, home: { ...FIVE_KINDS.home }, commands: piCannotStart, keys: [...toMixedDocuments(true), ...down(6), KEY.space, KEY.enter, KEY.enter] },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
   { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面。只装一个工具时不重复「结果」分区', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
@@ -639,7 +664,10 @@ const scenes: Scene[] = [
   { title: '英文界面 · 选择宿主 · 检测到三个', argv: ['--lang', 'en'], onPath: THREE_HOSTS, keys: toRecommended },
   { title: '英文界面 · 混合列表 · 五种类型 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
   { title: '英文界面 · 三个宿主的汇总与结果', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
-  { title: '英文界面 · 混合列表 · 只检测到 Pi', argv: ['--lang', 'en'], ...FIVE_KINDS, onPath: ['pi', 'pandoc'], keys: [...toMixedDocuments(), ...down(6)] },
+  { title: '英文界面 · 混合列表 · 只检测到 Pi', argv: ['--lang', 'en'], ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...down(6)] },
+  { title: '英文界面 · 混合列表 · 装到项目 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...intoProject, ...down(6)] },
+  { title: '英文界面 · 汇总确认 · 装到项目 · 带 key 的 MCP · 三个宿主', note: '英文的提醒更长，照规矩折行，每一行都不折出第 80 列', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: toProjectMcpSummary },
+  { title: '英文界面 · MCP 的汇总与结果 · 只检测到 Pi', argv: ['--lang', 'en'], ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...toMcpSummary, KEY.enter] },
   { title: '英文界面 · 四种类型的汇总与结果', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '英文界面 · 混合列表 · 只有工具', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
