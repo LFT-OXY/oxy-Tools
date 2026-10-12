@@ -168,7 +168,7 @@ describe('网页界面：装到哪里', () => {
     expect(before && statuses(before)['alpha']).toEqual(['Claude Code 已装']);
     expect(inProject?.target.scope).toBe('project');
     expect(inProject && statuses(inProject)['alpha']).toEqual(['Claude Code 未装']);
-    expect(summary?.entries.map((entry) => entry.rows.map((row) => `${row.action} ${row.location}`))).toEqual([['新装 .claude/skills/alpha']]);
+    expect(summary?.entries.map((entry) => entry.rows.map((row) => `${row.action} ${row.location}`))).toEqual([[`新装 ${join('.claude', 'skills', 'alpha')}`]]);
     expect(results?.rows.map((row) => `${row.name} ${row.text}`)).toEqual(['alpha 已安装']);
     expect(existsSync(join(result.project, '.claude', 'skills', 'alpha', 'SKILL.md'))).toBe(true);
     expect(tree(result.home)).toEqual(homeBefore);
@@ -243,6 +243,6 @@ describe('网页界面：这两个选择一直在安装器这边', () => {
 
     expect(statuses).toEqual([400, 400]);
     expect(after?.target).toMatchObject({ hosts: ['Claude Code', 'Codex'], scope: 'global' });
-    expect(after?.summary?.entries[0]?.rows.map((row) => row.location)).toEqual(['~/.claude/skills/alpha', '~/.agents/skills/alpha']);
+    expect(after?.summary?.entries[0]?.rows.map((row) => row.location)).toEqual([join('~', '.claude', 'skills', 'alpha'), join('~', '.agents', 'skills', 'alpha')]);
   });
 });
