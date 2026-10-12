@@ -14,7 +14,7 @@ Curated AI toolchain installer: pick skills, MCP servers and tools from the [oxy
 npx oxy-tools
 ```
 
-它在本机起一个网页，并用默认浏览器打开：挑选、看汇总、确认、看安装进度和结果，都在这一页里（**网页界面**）。打不开浏览器的机器上，它自动改用终端里的菜单（**终端界面**）。两套界面装的东西、装的方式完全一样，见下面「两套界面」。
+它在本机起一个网页，并用默认浏览器打开（**网页界面**）。页面打开后先问两件事——装进哪些 AI Agent、装到哪里，都带着缺省，点一下「开始挑选」就进去；然后挑选、看汇总、确认、看安装进度和结果，都在这一页里。打不开浏览器的机器上，它自动改用终端里的菜单（**终端界面**）。两套界面装的东西、装的方式完全一样，见下面「两套界面」。
 
 需要：
 
@@ -29,11 +29,12 @@ npx oxy-tools
 | | 网页界面 | 终端界面 |
 |---|----------|----------|
 | 什么时候用 | 缺省 | 带了 `--terminal`；或安装器认出打不开浏览器——经 SSH 远程连接、Linux 上没有桌面（`DISPLAY` 和 `WAYLAND_DISPLAY` 都没设）；或浏览器打不开、本机的网页起不来（终端上会说明一句原因） |
-| 怎么挑 | 一页到底：用途、条目、装进哪些 AI Agent、装到哪里同时在页面上，可以跨用途一起挑，一次确认、一次装完 | 主菜单上选一个用途进去，勾选、确认、装完，再回主菜单 |
+| 怎么挑 | 打开时先问一次装进哪些 AI Agent、装到哪里；进去之后一页到底：用途、条目和这两样选项同时在页面上，可以跨用途一起挑，一次确认、一次装完 | 主菜单上选一个用途进去；里面有 Skill 或 MCP 时，每进一次问一次装到哪里，检测到不止一个宿主时先问装进哪些 AI Agent；然后勾选、确认、装完，再回主菜单 |
 | 条目的说明 | 完整显示；外部项目的链接可以直接点 | 一行放不下时截断，光标移到那一行看全文 |
 
 用网页界面时：
 
+- **页面第一次打开时先问两件事**：一小段开场动画（点一下或按任意键跳过）之后，在同一个画面上问「装进哪些 AI Agent」「装到哪里」。两样都带着缺省——检测到的宿主全部勾上、装到全局——不想改就直接点「开始挑选」或按回车；选了「项目」会当场写明是哪个目录。进去之后这两样仍在页面顶上，随时能改。只检测到一个宿主时只问装到哪里；一个都没检测到时不问，直接是挑选的页面。答过之后这次运行里不再问，刷新页面也不会。
 - **这个网页只有这台机器访问得到**：它只监听本机的回环地址（`127.0.0.1`），端口随机，网址里带着这次运行才有效的口令。同一个网络里的别的机器打不开它，你浏览器里开着的别的网站也指挥不了它。页面不向互联网发任何请求。
 - 终端上留着它的网址：浏览器没有弹出来时，把网址复制到这台机器的浏览器里打开。
 - 网页界面开着、没有在安装的时候，在终端里按 `t` 就改用终端界面（页面上的勾选不带过去）。
@@ -53,7 +54,7 @@ npx oxy-tools
 | 工具 | 执行它的官方安装命令，输出实时可见；结束后复核它是否真的可用 |
 | 外部项目 | 安装器装不了、只给链接的条目（要自行部署的应用、开发库、资源合集）。网页界面里它们不能勾选，说明和链接直接看得到、点得开；终端界面里勾了之后在这一轮的最后列出说明和链接，不替你打开浏览器 |
 
-Skill 和 MCP 可以选**装到哪里**，缺省是全局（网页界面里是页面顶上的一个选项，终端界面里每进一个用途问一次）：
+Skill 和 MCP 可以选**装到哪里**，缺省是全局（网页界面里打开时先问一次，之后是页面顶上的一个选项；终端界面里每进一个用途问一次）：
 
 | 装到哪里 | Skill 和第三方 Skill | MCP |
 |----------|----------------------|-----|
@@ -115,7 +116,7 @@ npm run preview:web                     # 生成网页界面的预览 .preview/w
 npx oxy-tools
 ```
 
-It starts a web page on this machine and opens it in your default browser: picking, reviewing the summary, confirming, and watching progress and results all happen on that one page (the **web UI**). On a machine that cannot open a browser it falls back to menus in the terminal (the **terminal UI**) on its own. Both install the same things in the same way; see "Two interfaces" below.
+It starts a web page on this machine and opens it in your default browser (the **web UI**). The page first asks two things — which AI Agents to install into and where to install — both with defaults, so one click on "Start picking" takes you in; after that, picking, reviewing the summary, confirming, and watching progress and results all happen on that one page. On a machine that cannot open a browser it falls back to menus in the terminal (the **terminal UI**) on its own. Both install the same things in the same way; see "Two interfaces" below.
 
 Requirements:
 
@@ -130,11 +131,12 @@ Requirements:
 | | Web UI | Terminal UI |
 |---|--------|-------------|
 | When it is used | By default | With `--terminal`; or when the installer can tell no browser can be opened: over an SSH connection, or on Linux without a desktop (neither `DISPLAY` nor `WAYLAND_DISPLAY` is set); or when the browser fails to open or the local page fails to start (the terminal says why in one line) |
-| How you pick | One page: purposes, entries, which AI Agents to install into and where to install are all on screen; pick across purposes, confirm once, install once | Pick a purpose from the main menu, select, confirm, install, then return to the main menu |
+| How you pick | Asked once on opening which AI Agents to install into and where to install; then one page: purposes, entries and those two options are all on screen; pick across purposes, confirm once, install once | Pick a purpose from the main menu; when it holds skills or MCP servers, each time you enter it you are asked where to install, preceded by which AI Agents to install into when more than one host is detected; then select, confirm, install, and return to the main menu |
 | Entry descriptions | Shown in full; links of external projects are clickable | Cut when a line is too short; move the cursor to a row to read it in full |
 
 With the web UI:
 
+- **The page asks two things the first time it opens**: after a short opening animation (click or press any key to skip it), the same screen asks "Install into which AI Agents" and "Install where". Both come with defaults — every detected host ticked, installing globally — so if you want to change nothing, just click "Start picking" or press Enter; choosing "Project" shows which directory that is right away. Once you are in, both options stay at the top of the page and can be changed at any time. With only one host detected you are asked only where to install; with none detected you are not asked and go straight to the picking page. After you have answered, you are not asked again during this run, not even after reloading the page.
 - **Only this machine can reach the page**: it listens on the loopback address (`127.0.0.1`) only, on a random port, and its address carries a token that is valid for this run alone. Other machines on the same network cannot open it, and other websites open in your browser cannot drive it. The page sends no requests to the internet.
 - The terminal keeps showing its address: if no browser pops up, copy the address into a browser on this machine.
 - While the web UI is open and nothing is being installed, press `t` in the terminal to switch to the terminal UI (selections made on the page are not carried over).
@@ -154,7 +156,7 @@ The catalog is fetched from the oxy-Tools repository on GitHub on every run. Ent
 | Tool | Its official install command is run with live output, then the installer checks that the tool is really available |
 | External project | Entries the installer cannot install and only links to (apps you deploy yourself, libraries, resource collections). In the web UI they cannot be selected; their descriptions and links are right there to read and click. In the terminal UI, the ones you select are listed with descriptions and links at the end of the round, and no browser is opened for you |
 
-For skills and MCP servers you choose **where to install**, global by default (an option at the top of the page in the web UI; asked each time you enter a purpose in the terminal UI):
+For skills and MCP servers you choose **where to install**, global by default (in the web UI, asked once on opening and then an option at the top of the page; asked each time you enter a purpose in the terminal UI):
 
 | Where | Skills and third-party skills | MCP |
 |-------|-------------------------------|-----|
