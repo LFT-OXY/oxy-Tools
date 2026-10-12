@@ -49,7 +49,8 @@ export function mcpStatusText(t: Messages, status: McpStatus): StatusText {
       return { text: t.mcpStatus.configured, tone: 'ready' };
     case 'unknown':
       return { text: t.mcpStatus.unknown, tone: 'plain' };
-    // 条目不支持这个宿主，这个宿主的 MCP 安装器不装，或它的 MCP 装不到所选的安装范围：是同一个词
+    // 条目不支持这个宿主，或它的 MCP 装不到所选的安装范围：是同一个词。MCP 安装器不装的宿主在列表里不出栏，
+    // 界面上写不到它的这个状态，词仍照同一个给
     case 'unsupported':
     case 'no-config':
     case 'global-only':

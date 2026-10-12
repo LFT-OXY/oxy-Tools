@@ -147,7 +147,7 @@ describe('网页界面：同时选了 Codex 和 Pi，本仓库的 skill 只装�
     expect(filesUnder(result.home)).toEqual([]);
   });
 
-  it('卡片上每个所选的宿主仍各有一段状态；Codex 和 Pi 两段写的一样', async () => {
+  it('卡片上的状态同样归组：Codex 和 Pi 合成一段「Codex、Pi」，状态只写一份', async () => {
     let first: ViewState | undefined;
     await run({
       onPath: ALL_HOSTS,
@@ -158,7 +158,7 @@ describe('网页界面：同时选了 Codex 和 Pi，本仓库的 skill 只装�
       },
     });
 
-    expect(statuses(first, 'beta-pack')).toEqual(['Claude Code 未装', 'Codex 非本工具安装', 'Pi 非本工具安装']);
+    expect(statuses(first, 'beta-pack')).toEqual(['Claude Code 未装', 'Codex、Pi 非本工具安装']);
   });
 
   it('英文界面：宿主那一格用英文的并列写法 Codex, Pi', async () => {

@@ -156,8 +156,8 @@ describe('共用 skill 目录里已有不是本工具装的同名 skill', () => 
   });
 });
 
-describe('列表里的状态不合并', () => {
-  it('每个所选的宿主仍各有一栏；Codex 和 Pi 两栏写的一样', async () => {
+describe('列表里的状态同样归组', () => {
+  it('Codex 和 Pi 合成一栏「Codex、Pi」，状态只写一份；Claude Code 另是一栏', async () => {
     const result = await run({
       onPath: ALL_HOSTS,
       home: {
@@ -168,9 +168,9 @@ describe('列表里的状态不合并', () => {
       answers: [choose('推荐'), accept(), pick(), pick(), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+说明$/m);
-    expect(listOf(result.output)).toMatch(/^\s*□ alpha\s+未装\s+已装 1\.0\.0\s+已装 1\.0\.0\s/m);
-    expect(listOf(result.output)).toMatch(/^\s*□ beta-pack\s+未装\s+非本工具安装\s+非本工具安装\s/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex、Pi\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^\s*□ alpha\s+未装\s+已装 1\.0\.0\s+第一个样例 skill/m);
+    expect(listOf(result.output)).toMatch(/^\s*□ beta-pack\s+未装\s+非本工具安装\s+第二个样例 skill$/m);
   });
 });
 
@@ -434,8 +434,9 @@ describe('80 列：那句说明和合成一行的行', () => {
     // 那句说明和它下面的一行：下面是空行，说明没有折到第二行
     const notice = noticeLines(result.screen, 'Codex、Pi、omp', 2);
 
-    // 汇总和结果里各有：两个本仓库的 skill、三个第三方的 skill
-    expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(10);
+    // 列表和清单的表头各一行（栏名）；汇总和结果里各有：两个本仓库的 skill、三个第三方的 skill
+    expect(rows.filter((line) => /^\s+名称\s/.test(line)).length).toBe(2);
+    expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(12);
     expect(Math.max(...rows.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
     expect(notice).toEqual(['  注意      Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到', '']);
     expect(displayWidth(notice[0] ?? '')).toBeLessThanOrEqual(79);
@@ -460,7 +461,8 @@ describe('80 列：那句说明和合成一行的行', () => {
     const rows = joined(result.screen, 'Codex, Pi');
     const notice = noticeLines(result.screen, 'Codex, Pi and omp', 2);
 
-    expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(10);
+    expect(rows.filter((line) => /^\s+Name\s/.test(line)).length).toBe(2);
+    expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(12);
     expect(Math.max(...rows.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
     // 英文的更长，照「注意」的规矩折行：续行与话的左缘对齐
     expect(notice).toEqual(['  Notice    Codex, Pi and omp share one skill folder: install for one and the', '            other two see it too']);

@@ -38,6 +38,9 @@ export function skillStatus(skill: Skill, skillsDir: string): SkillStatus;
 
 // cli/src/availability.ts —— 列表里要不要那句共用 skill 目录的说明，两套界面共用
 export function sharedSkillsNoted(hosts: readonly Host[], listing: Pick<Listing, 'skills' | 'thirdParty'>): boolean;
+// 所选的宿主按所选安装范围下的 skill 目录归的组：算计划和列表的状态用的是这同一种归组
+export interface SkillGroup { skillsDir: string; hosts: [Host, ...Host[]] } // hosts 照界面上的先后，至少一个
+export function skillGroups(hosts: readonly Host[], scope: Scope): SkillGroup[];
 
 // cli/src/plan.ts —— 一项安装的目标：hosts 是这一项装进的各个宿主的名字，照界面上的先后；不止一个时它们共用这个 skill 目录
 export interface InstallTarget { name: string; hosts: readonly string[]; location: string; version: string; status: SkillStatus }
@@ -117,19 +120,19 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - **一个都不勾就确认是回到上一步**：宿主选择上是回主菜单；混合列表上，问过宿主就回宿主选择（之前勾的还在），没问过就是主菜单。汇总里的「返回修改」回混合列表，不重问宿主。
 - skill 不再有自己的入口：它在主菜单的「推荐」里（本仓库的全部 skill），写了用途的另在那个用途下；和外部项目在同一张混合列表里勾选，主菜单与流程见 [入口与测试](./installer-entry.md)。
 
-**按 skill 目录归组（`plan.ts`；任务 `10-12-installer-add-pi-omp-hosts` 工单 03）**
+**按 skill 目录归组（`availability.ts` 的 `skillGroups`，算计划的 `plan.ts` 和列表的状态 `listingStatus` 都用它；任务 `10-12-installer-add-pi-omp-hosts` 工单 03、06）**
 
 所选的宿主里有几个在所选安装范围下用的是同一个 skill 目录时（现在是 Codex、Pi 和 omp：全局都是 `<主目录>/.agents/skills`，项目都是 `<项目目录>/.agents/skills`），同一个 skill 只装一次。决定见 [ADR-0005](../../../docs/adr/0005-pi-and-omp-skills-go-to-shared-skill-directory.md)。
 
 | 项 | 约定 |
 |----|------|
-| 怎么归组 | 算计划时把所选的宿主按 `skillsDirOf(host, scope)` 归组：目录（路径逐字）相同的是一组，组照各自排在最前的那个宿主在界面上的先后，组里的宿主也照界面上的先后。不看宿主的 `sharedSkills`——那个只管说明显不显示 |
+| 怎么归组 | `skillGroups(hosts, scope)` 把所选的宿主按所选安装范围下的 skill 目录归组：目录（路径逐字）相同的是一组，组照各自排在最前的那个宿主在界面上的先后，组里的宿主也照界面上的先后。不看宿主的 `sharedSkills`——那个只管说明显不显示；也不写死宿主的名字。**算计划和列表的状态用的是这同一个函数**，所以列表上是几栏，汇总里一个 skill 就是几行 |
 | 一组一项 | 本仓库的 skill：一个 skill 在一组下是一项（`SkillJob`），只调一次 `installSkill`、只下载一次、只写一份安装标记。第三方 Skill 见第二个 Scenario 的「命令」 |
 | 宿主那一格 | 一项的 `target.hosts` 是这一组里各宿主的名字，照界面上的先后。界面把它们用并列的写法连起来（文案的 `listSeparator`：中文「Codex、Pi、omp」，英文 `Codex, Pi, omp`；只选了其中两个就是那两个，如「Pi、omp」）：终端界面的汇总、进行中的那一行、结果行，网页界面汇总和进度的行里的 `host`。位置、状态、版本各只有一份 |
 | `SkillJob.host`、`ThirdPartyJob.host` | 这一组里排在最前的那个宿主。网页界面逐项决定覆盖的标识里用的是它的 `id`；第三方 Skill 的命令照它拼 |
 | 覆盖前另问 | 按项问，所以一组只问一次；没同意时这一项是跳过 |
 | 合计 | 按项算：同时选了 Codex、Pi、omp、装一个 skill，合计是「1 成功」，不是 3；四个宿主都选了是「2 成功」 |
-| 列表里的状态 | **不合并**：仍是每个所选的宿主一栏。Codex、Pi、omp 三栏看的是同一个目录，所以写的一样 |
+| 列表里的状态 | **同样归组，一组一栏**（工单 06；原先是每个所选的宿主一栏、三栏写的一样，四个宿主时 80 列排不下）。`ListingStatus.skillColumns` 就是这几组，每个 skill 的 `statuses` 与它一一对应、看的是那一组的目录；栏名是这一组里各宿主的名字，和「宿主那一格」同一种并列的写法（「Codex、Pi、omp」）。只要所选的宿主里有两个以上落在同一个目录就合成一栏：选了 Codex 和 Pi 是一栏「Codex、Pi」，选了 Claude Code、Codex、Pi 是「Claude Code」「Codex、Pi」两栏，四个都选是「Claude Code」「Codex、Pi、omp」两栏；只选 Claude Code、选了 Claude Code 和 Codex 时每组只有一个宿主，和归组之前一样。两套界面的画法见 [界面设计](./ui-design.md) 的「选择条目」、[网页界面的设计](./web-ui-design.md) 的「条目的卡片」 |
 | 两种安装范围 | 一样归组，只是换了目录 |
 | Claude Code 的目录与共用 skill 目录之间 | 不特别处理：它们是两个目录、两项 |
 
@@ -292,14 +295,18 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
   - 归组：同时选了 Codex 和 Pi 时汇总一行、进行中一行（从没擦过的 `result.output` 里找）、结果一行，宿主那一格「Codex、Pi」（英文 `Codex, Pi`），合计「1 成功」，`.agents/skills/<名字>` 下只有一份内容和安装标记、主目录下只多出 `.agents`；三个宿主时每个 skill 两行、两个目录各有标记；Claude Code 加 Pi 仍是各一行；装到项目时同样归组、主目录里什么都不多。
   - 覆盖：共用 skill 目录里有不是本工具装的同名 skill → 只问一次（**预设的应答里只排一个**，多问就会失败），`accept()` 证明缺省不覆盖、一行「跳过」；`yes()` 整目录替换；三个宿主、两个目录里都有时问两次，各问各的路径。网页界面是汇总里只有一处 `overwrite`。
   - 第三方 Skill：记录到的命令是**字面值**——一条，`--agent codex`，不另带环境变量；三个宿主时两条（Claude Code 的带 `CLAUDE_CONFIG_DIR: ''`）；条目的 `hosts` 是 `['pi']` 时一条 `--agent pi`、宿主那一格只写「Pi」；`hosts` 是 `['claude-code']`、三个宿主都选了时没有共用 skill 目录的那一行；已有同名目录只问一次、没同意的不执行命令；装到项目时不带 `--global`、`cwd` 是项目目录。网页界面记录到的命令与终端界面逐条相同。
-  - 列表里的状态不合并：三个宿主三栏，Codex 和 Pi 两栏写的一样。
+  - 列表里的状态同样归组：三个宿主两栏，「Codex、Pi」那一栏只写一份（各种宿主组合、四种状态、装到项目、第三方 Skill 和它的清单、80 列在 `status-columns.test.ts`、`web-status-columns.test.ts`，见 [界面设计](./ui-design.md) 的「选择条目」和下面那一条）。
   - 那句说明：只选 Pi、只选 Codex（Pi 没检测到）时有；三个都选了只说一次；只选 Claude Code（只检测到它，或在宿主选择上只留它）时没有；列表里只有第三方 Skill 时有；只有 MCP、工具、外部项目时没有；和「读不到配置」那一行同时出现时它在前、两行之间没有空行；英文的那一句。和「只能装到全局」「读不到配置」三句同时出现时依次是它、只能装到全局、读不到配置（装到项目的那一条）。中文的这一句连行首的键只占一行、不超出第 79 列（80 列的那一条整行去比，再看它下面是空行）；英文的会折行，所以找这句话时**把空白去掉再比**。网页界面断言的是各区的 `notices`：在 `Skill` 那一区，只有第三方 Skill 时在它那一区，MCP 那一区的提醒照旧在它自己那里。
   - 这两个文件里的用例只到三个宿主（`onPath` 里没有 `omp`，它写着未检测到）；「Codex、Pi、omp」这一格、四个宿主时的行数在下一条的 `omp.test.ts`。
 - omp（`cli/test/omp.test.ts`，网页界面那一边在 `cli/test/web-omp.test.ts`；检测、「AI Agent」一行、那两句「注意」、四个宿主时的宿主选择在 `hosts.test.ts`。`onPath` 给 `['omp']`、`['codex', 'pi', 'omp']`、`['claude', 'codex', 'pi', 'omp']`）：
   - 只检测到 omp：装到全局和项目的位置与安装标记、四种状态、另问与缺省不覆盖、omp 自己的目录（`~/.omp/agent/skills`）不读不写、列表上方共用 skill 目录的那句说明；第三方 Skill 的那一条命令是**字面值**——`--agent pi`，全局的带 `--global`，项目的不带、`cwd` 是项目目录——展示的就是它，装完复核通过；命令把它装到了别处时判失败；条目的 `hosts` 写了 `omp` 的照常装、没写的不可选。
-  - 归组：Codex、Pi、omp 都选了时汇总、进行中、结果各一行「Codex、Pi、omp」（英文 `Codex, Pi, omp`），合计「1 成功」，只写一份；Pi 加 omp 是「Pi、omp」；四个宿主时每个 skill 两行、两个目录各有标记；Claude Code 加 omp 各一行；不是本工具装的同名 skill 三个宿主只问一次；装到项目时同样归组；列表里四栏状态不合并、后三栏写的一样。第三方 Skill：三个共用的宿主一条 `--agent codex`，Pi 加 omp 一条 `--agent pi`，四个宿主两条；条目只支持 omp、四个宿主都选了时一条 `--agent pi`、宿主那一格只写「omp」。
+  - 归组：Codex、Pi、omp 都选了时汇总、进行中、结果各一行「Codex、Pi、omp」（英文 `Codex, Pi, omp`），合计「1 成功」，只写一份；Pi 加 omp 是「Pi、omp」；四个宿主时每个 skill 两行、两个目录各有标记；Claude Code 加 omp 各一行；不是本工具装的同名 skill 三个宿主只问一次；装到项目时同样归组；列表里的状态是「Claude Code」「Codex、Pi、omp」两栏。第三方 Skill：三个共用的宿主一条 `--agent codex`，Pi 加 omp 一条 `--agent pi`，四个宿主两条；条目只支持 omp、四个宿主都选了时一条 `--agent pi`、宿主那一格只写「omp」。
   - **从头到尾没有碰 omp**：每一条走到安装的用例最后都断言记录到的命令里没有一条的命令名是 `omp`，主目录和项目目录下都没有出现 `.omp`（`expectOmpUntouched`）。主目录里本来就该有 `.omp` 的三条除外（事先放着 omp 自己的配置文件、事先放着 omp 自己的 skill 目录、假装的命令把 skill 装到了 omp 自己的目录）：它们断言记录到的命令逐条相等，前两条另断言那里的文件原样留着。只逛列表、没有走到安装的用例不过它。
-  - 四个宿主都选了时的 80 列：中文的宿主行、宿主选择、列表（四栏）、清单、汇总、结果每一行都不超出第 79 列；英文的不量汇总的小表（「位置」一栏的路径会超，见 [界面设计](./ui-design.md) 文末）。**这一组用的是样例里的短名字**：名字长、四栏状态又都宽时列表的行会超出第 79 列，这是工单 04 查出来的，维护者定了列表的状态按 skill 目录归组、由工单 06 改，这张工单没有为它写断言。
+  - 四个宿主都选了时的 80 列：中文的宿主行、宿主选择、列表、清单、汇总、结果每一行都不超出第 79 列；英文的不量汇总的小表（「位置」一栏的路径会超，见 [界面设计](./ui-design.md) 文末）。这一组用的是样例里的短名字；名字长（27 列的组件、32 列的外部项目）、状态又都宽时的列表在下一条的 `status-columns.test.ts` 里量。
+- 列表的状态按 skill 目录归组（工单 06；`cli/test/status-columns.test.ts`，网页界面那一边在 `cli/test/web-status-columns.test.ts`）：
+  - Skill：选了 Codex 和 Pi 是一栏「Codex、Pi」、状态只写一份；三个宿主是「Claude Code」「Codex、Pi」；四个是「Claude Code」「Codex、Pi、omp」；四个里只留 Pi 和 omp 是「Pi、omp」，只留 Claude Code 和 omp 是各一栏；只选 Claude Code、选了 Claude Code 和 Codex 和原来一样。一栏里的四种状态看的是那个目录；装到项目时看项目目录下的那一个，全局装过的不算；英文的栏名 `Codex, Pi, omp`。断言栏名时**拿表头整行去比**（到「说明」为止），断言状态时后面跟上说明的开头——只写到第二栏状态就停的正则，改动前的四栏也能通过。
+  - 第三方 Skill：同样的几种组合；条目用 `hosts` 限定了宿主时，一组里有它支持的宿主就照目录写（`hosts: ['pi']`、四个宿主：Claude Code 一栏「不支持」，共用的那一栏照目录），一个都不支持的那一组写「不支持」（`hosts: ['claude-code']`：共用 skill 目录里有同名目录也不算），每一组都不支持时这一行不可选；清单（终端界面）和小格（网页界面）同样按组。
+  - MCP 的栏、终端界面的标题行、80 列见 [安装 MCP](./mcp-install.md) 的「Tests Required」和 [界面设计](./ui-design.md)。
   - omp 的 MCP 那一半见 [安装 MCP](./mcp-install.md) 的「Tests Required」。
 - 宿主：`onPath` 给 `['codex']`、`['pi']`、`['omp']`、`['claude', 'codex']`、`['claude', 'codex', 'pi']`、`['claude', 'codex', 'pi', 'omp']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
 
@@ -345,15 +352,15 @@ if (lstatSync(target).isSymbolicLink()) return { kind: 'unmanaged' };
 const entries = catalog.skills.map((skill) => ({ skill, statuses: hosts.map((host) => skillStatus(skill, host.skillsDir)) }));
 ```
 
-上面这一段是加安装范围之前的写法，目录写死成了全局的。现在状态、位置、安装、复核、同名目录的另问**都从同一个按安装范围定的目录来**（`availability.ts` 的 `skillsDirOf`，列表的状态和 `plan.ts` 算计划都用它）：
+上面这一段是加安装范围之前的写法，目录写死成了全局的。现在状态、位置、安装、复核、同名目录的另问**都从同一个按安装范围定的目录来**（`availability.ts` 的 `skillsDirOf`；工单 06 起它不再导出，外面拿到的是按它归好的组 `skillGroups(hosts, scope)`，每组带着自己的 `skillsDir`，列表的状态和 `plan.ts` 算计划都用这几组）：
 
 ```ts
 // 错：选了项目，状态却看的是全局——列表写「已装」，汇总说「覆盖」，装的却是项目里一个空位置
 skillStatus(skill, host.skillsDir);
 
 // 对：一处定目录，后面每一步都用它；一项安装把它带在自己身上（SkillJob.skillsDir），执行时不再回头找宿主要
-export const skillsDirOf = (host: Host, scope: Scope): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
-skillStatus(skill, skillsDirOf(host, scope));
+const skillsDirOf = (host: Host, scope: Scope): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
+skillGroups(hosts, scope).map(({ skillsDir }) => skillStatus(skill, skillsDir)); // 一组一个状态
 ```
 
 ```ts
@@ -452,13 +459,15 @@ export async function installThirdPartySkill(command: SkillsCliCommand, host: Ho
 
 只看目标位置 `<skillsDir>/<skill 的名字>` 下有没有东西（`lstat` 成功就算有：目录、文件、符号链接都算）。不比较版本，不写也不认安装标记，没有「非本工具安装」这一种。
 
+列表里的状态和本仓库的 skill 一样按 skill 目录归组、一组一栏（见第一个 Scenario 的「按 skill 目录归组」）。`thirdPartyStatus` 仍是对一个宿主问的；一组的状态取这一组里**条目支持的那个宿主**的（它们看的是同一个目录，取哪个都一样），一个都不支持才是 `unsupported`。
+
 | 条目 | 列表里那一栏 |
 |------|--------------|
 | 只含一个 skill | `未装` / `已装` |
 | 含多个 skill | 一个都没装 `未装`；否则 `已装 <已装几个>/<共几个>` |
-| `hosts` 里没有这个宿主 | `不支持` |
+| 这一组里的宿主 `hosts` 里一个都没有 | `不支持`（那个目录下有同名的东西也不算） |
 
-一个宿主都没检测到时不可选（「需要 AI Agent」）；所选的宿主一个都不支持时不可选（「需要别的 AI Agent」）；只支持其中一部分时可选，只装进支持的那些（共用 skill 目录上：它不支持的那个宿主那一栏写「不支持」，汇总里宿主那一格没有它的名字——尽管装进去之后那个宿主也读得到）。清单里各个 skill 各写各的：`未装`、`已装`、`不支持`。
+一个宿主都没检测到时不可选（「需要 AI Agent」）；所选的宿主一个都不支持（每一组都是「不支持」）时不可选（「需要别的 AI Agent」）；只支持其中一部分时可选，只装进支持的那些（共用 skill 目录上：一组里只要有它支持的宿主，那一栏就照目录写状态，栏名仍是整组的名字；汇总里宿主那一格只写它支持的那些——尽管装进去之后同组的别的宿主也读得到）。清单里各个 skill 各写各的：`未装`、`已装`、`不支持`，栏和列表一样按组。
 
 **命令**
 
@@ -529,6 +538,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 - Base：清单里一个都不勾 → 这一条不装；同一轮勾的别的条目照常进汇总；只勾了它时没有汇总，直接回主菜单。
 - Base：`~/.claude/skills/note-taker` 已经在（哪怕里面没有 `SKILL.md`，哪怕是个文件或符号链接）→ 列表里「已装」，汇总里「覆盖」加备注和一行覆盖的提醒；选了开始安装之后另问，直接回车（否）→ 那条命令不执行，原样留着，结果「跳过」。
 - Base：条目的 `hosts` 是 `["codex"]`，Claude Code 和 Codex 都选了 → Claude Code 那一栏「不支持」，只有装进 Codex 的那一条命令；只检测到 Claude Code 时这一行不可选。
+- Base：条目的 `hosts` 是 `["pi"]`，四个宿主都选了 → 列表里 Claude Code 一栏「不支持」，「Codex、Pi、omp」那一栏照共用 skill 目录写（已装、未装）；装的时候一条 `--agent pi`，汇总里宿主那一格只写「Pi」。
 - Bad：命令以 0 退出但目标位置没有 `SKILL.md`（上游改了 skill 的名字，目录里登记的对不上）→ `失败 安装命令已结束，但目标位置没有 SKILL.md`，别的项照常。
 - Bad：机器上没有 `npx` → `失败 安装命令没能运行（ENOENT）`，安装器不退出。
 - Bad：`source` 写成 `../repo`，或 skill 的名字写成 `--all` → 这一条被跳过，目录校验命令指出字段。
@@ -541,7 +551,7 @@ npx -y skills@1 add <source> --skill <名字> --agent <宿主在 skills CLI 里�
 - 记录到的命令在 `result.commands` 里多两样：不经 shell 的带着 `env`（额外的环境变量，没有就没有这个键），整行交给 shell 的仍是 `shell: true`。**期望值写成字面的命令**。
 - 向 GitHub 查询失败要用 `fakeGitHub()` 单独证一条：本仓库的 skill 一个都不装，第三方 Skill 照常（它不经那次查询）。
 - 真实的清单画面在 `prompts.test.ts` 的「真实的画面：第三方 Skill」：按键提示整行、收成一行（勾了的名字、「不装」）、`NO_COLOR`、没有 Unicode、英文加没有 Unicode 时按键提示仍在 79 列以内。空行的规则在 `spacing.test.ts`，栏间隔在 `columns.test.ts`。
-- 至少覆盖：只含一个 skill 的直接装；含多个的出清单、勾几个装几个、一个不勾则不装而其余照常；每个 skill 目录一条命令（Claude Code 加 Codex 是两条；共用一个目录的 Codex 加 Pi 是一条，在 `shared-skills.test.ts`；omp 借用 `pi` 这个 agent 名的在 `omp.test.ts`）；带着关遥测的环境变量、不是 shell 方式；退出 0 而没有 `SKILL.md` 判失败；非零退出与没能运行时结果行的写法；已有同名目录时另问、`accept()` 证明缺省不覆盖、没同意的不执行命令；宿主限制（一栏「不支持」、只装进支持的；一个都不支持时不可选）；写坏的条目被跳过；取消则一条命令都不执行；一项失败不影响其余项。
+- 至少覆盖：只含一个 skill 的直接装；含多个的出清单、勾几个装几个、一个不勾则不装而其余照常；每个 skill 目录一条命令（Claude Code 加 Codex 是两条；共用一个目录的 Codex 加 Pi 是一条，在 `shared-skills.test.ts`；omp 借用 `pi` 这个 agent 名的在 `omp.test.ts`）；带着关遥测的环境变量、不是 shell 方式；退出 0 而没有 `SKILL.md` 判失败；非零退出与没能运行时结果行的写法；已有同名目录时另问、`accept()` 证明缺省不覆盖、没同意的不执行命令；宿主限制（一栏「不支持」、只装进支持的；一个都不支持时不可选；几个宿主共用一个目录时按组看，在 `status-columns.test.ts`）；写坏的条目被跳过；取消则一条命令都不执行；一项失败不影响其余项。
 
 ### 7. Wrong vs Correct
 

@@ -116,15 +116,15 @@ describe('把本仓库的 skill 装给 Pi', () => {
     expect(read(result.home, '.agents', 'skills', 'alpha', 'SKILL.md')).toBe('# alpha\n');
   });
 
-  it('三个宿主都选了：列表里每个宿主一栏状态，依次是 Claude Code、Codex、Pi', async () => {
+  it('三个宿主都选了：列表里的状态是「Claude Code」「Codex、Pi」两栏——Codex 和 Pi 共用一个 skill 目录', async () => {
     const result = await run({
       onPath: ALL_HOSTS,
       home: installed('.claude/skills', 'alpha', '1.0.0'),
       answers: [choose('推荐'), accept(), pick(), pick(), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+说明$/m);
-    expect(listOf(result.output)).toMatch(/^\s*□ alpha\s+已装 1\.0\.0\s+未装\s+未装\s+第一个样例 skill/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex、Pi\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^\s*□ alpha\s+已装 1\.0\.0\s+未装\s+第一个样例 skill/m);
   });
 
   it('英文界面：状态词、汇总和结果里的宿主都是英文界面的写法', async () => {
@@ -344,8 +344,9 @@ describe('三个宿主都选了时的 80 列', () => {
     });
 
     expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp – 未检测到$/m);
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\b/m);
-    expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+非本工具安装(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex、Pi\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+推荐 · \S/m);
+    expect(listOf(result.output)).toMatch(/^\s+── MCP\s+Claude Code\s+Codex\s+Pi$/m);
     expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+已安装 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
   });
@@ -367,7 +368,8 @@ describe('三个宿主都选了时的 80 列', () => {
       ],
     });
 
-    expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+Pi\b/m);
+    expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex, Pi\s+About$/m);
+    expect(result.output).toMatch(/^\s+── MCP\s+Claude Code\s+Codex\s+Pi$/m);
     expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+installed 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
   });

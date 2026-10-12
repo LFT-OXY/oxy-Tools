@@ -53,7 +53,7 @@ const install = async (page: Page, summary: SummaryView): Promise<RunView> => {
 // 正在看的那张列表里名字是它的卡片
 const card = (state: ViewState | undefined, name: string): ComponentView | undefined =>
   state?.listing?.sections.flatMap((section) => section.entries).find((entry) => entry.name === name);
-// 卡片上每个宿主一段「宿主 词 后面的字」
+// 卡片底部的状态：每一段「段名 词 后面的字」
 const statuses = (state: ViewState | undefined, name: string): string[] =>
   (card(state, name)?.statuses ?? []).map((one) => [one.host, one.text, one.rest].filter((part) => part !== undefined).join(' '));
 // 汇总写成几行字：条目 · 类型 · 版本，下面每行 skill/宿主/操作/位置/备注
@@ -74,7 +74,7 @@ const installed = (skillsDir: string, name: string, version: string): Record<str
 });
 
 describe('网页界面：检测到 Pi', () => {
-  it('三个宿主都检测到：本机信息里 omp 写着未检测到；开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi，都默认勾着；卡片上每个宿主一段状态', async () => {
+  it('三个宿主都检测到：本机信息里 omp 写着未检测到；开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi，都默认勾着；卡片上 Skill 的状态是「Claude Code」「Codex、Pi」两段', async () => {
     let first: ViewState | undefined;
     await run({
       onPath: ALL_HOSTS,
@@ -102,7 +102,7 @@ describe('网页界面：检测到 Pi', () => {
       ],
       hosts: ['Claude Code', 'Codex', 'Pi'],
     });
-    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex 未装', 'Pi 未装']);
+    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex、Pi 未装']);
   });
 
   it('只检测到 Pi：没有可改的宿主，另外三个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {

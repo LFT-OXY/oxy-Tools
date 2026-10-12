@@ -50,7 +50,7 @@ export interface ViewState {
   target: {                         // 装进哪些宿主、装到哪里，连同这两样在页面上的名字（和终端界面的提问同一份文案）
     hostsLabel: string;
     choices: { id: string; name: string; on: boolean }[];         // 检测到的宿主，照本机信息里的先后；id 放进 host 意图，on 是这一轮要装进它
-    hosts: string[];                                              // 要装进的宿主的名字（choices 里 on 的那些）：条目的 statuses 与它一一对应
+    hosts: string[];                                              // 要装进的宿主的名字（choices 里 on 的那些）。条目的 statuses 不与它一一对应：那是按栏分的
     scopeLabel: string; scopes: { id: Scope; name: string }[]; scope: Scope; // scopes 是安装范围有哪几种，照显示的先后
     project: { note: string; dir: string };                       // 装到项目是装到哪个目录：note 是终端界面「项目」那一项后面的那句，dir 是目录（主目录里的以 ~ 开头）
   };
@@ -73,16 +73,16 @@ export interface ComponentView {
   about: string;                    // 完整的说明，不截断
   mark?: string;                    // 「推荐」的标记，要标时是那个词；「推荐」那张列表里每一条都是，不标
   key?: string;                     // 要 key 的 MCP 才有的标记：有必填的变量是「要填 key」，只有可选的是「可选的 key」
-  statuses: StatusView[];           // 每个要装进的宿主一段（与 target.hosts 一一对应）；工具只有一段，没有 host
+  statuses: StatusView[];           // 卡片底部的状态，一栏一段、各带栏名：Skill 和第三方 Skill 一组宿主一段，MCP 每个装得了 MCP 的宿主一段；工具只有一段，没有 host
   unavailable?: string;             // 不可选的原因；有它就勾不上
   picked?: true;                    // 已经勾上了
   skills?: SkillChoicesView;        // 含多个 skill 的第三方 Skill 才有：里面的各个 skill，页面在勾上之后画成清单让用户挑
 }
 export interface SkillChoicesView {
   lead: string;                     // 清单上面那一句：终端界面那一问的话（「paper-kit 里有 3 个 skill，选择要装的」）
-  entries: { name: string; about: string; statuses: StatusView[]; chosen?: true }[]; // 每个 skill：名字、完整的说明、每个要装进的宿主一段状态（未装、已装、不支持）、挑了没有
+  entries: { name: string; about: string; statuses: StatusView[]; chosen?: true }[]; // 每个 skill：名字、完整的说明、和卡片同样的几段状态（一组宿主一段：未装、已装、不支持）、挑了没有
 }
-export interface StatusView { host?: string; text: string; tone: Tone; rest?: string } // rest：词后面不上色的一段（版本、装了几个）
+export interface StatusView { host?: string; text: string; tone: Tone; rest?: string } // host：这一段的栏名——一个宿主的名字，或共用一个 skill 目录的几个宿主并列（「Codex、Pi、omp」）；rest：词后面不上色的一段（版本、装了几个）
 export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
 export type Scope = 'global' | 'project';
 export interface AppView { name: string; about: string; url: string; mark?: string }
@@ -234,11 +234,11 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 **宿主与安装范围**（工单 08）
 
 - 两样都在安装器这边（`Session.hosts`、`Session.scope`），起初是**检测到的全部宿主、全局**——和终端界面两个提问光标起始的答案一样。刷新、再开一个标签页看到的是同一份；换语言不动它们。
-- `target.choices` 是检测到的宿主，照本机信息里的先后，各带 `id`、名字和这一轮要不要装进它；`target.hosts` 是其中要装进的那些的名字，条目的 `statuses` 与它一一对应。**只检测到一个宿主时**页面不画成选项，写一句「装进 <宿主>」；**一个都没检测到时** `choices` 是空的，页面上没有这两样。
+- `target.choices` 是检测到的宿主，照本机信息里的先后，各带 `id`、名字和这一轮要不要装进它；`target.hosts` 是其中要装进的那些的名字（条目的 `statuses` 不与它一一对应，见下面「卡片的状态怎么分段」）。**只检测到一个宿主时**页面不画成选项，写一句「装进 <宿主>」；**一个都没检测到时** `choices` 是空的，页面上没有这两样。
 - 意图 `host`：`host` 是 `choices` 里某一项的 `id`，`on` 是装进还是不装进。**至少留一个**：去掉最后一个的意图不照办（400，什么都不变）——页面上那时写一句说明；只检测到一个宿主时因此没有可改的。`id` 不是检测到的宿主的不照办。
 - 意图 `scope`：`scope` 是 `global` 或 `project`；一个宿主都没检测到时不照办（没有要装进的地方，也就没有范围可言——和终端界面一样）。
 - `target.project` 是装到项目是装到哪个目录：`note` 是终端界面「项目」那一项后面的那句（`scopes.project.about`，「只对当前目录生效：」），`dir` 是运行安装器时所在的目录，写成和终端界面那一行同一种样子（`homeRelative`：主目录里的以 `~` 开头，别处的是全路径）；终端界面放不下时从前面截，网页界面不截、在任意处断开。它一直在画面状态里，页面在选了项目时显示。
-- **改了之后状态马上重查**：画面状态本来就是每次现算的，条目的 `statuses` 只有所选宿主的那几段，skill 的目录按新的范围看（`skillsDirOf`）；汇总、位置、覆盖的另问都跟着（装到项目时位置写成相对项目目录的路径，主目录下的全局目录不读也不写——规矩在 [安装 skill](./skill-install.md)）。
+- **改了之后状态马上重查**：画面状态本来就是每次现算的，条目的 `statuses` 照所选的宿主重新分段（去掉 Codex，「Codex、Pi、omp」那一段就成了「Pi、omp」），skill 的目录按新的范围看；汇总、位置、覆盖的另问都跟着（装到项目时位置写成相对项目目录的路径，主目录下的全局目录不读也不写——规矩在 [安装 skill](./skill-install.md)）。
 - **已选不因此被去掉**：`selected` 里每一项照旧；在现在所选的宿主和范围下**装不了的**带着 `unavailable`（原因，和卡片上的是同一句，`unavailableReason`），**不进汇总**（算计划时只给可选的那些），改回去之后它没有了 `unavailable`、照常会装。已选里一个会装的都没有时 `review` 不照办（400），和已选为空一样。落进这一条的是第三方 Skill 和 MCP 的「需要别的 AI Agent」、MCP 的「只能装到全局」（工单 09、10）；本仓库的 skill 只在一个宿主都没有时装不了，而宿主至少留一个。
 - 这两种意图只在浏览的时候照办：填 key、汇总开着、正在装、结果还没收掉时都是 400——**一批里只有一组宿主、一个安装范围**，汇总和执行用的是确认那一刻的选择。
 
@@ -362,7 +362,12 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - `listing.sections` 是组件，按类型分开，先后是 Skill、第三方 Skill、MCP、工具，**没有条目的类型不在里面**；每个分区的 `title` 和 `note` 是文案里那一份（`messages.ts` 的 `sections`）。条目的先后取自 `listing.ts`：用途的列表里带推荐标记的在前、其余按名字，「推荐」里只按名字。一个分区还可以带 `notices`：它上方的提醒，每条一句，页面照给的先后画在小标题下面，没有时没有这个字段。现在有两样：共用 skill 目录的那句说明（下一条），和 MCP 那一区的三种（只能装到全局、安装器装不了某个宿主的 MCP、读不到配置，见「MCP 与填 key」）。
 - **共用 skill 目录的那句说明**（任务 `10-12-installer-add-pi-omp-hosts` 工单 03）随正在看的那张列表发给页面：所选的宿主里有用共用 skill 目录的（Codex、Pi、omp），且这张列表里有本仓库的 skill 或第三方 Skill 时，`listing.sections` 里 `Skill` 和「第三方 Skill」这两区中**排在前面的那一区**带着 `notices`，里面是那一句（文案 `sharedSkillsNotice`：「Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到」）。只出现一次：两区都有时在 `Skill` 那一区，只有第三方 Skill 时在它那一区。显不显示和终端界面问的是同一处（`availability.ts` 的 `sharedSkillsNoted`）；宿主改成只剩 Claude Code，重发的画面状态里就没有它了。它不和 MCP 那一区的提醒放在一起：那一区可能根本不在这张列表里。
 - 条目的 `mark` 是「推荐」的标记（文案里的 `recommendedMark`）：用途的列表里带推荐标记的条目有，本仓库的 skill 都算；「推荐」那张列表里每一条都是推荐的，都没有。
-- 条目的 `statuses` 每个要装进的宿主一段，与 `target.hosts` 一一对应，各带宿主的名字；工具只有一段、没有 `host`。词和含义来自 `status-text.ts`，和终端界面是同一张表：
+- **卡片的状态怎么分段**（任务 `10-12-installer-add-pi-omp-hosts` 工单 06；原先是每个要装进的宿主一段、与 `target.hosts` 一一对应）：条目的 `statuses` **一栏一段**，照显示的先后，各带栏名 `host`；分成哪几栏由 `listingStatus` 定（`skillColumns`、`mcpColumns`），和终端界面列表的状态栏是同一份，**页面照原样画，不自己归组**。
+  - **Skill 和第三方 Skill**：所选的宿主按所选安装范围下的 skill 目录归组，一组一段；`host` 是这一组里各宿主的名字，用 `listSeparator` 并列起来（和汇总、进度里行的 `host` 同一种写法：中文 `"Codex、Pi、omp"`，英文 `"Codex, Pi, omp"`）。选了 Codex 和 Pi 是一段 `"Codex、Pi"`；四个都选是 `"Claude Code"`、`"Codex、Pi、omp"` 两段；只选 Claude Code、选了 Claude Code 和 Codex 时每段一个宿主，和归组之前一样。第三方 Skill 的一组里有条目支持的宿主就照目录写状态，一个都不支持才是「不支持」；`skills.entries` 里每个 skill 的 `statuses` 是同样的几段。
+  - **MCP**：每个装得了 MCP 的所选宿主一段，各看各的配置；**MCP 安装器不装的宿主（omp）没有它的那一段**。只选了它时 `statuses` 是空数组，卡片带 `unavailable`。
+  - **工具**只有一段、没有 `host`。
+  - 页面写不写栏名看的仍是 `target.hosts` 有几个（只装进一个宿主时不写）：选了 Claude Code 和 omp 时 MCP 的卡片只有一段，也带着「Claude Code」。
+- 词和含义来自 `status-text.ts`，和终端界面是同一张表：
 
   | `tone` | 含义 | 哪些状态 |
   |--------|------|----------|
@@ -371,7 +376,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
   | `faint` | 退后 | 未装、未配置、未安装、不支持 |
   | `plain` | 不上色 | 未知（宿主的配置读不了） |
 
-- 条目带着 `unavailable` 就是不可选，值是那句原因（需要 AI Agent、需要别的 AI Agent、只能装到全局、不支持 macOS）：哪些不可选、为什么，由 `availability.ts` 定，写成哪句话由 `status-text.ts` 的 `unavailableReason` 定。一个宿主都没检测到时 `target.hosts` 是空的，skill、第三方 Skill、MCP 的 `statuses` 也是空的，每个组件都带「需要 AI Agent」。
+- 条目带着 `unavailable` 就是不可选，值是那句原因（需要 AI Agent、需要别的 AI Agent、只能装到全局、不支持 macOS）：哪些不可选、为什么，由 `availability.ts` 定，写成哪句话由 `status-text.ts` 的 `unavailableReason` 定。一个宿主都没检测到时 `target.hosts` 是空的，skill、第三方 Skill、MCP 的 `statuses` 也是空的，每个组件都带「需要 AI Agent」。只选了 MCP 安装器不装的宿主（omp）时 MCP 的 `statuses` 同样是空的，带的是「需要别的 AI Agent」。
 - `listing.apps` 是外部项目，和组件分开：只有名字、完整的说明、链接和「推荐」的标记，**没有状态、没有可不可选**——页面上它们没有勾选框。链接是目录读取时验过的 `https` 网址；页面把它画成普通的链接，在新标签页打开，带 `rel="noopener noreferrer"`。列表里没有外部项目时没有这一块。
 - `target` 是装进哪些宿主、装到哪里，页面上能改，见下面「宿主与安装范围」。`hostsLabel`、`scopeLabel` 和 `scopes` 里的名字是终端界面那两个提问的文案（`pickHosts`、`pickScope`、`scopes.*.name`）。
 - 一个宿主都没检测到时 `machine.noHosts` 是终端界面本机信息里的那一句（「没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件；外部项目仍可浏览」，目录里没有外部项目时没有后半句）；检测到了任何一个就没有这个字段。
@@ -513,7 +518,8 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 - Base：只检测到 Claude Code，目录里有一个只支持 Codex 的 MCP → 它在列表里，带 `unavailable: "需要别的 AI Agent"`，`statuses` 是 `[{ host: "Claude Code", text: "不支持", tone: "faint" }]`。
 - Good：两个宿主都检测到，发 `{"type":"host","host":"codex","on":false}` → 204，`target.hosts` 是 `["Claude Code"]`，每张卡片只剩 Claude Code 那一段状态；勾了 `alpha` 去装，只有 `~/.claude/skills/alpha`，`~/.agents` 不存在。
 - Good：三个宿主都检测到（任务 `10-12-installer-add-pi-omp-hosts` 工单 01）→ `machine.hosts`、`target.choices` 依次是 Claude Code、Codex、Pi（`id` 是 `claude-code`、`codex`、`pi`），都勾着；每张卡片三段状态。去掉前两个只留 Pi、勾了 `alpha` 去装 → 汇总和结果里 `host` 是 `"Pi"`，位置是 `~/.agents/skills/alpha`，主目录下只多出 `.agents`。画面状态的形状没有因为多一个宿主而变。
-- Good：只检测到 Pi，目录里有 MCP（任务 `10-12-installer-add-pi-omp-hosts` 工单 02）→ 卡片可选，`statuses` 是 `[{ host: "Pi", text: "未配置", tone: "faint" }]`，看的是所选安装范围下 Pi 的那份配置；勾上去装，记录到的是 `pi mcp add …`，汇总和结果里 `host` 是 `"Pi"`。三个宿主都留着时卡片三段状态、一个 MCP 三行结果。画面状态的形状没有变。
+- Good：只检测到 Pi，目录里有 MCP（任务 `10-12-installer-add-pi-omp-hosts` 工单 02）→ 卡片可选，`statuses` 是 `[{ host: "Pi", text: "未配置", tone: "faint" }]`，看的是所选安装范围下 Pi 的那份配置；勾上去装，记录到的是 `pi mcp add …`，汇总和结果里 `host` 是 `"Pi"`。三个宿主都留着时 MCP 的卡片三段状态、一个 MCP 三行结果。画面状态的形状没有变。
+- Good：四个宿主都留着（工单 06）→ Skill 的卡片 `statuses` 是 `[{ host: "Claude Code", … }, { host: "Codex、Pi、omp", … }]` 两段，MCP 的卡片是 Claude Code、Codex、Pi 三段；去掉 Codex 的勾，Skill 的第二段变成 `"Pi、omp"`；只留 omp，Skill 一段 `"omp"`、MCP 的 `statuses` 是 `[]` 且带 `unavailable: "需要别的 AI Agent"`。
 - Good：四个宿主都检测到（任务 `10-12-installer-add-pi-omp-hosts` 工单 04）→ `machine.hosts`、`target.choices` 依次是 Claude Code、Codex、Pi、omp（`id` 是 `claude-code`、`codex`、`pi`、`omp`），都勾着；每张卡片四段状态。只检测到 omp、勾了 `alpha` 去装 → 汇总和结果里 `host` 是 `"omp"`，位置是 `~/.agents/skills/alpha`，主目录下只多出 `.agents`、没有 `.omp`；第三方 Skill 记录到的命令是 `--agent pi`。画面状态的形状没有变，页面的代码没有动。
 - Base：选着 omp，目录里有 MCP → MCP 的卡片上 omp 那一段是「不支持」，那一区的 `notices` 里有「安装器装不了 omp 的 MCP：请在 omp 里用 /mcp add 添加」；勾上去装，记录到的只有别的宿主的命令，汇总和结果里没有 omp 的行。去掉 omp，重发的画面状态里就没有那一句。只检测到 omp 时卡片都带 `unavailable: "需要别的 AI Agent"`（全局、项目都是），`pick` 是 400；和 Codex 一起选、装到项目时是「只能装到全局」，`notices` 依次是只能装到全局的那一句、omp 的那一句。
 - Base：三个宿主、装到项目、带 key 的 MCP → MCP 那一区的 `notices` 是 Codex 只能装到全局的那一句，卡片上 Codex 那一段「不支持」；汇总里只有 Claude Code 和 Pi 的行，`summary.notices` 依次是明文写进 `.mcp.json、.pi/mcp.json` 的一句、Claude Code 要批准的一句、Pi 要批准的一句（启动命令 `pi`）；没有登录的提醒。Pi 的配置读不了时那一区的 `notices` 是「读不到 Pi 的配置，无法判断哪些 MCP 已配置」，那一段是 `{ text: "未知", tone: "plain" }`。
@@ -608,6 +614,7 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 
 - 起初是检测到的全部宿主、全局；`choices` 的 `id`、名字、先后；只检测到一个时 `choices` 只有一项；一个都没有时是空的。
 - 两个宿主只选一个：`target.hosts` 和每张卡片的 `statuses` 只剩它；装的东西只进它的目录，另一个宿主的目录不存在。
+- 卡片的状态按栏分段（工单 06，`web-status-columns.test.ts`）：各种宿主组合下 Skill、第三方 Skill（连同小格）的段名和状态，在页面上去掉、勾回宿主之后段跟着重新归，装到项目，`hosts` 限定了宿主的条目，MCP 的三段、Claude Code 加 omp 的一段、只选 omp 时的空数组与勾不上（400），英文。断言整个 `statuses`（`toEqual`），不只看其中一段——多出一段也要失败。
 - Pi（`cli/test/web-pi.test.ts`）：三个宿主时本机信息与 `target` 的先后和缺省、只检测到 Pi、一个都没检测到时那一句的中英文；只留 Pi 时装到全局和项目的位置与安装标记、四种状态、逐项决定的覆盖；第三方 Skill 的命令与终端界面逐条相同（`--agent pi`）、装到项目、复核没过；英文。
 - Pi 的 MCP（`cli/test/web-pi-mcp.test.ts`）：只检测到 Pi 时卡片的状态、可选、记录到的命令（**字面值**）、没有登录的提醒；三个宿主时三段状态、三行结果、已配置的先移除再添加；`PI_CODING_AGENT_DIR`；配置读不了时那一区的提醒与「未知」；非零退出与没能起来；命令与终端界面逐条相同；必填的 key 没填（汇总里不算它、提醒、每个宿主一行跳过；只勾了它时「将安装 0 项」、没有命令）；装到项目（状态看 `.pi/mcp.json`、命令带 `-l` 与 `cwd`、项目里配过的先 `pi mcp remove … -l` 再添加、远程地址的 `-l --url`、两句提醒的原文、三个宿主时两个文件与两句要批准）；填的 key 不出现在任何别处（三个宿主只填一次、装到项目、命令起不来而错误消息里带着整条命令、画面状态里没有命令）；英文。
 - omp（`cli/test/web-omp.test.ts`，工单 04）：四个宿主时本机信息与 `target` 的先后和缺省、卡片上四段状态；只检测到 omp（不可去掉、另外三个未检测到）；装到全局和项目的位置与安装标记；Codex、Pi、omp 合成一行与四个宿主时的两行（汇总、安装中的行、结果；英文的看汇总和结果）；只留 omp 时 `Skill` 那一区的那句说明；第三方 Skill 的命令与终端界面逐条相同（`--agent pi`；四个宿主两条）、装到项目；MCP：omp 那一段「不支持」、那一区的 `notices`（去掉 omp 就没有、勾回来又有、没检测到时整份画面状态里搜不到、列表里没有 MCP 时没有）、只装进别的宿主且命令与终端界面逐条相同、只检测到 omp 时不可选与原因（全局、项目）、勾它是 400、和 Codex 一起装到项目时的原因与两句的先后、三句同时出现时的先后、omp 的配置文件写坏了不提且原样留着；每一条走到安装的用例都断言没有命令名是 `omp` 的命令、主目录和项目目录下没有 `.omp`（`expectOmpUntouched`；主目录里本来就放着 `.omp` 的那一条——omp 的配置文件写坏了——断言的是记录到的命令逐条相等、那里的文件原样留着）；英文。

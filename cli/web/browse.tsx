@@ -325,7 +325,7 @@ function SkillChoices({ entry, skills, showsHosts, send }: { entry: string; skil
   );
 }
 
-/** 一个宿主下的状态：宿主的名字（只装进一个宿主时不写）、状态的词、词后面不上色的那一段 */
+/** 一段状态：栏名（一个宿主，或共用一个 skill 目录的几个宿主；只装进一个宿主时不写）、状态的词、词后面不上色的那一段 */
 function Status({ status, showsHost }: { status: StatusView; showsHost: boolean }) {
   return (
     <span class="status">

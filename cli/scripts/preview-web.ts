@@ -569,13 +569,13 @@ const scenes: Scene[] = [
   { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的三个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
   {
     title: '浏览 · 三个宿主',
-    note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；每张卡片底部三段状态，各带宿主的名字，不合并。Codex 和 Pi 两段写的一样：它们的 skill 装在同一个共用 skill 目录里，Skill 那一区上方的「注意」说的就是这件事',
+    note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi」合成一段、状态只写一份——Skill 那一区上方的「注意」说的就是这件事',
     ...THREE,
     drive: crowded,
   },
   {
     title: '浏览 · 三个宿主 · MCP 那一区',
-    note: '卡片上每个宿主一段，各看各的配置：markitdown 在 Pi 里配过，是就绪色的「已配置」；excel 只支持 Claude Code，另外两段是「不支持」。那一区上方没有提醒',
+    note: 'MCP 的卡片上仍是每个宿主一段，各看各的配置：markitdown 在 Pi 里配过，是就绪色的「已配置」；excel 只支持 Claude Code，另外两段是「不支持」。那一区上方没有提醒',
     ...THREE,
     ...PI_CONFIGURED,
     drive: crowded,
@@ -599,7 +599,16 @@ const scenes: Scene[] = [
     drive: crowded,
     reveal: 'markitdown',
   },
-  { title: '浏览 · 三个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的三段状态都放得下，没有横向滚动条', ...THREE, drive: crowded, viewport: NARROW },
+  { title: '浏览 · 三个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的两段状态都放得下，没有横向滚动条', ...THREE, drive: crowded, viewport: NARROW },
+  {
+    title: '浏览 · 三个宿主 · 第三方 Skill 那一区',
+    note: '第三方 Skill 的卡片同样是「Claude Code」「Codex、Pi」两段；paper-craft-skills 勾上之后清单里每个 skill 的小格也按组，各写各的状态',
+    ...THREE,
+    drive: inOrder(crowded, THIRD_PARTY_PICKS),
+    reveal: 'paper-craft-skills',
+  },
+  { title: '浏览 · 三个宿主 · 第三方 Skill 那一区 · 1024×768', ...THREE, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills', viewport: NARROW },
+  { title: '浏览 · 三个宿主 · MCP 那一区 · 1024×768', note: '窄的窗口里 MCP 的三段状态', ...THREE, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown', viewport: NARROW },
   {
     title: '浏览 · 只检测到 Pi',
     note: '顶上写一句「装进 Pi」，没检测到的三个写在旁边；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
@@ -645,7 +654,7 @@ const scenes: Scene[] = [
   { title: '结果 · 三个宿主', note: '每个条目两行：Claude Code 一行，「Codex、Pi」一行，宿主那一格写得下；合计按行算', ...THREE, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
   {
     title: '浏览 · 共用 skill 目录的说明 · Codex 和 Pi',
-    note: 'Skill 那一区的小标题下面一行「注意」：三个名字是固定的，不看检测到了哪几个。卡片上仍是每个宿主一段状态，两段写的一样',
+    note: 'Skill 那一区的小标题下面一行「注意」：三个名字是固定的，不看检测到了哪几个。两个宿主共用一个 skill 目录：卡片底部的状态合成一段「Codex、Pi」',
     ...SHARING,
   },
   {
@@ -685,13 +694,13 @@ const scenes: Scene[] = [
   { title: '开场引导 · 只检测到 omp', note: '没有可勾的宿主：写一句「装进 omp」，没检测到的三个写在旁边；只有安装范围可选', ...OMP_ONLY, guide: true },
   {
     title: '浏览 · 四个宿主',
-    note: '顶上那一条里四个宿主的勾选和安装范围；每张卡片底部四段状态，各带宿主的名字，不合并。Codex、Pi、omp 三段写的一样：它们的 skill 装在同一个共用 skill 目录里',
+    note: '顶上那一条里四个宿主的勾选和安装范围；卡片底部的状态按 skill 目录归组：「Claude Code」一段，共用 skill 目录的「Codex、Pi、omp」合成一段，一行放得下，段名不被截断',
     ...FOUR,
     drive: crowded,
   },
   {
     title: '浏览 · 四个宿主 · MCP 那一区',
-    note: '卡片上 omp 那一段都是最淡的「不支持」：安装器不装 omp 的 MCP，那一区上方一行「注意」写明原因和出路。卡片照常勾得上，装进别的宿主',
+    note: 'MCP 的卡片上是 Claude Code、Codex、Pi 三段，没有 omp 的那一段：安装器不装 omp 的 MCP，那一区上方一行「注意」写明原因和出路。卡片照常勾得上，装进别的宿主',
     ...FOUR,
     ...PI_CONFIGURED,
     drive: crowded,
@@ -699,7 +708,7 @@ const scenes: Scene[] = [
   },
   {
     title: '浏览 · 四个宿主 · 装到项目 · MCP 那一区',
-    note: '选了「项目」：Codex 和 omp 两段都是「不支持」，那一区上方两行「注意」——Codex 的 MCP 只能装到全局在前，安装器装不了 omp 的 MCP 在后。仍然勾得上，装进 Claude Code 和 Pi',
+    note: '选了「项目」：仍是 Claude Code、Codex、Pi 三段，Codex 那一段是「不支持」，那一区上方两行「注意」——Codex 的 MCP 只能装到全局在前，安装器装不了 omp 的 MCP 在后。仍然勾得上，装进 Claude Code 和 Pi',
     ...FOUR,
     ...PI_CONFIGURED,
     catalog: withKeyed,
@@ -707,7 +716,23 @@ const scenes: Scene[] = [
     drive: inOrder(crowded, toProject, pickingMcp('markitdown')),
     reveal: 'markitdown',
   },
-  { title: '浏览 · 四个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的四段状态，没有横向滚动条', ...FOUR, drive: crowded, viewport: NARROW },
+  { title: '浏览 · 四个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的两段状态：「Codex、Pi、omp」完整显示，没有横向滚动条', ...FOUR, drive: crowded, viewport: NARROW },
+  {
+    title: '浏览 · 四个宿主 · 第三方 Skill 那一区',
+    note: '第三方 Skill 的卡片同样是「Claude Code」「Codex、Pi、omp」两段；paper-craft-skills 勾上之后清单里每个 skill 的小格也按组，各写各的状态',
+    ...FOUR,
+    drive: inOrder(crowded, THIRD_PARTY_PICKS),
+    reveal: 'paper-craft-skills',
+  },
+  { title: '浏览 · 四个宿主 · 第三方 Skill 那一区 · 1024×768', note: '窄的窗口里清单由三栏变两栏，小格里的两段状态', ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills', viewport: NARROW },
+  { title: '浏览 · 四个宿主 · MCP 那一区 · 1024×768', note: '窄的窗口里 MCP 的三段状态', ...FOUR, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown', viewport: NARROW },
+  {
+    title: '浏览 · 选了 Claude Code 和 omp · MCP 那一区',
+    note: 'MCP 的卡片上只有 Claude Code 一段（选了两个宿主，所以带着名字），没有 omp 的；那一区上方的「注意」照旧',
+    onPath: ['claude', 'omp', 'pandoc'],
+    drive: crowded,
+    reveal: 'markitdown',
+  },
   {
     title: '浏览 · 只检测到 omp',
     note: '顶上写一句「装进 omp」，没检测到的三个写在旁边；Skill 和第三方 Skill 的卡片照常勾得上；MCP 的卡片都是不可选的画法，原因是「需要别的 AI Agent」，出路在那一区上方的「注意」里',
@@ -770,6 +795,8 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 四个宿主', ...EN, ...FOUR, drive: crowded },
   { title: '英文 · 浏览 · 四个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、四个宿主', ...EN, ...FOUR, drive: crowded, viewport: NARROW },
   { title: '英文 · 浏览 · 四个宿主 · MCP 那一区', ...EN, ...FOUR, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
+  { title: '英文 · 浏览 · 四个宿主 · 第三方 Skill 那一区', note: '段名用英文的并列写法 Codex, Pi, omp', ...EN, ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills' },
+  { title: '英文 · 浏览 · 四个宿主 · 第三方 Skill 那一区 · 1024×768', note: '最挤的一格：英文、窄窗口、小格里的两段状态', ...EN, ...FOUR, drive: inOrder(crowded, THIRD_PARTY_PICKS), reveal: 'paper-craft-skills', viewport: NARROW },
   { title: '英文 · 汇总 · 四个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi, omp，完整显示', ...EN, ...FOUR, drive: summarized },
   { title: '英文 · 浏览 · 只检测到 omp', ...EN, ...OMP_ONLY, drive: crowded, reveal: 'markitdown' },
   {

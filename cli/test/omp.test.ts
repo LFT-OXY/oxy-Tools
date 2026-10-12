@@ -157,7 +157,7 @@ const PI_ADD_LOCAL = { command: 'pi', args: ['mcp', 'add', 'docs-local', '--', '
 const KEY_VALUE = 'sk-omp-test-0123456789';
 
 describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
-  it('四个宿主都选了：列表里 omp 那一栏是「不支持」，别的三栏各是各的状态；行照常可选', async () => {
+  it('四个宿主都选了：列表里没有 omp 的那一栏，别的三栏各是各的状态；行照常可选', async () => {
     const result = await run({
       catalog: withMcps(),
       onPath: ALL_HOSTS,
@@ -165,9 +165,9 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
       answers: [choose(WEB_SEARCH), accept(), pick(), pick(), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+omp\b/m);
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+未配置\s+已配置\s+不支持(\s|$)/m);
-    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s+未配置\s+未配置\s+不支持(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+未配置\s+已配置\s+本地进程方式的样例 MCP/m);
+    expect(listOf(result.output)).toMatch(/^ □ tracker-remote\s+未配置\s+未配置\s+未配置\s+远程地址方式的样例 MCP$/m);
   });
 
   it('MCP 照常装进别的宿主：汇总、将执行的命令、结果里都没有 omp 的行，执行的只有别的宿主的命令', async () => {
@@ -213,13 +213,13 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
     });
 
     expect(result.output).not.toContain('读不到');
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/m);
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
     expect(filesUnder(join(result.home, '.omp'))).toEqual(['agent', join('agent', 'mcp.json')]);
     expect(read(result.home, '.omp', 'agent', 'mcp.json')).toBe(before['.omp/agent/mcp.json']);
   });
 
-  it('装到项目：omp 那一栏照样是「不支持」，MCP 装进别的宿主的项目配置；项目目录里没有 omp 的东西', async () => {
+  it('装到项目：照样没有 omp 的那一栏，MCP 装进别的宿主的项目配置；项目目录里没有 omp 的东西', async () => {
     const result = await run({
       catalog: withMcps(),
       onPath: ['claude', 'omp'],
@@ -227,7 +227,8 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
       answers: [choose(WEB_SEARCH), accept(), choose('项目'), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/m);
     expect(result.commands).toEqual([
       { command: 'claude', args: ['mcp', 'add', '--scope', 'project', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'], cwd: result.project },
     ]);
@@ -236,7 +237,7 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
     expectOmpUntouched(result);
   });
 
-  it('英文界面：那一栏是 unsupported，汇总和结果里没有 omp', async () => {
+  it('英文界面：列表里没有 omp 的那一栏，汇总和结果里没有 omp', async () => {
     const result = await run({
       argv: ['--lang', 'en'],
       catalog: withMcps(),
@@ -244,7 +245,8 @@ describe('omp 的 MCP 安装器不装：和别的宿主一起选', () => {
       answers: [choose(WEB_SEARCH_EN), accept(), pick('docs-local'), choose('Install'), choose('Exit')],
     });
 
-    expect(listOf(result.output, '? Pick entries to install')).toMatch(/^ □ docs-local\s+none\s+unsupported(\s|$)/m);
+    expect(listOf(result.output, '? Pick entries to install')).toMatch(/^\s+Name\s+Claude Code\s+About$/m);
+    expect(listOf(result.output, '? Pick entries to install')).toMatch(/^ □ docs-local\s+none\s+A sample MCP run as a local process/m);
     expect(result.commands).toEqual([CLAUDE_ADD_LOCAL]);
     // 从汇总的标题到最后：先确认切到了汇总和结果（里面有 Claude Code 的那两行），再看里面没有 omp
     const fromSummary = result.output.slice(result.output.indexOf('── Install 1 item'));
@@ -287,7 +289,8 @@ describe('omp 的 MCP 安装器不装：所选的宿主都装不了时不可选'
   it('四个宿主里只留 omp：同样不可选', async () => {
     const result = await run({ catalog: withMcps(), onPath: ALL_HOSTS, answers: [choose(WEB_SEARCH), pick('omp'), pick(), pick(), choose('退出')] });
 
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+omp\s/m);
+    // 所选的宿主没有一个出 MCP 的栏：状态只有一栏
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+状态\s+说明$/m);
     expect(listOf(result.output)).toMatch(/^ – docs-local\s+需要别的 AI Agent\s/m);
   });
 
@@ -311,7 +314,8 @@ describe('omp 的 MCP 安装器不装：所选的宿主都装不了时不可选'
       answers: [choose(WEB_SEARCH), accept(), pick('docs-local'), choose('开始安装'), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+不支持(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Codex\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+本地进程方式的样例 MCP/m);
     expect(result.commands).toEqual([CODEX_ADD_LOCAL]);
     expectOmpUntouched(result);
   });
@@ -511,16 +515,16 @@ describe('同时选了共用 skill 目录的几个宿主：本仓库的 skill �
     expectOmpUntouched(result);
   });
 
-  it('列表里的状态不合并：四个宿主四栏，Codex、Pi、omp 三栏写的一样', async () => {
+  it('列表里的状态同样归组：四个宿主两栏，「Codex、Pi、omp」那一栏只写一份', async () => {
     const result = await run({
       onPath: ALL_HOSTS,
       home: { ...installed('.claude/skills', 'alpha', '1.0.0'), ...installed('.agents/skills', 'beta-pack', '2.0') },
       answers: [choose('推荐'), accept(), pick(), pick(), choose('退出')],
     });
 
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+omp\b/m);
-    expect(listOf(result.output)).toMatch(/^ □ alpha\s+已装 1\.0\.0\s+未装\s+未装\s+未装(\s|$)/m);
-    expect(listOf(result.output)).toMatch(/^ □ beta-pack\s+未装\s+2\.0 → 2\.3\s+2\.0 → 2\.3\s+2\.0 → 2\.3(\s|$)/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex、Pi、omp\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ alpha\s+已装 1\.0\.0\s+未装\s+第一个样例 skill/m);
+    expect(listOf(result.output)).toMatch(/^ □ beta-pack\s+未装\s+2\.0 → 2\.3\s+第二个样例 skill$/m);
   });
 
   it('英文界面：宿主那一格用英文的并列写法 Codex, Pi, omp', async () => {
@@ -730,7 +734,7 @@ describe('四个宿主都选了时的 80 列', () => {
   const measured = (text: string): string[] => text.split('\n').filter((line) => !line.includes('──') && !prose.has(line));
   const widest = (text: string): number => Math.max(...measured(text).map((line) => displayWidth(line)));
 
-  it('宿主行、宿主选择、列表（四栏状态）、清单、汇总、结果：样例里的每一行都不超出第 79 列', async () => {
+  it('宿主行、宿主选择、列表、清单、汇总、结果：样例里的每一行都不超出第 79 列', async () => {
     const result = await run({
       catalog: everything(),
       onPath: ALL_HOSTS,
@@ -748,9 +752,10 @@ describe('四个宿主都选了时的 80 列', () => {
 
     expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp ✓$/m);
     expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex\n ■ Pi\n ■ omp$/m);
-    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\s+omp$/m);
-    expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+非本工具安装\s+非本工具安装$/m);
-    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+未配置\s+未配置\s+不支持$/m);
+    expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex、Pi、omp\s+说明$/m);
+    expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+推荐 · \S/m);
+    expect(listOf(result.output)).toMatch(/^\s+── MCP\s+Claude Code\s+Codex\s+Pi$/m);
+    expect(listOf(result.output)).toMatch(/^ □ docs-local\s+未配置\s+未配置\s+未配置$/m);
     expect(summaryOf(result.output)).toMatch(/^\s+Codex、Pi、omp\s+覆盖\s+~\S+beta-pack$/m);
     expect(resultsOf(result.screen)).toMatch(/^\s+✓\s+beta-pack\s+Codex、Pi、omp\s+已安装 2\.0 → 2\.3$/m);
     expect(widest(result.screen)).toBeLessThanOrEqual(79);
@@ -780,7 +785,8 @@ describe('四个宿主都选了时的 80 列', () => {
 
     expect(summary).toBeGreaterThan(-1);
     expect(commands).toBeGreaterThan(summary);
-    expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex\s+Pi\s+omp$/m);
+    expect(result.output).toMatch(/^\s+Name\s+Claude Code\s+Codex, Pi, omp\s+About$/m);
+    expect(result.output).toMatch(/^\s+── MCP\s+Claude Code\s+Codex\s+Pi$/m);
     expect(result.screen).toMatch(/^\s+✓\s+beta-pack\s+Codex, Pi, omp\s+installed 2\.0 → 2\.3$/m);
     expect(widest(result.screen.slice(0, summary))).toBeLessThanOrEqual(79);
     expect(widest(result.screen.slice(commands))).toBeLessThanOrEqual(79);

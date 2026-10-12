@@ -83,15 +83,15 @@ async function planEntries(
   for (;;) {
     // 状态每次进列表都现探测
     const status = listingStatus(session, listing, hosts, scope);
-    ui.listNotices({ sharedSkills: sharedSkillsNoted(hosts, listing), ...mcpColumnHosts(hosts, status.mcps) });
-    picked = await prompter.checkbox(ui.mixedPicker({ hosts, ...status, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }));
+    ui.listNotices({ sharedSkills: sharedSkillsNoted(hosts, listing), ...mcpColumnHosts(hosts, status) });
+    picked = await prompter.checkbox(ui.mixedPicker({ ...status, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }));
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));
     const thirdParty: { entry: ThirdPartySkill; wanted: readonly SourcedSkill[] }[] = [];
     for (const { entry, statuses } of status.thirdParty.filter(({ entry }) => picked.includes(entry))) {
       // 含多个 skill 的问要其中哪几个，一个都不勾就是这一条不装；只含一个的不问
       if (entry.skills.length > 1) {
-        chosen.set(entry, await prompter.checkbox(ui.thirdPartyPicker({ entry, hosts, statuses, checked: chosen.get(entry) ?? [] })));
+        chosen.set(entry, await prompter.checkbox(ui.thirdPartyPicker({ entry, skillColumns: status.skillColumns, statuses, checked: chosen.get(entry) ?? [] })));
       }
       thirdParty.push({ entry, wanted: chosen.get(entry) ?? entry.skills });
     }

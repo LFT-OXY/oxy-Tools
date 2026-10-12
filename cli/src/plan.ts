@@ -1,6 +1,6 @@
 // 算计划：把勾选算成要装的每一项。两套界面共用：只探测，不提问、不往终端上打东西，也不执行任何命令。
 import { isAbsolute, join, relative } from 'node:path';
-import { skillsDirOf, toolUnavailable, type Machine } from './availability.ts';
+import { skillGroups, toolUnavailable, type Machine } from './availability.ts';
 import type { Mcp, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
 import { mcpConfigOf, type Command, type Host, type McpConfig, type Scope } from './hosts.ts';
 import { mcpSteps, type McpStep } from './install-mcp.ts';
@@ -147,14 +147,8 @@ export function planInstall(machine: Machine, { hosts, scope, skills, thirdParty
   // 给用户看的位置：全局的以 ~ 开头，项目的写成相对项目目录的路径
   const located = (path: string): string => (scope === 'project' ? relative(machine.projectDir, path) : homeRelative(machine, path));
   // 所选的宿主按 skill 目录归组：共用一个目录的几个宿主是一组，同一个 skill 在一组下只装一次。
-  // 组和组里的宿主都照界面上的先后；first 是组里排在最前的那个
-  const groups: { skillsDir: string; first: Host; hosts: Host[] }[] = [];
-  for (const host of hosts) {
-    const skillsDir = skillsDirOf(host, scope);
-    const group = groups.find((candidate) => candidate.skillsDir === skillsDir);
-    if (group) group.hosts.push(host);
-    else groups.push({ skillsDir, first: host, hosts: [host] });
-  }
+  // 和列表的状态是同一种归组；first 是组里排在最前的那个
+  const groups = skillGroups(hosts, scope).map(({ skillsDir, hosts: group }) => ({ skillsDir, first: group[0], hosts: group }));
   const names = (group: readonly Host[]): string[] => group.map((host) => host.name);
   // 每个 skill 在每一组下各是一项，各有自己的结果
   const jobs = skills.flatMap((skill) =>

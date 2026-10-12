@@ -66,9 +66,12 @@ export function listingView(
     ...(unavailable ? { unavailable: unavailableReason(t, unavailable) } : {}),
     ...(picked.has(entry) ? { picked: true as const } : {}),
   });
-  // 每个宿主一段，与 hosts 一一对应
-  const perHost = (texts: StatusText[]): StatusView[] => texts.map((text, column) => ({ host: hosts[column]?.name ?? '', ...text }));
-  // 含多个 skill 的第三方 Skill 里的各个 skill：各写各的状态（条目不支持那个宿主时是不支持），挑了的标出来
+  // 状态一栏一段，各带栏名。Skill 和第三方 Skill 的栏是所选的宿主按 skill 目录归的组，栏名把一组里的名字并列起来；
+  // MCP 的栏是装得了 MCP 的那些所选宿主
+  const labelled = (columns: readonly string[]) => (texts: StatusText[]): StatusView[] => texts.map((text, column) => ({ host: columns[column] ?? '', ...text }));
+  const perGroup = labelled(status.skillColumns.map((group) => group.hosts.map((host) => host.name).join(t.listSeparator)));
+  const perMcpHost = labelled(status.mcpColumns.map((host) => host.name));
+  // 含多个 skill 的第三方 Skill 里的各个 skill：各写各的状态（条目不支持那一组里的宿主时是不支持），挑了的标出来
   const skillChoices = (entry: ThirdPartySkill, statuses: ThirdPartyStatus[]): { skills?: SkillChoicesView } =>
     entry.skills.length > 1
       ? {
@@ -77,14 +80,14 @@ export function listingView(
             entries: entry.skills.map((skill, index) => ({
               name: skill.name,
               about: skill.description[lang],
-              statuses: perHost(statuses.map((status) => thirdPartyStatusText(t, status === 'unsupported' ? status : [status[index] === true]))),
+              statuses: perGroup(statuses.map((status) => thirdPartyStatusText(t, status === 'unsupported' ? status : [status[index] === true]))),
               ...(chosen.get(entry)?.has(skill) ? { chosen: true as const } : {}),
             })),
           },
         }
       : {};
   // MCP 那一区上方的提醒：和终端界面列表上方关于 MCP 的那几行是同一份话
-  const mcpNotices = mcpColumnNoticeTexts(t, mcpColumnHosts(hosts, status.mcps));
+  const mcpNotices = mcpColumnNoticeTexts(t, mcpColumnHosts(hosts, status));
   // 要 key 的 MCP 的标记：说的是条目，不随填没填变
   const keyTag = ({ env }: Mcp): { key?: string } =>
     env.length === 0 ? {} : { key: env.some((variable) => variable.required) ? t.keyTags.required : t.keyTags.optional };
@@ -94,14 +97,14 @@ export function listingView(
       ...t.sections.skill,
       // 本仓库的 skill 都是推荐的
       entries: status.skills.map(({ skill, statuses, unavailable }) =>
-        component(skill, true, perHost(statuses.map((one) => skillStatusText(t, one, skill.version, ARROW))), unavailable),
+        component(skill, true, perGroup(statuses.map((one) => skillStatusText(t, one, skill.version, ARROW))), unavailable),
       ),
     },
     {
       kind: 'thirdParty' as const,
       ...t.sections.thirdParty,
       entries: status.thirdParty.map(({ entry, statuses, unavailable }) => ({
-        ...component(entry, entry.recommended, perHost(statuses.map((one) => thirdPartyStatusText(t, one))), unavailable),
+        ...component(entry, entry.recommended, perGroup(statuses.map((one) => thirdPartyStatusText(t, one))), unavailable),
         ...skillChoices(entry, statuses),
       })),
     },
@@ -110,7 +113,7 @@ export function listingView(
       ...t.sections.mcp,
       ...(mcpNotices.length > 0 ? { notices: mcpNotices } : {}),
       entries: status.mcps.map(({ mcp, statuses, unavailable }) => ({
-        ...component(mcp, mcp.recommended, perHost(statuses.map((one) => mcpStatusText(t, one))), unavailable),
+        ...component(mcp, mcp.recommended, perMcpHost(statuses.map((one) => mcpStatusText(t, one))), unavailable),
         ...keyTag(mcp),
       })),
     },

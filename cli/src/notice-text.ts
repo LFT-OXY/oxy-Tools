@@ -31,7 +31,7 @@ export interface McpColumnHosts {
 
 /**
  * 列表里 MCP 那几栏的说明，照这个先后：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，它们那一栏写着不支持，
- * 这里说原因（几个宿主合成一句）；noConfig 是 MCP 安装器不装的宿主，那一栏同样写着不支持，这里说在它里面怎么自己添加
+ * 这里说原因（几个宿主合成一句）；noConfig 是 MCP 安装器不装的宿主，它们不出栏，这里说在它里面怎么自己添加
  * （各自的办法不同，一个宿主一句）；unreadable 是配置读不到的宿主，它们那一栏都是未知（合成一句）。都没有时是空的
  */
 export function mcpColumnNoticeTexts(t: Messages, { globalOnly, noConfig, unreadable }: McpColumnHosts): string[] {

@@ -73,7 +73,7 @@ export interface ViewState {
     hostsLabel: string;
     /** 检测到的宿主，照本机信息里的先后：id 放进 host 意图，on 是这一轮要装进它。只检测到一个时页面不画成选项 */
     choices: { id: string; name: string; on: boolean }[];
-    /** 要装进的宿主的名字（choices 里 on 的那些）：条目的 statuses 与它一一对应 */
+    /** 要装进的宿主的名字（choices 里 on 的那些）。条目的 statuses 不与它一一对应：那是按栏分的，见 ComponentView */
     hosts: string[];
     scopeLabel: string;
     /** 安装范围有哪几种，照显示的先后 */
@@ -135,7 +135,10 @@ export interface ComponentView {
   mark?: string;
   /** 要 key 的 MCP 才有的标记：有必填的变量是「要填 key」，只有可选的是「可选的 key」 */
   key?: string;
-  /** 每个要装进的宿主一段，与 target.hosts 一一对应；工具只有一段，没有 host */
+  /**
+   * 卡片底部的状态，一栏一段，照显示的先后，各带栏名（host）。Skill 和第三方 Skill 是所选的宿主按 skill 目录归组、一组一段；
+   * MCP 是每个装得了 MCP 的所选宿主一段，MCP 安装器不装的宿主没有；工具只有一段，没有 host。页面照原样画，不自己归组
+   */
   statuses: StatusView[];
   /** 不可选的原因；有它就勾不上 */
   unavailable?: string;
@@ -155,7 +158,7 @@ export interface SkillChoiceView {
   name: string;
   /** 完整的说明 */
   about: string;
-  /** 这个 skill 自己在每个要装进的宿主下的状态，与 target.hosts 一一对应 */
+  /** 这个 skill 自己的状态：和它所在卡片的 statuses 是同样的几段（一组宿主一段） */
   statuses: StatusView[];
   /** 挑了 */
   chosen?: true;
@@ -165,6 +168,7 @@ export interface SkillChoiceView {
 export type Tone = 'ready' | 'attention' | 'faint' | 'plain';
 
 export interface StatusView {
+  /** 这一段的栏名：一个宿主的名字，或共用一个 skill 目录的几个宿主的名字并列起来（「Codex、Pi、omp」）；工具的没有 */
   host?: string;
   text: string;
   tone: Tone;

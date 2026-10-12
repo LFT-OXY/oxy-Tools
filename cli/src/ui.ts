@@ -102,6 +102,8 @@ export type MenuChoice = 'recommended' | Purpose | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
 /** 一项装进哪：一个宿主（MCP），或共用一个 skill 目录的那几个宿主（skill、第三方 Skill），都是名字 */
 type HostCell = { host: string } | { hosts: readonly string[] };
+/** 列表里共用一个 skill 目录、状态合成一栏的那几个宿主 */
+type HostGroup = { hosts: readonly Host[] };
 
 export interface UiOptions {
   out: TerminalOutput;
@@ -193,6 +195,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
   // 宿主那一格：共用一个 skill 目录的几个宿主合成一项，名字照界面上的先后用并列的写法连起来（「Codex、Pi」）
   const hostCell = (target: HostCell): string => ('hosts' in target ? target.hosts.join(t.listSeparator) : target.host);
+  // 列表里一组宿主的栏名：同一种并列的写法
+  const groupName = (group: HostGroup): string => group.hosts.map((host) => host.name).join(t.listSeparator);
 
   // 每一栏取这一栏里最长的一格再加栏间隔
   const columnWidths = (rows: readonly (readonly string[])[]): number[] =>
@@ -639,14 +643,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
 
     /**
      * 进入「推荐」或一个用途之后的那张列表（混合列表）：条目按类型分段，段首一行标题。组件在上（skill、第三方
-     * Skill、MCP、工具），前三样每个所选的宿主一栏状态（statuses 与 hosts 一一对应）；工具只有一个状态，与宿主无关，
-     * 写在第一栏的位置；外部项目在下，没有状态。hosts 是空的时状态只有一栏。带着 unavailable 的行不可选，原因写在
-     * 状态的位置：哪些行不可选、为什么，由调用方照共用的规矩给。
+     * Skill、MCP、工具）：skill 和第三方 Skill 的状态一组宿主一栏（skillColumns 是所选的宿主按 skill 目录归的组，statuses
+     * 与它一一对应），MCP 的每个装得了 MCP 的宿主一栏（mcpColumns，statuses 与它一一对应）；工具只有一个状态，与宿主
+     * 无关，写在第一栏的位置；外部项目在下，没有状态。表头写 skill 的栏；MCP 的栏和它不同时，栏名写在 MCP 那一段的
+     * 标题行上，那一段不写说明一栏。列表里没有 skill 和第三方 Skill 时表头直接写 MCP 的栏。一栏都没有时状态只有一栏
+     *（一个宿主都没有，或所选的宿主都不出这种栏）。带着 unavailable 的行不可选，原因写在状态的位置：哪些行不可选、
+     * 为什么，由调用方照共用的规矩给。
      * checked 是提问出现时已经勾上的那些。marksRecommended 表示把带推荐的行标出来——「推荐」那张列表里每一行都是，
      * 不标。列表下方是光标所在行的类型和说明全文。一个都不勾就确认表示返回。
      */
     mixedPicker({
-      hosts,
+      skillColumns,
+      mcpColumns,
       skills,
       thirdParty,
       mcps,
@@ -655,7 +663,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       checked,
       marksRecommended,
     }: {
-      hosts: readonly Host[];
+      skillColumns: readonly HostGroup[];
+      mcpColumns: readonly Host[];
       skills: readonly { skill: Skill; statuses: readonly SkillStatus[]; unavailable?: Unavailable }[];
       thirdParty: readonly { entry: ThirdPartySkill; statuses: readonly ThirdPartyStatus[]; unavailable?: Unavailable }[];
       mcps: readonly { mcp: Mcp; statuses: readonly McpStatus[]; unavailable?: Unavailable }[];
@@ -667,15 +676,23 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       // 多选的每一行前面是光标、勾选框和一个空格；分隔行前面只有一格，所以表头和段标题要多缩进
       const lead = displayWidth(symbols.checked) + 2;
       const indent = ' '.repeat(lead - 1);
-      const hostless = hosts.length === 0;
       // 组件各段的行：cells 是各栏状态，比状态栏少时后面空着；unavailable 是这一行不可选的原因，写在状态的位置、
       // 占满各个状态栏，这时不看 cells
-      const sections: {
-        title: string;
-        note?: string;
-        kind: string;
-        rows: { value: Skill | ThirdPartySkill | Mcp | Tool; name: string; about: string; recommended: boolean; cells: string[]; unavailable?: string }[];
-      }[] = [
+      type ComponentRow = { value: Skill | ThirdPartySkill | Mcp | Tool; name: string; about: string; recommended: boolean; cells: string[]; unavailable?: string };
+      type Section = { title: string; note?: string; kind: string; rows: ComponentRow[] };
+      const mcpSection: Section = {
+        ...t.sections.mcp,
+        kind: t.kinds.mcp,
+        rows: mcps.map(({ mcp, statuses, unavailable }) => ({
+          value: mcp,
+          name: mcp.name,
+          about: mcp.description[lang],
+          recommended: mcp.recommended,
+          cells: statuses.map((status) => statusCell(mcpStatusText(t, status))),
+          ...reasonOf(unavailable),
+        })),
+      };
+      const sections: Section[] = [
         {
           ...t.sections.skill,
           kind: t.kinds.skill,
@@ -701,18 +718,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
             ...reasonOf(unavailable),
           })),
         },
-        {
-          ...t.sections.mcp,
-          kind: t.kinds.mcp,
-          rows: mcps.map(({ mcp, statuses, unavailable }) => ({
-            value: mcp,
-            name: mcp.name,
-            about: mcp.description[lang],
-            recommended: mcp.recommended,
-            cells: statuses.map((status) => statusCell(mcpStatusText(t, status))),
-            ...reasonOf(unavailable),
-          })),
-        },
+        mcpSection,
         {
           ...t.sections.tool,
           kind: t.kinds.tool,
@@ -727,18 +733,34 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         },
       ].filter((section) => section.rows.length > 0);
       const components = sections.flatMap((section) => section.rows);
-      // 一个组件都没有时没有状态栏
-      const columns = components.length === 0 ? [] : hostless ? [t.statusColumn] : hosts.map((host) => host.name);
+      const skillNames = skillColumns.map(groupName);
+      const mcpNames = mcpColumns.map((host) => host.name);
+      // 表头写 skill 的栏；列表里没有 skill 和第三方 Skill 时直接写 MCP 的栏
+      const headNames = skills.length + thirdParty.length > 0 ? skillNames : mcpNames;
+      // MCP 的栏和表头的不同：那一段自己排，栏名写在它的标题行上。它一栏都没有时没有可写的，行照表头的栏排
+      const ownMcp = mcpSection.rows.length > 0 && mcpNames.length > 0 && mcpNames.join('\n') !== headNames.join('\n');
+      // 一个组件都没有时没有状态栏；一栏都没有时状态只有一栏
+      const columns = components.length === 0 ? [] : headNames.length === 0 ? [t.statusColumn] : headNames;
       const nameWidth = Math.max(displayWidth(t.nameColumn), ...[...components, ...apps].map((entry) => displayWidth(entry.name))) + GUTTER;
-      const cellWidths = columns.map(
-        (column, at) =>
-          Math.max(displayWidth(column), ...components.map((row) => (row.unavailable === undefined ? displayWidth(row.cells[at] ?? '') : 0))) + GUTTER,
-      );
+      // 每一栏取栏名和这一栏里最长的状态再加栏间隔；不可选的行写的是原因，不算
+      const widthsOf = (names: readonly string[], rows: readonly ComponentRow[]): number[] =>
+        names.map((name, at) => Math.max(displayWidth(name), ...rows.map((row) => (row.unavailable === undefined ? displayWidth(row.cells[at] ?? '') : 0))) + GUTTER);
+      // 照表头的栏排的行
+      const headRows = ownMcp ? components.filter((row) => !mcpSection.rows.includes(row)) : components;
+      const cellWidths = widthsOf(columns, headRows);
       // 原因比各栏状态合起来还宽时，把最后一栏撑到放得下它
-      const reasonWidth = Math.max(0, ...components.map((row) => displayWidth(row.unavailable ?? ''))) + GUTTER;
+      const reasonWidth = Math.max(0, ...headRows.map((row) => displayWidth(row.unavailable ?? ''))) + GUTTER;
       const short = Math.max(0, reasonWidth - cellWidths.reduce((sum, width) => sum + width, 0));
       const statusWidths = cellWidths.map((width, at) => (at === cellWidths.length - 1 ? width + short : width));
       const statusWidth = statusWidths.reduce((sum, width) => sum + width, 0);
+      // MCP 那一段自己的栏宽。开头和表头是同一栏的（同一个宿主）跟表头的那一栏同宽，后面的栏就和表头的从同一列起；
+      // 这样排超出一行时各栏照自己最长的一格定
+      const ownWidths = widthsOf(mcpNames, mcpSection.rows);
+      const differs = mcpNames.findIndex((name, at) => name !== columns[at]);
+      const leading = differs === -1 ? mcpNames.length : differs;
+      const alignedWidths = ownWidths.map((width, at) => (at < leading ? Math.max(width, statusWidths[at] ?? 0) : width));
+      const fits = lead + nameWidth + alignedWidths.reduce((sum, width) => sum + width, 0) - GUTTER <= USABLE;
+      const mcpWidths = fits ? alignedWidths : ownWidths;
       // 外部项目没有状态，说明从第一栏状态的位置写起
       const wideAbout = USABLE - lead - nameWidth;
       const aboutWidth = wideAbout - statusWidth;
@@ -758,24 +780,34 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       const title = (section: { title: string; note?: string }) => ({
         separator: `${indent}${dim(symbols.rule.repeat(2))} ${section.title}${section.note === undefined ? '' : ` ${symbols.separator} ${section.note}`}`,
       });
+      // MCP 那一段自己排时的标题行：标题后面是它自己的栏名，和下面的状态对齐
+      const mcpTitle = () => ({
+        separator: `${pad(title(mcpSection).separator, lead - 1 + nameWidth)}${dim(mcpNames.map((name, at) => pad(name, mcpWidths[at] ?? 0)).join('').trimEnd())}`,
+      });
       const rows = [
         { separator: dim(`${indent}${pad(t.nameColumn, nameWidth)}${columns.map((column, at) => pad(column, statusWidths[at] ?? 0)).join('')}${showsAbout ? t.aboutColumn : ''}`.trimEnd()) },
-        ...sections.flatMap((section) => [
-          title(section),
-          ...section.rows.map((row) => {
-            const text = showsAbout ? about(row.about, aboutWidth, row.recommended) : '';
-            const choice = { value: row.value, short: row.name, description: below(section.kind, row.recommended, row.about), checked: checked.includes(row.value) };
-            // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：名称少补一格。整行压暗，原因自己不带样式
-            if (row.unavailable !== undefined) {
-              const name = pad(row.name, nameWidth - 1);
-              const disabled = `${pad(`${REASON_MARK}${row.unavailable}${REASON_MARK}`, statusWidth)}${text}`.trimEnd();
-              belowUnavailable.set(`${name} ${disabled}`, choice.description);
-              return { ...choice, name, disabled };
-            }
-            const cells = pad(row.cells.map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join(''), statusWidth);
-            return { ...choice, name: `${pad(row.name, nameWidth)}${cells}${text}`.trimEnd() };
-          }),
-        ]),
+        ...sections.flatMap((section) => {
+          // 自己排的那一段只有名称和它自己的几栏状态，不写说明
+          const own = ownMcp && section === mcpSection;
+          const widths = own ? mcpWidths : statusWidths;
+          const width = own ? 0 : statusWidth;
+          return [
+            own ? mcpTitle() : title(section),
+            ...section.rows.map((row) => {
+              const text = showsAbout && !own ? about(row.about, aboutWidth, row.recommended) : '';
+              const choice = { value: row.value, short: row.name, description: below(section.kind, row.recommended, row.about), checked: checked.includes(row.value) };
+              // 交互库把不可选的行拼成「名称 + 一个空格 + 原因」：名称少补一格。整行压暗，原因自己不带样式
+              if (row.unavailable !== undefined) {
+                const name = pad(row.name, nameWidth - 1);
+                const disabled = `${pad(`${REASON_MARK}${row.unavailable}${REASON_MARK}`, width)}${text}`.trimEnd();
+                belowUnavailable.set(`${name} ${disabled}`, choice.description);
+                return { ...choice, name, disabled };
+              }
+              const cells = pad(row.cells.map((cell, at) => pad(cell, widths[at] ?? 0)).join(''), width);
+              return { ...choice, name: `${pad(row.name, nameWidth)}${cells}${text}`.trimEnd() };
+            }),
+          ];
+        }),
         // 外部项目一段与上面的组件之间空一行
         ...(components.length > 0 && apps.length > 0 ? [{ separator: ' ' }] : []),
         ...(apps.length > 0 ? [title(t.sections.app)] : []),
@@ -825,18 +857,18 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 含多个 skill 的第三方 Skill 的清单：混合列表确认之后，问要其中哪几个。栏和混合列表一样（名称、每个所选的宿主
-     * 一栏状态、说明），没有分段；每个 skill 各写各的状态（statuses 是条目在各个宿主下的状态，与 hosts 一一对应）。
+     * 含多个 skill 的第三方 Skill 的清单：混合列表确认之后，问要其中哪几个。栏和混合列表里它那一段一样（名称、一组宿主
+     * 一栏状态、说明），没有分段；每个 skill 各写各的状态（statuses 是条目在各组下的状态，与 skillColumns 一一对应）。
      * checked 是提问出现时已经勾上的那些。一个都不勾就确认表示这一条不装。
      */
     thirdPartyPicker({
       entry,
-      hosts,
+      skillColumns,
       statuses,
       checked,
     }: {
       entry: ThirdPartySkill;
-      hosts: readonly Host[];
+      skillColumns: readonly HostGroup[];
       statuses: readonly ThirdPartyStatus[];
       checked: readonly SourcedSkill[];
     }): CheckboxQuestion<SourcedSkill> {
@@ -846,14 +878,15 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         cells: statuses.map((status) => thirdPartyCell(status === 'unsupported' ? status : [status[index] === true])),
       }));
       const nameWidth = Math.max(displayWidth(t.nameColumn), ...rows.map((row) => displayWidth(row.skill.name))) + GUTTER;
-      const statusWidths = hosts.map((host, at) => Math.max(displayWidth(host.name), ...rows.map((row) => displayWidth(row.cells[at] ?? ''))) + GUTTER);
+      const columns = skillColumns.map(groupName);
+      const statusWidths = columns.map((column, at) => Math.max(displayWidth(column), ...rows.map((row) => displayWidth(row.cells[at] ?? ''))) + GUTTER);
       const aboutWidth = USABLE - lead - nameWidth - statusWidths.reduce((sum, width) => sum + width, 0);
       const showsAbout = aboutWidth >= MIN_ABOUT;
       const line = (name: string, cells: readonly string[], about: string): string =>
         `${pad(name, nameWidth)}${cells.map((cell, at) => pad(cell, statusWidths[at] ?? 0)).join('')}${showsAbout ? about : ''}`.trimEnd();
       const question = list([
         // 表头比条目少一格，理由同混合列表
-        { separator: dim(`${' '.repeat(lead - 1)}${line(t.nameColumn, hosts.map((host) => host.name), t.aboutColumn)}`) },
+        { separator: dim(`${' '.repeat(lead - 1)}${line(t.nameColumn, columns, t.aboutColumn)}`) },
         ...rows.map(({ skill, cells }) => ({
           value: skill,
           short: skill.name,
@@ -921,7 +954,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /**
      * 混合列表上方的说明，各占一行，几行挨着。sharedSkills 是要不要那句共用 skill 目录的说明，排在最前；后面是关于
      * MCP 那几栏的：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，它们那一栏写着不支持，这里说原因；
-     * noConfig 是 MCP 安装器不装的宿主，那一栏同样写着不支持，这里说在它里面怎么自己添加；
+     * noConfig 是 MCP 安装器不装的宿主，它们不出栏，这里说在它里面怎么自己添加；
      * unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
      */
     listNotices({ sharedSkills, ...mcpColumns }: { sharedSkills: boolean } & McpColumnHosts): void {

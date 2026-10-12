@@ -67,6 +67,10 @@ export type McpStatus = 'none' | 'configured' | 'unknown' | 'unsupported' | 'no-
 export type InstallableMcpStatus = Exclude<McpStatus, 'unsupported' | 'no-config' | 'global-only'>;
 export function mcpStatuses(mcps: readonly Mcp[], hosts: readonly Host[], scope: Scope): McpStatus[][]; // [第几个 MCP][第几个宿主]
 
+// cli/src/availability.ts —— 列表里 MCP 的状态栏（工单 06）：ListingStatus.mcpColumns 是所选的宿主里有 MCP 配置的那些，
+// 每个 MCP 的 statuses 与它一一对应；没有 MCP 配置的宿主不出栏。列表拿 mcpColumns 去调 mcpStatuses，所以列表的状态里没有 no-config
+// （算计划时仍拿所选的全部宿主去调，那里它是 no-config、不出项）
+
 // cli/src/install-mcp.ts
 export interface McpStep { action: 'remove' | 'add'; command: Command; tolerated: boolean }
 // config 是 mcpConfigOf(host, scope)
@@ -169,7 +173,7 @@ export function systemCommandRunner(): CommandRunner;
 | 情况 | 状态 | 列表里的写法 |
 |------|------|--------------|
 | 条目写了 `hosts` 且不含这个宿主的 `id` | `unsupported` | `不支持`（暗淡） |
-| 这个宿主没有 MCP 配置（适配里没有 `mcp`；条目本身支持它） | `no-config` | `不支持`（暗淡），见下面「宿主可以没有 MCP 配置」 |
+| 这个宿主没有 MCP 配置（适配里没有 `mcp`；条目本身支持它） | `no-config` | **列表里没有它的那一栏**（工单 06；原先是一栏暗淡的「不支持」），见下面「宿主可以没有 MCP 配置」和「列表里的栏」 |
 | 选了项目，而这个宿主没有 `projectMcp`（条目本身支持它） | `global-only` | `不支持`（暗淡），列表上方另有一行说明，见「装到项目」 |
 | 配置文件不存在（宿主还没写过配置） | `none` | `未配置`（暗淡） |
 | 读得出来，那张表里没有这个名字（包括整张表都没有） | `none` | `未配置` |
@@ -179,6 +183,7 @@ export function systemCommandRunner(): CommandRunner;
 - **Pi 的配置目录照 Pi 自己的规矩从 `PI_CODING_AGENT_DIR` 读**（`hosts.ts` 的 `piAgentDir`；对照它的 `dist/config.js` 的 `getAgentDir` 和 `dist/utils/paths.js` 的 `normalizePath`，只读）：值单独是一个 `~` 就是主目录，以 `~/` 开头（Windows 上还有 `~\`）就是主目录下的那一段，别的原样用。不展开的话，写成 `~/x` 的值在安装器这边成了相对路径，读不到文件，状态全是「未配置」、汇总写「新装」而不是「覆盖」。Pi 另外还认 `file://` 开头的写法、在 Windows 上把 shell 风格的路径（`/c/Users/…`）转成盘符路径，这两样安装器**没有**照做——值写成那样时状态会看错地方。`CLAUDE_CONFIG_DIR`、`CODEX_HOME` 原样用，没有动。
 - Codex 的配置用 `smol-toml` 解析，所以 `[mcp_servers.x]`、行内表、带点的键哪种写法都认得；解析失败就是 `unknown`，不自己猜。
 - 状态每次进列表都现探测，只探测这张列表里的 MCP；某个宿主那一栏出现 `unknown` 时，列表上方多一行「注意  读不到 <宿主> 的配置，无法判断哪些 MCP 已配置」。列表里没有 MCP 时没有这一行。
+- **列表里的栏**（任务 `10-12-installer-add-pi-omp-hosts` 工单 06；维护者 2026-10-12 定的，见该任务规格「四个宿主时的版式」第 1 条）：MCP **每个宿主一栏、各看各的配置，不随 skill 目录归组**；**没有 MCP 配置的宿主（omp）不出栏**（`ListingStatus.mcpColumns`）。所以四个宿主都选了时是 Claude Code、Codex、Pi 三栏，选了 Claude Code 和 omp 时只有 Claude Code 一栏，只选 omp 时一栏都没有、每个 MCP 都不可选。Skill 和第三方 Skill 的栏另按 skill 目录归组（[安装 skill](./skill-install.md) 的「按 skill 目录归组」），两种栏不一样时终端界面把 MCP 的栏名写在 MCP 那一段的标题行上（[界面设计](./ui-design.md) 的「选择条目」），网页界面的卡片上各写各的段（[网页界面的设计](./web-ui-design.md) 的「条目的卡片」）。
 
 **怎么装（`mcpSteps`）**
 
@@ -192,7 +197,7 @@ export function systemCommandRunner(): CommandRunner;
 - 汇总（「将安装 N 项」里 MCP 的那张小表）之后是「将执行 N 条命令」：每条完整命令编号列出，确认了才执行。**任何外部命令都不许在这之前跑**，状态探测因此只读文件。
 - 不另问“要不要覆盖”：MCP 没有“是不是本工具装的”这个概念，再装一次就是覆盖。
 - 每个 MCP 在每个**支持它的**所选宿主下各是一项，各有一行结果，互不影响；一项失败不影响其余项，退出状态不变。
-- 所选宿主一个都装不了的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写在状态的位置、占满各个状态栏：各栏里有 `global-only` 的写「只能装到全局」（换成全局就装得了），其余的（全是 `unsupported`、`no-config`）写「需要别的 AI Agent」——只选了 omp 时每个 MCP 都落在后一种。只有一部分装不了的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
+- 所选宿主一个都装不了的条目在列表里不可选（多选的不可选行，见 [终端输出](./terminal-output.md)），原因写在状态的位置、占满各个状态栏：各栏里有 `global-only` 的写「只能装到全局」（换成全局就装得了），其余的（全是 `unsupported`，或一栏都没有）写「需要别的 AI Agent」——只选了 omp 时没有 MCP 的栏，每个 MCP 都落在后一种。只有一部分装不了的仍可选。一个宿主都没检测到时每个 MCP 都不可选，原因是「需要 AI Agent」。
 
 **装到项目**（任务 `10-10-catalog-purpose-categories` 工单 11；2026-10-11 用 claude 2.1.295、codex 0.162.0 在临时目录里实测并对照官方文档，记录在该任务的 `research/project-mcp-trial-record.md`）
 
@@ -226,8 +231,8 @@ export function systemCommandRunner(): CommandRunner;
 | 哪里 | 怎么办 |
 |------|--------|
 | 状态（`mcpStatuses`） | 条目本身支持这个宿主时是 `no-config`，**全局和项目两个安装范围都一样**（不是 `global-only`：换成全局也装不进它）。条目的 `hosts` 里没有它时仍是 `unsupported`，先看这一条 |
-| 列表里那一栏 | 现有的词「不支持」（暗淡），和 `unsupported`、`global-only` 是同一个词。内部分三种是因为说明不同：`global-only` 的说明是「只能装到全局」，`no-config` 的是「安装器装不了…」，`unsupported` 没有 |
-| 可不可选（`listingStatus`） | 所选的宿主都装不了它时不可选。原因照原来的规则：各栏里有 `global-only` 的是「只能装到全局」，否则是「需要别的 AI Agent」。只选了 omp 时落在后一种（两个安装范围都是）；它和 Codex 一起选、安装范围是项目时落在前一种。行上只放得下一个短词，完整的出路在下一行说的那句说明里 |
+| 列表里那一栏 | **没有这一栏**（工单 06）：它永远装不了，列表上方那句说明已经讲了原因和出路。两套界面都是——终端界面的状态栏、网页界面卡片底部的段里都没有它；只选了它时一栏都没有，MCP 的行不可选、原因写在状态的位置。工单 04 时是一栏暗淡的「不支持」，四个宿主时排不下、又只是把同一个词重复一列。内部仍和 `unsupported`、`global-only` 分得开：`global-only` 的说明是「只能装到全局」，没有 MCP 配置的是「安装器装不了…」，`unsupported` 没有 |
+| 可不可选（`listingStatus`） | 所选的宿主都装不了它时不可选。原因照原来的规则：各栏里有 `global-only` 的是「只能装到全局」，否则是「需要别的 AI Agent」。只选了 omp 时一栏都没有，落在后一种（两个安装范围都是）；它和 Codex 一起选、安装范围是项目时落在前一种。行上只放得下一个短词，完整的出路在下一行说的那句说明里 |
 | 列表的说明（`mcpColumnHosts` 的 `noConfig`、`mcpColumnNoticeTexts`、文案 `mcpNoConfigNotice`） | **所选的宿主里有没有 MCP 配置的，且这张列表里有 MCP 时**，MCP 那几栏的说明里多一句，每个这样的宿主各一句（各自的办法不同）：中文「安装器装不了 omp 的 MCP：请在 omp 里用 /mcp add 添加」，英文 `The installer cannot install omp MCP servers: use /mcp add in omp`。**宿主名和添加办法取自宿主适配（`host.name`、`host.manualMcp`），不写死在文案里**。它**不看条目支不支持这个宿主**（和 `global-only` 那一句不同：那一句要列表里至少有一个条目本身支持它）——哪个条目、哪个安装范围都装不进它，这句话都成立；只选了它、MCP 的行都不可选时也显示。没选它、或列表里没有 MCP 时不显示。适配里没带 `manualMcp` 的不说这一句（现在没有这样的宿主） |
 | 那句说明排在哪 | **「只能装到全局」之后、「读不到配置」之前**。终端界面和另外几句打在同一处（混合列表上方的「注意」，`ui.listNotices`），几行挨着：共用 skill 目录、只能装到全局、安装器装不了 omp 的 MCP、读不到配置；中文、英文连行首的键都是一行放得下（中文 64 列，英文 77 列——`omp.test.ts` 守着英文的那一句不超出第 79 列，要改这句话先量）。网页界面在 MCP 那一区的 `notices` 里，同一个先后 |
 | 算计划（`planInstall`） | 不为这样的宿主出 MCP 的项：汇总、将执行的命令、结果里都没有它；key 仍只问一次，用于别的宿主 |
@@ -316,10 +321,11 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 - Base（装到项目）：只检测到 Codex → MCP 的行都不可选，原因「只能装到全局」；同一张列表里的 skill 照常装到项目。
 - Good（Pi，装到全局）：只检测到 Pi，勾了一个本地进程的和一个远程地址的 → 两条 `pi mcp add …`，不指定运行目录，没有登录的提醒，结果两行「已配置」。设了 `PI_CODING_AGENT_DIR` 时状态看的是那个目录里的 `mcp.json`。
 - Good（Pi，装到项目）：只检测到 Pi，选了项目，勾了一个带必填 key 的 → 一条 `pi mcp add <名字> -l --env <变量>=<值> -- …`，在项目目录下运行；汇总下方有明文写进 `.pi/mcp.json` 和要批准（启动命令 `pi`）的两行提醒；主目录下什么都不多。
-- Base（三个宿主）：都选了、装到全局 → 一个 MCP 各装一次，三条命令、三行结果；key 只问一次。装到项目 → Codex 那一栏「不支持」并说明原因，装进 Claude Code 和 Pi，明文的提醒点到两个文件，两个宿主各一句要批准。
+- Base（三个宿主）：都选了、装到全局 → 列表里 MCP 是 Claude Code、Codex、Pi 三栏（同一张列表里有 Skill 时表头写的是 Skill 的「Claude Code」「Codex、Pi」两栏，MCP 的三个栏名在它那一段的标题行上）；一个 MCP 各装一次，三条命令、三行结果；key 只问一次。装到项目 → Codex 那一栏「不支持」并说明原因，装进 Claude Code 和 Pi，明文的提醒点到两个文件，两个宿主各一句要批准。
 - Base（Pi 的配置写坏了）：列表上方一行「注意  读不到 Pi 的配置…」，Pi 那一栏都是「未知」；装的时候先 `pi mcp remove`（失败了也接着做）再 `pi mcp add`。
-- Base（四个宿主都选了）：列表里 omp 那一栏每个 MCP 都是「不支持」，列表上方一行「注意  安装器装不了 omp 的 MCP：请在 omp 里用 /mcp add 添加」；勾上的 MCP 装进 Claude Code、Codex、Pi，三条命令、三行结果，汇总、命令、结果里都没有 omp。装到项目时列表上方依次是共用 skill 目录、Codex 只能装到全局、omp 这三句（Claude Code 的项目配置写坏了时再加一句读不到配置）。
-- Base（只检测到 omp）：MCP 的行都不可选，原因「需要别的 AI Agent」，全局、项目都是；那句说明照样在；同一张列表里的 skill 照常装。
+- Base（四个宿主都选了）：列表里 MCP 是 Claude Code、Codex、Pi 三栏，没有 omp 的那一栏，列表上方一行「注意  安装器装不了 omp 的 MCP：请在 omp 里用 /mcp add 添加」；勾上的 MCP 装进 Claude Code、Codex、Pi，三条命令、三行结果，汇总、命令、结果里都没有 omp。装到项目时列表上方依次是共用 skill 目录、Codex 只能装到全局、omp 这三句（Claude Code 的项目配置写坏了时再加一句读不到配置）。
+- Base（只检测到 omp）：MCP 一栏都没有，行都不可选，原因「需要别的 AI Agent」写在状态的位置，全局、项目都是；那句说明照样在；同一张列表里的 skill 照常装。
+- Base（选了 Claude Code 和 omp）：MCP 只有 Claude Code 一栏；勾上的只装进 Claude Code。
 - Base（选了 Codex 和 omp、装到项目）：MCP 的行不可选，原因「只能装到全局」；换成全局就可选，只装进 Codex。
 - Bad（旧版 Pi 没有 `pi mcp`，或 `pi` 起不来）：这一行「失败 添加命令退出状态 1」/「失败 添加命令没能运行（ENOENT）」，别的宿主、别的项照常，安装器不退出。
 
@@ -345,12 +351,13 @@ Codex 的 `mcp add --url` 写完配置之后，如果那个服务器支持 OAuth
 
 - Pi 的 MCP 在 `cli/test/pi-mcp.test.ts`，网页界面那一边在 `cli/test/web-pi-mcp.test.ts`：全局和项目的添加（两种连接方式、带 key）与移除命令是**字面值**（项目的带 `-l`、`cwd` 是 `result.project`）；汇总里展示的就是那几条、key 的位置是占位符；状态按范围读（用户级、`PI_CODING_AGENT_DIR`——含以 `~/` 开头和单独一个 `~` 的值、项目里的 `.pi/mcp.json`、每一种读不了、另一个范围的那一份写坏了不提）；已配置的先移除再添加、状态未知的先尝试移除；装完再进列表看到新状态；非零退出与没能起来（别的宿主照常）；三个宿主时三栏状态、三条命令、三行结果、key 只问一次、值不出现在终端和任何文件里、必填的没填每个宿主一行跳过；装到项目的两句提醒（文件名、启动命令、先后、选全局时没有）、三个宿主时两个文件与两句要批准；没有登录的提醒（和 Codex 一起选时只说 Codex）；中英文与 79 列。
 - 没有 MCP 配置的宿主（omp）在 `cli/test/omp.test.ts`，网页界面那一边在 `cli/test/web-omp.test.ts`（工单 01 为 Pi 写的那两组随 Pi 接上 MCP 删掉了，这是工单 04 照上面那张表重写的）：
-  - 那一栏：四个宿主都选了时 omp 那一栏是「不支持」、别的三栏各是各的状态，行照常可选；装到项目时也是。
+  - 栏：四个宿主都选了时没有 omp 的那一栏、别的三栏各是各的状态，行照常可选；选了 Claude Code 和 omp（装到全局、项目、英文）时只有 Claude Code 一栏；四个宿主里只留 omp 时表头是「状态」。**工单 04 时这几条断言的是 omp 一栏「不支持」，工单 06 换掉了**。
   - 只装进别的宿主：记录到的命令是**字面值**，只有别的宿主的那几条；汇总、将执行的命令、结果里搜不到 `omp` 这个词；带 key 的只问一次；装到项目时要批准的提醒只有别的宿主的那一句。
   - 那句说明：选了 omp 且列表里有 MCP 时在（整行去比，上下各空一行）；没检测到它、在宿主选择上去掉它、列表里没有 MCP 时没有；只选了它时有；列表里的 MCP 本来就都不支持它时照样有；四句同时出现时依次是共用 skill 目录、只能装到全局、它、读不到配置（**切出那几行整段去比**）；英文的那一句只占一行、不超出第 79 列。网页界面断言的是 MCP 那一区的 `notices`（去掉 omp 就没有、勾回来又有）。
   - 不可选：只检测到 omp 时全局、项目各一条，原因都是「需要别的 AI Agent」；四个宿主里只留 omp；选了 omp 和 Codex、装到项目是「只能装到全局」，装到全局可选、只装进 Codex；网页界面勾它是 400。
   - **不碰 omp**：`~/.omp/agent/mcp.json` 写坏了不出「读不到」、装完原样留着；每一条走到安装的用例都断言记录到的命令里没有命令名是 `omp` 的、主目录和项目目录下没有出现 `.omp`（`expectOmpUntouched`；主目录里事先放了 `.omp` 的那一条断言的是记录到的命令逐条相等、文件原样留着；只逛列表的用例不过它）。
-  - 英文：`unsupported`、`needs another AI Agent`、那句说明。
+  - 英文：没有 omp 的那一栏、`needs another AI Agent`、那句说明。
+- 列表里 MCP 的栏（工单 06）在 `cli/test/status-columns.test.ts` 的「MCP 每个宿主一栏，omp 不出栏」，网页界面那一边在 `cli/test/web-status-columns.test.ts`：四个宿主、列表里有 Skill 和 MCP 时表头是 Skill 的两栏、MCP 的三个栏名在它那一段的标题行上（拿栏名在标题行里的位置去对下面状态的位置，`startOf`），这一段没有说明；列表里只有 MCP 时表头直接是三栏、标题行上不另写、说明照旧；选了 Claude Code 和 omp、选了 Codex 和 Pi、选了 Claude Code 和 Codex（两者的栏相同，不另写）各一条；只选 omp（只有 MCP 的列表表头是「状态」；有 Skill 的列表里原因写在 Skill 那一栏的位置、各行的说明从同一列起）；MCP 那一段自己排时三栏都装不了的行；装到项目（Codex 一栏「不支持」、那几句说明的先后不变）；读不到 Pi 的配置；英文；真实的画面里标题行和状态对齐、光标跳过标题行。网页界面断言卡片的 `statuses`：四个宿主三段、Claude Code 加 omp 一段、只选 omp 时是空的。
 - 装到项目的在 `cli/test/scope.test.ts` 的「把 MCP 装到项目」几组（列表上方两行「注意」上下的空行在 `spacing.test.ts`）：Claude Code 的添加（两种连接方式、带 key）与移除命令是**字面值**且 `cwd` 是 `result.project`；汇总里展示的就是那几条；状态按范围读（项目里配过而全局没有、反过来、`.mcp.json` 写坏、用户级配置写坏不提）；装完再进列表看到新状态（`commandResult` 照真的来：往 `cwd` 的 `.mcp.json` 里写）；明文写入的提醒在「开始安装吗」之前、有变量名和文件名而没有值，可选的 key 留空时没有，选全局时没有；要批准的提醒；Codex 那一栏的「不支持」、列表上方的说明（列表里的 MCP 本来就都不支持它时没有）、只装进 Claude Code、没有登录的提醒；只有 Codex 时不可选与原因；`hosts` 只含一个宿主的条目在两种原因之间怎么选；英文界面与 79 列；真实的画面里在不可选的行上按空格勾不上。
 
 测试架子：`commandResult: (command, args) => …` 预设外部命令的结果——返回 `{ exitCode }` 盖过缺省的 0，返回一个 `Error` 表示命令没能起来，**它自己抛出**表示执行器当场抛出、连承诺都没返回，什么都不返回就是成功；命令照样进 `result.commands`（里面是代入了值的字符串参数）。`secret(值)`、`blank()` 回答隐藏输入。

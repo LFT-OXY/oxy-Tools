@@ -146,7 +146,12 @@ export interface Machine { hosts: readonly Host[]; env: Environment; platform: N
 export type Unavailable = { kind: 'no-host' } | { kind: 'hosts' } | { kind: 'global-only' } | { kind: 'os'; os: ToolOs };
 export function listingStatus(machine: Machine, listing: Pick<Listing, 'skills' | 'thirdParty' | 'mcps' | 'tools'>, hosts: readonly Host[], scope: Scope): ListingStatus;
 export function sharedSkillsNoted(hosts: readonly Host[], listing: Pick<Listing, 'skills' | 'thirdParty'>): boolean; // 列表里要不要那句共用 skill 目录的说明
-// ListingStatus 的每一行：{ skill | entry | mcp, statuses（与 hosts 一一对应）, unavailable? }；工具是 { tool, status, unavailable? }
+export interface SkillGroup { skillsDir: string; hosts: [Host, ...Host[]] }           // 共用一个 skill 目录的那几个所选宿主，照界面上的先后
+export function skillGroups(hosts: readonly Host[], scope: Scope): SkillGroup[];      // 所选的宿主按 skill 目录归组：算计划和列表的状态都用它
+// ListingStatus：skillColumns（Skill 和第三方 Skill 的状态栏，就是上面那几组）、mcpColumns（MCP 的状态栏：所选的宿主里有 MCP 配置的），
+// 加每一行 { skill | entry, statuses（与 skillColumns 一一对应）, unavailable? }、{ mcp, statuses（与 mcpColumns 一一对应）, unavailable? }；
+// 工具是 { tool, status, unavailable? }
+export function mcpColumnHosts(hosts: readonly Host[], status: Pick<ListingStatus, 'mcpColumns' | 'mcps'>): { globalOnly: Host[]; noConfig: Host[]; unreadable: Host[] };
 
 // cli/src/plan.ts
 export interface Selection {
@@ -173,8 +178,8 @@ export class Interrupted extends Error {}
 | 情形 | 共用的部分怎么办 |
 |------|------------------|
 | 所选的宿主是空的 | `listingStatus`：skill、第三方 Skill、MCP 每一行都是 `no-host`（它排在别的原因前面）；`planInstall`：这三类没有任何一项 |
-| 所选的宿主里有几个用同一个 skill 目录（Codex、Pi、omp） | `planInstall`：同一个 skill 在这个目录下只有一项，`target.hosts` 是这几个宿主的名字；第三方 Skill 的那一项只算条目支持的那些宿主，命令照其中排在最前的拼，一个都不支持就没有这一项。`listingStatus` 不合并：仍是每个所选的宿主一个状态。规矩见 [安装 skill](./skill-install.md) 的「按 skill 目录归组」 |
-| 所选的宿主里有没有 MCP 配置的（omp） | `listingStatus`：MCP 在它那一个状态是 `no-config`；所选的宿主都装不了时那一行不可选，原因照原来的规则（有 `global-only` 的是只能装到全局，否则是需要别的宿主）。`planInstall`：不为它出 MCP 的项。`mcpColumnHosts`：列表里有 MCP 时它在 `noConfig` 里。规矩见 [安装 MCP](./mcp-install.md) 的「宿主可以没有 MCP 配置」 |
+| 所选的宿主里有几个用同一个 skill 目录（Codex、Pi、omp） | `planInstall`：同一个 skill 在这个目录下只有一项，`target.hosts` 是这几个宿主的名字；第三方 Skill 的那一项只算条目支持的那些宿主，命令照其中排在最前的拼，一个都不支持就没有这一项。`listingStatus` 是同一种归组（两边都调 `skillGroups`）：`skillColumns` 是这几组，Skill 和第三方 Skill 的状态一组一个；第三方 Skill 的一组里有条目支持的宿主就照目录写，一个都不支持才是 `unsupported`。规矩见 [安装 skill](./skill-install.md) 的「按 skill 目录归组」 |
+| 所选的宿主里有没有 MCP 配置的（omp） | `listingStatus`：**它不在 `mcpColumns` 里，MCP 的 `statuses` 里没有它的那一个**（工单 06；原先是一个 `no-config` 的状态、界面上写「不支持」）；所选的宿主都装不了时那一行不可选，原因照原来的规则（有 `global-only` 的是只能装到全局，否则是需要别的宿主——只选了它时 `statuses` 是空的，落在后一种）。`planInstall`：不为它出 MCP 的项（它那边 `mcpStatuses` 给的仍是 `no-config`）。`mcpColumnHosts`：列表里有 MCP 时它在 `noConfig` 里。规矩见 [安装 MCP](./mcp-install.md) 的「宿主可以没有 MCP 配置」 |
 | 勾了的工具装不了（没有检测到宿主、系统不支持、要的宿主不在） | 不进 `toolJobs` |
 | MCP 必填的 key 不在 `filledKeys` 里 | 它在每个装得了的宿主下各有一项 `steps` 为空、带 `missingVariable` 的；`notices.missingKeys` 里说一次；执行时 `skip` |
 | `SkillJob` / `ThirdPartyJob` 带着 `declined` | 执行时 `skip`，不下载、不执行命令；本仓库的 skill 全都 `declined` 时不向 GitHub 查询 |

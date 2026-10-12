@@ -57,7 +57,7 @@ const install = async (page: Page, summary: SummaryView): Promise<RunView> => {
 // 正在看的那张列表里名字是它的卡片
 const card = (state: ViewState | undefined, name: string): ComponentView | undefined =>
   state?.listing?.sections.flatMap((section) => section.entries).find((entry) => entry.name === name);
-// 卡片上每个宿主一段「宿主 词 后面的字」
+// 卡片底部的状态：每一段「段名 词 后面的字」
 const statuses = (state: ViewState | undefined, name: string): string[] =>
   (card(state, name)?.statuses ?? []).map((one) => [one.host, one.text, one.rest].filter((part) => part !== undefined).join(' '));
 // 正在看的那张列表各区上方的提醒：区的种类 → 那几句
@@ -87,7 +87,7 @@ function expectOmpUntouched(result: RunResult): void {
 }
 
 describe('网页界面：检测到 omp', () => {
-  it('四个宿主都检测到：本机信息、开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi、omp，都默认勾着；卡片上每个宿主一段状态', async () => {
+  it('四个宿主都检测到：本机信息、开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi、omp，都默认勾着；卡片上 Skill 的状态是两段', async () => {
     let first: ViewState | undefined;
     await run({
       onPath: ALL_HOSTS,
@@ -116,7 +116,7 @@ describe('网页界面：检测到 omp', () => {
       ],
       hosts: ['Claude Code', 'Codex', 'Pi', 'omp'],
     });
-    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex 未装', 'Pi 未装', 'omp 未装']);
+    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex、Pi、omp 未装']);
   });
 
   it('只检测到 omp：没有可改的宿主，另外三个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
@@ -211,7 +211,7 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
     expectOmpUntouched(result);
   });
 
-  it('四个宿主都选了：每个 skill 两行——Claude Code 一行，「Codex、Pi、omp」一行；卡片上仍是四段状态', async () => {
+  it('四个宿主都选了：每个 skill 两行——Claude Code 一行，「Codex、Pi、omp」一行；卡片上的状态同样是这两段', async () => {
     let first: ViewState | undefined;
     let summary: SummaryView | undefined;
     let installing: RunView | undefined;
@@ -229,7 +229,7 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
       },
     });
 
-    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex 未装', 'Pi 未装', 'omp 未装']);
+    expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex、Pi、omp 未装']);
     expect(rows(summary)).toEqual([
       'alpha · Skill · 1.0.0',
       `  Claude Code | 新装 | ${join('~', CLAUDE_SKILLS, 'alpha')}`,
@@ -385,7 +385,7 @@ const CODEX_ADD_LOCAL = { command: 'codex', args: ['mcp', 'add', 'docs-local', '
 const PI_ADD_LOCAL = { command: 'pi', args: ['mcp', 'add', 'docs-local', '--', 'npx', '-y', '@example/docs-mcp@latest'] };
 
 describe('网页界面：omp 的 MCP 安装器不装', () => {
-  it('四个宿主都选了：卡片上 omp 那一段是最淡的「不支持」，MCP 那一区上方说明原因和出路；卡片照常可选', async () => {
+  it('四个宿主都选了：卡片上没有 omp 的那一段，MCP 那一区上方说明原因和出路；卡片照常可选', async () => {
     let listed: ViewState | undefined;
     await run({
       catalog: withMcps(),
@@ -400,7 +400,6 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
       { host: 'Claude Code', text: '未配置', tone: 'faint' },
       { host: 'Codex', text: '未配置', tone: 'faint' },
       { host: 'Pi', text: '未配置', tone: 'faint' },
-      { host: 'omp', text: '不支持', tone: 'faint' },
     ]);
     expect(card(listed, 'docs-local')).not.toHaveProperty('unavailable');
     expect(notices(listed)).toEqual({ mcp: [OMP_MCP_NOTICE] });
@@ -492,7 +491,7 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
       },
     });
 
-    expect(card(listed, 'docs-local')).toMatchObject({ unavailable: '需要别的 AI Agent', statuses: [{ host: 'omp', text: '不支持', tone: 'faint' }] });
+    expect(card(listed, 'docs-local')).toMatchObject({ unavailable: '需要别的 AI Agent', statuses: [] });
     expect(card(listed, 'tracker-remote')).toMatchObject({ unavailable: '需要别的 AI Agent' });
     expect(notices(listed)).toEqual({ mcp: [OMP_MCP_NOTICE] });
     expect(refused).toBe(400);
@@ -530,10 +529,7 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
 
     expect(card(listed, 'docs-local')).toMatchObject({
       unavailable: '只能装到全局',
-      statuses: [
-        { host: 'Codex', text: '不支持', tone: 'faint' },
-        { host: 'omp', text: '不支持', tone: 'faint' },
-      ],
+      statuses: [{ host: 'Codex', text: '不支持', tone: 'faint' }],
     });
     expect(notices(listed)).toEqual({ mcp: ['Codex 的 MCP 只能装到全局：没有把 MCP 写进项目的命令', OMP_MCP_NOTICE] });
   });
@@ -579,7 +575,7 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
     expect(read(result.home, '.omp', 'agent', 'mcp.json')).toBe(before['.omp/agent/mcp.json']);
   });
 
-  it('英文界面：那一段是 unsupported，那句说明和不可选的原因都是英文', async () => {
+  it('英文界面：没有 omp 的那一段，那句说明和不可选的原因都是英文', async () => {
     let both: ViewState | undefined;
     let onlyOmp: ViewState | undefined;
     await run({
@@ -593,10 +589,7 @@ describe('网页界面：omp 的 MCP 安装器不装', () => {
       },
     });
 
-    expect(card(both, 'docs-local')?.statuses).toEqual([
-      { host: 'Claude Code', text: 'none', tone: 'faint' },
-      { host: 'omp', text: 'unsupported', tone: 'faint' },
-    ]);
+    expect(card(both, 'docs-local')?.statuses).toEqual([{ host: 'Claude Code', text: 'none', tone: 'faint' }]);
     expect(notices(both)).toEqual({ mcp: [OMP_MCP_NOTICE_EN] });
     expect(card(onlyOmp, 'docs-local')).toMatchObject({ unavailable: 'needs another AI Agent' });
   });
