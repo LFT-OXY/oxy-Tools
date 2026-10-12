@@ -6,7 +6,7 @@
 
 **Blocked by:** 01
 **Status:** ready-for-agent
-**Impl:** ready
+**Impl:** done
 
 - [ ] 先改规范：`.atw/spec/cli/` 里写明「按 skill 目录归组、一组一项」的规矩、宿主那一格的写法、第三方 Skill 一组用哪个宿主的 agent 名、那句说明什么时候显示和排在哪；网页界面的契约里汇总和进度的行怎么表示几个宿主。
 - [ ] 同时选了 Codex 和 Pi、勾了一个本仓库的 skill：共用 skill 目录下只写一次，汇总一行、结果一行，宿主那一格是「Codex、Pi」，合计「1 成功」。
