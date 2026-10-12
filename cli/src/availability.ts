@@ -35,11 +35,12 @@ export interface ListingStatus {
 
 /**
  * 列表里 MCP 那几栏要另作说明的宿主：globalOnly 是选了项目范围而 MCP 只能装到全局的（列表里至少有一个条目本身支持它），
+ * noConfig 是没有 MCP 配置、MCP 安装器不装的（列表里有 MCP 就算，不看条目支不支持它：哪个安装范围、哪个条目都装不进它），
  * unreadable 是配置读不到的。mcps 是 listingStatus 给出的那一段，与 hosts 一一对应
  */
-export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps']): { globalOnly: Host[]; unreadable: Host[] } {
+export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps']): { globalOnly: Host[]; noConfig: Host[]; unreadable: Host[] } {
   const withStatus = (wanted: McpStatus): Host[] => hosts.filter((_, column) => mcps.some(({ statuses }) => statuses[column] === wanted));
-  return { globalOnly: withStatus('global-only'), unreadable: withStatus('unknown') };
+  return { globalOnly: withStatus('global-only'), noConfig: mcps.length > 0 ? hosts.filter((host) => !host.mcp) : [], unreadable: withStatus('unknown') };
 }
 
 /**

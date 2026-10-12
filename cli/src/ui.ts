@@ -8,7 +8,7 @@ import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebEnding, type WebUnavailable } from './messages.ts';
-import { commandLine, mcpColumnNoticeTexts, noticeTexts } from './notice-text.ts';
+import { commandLine, mcpColumnNoticeTexts, noticeTexts, type McpColumnHosts } from './notice-text.ts';
 import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
 import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion, StandbyQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
@@ -921,10 +921,11 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     /**
      * 混合列表上方的说明，各占一行，几行挨着。sharedSkills 是要不要那句共用 skill 目录的说明，排在最前；后面是关于
      * MCP 那几栏的：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，它们那一栏写着不支持，这里说原因；
+     * noConfig 是 MCP 安装器不装的宿主，那一栏同样写着不支持，这里说在它里面怎么自己添加；
      * unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
      */
-    listNotices({ sharedSkills, globalOnly, unreadable }: { sharedSkills: boolean; globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
-      const notices = [...(sharedSkills ? [t.sharedSkillsNotice] : []), ...mcpColumnNoticeTexts(t, { globalOnly, unreadable })];
+    listNotices({ sharedSkills, ...mcpColumns }: { sharedSkills: boolean } & McpColumnHosts): void {
+      const notices = [...(sharedSkills ? [t.sharedSkillsNotice] : []), ...mcpColumnNoticeTexts(t, mcpColumns)];
       if (notices.length > 0) print(...gapAbove(), ...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 

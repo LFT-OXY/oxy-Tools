@@ -19,7 +19,7 @@ describe('只检测到 Codex', () => {
   it('可执行路径上有 codex 命令时算检测到，skill 装进用户主目录的 .agents/skills', async () => {
     const result = await run({ onPath: ['codex'], answers: installAlpha });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex ✓\s+Pi – 未检测到$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex ✓\s+Pi – 未检测到\s+omp – 未检测到$/m);
     expect(read(codexSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
     expect(marker(codexSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -43,7 +43,7 @@ describe('只检测到 Pi', () => {
   it('可执行路径上有 pi 命令时算检测到，排在 Claude Code、Codex 之后；skill 装进用户主目录的 .agents/skills，带安装标记', async () => {
     const result = await run({ onPath: ['pi'], answers: installAlpha });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi ✓$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi ✓\s+omp – 未检测到$/m);
     expect(read(sharedSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
     expect(marker(sharedSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
     expect(readdirSync(result.home)).toEqual(['.agents']);
@@ -63,6 +63,31 @@ describe('只检测到 Pi', () => {
   });
 });
 
+describe('只检测到 omp', () => {
+  const installAlpha = [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')];
+
+  it('可执行路径上有 omp 命令时算检测到，排在最后；skill 装进用户主目录的 .agents/skills，带安装标记', async () => {
+    const result = await run({ onPath: ['omp'], answers: installAlpha });
+
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi – 未检测到\s+omp ✓$/m);
+    expect(read(sharedSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
+    expect(marker(sharedSkills(result.home), 'alpha')).toMatchObject({ name: 'alpha', version: '1.0.0' });
+    expect(readdirSync(result.home)).toEqual(['.agents']);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('不问装进哪个宿主；汇总和结果里写的是 omp 和共用 skill 目录；不执行任何外部命令', async () => {
+    const result = await run({ onPath: ['omp'], answers: installAlpha });
+
+    expect(result.output).not.toContain('装进哪些 AI Agent');
+    expect(result.output).toMatch(/^\s+alpha\s+omp\s+新装\s+~\S+alpha$/m);
+    expect(result.output).toContain(join('~', '.agents', 'skills', 'alpha'));
+    expect(result.output).toMatch(/^\s+✓\s+alpha\s+omp\s+已安装 1\.0\.0$/m);
+    expect(result.output).toMatch(/^\s+合计\s+1 成功 · 0 失败 · 0 跳过$/m);
+    expect(result.commands).toEqual([]);
+  });
+});
+
 describe('只检测到一个宿主', () => {
   it('只有 Claude Code：说明另外的宿主没有检测到并被跳过，不问装进哪个，直接装进 Claude Code', async () => {
     const result = await run({
@@ -70,8 +95,8 @@ describe('只检测到一个宿主', () => {
       answers: [choose('推荐'), pick('alpha'), choose('开始安装'), choose('退出')],
     });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex – 未检测到\s+Pi – 未检测到$/m);
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Codex、Pi，已跳过；组件只装进 Claude Code$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex – 未检测到\s+Pi – 未检测到\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Codex、Pi、omp，已跳过；组件只装进 Claude Code$/m);
     expect(result.output).not.toContain('装进哪些 AI Agent');
     expect(readdirSync(result.home)).toEqual(['.claude']);
   });
@@ -79,34 +104,36 @@ describe('只检测到一个宿主', () => {
   it('只有 Codex：说明另外的宿主没有检测到并被跳过', async () => {
     const result = await run({ onPath: ['codex'], answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Pi，已跳过；组件只装进 Codex$/m);
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Pi、omp，已跳过；组件只装进 Codex$/m);
   });
 
   it('只有 Pi：说明另外的宿主没有检测到并被跳过', async () => {
     const result = await run({ onPath: ['pi'], answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Codex，已跳过；组件只装进 Pi$/m);
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Codex、omp，已跳过；组件只装进 Pi$/m);
   });
 
   it('英文界面下同样说明', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: ['claude'], answers: [choose('Exit')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex – not detected\s+Pi – not detected$/m);
+    // 四个宿主里三个写着 not detected 时这一行比 80 列长，照键值行的规矩折到下一行
+    expect(flat(result.output)).toContain(' AI Agent Claude Code ✓ Codex – not detected Pi – not detected omp – not detected ');
     // 这一句在 80 列里放不下，照「注意」的规矩折成两行
-    expect(flat(result.output)).toContain(' Notice Codex, Pi not detected, skipped; components go into Claude Code only ');
+    expect(flat(result.output)).toContain(' Notice Codex, Pi, omp not detected, skipped; components go into Claude Code only ');
   });
 
   it('英文界面下只有 Pi', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: ['pi'], answers: [choose('Exit')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – not detected\s+Codex – not detected\s+Pi ✓$/m);
-    expect(flat(result.output)).toContain(' Notice Claude Code, Codex not detected, skipped; components go into Pi only ');
+    expect(flat(result.output)).toContain(' AI Agent Claude Code – not detected Codex – not detected Pi ✓ omp – not detected ');
+    expect(flat(result.output)).toContain(' Notice Claude Code, Codex, omp not detected, skipped; components go into Pi only ');
   });
 
   it('名字只是相近的命令不算数', async () => {
-    const result = await run({ onPath: ['claude-helper', 'codex-helper', 'pi-helper', 'pip'], answers: [choose('退出')] });
+    const result = await run({ onPath: ['claude-helper', 'codex-helper', 'pi-helper', 'pip', 'omp-helper', 'bomp'], answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi – 未检测到$/m);
+    // 四个都写着未检测到时这一行比 80 列长，照键值行的规矩折到下一行
+    expect(flat(result.output)).toContain(' AI Agent Claude Code – 未检测到 Codex – 未检测到 Pi – 未检测到 omp – 未检测到 ');
   });
 });
 
@@ -117,8 +144,8 @@ describe('检测到两个宿主', () => {
   it('进入「推荐」后先问装进哪些宿主：两项都默认勾选，名字后面不写目录', async () => {
     const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi – 未检测到$/m);
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Pi，已跳过；组件只装进 Claude Code、Codex$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi – 未检测到\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Pi、omp，已跳过；组件只装进 Claude Code、Codex$/m);
     expect(result.output).toContain('装进哪些 AI Agent');
     expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex$/m);
     expect(result.output).not.toContain(join('~', '.claude', 'skills'));
@@ -235,12 +262,11 @@ describe('检测到两个宿主', () => {
 describe('检测到三个宿主', () => {
   const onPath = ['claude', 'codex', 'pi'];
 
-  it('「AI Agent」一行三个都打勾，没有被跳过的说明；宿主选择里依次是 Claude Code、Codex、Pi，都默认勾选', async () => {
+  it('「AI Agent」一行三个打勾、omp 写着未检测到并说明被跳过；宿主选择里依次是 Claude Code、Codex、Pi，都默认勾选', async () => {
     const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓$/m);
-    expect(result.output).not.toContain('未检测到');
-    expect(result.output).not.toContain('已跳过');
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp – 未检测到$/m);
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 omp，已跳过；组件只装进 Claude Code、Codex、Pi$/m);
     expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex\n ■ Pi$/m);
   });
 
@@ -281,8 +307,46 @@ describe('检测到三个宿主', () => {
   it('英文界面下的宿主选择', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Recommended'), pick(), choose('Exit')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp – not detected$/m);
     expect(result.output).toMatch(/^\? Install into which AI Agents\n\n ■ Claude Code\n ■ Codex\n ■ Pi$/m);
+  });
+});
+
+describe('检测到四个宿主', () => {
+  const onPath = ['claude', 'codex', 'pi', 'omp'];
+
+  it('「AI Agent」一行四个都打勾，没有被跳过的说明；宿主选择里依次是 Claude Code、Codex、Pi、omp，都默认勾选', async () => {
+    const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
+
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp ✓$/m);
+    expect(result.output).not.toContain('未检测到');
+    expect(result.output).not.toContain('已跳过');
+    expect(result.output).toMatch(/^\? 装进哪些 AI Agent\n\n ■ Claude Code\n ■ Codex\n ■ Pi\n ■ omp$/m);
+  });
+
+  it('只选 omp：只装进共用 skill 目录，汇总和结果里只有 omp 一行', async () => {
+    const result = await run({ onPath, answers: [choose('推荐'), pick('omp'), pick('alpha'), choose('开始安装'), choose('退出')] });
+
+    expect(readdirSync(result.home)).toEqual(['.agents']);
+    expect(read(sharedSkills(result.home), 'alpha', 'SKILL.md')).toBe(SAMPLE_FILES['skills/alpha/SKILL.md']);
+    expect(result.output).toMatch(/^\s+alpha\s+omp\s+新装\s+~\S+alpha$/m);
+    expect(result.output).not.toMatch(/^\s+(alpha\s+)?(Claude Code|Codex|Pi)\s+新装/m);
+    expect(result.output).toMatch(/^\s+合计\s+1 成功 · 0 失败 · 0 跳过$/m);
+  });
+
+  it('一个宿主都不勾就确认：回到主菜单，什么都不装', async () => {
+    const result = await run({ onPath, answers: [choose('推荐'), pick(), choose('退出')] });
+
+    expect(result.output).not.toContain('选择要安装的条目');
+    expect(readdirSync(result.home)).toEqual([]);
+  });
+
+  it('英文界面下的宿主行和宿主选择', async () => {
+    const result = await run({ argv: ['--lang', 'en'], onPath, answers: [choose('Recommended'), pick(), choose('Exit')] });
+
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp ✓$/m);
+    expect(result.output).not.toContain('not detected');
+    expect(result.output).toMatch(/^\? Install into which AI Agents\n\n ■ Claude Code\n ■ Codex\n ■ Pi\n ■ omp$/m);
   });
 });
 
@@ -290,8 +354,9 @@ describe('一个宿主都没检测到', () => {
   it('主菜单上方说明原因，每个宿主都写明未检测到', async () => {
     const result = await run({ onPath: [], answers: [choose('退出')] });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code – 未检测到\s+Codex – 未检测到\s+Pi – 未检测到$/m);
-    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Codex 或 Pi，暂时装不了组件$/m);
+    // 四个都写着未检测到时这一行比 80 列长，照键值行的规矩折到下一行
+    expect(flat(result.output)).toContain(' AI Agent Claude Code – 未检测到 Codex – 未检测到 Pi – 未检测到 omp – 未检测到 ');
+    expect(result.output).toMatch(/^\s+注意\s+没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件$/m);
     expect(result.exitCode).toBe(0);
   });
 
@@ -329,7 +394,7 @@ describe('一个宿主都没检测到', () => {
   it('英文界面下同样说明', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: [], answers: [choose('Recommended'), pick(), choose('Exit')] });
 
-    expect(flat(result.output)).toContain(' Notice Claude Code, Codex and Pi not detected; components cannot be installed ');
+    expect(flat(result.output)).toContain(' Notice Claude Code, Codex, Pi and omp not detected; components cannot be installed ');
     expect(result.output).toMatch(/^ – beta-pack\s+needs an AI Agent\s+The second sample skill$/m);
   });
 });

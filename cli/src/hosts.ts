@@ -63,6 +63,8 @@ export interface Host {
   skillsCli: { agent: string; env: Readonly<Record<string, string>> };
   /** 用户级的 MCP 配置，装在那里对所有项目生效；没有它表示这个宿主的 MCP 安装器不装 */
   mcp?: McpConfig;
+  /** 没有 mcp 的宿主才有：用户在这个宿主里自己添加 MCP 的办法（它里面的一条命令），列表的说明里写它 */
+  manualMcp?: string;
   /** 项目范围的 MCP 配置；有 mcp 而没有它表示这个宿主的 MCP 只能装到全局 */
   projectMcp?: ProjectMcpConfig;
   /**
@@ -219,6 +221,21 @@ function piMcpCommands(range: readonly string[]): Pick<McpConfig, 'addMcp' | 're
 }
 
 /**
+ * omp：以 omp 命令是否可用判断在不在。skill 和 Pi 一样装进共用 skill 目录（.agents/skills），不用它自己的 ~/.omp/agent/skills（ADR-0005）。
+ * skills CLI 不认识 omp，交给它的 agent 名借用 pi：pi 落的正是这个目录，没装 Pi 的机器上也一样。
+ * 它没有 MCP 配置：会话外没有添加 MCP 的命令，安装器也不改写它的配置文件（~/.omp/agent/mcp.json），所以它的 MCP 安装器不装——
+ * 用户在 omp 的会话里用 /mcp add 自己添加。安装器不执行 omp 命令，不读也不写它的任何文件。
+ */
+const omp: HostAdapter = (env, homeDir, projectDir) => ({
+  id: 'omp',
+  name: 'omp',
+  detected: isOnPath('omp', env),
+  ...sharedSkillsDirs(homeDir, projectDir),
+  skillsCli: { agent: 'pi', env: {} },
+  manualMcp: '/mcp add',
+});
+
+/**
  * host 在 scope 这个安装范围下的 MCP 配置：全局是它的用户级配置，项目是它项目范围的那一份——没有就是装不到这个范围；
  * 没有 MCP 配置的宿主两个范围都没有
  */
@@ -227,7 +244,7 @@ export function mcpConfigOf(host: Host, scope: Scope): McpConfig | undefined {
 }
 
 // 顺序就是界面上的顺序；加一个宿主就在这里追加一份适配
-const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex, pi];
+const ADAPTERS: readonly HostAdapter[] = [claudeCode, codex, pi, omp];
 
 /** 安装器认识的全部宿主，各自在不在。 */
 export function detectHosts(env: Environment, homeDir: string, projectDir: string): Host[] {

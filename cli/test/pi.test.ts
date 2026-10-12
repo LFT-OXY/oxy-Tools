@@ -343,7 +343,7 @@ describe('三个宿主都选了时的 80 列', () => {
       ],
     });
 
-    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓$/m);
+    expect(result.output).toMatch(/^\s+AI Agent\s+Claude Code ✓\s+Codex ✓\s+Pi ✓\s+omp – 未检测到$/m);
     expect(listOf(result.output)).toMatch(/^\s+名称\s+Claude Code\s+Codex\s+Pi\b/m);
     expect(listOf(result.output)).toMatch(/^ □ alpha\s+非本工具安装\s+非本工具安装\s+非本工具安装(\s|$)/m);
     expect(result.output).toMatch(/^\s+✓\s+beta-pack\s+Claude Code\s+已安装 2\.0 → 2\.3$/m);

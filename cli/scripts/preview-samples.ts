@@ -7,8 +7,12 @@ import { EMPTY_CATALOG } from '../test/fixtures.ts';
 
 export const BOTH_HOSTS = ['claude', 'codex'];
 export const THREE_HOSTS = [...BOTH_HOSTS, 'pi'];
+// 安装器认识的四个宿主都检测到
+export const FOUR_HOSTS = [...THREE_HOSTS, 'omp'];
 // 只检测到 Codex 和 Pi：它们用的是同一个共用 skill 目录
 export const CODEX_AND_PI = ['codex', 'pi'];
+// 只检测到 Codex、Pi 和 omp：三个用的都是共用 skill 目录
+export const SHARED_THREE = [...CODEX_AND_PI, 'omp'];
 
 // ── 样例目录 ──────────────────────────────────────────────────────────────────
 

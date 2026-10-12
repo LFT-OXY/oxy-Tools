@@ -21,14 +21,24 @@ export function commandLine({ command, args }: Command, placeholder: (text: stri
     .join(' ');
 }
 
+/** 列表里 MCP 那几栏要另作说明的宿主，各是哪几个：出自 availability.ts 的 mcpColumnHosts */
+export interface McpColumnHosts {
+  globalOnly: readonly Named[];
+  /** manualMcp 是在这个宿主里自己添加 MCP 的办法，说明里写它；没有它的不说 */
+  noConfig: readonly (Named & { manualMcp?: string })[];
+  unreadable: readonly Named[];
+}
+
 /**
- * 列表里 MCP 那几栏的说明，各一句，照这个先后：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，
- * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时是空的
+ * 列表里 MCP 那几栏的说明，照这个先后：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，它们那一栏写着不支持，
+ * 这里说原因（几个宿主合成一句）；noConfig 是 MCP 安装器不装的宿主，那一栏同样写着不支持，这里说在它里面怎么自己添加
+ * （各自的办法不同，一个宿主一句）；unreadable 是配置读不到的宿主，它们那一栏都是未知（合成一句）。都没有时是空的
  */
-export function mcpColumnNoticeTexts(t: Messages, { globalOnly, unreadable }: { globalOnly: readonly Named[]; unreadable: readonly Named[] }): string[] {
+export function mcpColumnNoticeTexts(t: Messages, { globalOnly, noConfig, unreadable }: McpColumnHosts): string[] {
   const names = (hosts: readonly Named[]): string => hosts.map((host) => host.name).join(t.listSeparator);
   return [
     ...(globalOnly.length > 0 ? [t.mcpGlobalOnlyNotice(names(globalOnly))] : []),
+    ...noConfig.flatMap(({ name, manualMcp }) => (manualMcp === undefined ? [] : [t.mcpNoConfigNotice(name, manualMcp)])),
     ...(unreadable.length > 0 ? [t.mcpConfigUnreadable(names(unreadable))] : []),
   ];
 }

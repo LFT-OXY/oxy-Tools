@@ -74,7 +74,7 @@ const installed = (skillsDir: string, name: string, version: string): Record<str
 });
 
 describe('网页界面：检测到 Pi', () => {
-  it('三个宿主都检测到：本机信息、开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi，都默认勾着；卡片上每个宿主一段状态', async () => {
+  it('三个宿主都检测到：本机信息里 omp 写着未检测到；开场引导和页面顶上的宿主依次是 Claude Code、Codex、Pi，都默认勾着；卡片上每个宿主一段状态', async () => {
     let first: ViewState | undefined;
     await run({
       onPath: ALL_HOSTS,
@@ -88,6 +88,7 @@ describe('网页界面：检测到 Pi', () => {
       { name: 'Claude Code', detected: true },
       { name: 'Codex', detected: true },
       { name: 'Pi', detected: true },
+      { name: 'omp', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     // 开场引导和页面顶上那一条画的是同一份 target；引导起初没答过
@@ -104,7 +105,7 @@ describe('网页界面：检测到 Pi', () => {
     expect(statuses(first, 'alpha')).toEqual(['Claude Code 未装', 'Codex 未装', 'Pi 未装']);
   });
 
-  it('只检测到 Pi：没有可改的宿主，另外两个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
+  it('只检测到 Pi：没有可改的宿主，另外三个写着未检测到；开场引导照样要答；没有「一个都没检测到」的那句提醒', async () => {
     let first: ViewState | undefined;
     let refused: number | undefined;
     await run({
@@ -120,6 +121,7 @@ describe('网页界面：检测到 Pi', () => {
       { name: 'Claude Code', detected: false, status: '未检测到' },
       { name: 'Codex', detected: false, status: '未检测到' },
       { name: 'Pi', detected: true },
+      { name: 'omp', detected: false, status: '未检测到' },
     ]);
     expect(first?.machine.noHosts).toBeUndefined();
     expect(first?.guideAnswered).toBe(false);
@@ -128,7 +130,7 @@ describe('网页界面：检测到 Pi', () => {
     expect(refused).toBe(400);
   });
 
-  it('一个宿主都没检测到：那句提醒把三个名字都列出来，中英文各一句', async () => {
+  it('一个宿主都没检测到：那句提醒把四个名字都列出来，中英文各一句', async () => {
     let zh: ViewState | undefined;
     let en: ViewState | undefined;
     await run({
@@ -141,12 +143,13 @@ describe('网页界面：检测到 Pi', () => {
       },
     });
 
-    expect(zh?.machine.noHosts).toBe('没有检测到 Claude Code、Codex 或 Pi，暂时装不了组件');
-    expect(en?.machine.noHosts).toBe('Claude Code, Codex and Pi not detected; components cannot be installed');
+    expect(zh?.machine.noHosts).toBe('没有检测到 Claude Code、Codex、Pi 或 omp，暂时装不了组件');
+    expect(en?.machine.noHosts).toBe('Claude Code, Codex, Pi and omp not detected; components cannot be installed');
     expect(en?.machine.hosts).toEqual([
       { name: 'Claude Code', detected: false, status: 'not detected' },
       { name: 'Codex', detected: false, status: 'not detected' },
       { name: 'Pi', detected: false, status: 'not detected' },
+      { name: 'omp', detected: false, status: 'not detected' },
     ]);
   });
 });
@@ -281,6 +284,7 @@ describe('网页界面：把本仓库的 skill 装给 Pi', () => {
       { name: 'Claude Code', detected: false, status: 'not detected' },
       { name: 'Codex', detected: false, status: 'not detected' },
       { name: 'Pi', detected: true },
+      { name: 'omp', detected: false, status: 'not detected' },
     ]);
     expect(statuses(state, 'alpha')).toEqual(['Pi none']);
     expect(rows(summary)).toEqual(['beta-pack · Skill · 2.3', `  Pi | overwrite | ${join('~', SHARED_SKILLS, 'beta-pack')} | 2.0 → 2.3`]);

@@ -217,7 +217,7 @@ export interface ConfirmQuestion {
 | 放不下时 | 这一行（光标的两格、名字一栏、说明、目录）超过 79 列就**从前面截**目录，以省略号开头、留住末尾的几级——认得出是哪个目录靠的是最后几级，`truncate` 截的是末尾，这里不用它。目录以外的部分不截 |
 | 不显示颜色、没有 Unicode | 只按现有的规则退：目录不再暗淡；省略号是 `symbols.ellipsis`（`...`） |
 
-汇总和覆盖前另问里的位置不归这里管：算计划的（`plan.ts`）按安装范围把它写好，流程原样交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。**呈现层不知道安装范围**：MCP 在项目范围下的不同都由流程折进交给它的东西里——状态里的 `global-only`（这个宿主的 MCP 只能装到全局；栏里和 `unsupported` 写同一个词「不支持」）、`listNotices` 的 `globalOnly`（列表上方的那一行）、`summaryNotices` 的 `plaintextKeys` 和 `approvals`（汇总下方的两行）。一行 MCP 各栏全是 `unsupported` / `global-only` 时不可选：有 `global-only` 的原因是 `mcpGlobalOnly`（「只能装到全局」），否则是「需要别的 AI Agent」；一个宿主都没检测到的原因排在它们前面。**哪一行不可选、是哪一种原因，不由呈现层判断**：`availability.ts` 的 `listingStatus` 给每一行带上 `unavailable`（一个种类，`Unavailable`），呈现层只把它写成那句话。
+汇总和覆盖前另问里的位置不归这里管：算计划的（`plan.ts`）按安装范围把它写好，流程原样交给呈现层（`InstallTarget.location`、`ThirdPartyTarget.location`）——全局的以 `~` 开头，项目的是相对项目目录的路径。**呈现层不知道安装范围**：MCP 在项目范围下的不同都由流程折进交给它的东西里——状态里的 `global-only`（这个宿主的 MCP 只能装到全局；栏里和 `unsupported` 写同一个词「不支持」）、`listNotices` 的 `globalOnly`（列表上方的那一行）、`summaryNotices` 的 `plaintextKeys` 和 `approvals`（汇总下方的两行）。没有 MCP 配置的宿主（omp）同样由流程折进来：状态里的 `no-config`（栏里也是「不支持」）、`listNotices` 的 `noConfig`（列表上方写明在它里面怎么自己添加的那一行；宿主名和办法取自交进来的宿主，呈现层不写死）。一行 MCP 各栏全是 `unsupported` / `no-config` / `global-only` 时不可选：有 `global-only` 的原因是 `mcpGlobalOnly`（「只能装到全局」），否则是「需要别的 AI Agent」；一个宿主都没检测到的原因排在它们前面。**哪一行不可选、是哪一种原因，不由呈现层判断**：`availability.ts` 的 `listingStatus` 给每一行带上 `unavailable`（一个种类，`Unavailable`），呈现层只把它写成那句话。
 
 ---
 
@@ -238,7 +238,7 @@ export interface ConfirmQuestion {
 | 每一格备注（连同表头）接在行尾都不超过 79 列。**只看有备注的行**：没有备注的行后面什么都不写，它的位置再长也不算放不下 | 备注成一栏：skill 的小表里在「位置」后面，MCP 的小表里紧跟「操作」。有备注的小表表头写它，没有的不写 |
 | 有一格放不下 | 整个分区的备注全部另起一行，缩进到「位置」的左缘（MCP 的小表没有这一栏，也从同一列起）；表头都不写这一栏。从那里起连最长的一格都放不下时，所有备注一起往左挪到刚好放得下，不让终端来折 |
 
-表头永远只有一行。同一个条目装进几个 skill 目录（MCP 是几个宿主）就有几行，名字只写在第一行。**宿主那一格可以是几个名字**：共用一个 skill 目录的几个所选宿主（Codex 和 Pi）在算计划时合成一项，`InstallTarget.hosts`、`ThirdPartyTarget.hosts` 是它们的名字，呈现层用文案的 `listSeparator` 连起来（`ui.ts` 的 `hostCell`：「Codex、Pi」，英文 `Codex, Pi`）；`McpTarget` 仍是一个 `host`。汇总的小表、进行中的那一行、结果行用的是同一个 `hostCell`，宿主一栏照连起来之后的宽度定宽。
+表头永远只有一行。同一个条目装进几个 skill 目录（MCP 是几个宿主）就有几行，名字只写在第一行。**宿主那一格可以是几个名字**：共用一个 skill 目录的几个所选宿主（Codex、Pi、omp）在算计划时合成一项，`InstallTarget.hosts`、`ThirdPartyTarget.hosts` 是它们的名字，呈现层用文案的 `listSeparator` 连起来（`ui.ts` 的 `hostCell`：「Codex、Pi、omp」，英文 `Codex, Pi, omp`——最长的一格是 14 列，比「Claude Code」宽 3 列）；`McpTarget` 仍是一个 `host`。汇总的小表、进行中的那一行、结果行用的是同一个 `hostCell`，宿主一栏照连起来之后的宽度定宽。
 
 ```ts
 // 错：逐行决定——同一张表里有的备注在栏里、有的折到路径下面，折下去的像是路径的续行；
@@ -471,7 +471,7 @@ ui.webEnded('finished');
 
 | 帮手 | 给什么 | 用在 |
 |------|--------|------|
-| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、混合列表上方的「注意」（`listNotices`：共用 skill 目录的那一句、MCP 只能装到全局、读不到配置，照这个先后，几行在同一次 `print` 里所以挨着） |
+| `gapAbove()` | 要拼进 `print` 的行：上面不是空行时是一行空行，否则没有 | 本机信息、混合列表上方的「注意」（`listNotices`：共用 skill 目录的那一句、MCP 只能装到全局、安装器装不了某个宿主的 MCP、读不到配置，照这个先后，几行在同一次 `print` 里所以挨着） |
 | `heading(title, format?)` | 一个分区的开头：`gapAbove()`、标题、一行空行 | 每一个分区。出错说明用 `errors.heading`；帮助的三个分区在同一次 `print` 里，空行是直接写的 |
 | `gap()` | 上面不是空行时当场打一行空行 | 回到上一轮（`nextRound`）；转动的加载提示之前（`loading`）——那一行擦掉之后，接着打的本机信息或分区就落在它的位置上，空行得先给，不然读完的一刻画面会往下跳一行 |
 
@@ -572,7 +572,7 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 
 `cli/scripts/preview.ts` 经 `runInstaller` 按场景表驱动安装器：提问由真实的交互库渲染，按键是脚本发的，输出喂给无头终端（`@xterm/headless`），再把字符格连同样式转成 HTML，每个画面一格，深色和浅色终端各一份。它是视觉评审对照 [界面设计](./ui-design.md) 时用的画面证据；什么时候生成、拿它核对什么，见那份文档的「界面预览页」。下面是场景怎么写。
 
-- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`（Claude Code 和 Codex；Pi 写着未检测到），三个都检测到的给 `onPath: THREE_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。五种类型同表、三个宿主的用 `THREE_HOSTS_FIVE_KINDS`（Pi 的用户级配置里配过 markitdown），只检测到 Pi 的用 `PI_ONLY_FIVE_KINDS`；三个宿主装到项目再加 `PROJECT_WITH_PI`（项目里 Pi 的 `.pi/mcp.json` 配过 mistral-ocr）。只检测到 Codex 和 Pi（共用一个 skill 目录、合成一行的那几格）给 `onPath: CODEX_AND_PI`（在 `preview-samples.ts`，网页界面的预览也用它），同样多一次回车确认宿主。
+- 加了或改了画面，就在 `scenes` 里加一个场景（标题、说明、参数、环境、目录来源、可执行路径上的命令、主目录里事先有的文件和符号链接、按键）。要画出 skill 的各种状态，用 `MIXED`（已装、版本不同、手动放的目录、符号链接都有）。场景缺省只有 `claude` 一个命令，也就是只检测到一个宿主；两个宿主的场景给 `onPath: BOTH_HOSTS`（Claude Code 和 Codex；Pi 和 omp 写着未检测到），三个的给 `onPath: THREE_HOSTS`（omp 写着未检测到），四个都检测到的给 `onPath: FOUR_HOSTS`，按键前面多一次回车确认宿主（`twoHosts(keys)`）。五种类型同表、四个宿主的用 `FOUR_HOSTS_FIVE_KINDS`，只检测到 omp 的用 `OMP_ONLY_FIVE_KINDS`；只检测到 Codex、Pi、omp 的给 `onPath: SHARED_THREE`（`FOUR_HOSTS`、`SHARED_THREE` 在 `preview-samples.ts`）。五种类型同表、三个宿主的用 `THREE_HOSTS_FIVE_KINDS`（Pi 的用户级配置里配过 markitdown），只检测到 Pi 的用 `PI_ONLY_FIVE_KINDS`；三个宿主装到项目再加 `PROJECT_WITH_PI`（项目里 Pi 的 `.pi/mcp.json` 配过 mistral-ocr）。只检测到 Codex 和 Pi（共用一个 skill 目录、合成一行的那几格）给 `onPath: CODEX_AND_PI`（在 `preview-samples.ts`，网页界面的预览也用它），同样多一次回车确认宿主。
 - 一个画面有“默认”和“按了某个键之后”两种状态时，各做一个场景；英文、不显示颜色、没有 Unicode 的变体拍默认状态。例外是「光标停在不可选的行上」：它要按了键才看得到，变体也各拍一个。出错和帮助同样要有英文的变体。
 - **场景缺省替用户在语言提问上按回车**（`cli/test/terminal.ts` 的假键盘做的：等语言提问画出来再按，接受光标起始所在的那一项），`keys` 里不用写它。场景的系统语言是中文，所以缺省得到中文界面，标题区下面留着 `✓ Language / 语言 · 中文`。要拍语言提问本身，给 `answersLanguage: true`，这时它由 `keys` 来按：不给 `keys` 就停在提问上。带 `--lang` 的场景不问语言。语言提问的场景有五个：系统语言是中文、不是中文（它就是英文的变体：按键提示是英文）、选了与系统语言不同的一项、不显示颜色、没有 Unicode。
 - **场景的环境里缺省没有 `COLORTERM`**，大标志走的是洋红那一档；要看渐变给 `env: TRUECOLOR`。标题区的三档各有一个场景（「标题区 · 渐变」「标题区 · 洋红（没有 COLORTERM）」「标题区 · 不显示颜色」——最后一个同时给了 `COLORTERM`，画的是 `NO_COLOR` 压过它）。测试架子同样缺省没有 `COLORTERM`。

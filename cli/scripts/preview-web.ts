@@ -14,6 +14,7 @@ import { findChrome, launchChrome, type Chrome } from './chrome.ts';
 import {
   BOTH_HOSTS,
   CODEX_AND_PI,
+  FOUR_HOSTS,
   DOCUMENT_MCPS,
   DOCUMENT_THIRD_PARTY,
   DOCUMENT_TOOLS,
@@ -108,6 +109,9 @@ const THREE = { onPath: [...THREE_HOSTS, 'pandoc'] };
 const PI_ONLY = { onPath: ['pi', 'pandoc'] };
 // 只检测到 Codex 和 Pi：两个宿主用的是同一个共用 skill 目录
 const SHARING = { onPath: [...CODEX_AND_PI, 'pandoc'] };
+// 四个宿主都检测到；只检测到 omp。omp 的 skill 也在共用 skill 目录里，它的 MCP 安装器不装
+const FOUR = { onPath: [...FOUR_HOSTS, 'pandoc'] };
+const OMP_ONLY = { onPath: ['omp', 'pandoc'] };
 // Pi 的用户级配置里配过 markitdown：MCP 的卡片上 Pi 那一段各看各的配置
 const PI_CONFIGURED = { home: { ...LIVED_IN.home, ...PI_MARKITDOWN_CONFIGURED } };
 
@@ -562,7 +566,7 @@ const scenes: Scene[] = [
     guide: true,
   },
   { title: '开场引导 · 三个宿主 · 1024×768', note: '窄的窗口里三个勾选仍排得下，没有滚动条', ...THREE, guide: true, viewport: NARROW },
-  { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的两个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
+  { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的三个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
   {
     title: '浏览 · 三个宿主',
     note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；每张卡片底部三段状态，各带宿主的名字，不合并。Codex 和 Pi 两段写的一样：它们的 skill 装在同一个共用 skill 目录里，Skill 那一区上方的「注意」说的就是这件事',
@@ -598,13 +602,13 @@ const scenes: Scene[] = [
   { title: '浏览 · 三个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的三段状态都放得下，没有横向滚动条', ...THREE, drive: crowded, viewport: NARROW },
   {
     title: '浏览 · 只检测到 Pi',
-    note: '顶上写一句「装进 Pi」，没检测到的两个写在旁边；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
+    note: '顶上写一句「装进 Pi」，没检测到的三个写在旁边；MCP 的卡片照常勾得上，状态看的是 Pi 自己的配置（markitdown 配过）；excel 只支持 Claude Code，是不可选的画法，原因是「需要别的 AI Agent」',
     ...PI_ONLY,
     ...PI_CONFIGURED,
     drive: crowded,
     reveal: 'markitdown',
   },
-  { title: '浏览 · 只检测到 Pi · 装到项目', note: '没检测到的两个写在旁边，这一行更长；目录那一行照样不折', ...PI_ONLY, ...PI_CONFIGURED, drive: inOrder(crowded, toProject) },
+  { title: '浏览 · 只检测到 Pi · 装到项目', note: '没检测到的三个写在旁边，这一行更长；目录那一行照样不折', ...PI_ONLY, ...PI_CONFIGURED, drive: inOrder(crowded, toProject) },
   {
     title: '汇总 · 带 key 的 MCP、装到项目 · 三个宿主',
     note: 'MCP 装进 Claude Code 和 Pi，每个宿主一行，没有 Codex 的；Pi 那边配过的 grok-search 写「覆盖」和备注。「注意」里：key 会以明文写进 .mcp.json 和 .pi/mcp.json（说变量名和文件，不说值）、两个宿主各一句要批准之后才启用、mistral-ocr 缺必填的 key 这次不装。每一句都完整显示',
@@ -676,6 +680,63 @@ const scenes: Scene[] = [
     drive: thirdPartySummarized,
   },
   { title: '汇总 · 有第三方 Skill · 三个宿主 · 1024×768', note: '窄的面板里「Codex、Pi」仍完整显示，位置放不下就在任意处断开', ...THREE, drive: thirdPartySummarized, viewport: NARROW },
+  { title: '开场引导 · 四个宿主', note: '四个宿主都检测到：第一行提问后面依次是 Claude Code、Codex、Pi、omp 四个勾选，都勾着', ...FOUR, intro: 'played', guide: true },
+  { title: '开场引导 · 四个宿主 · 1024×768', note: '窄的窗口里的四个勾选，没有滚动条', ...FOUR, guide: true, viewport: NARROW },
+  { title: '开场引导 · 只检测到 omp', note: '没有可勾的宿主：写一句「装进 omp」，没检测到的三个写在旁边；只有安装范围可选', ...OMP_ONLY, guide: true },
+  {
+    title: '浏览 · 四个宿主',
+    note: '顶上那一条里四个宿主的勾选和安装范围；每张卡片底部四段状态，各带宿主的名字，不合并。Codex、Pi、omp 三段写的一样：它们的 skill 装在同一个共用 skill 目录里',
+    ...FOUR,
+    drive: crowded,
+  },
+  {
+    title: '浏览 · 四个宿主 · MCP 那一区',
+    note: '卡片上 omp 那一段都是最淡的「不支持」：安装器不装 omp 的 MCP，那一区上方一行「注意」写明原因和出路。卡片照常勾得上，装进别的宿主',
+    ...FOUR,
+    ...PI_CONFIGURED,
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  {
+    title: '浏览 · 四个宿主 · 装到项目 · MCP 那一区',
+    note: '选了「项目」：Codex 和 omp 两段都是「不支持」，那一区上方两行「注意」——Codex 的 MCP 只能装到全局在前，安装器装不了 omp 的 MCP 在后。仍然勾得上，装进 Claude Code 和 Pi',
+    ...FOUR,
+    ...PI_CONFIGURED,
+    catalog: withKeyed,
+    project: KEYED_TO_PROJECT_WITH_PI.project,
+    drive: inOrder(crowded, toProject, pickingMcp('markitdown')),
+    reveal: 'markitdown',
+  },
+  { title: '浏览 · 四个宿主 · 1024×768', note: '窄的窗口里顶上那一条和卡片上的四段状态，没有横向滚动条', ...FOUR, drive: crowded, viewport: NARROW },
+  {
+    title: '浏览 · 只检测到 omp',
+    note: '顶上写一句「装进 omp」，没检测到的三个写在旁边；Skill 和第三方 Skill 的卡片照常勾得上；MCP 的卡片都是不可选的画法，原因是「需要别的 AI Agent」，出路在那一区上方的「注意」里',
+    ...OMP_ONLY,
+    drive: crowded,
+    reveal: 'markitdown',
+  },
+  {
+    title: '汇总 · 四个宿主',
+    note: '每个条目一段，段里两行：Claude Code 一行，共用 skill 目录的「Codex、Pi、omp」一行——三个名字完整显示，不被截断',
+    ...FOUR,
+    drive: summarized,
+  },
+  { title: '汇总 · 四个宿主 · 1024×768', note: '窄的面板里「Codex、Pi、omp」仍完整显示', ...FOUR, drive: summarized, viewport: NARROW },
+  { title: '结果 · 四个宿主', note: '每个条目两行：Claude Code 一行，「Codex、Pi、omp」一行；合计按行算', ...FOUR, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
+  {
+    title: '汇总 · 有第三方 Skill · 四个宿主',
+    note: '第三方 Skill 的每个 skill 两行：Claude Code 一行，「Codex、Pi、omp」一行',
+    ...FOUR,
+    drive: thirdPartySummarized,
+  },
+  {
+    title: '结果 · 有 MCP · 四个宿主',
+    note: '一个 MCP 在 Claude Code、Codex、Pi 下各装一次，三行结果；没有 omp 的行',
+    ...FOUR,
+    catalog: withKeyed,
+    commands: 'succeed',
+    drive: inOrder(crowded, pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished),
+  },
   { title: '键盘焦点', note: '按了三下 Tab：焦点是一圈 2px 的前景色描边，离元素 2px，深浅色下都看得见', tabs: 3 },
   { title: '结束 · 已完成', note: '点了「完成」：一个标题、一句说明，没有任何控件；彩色只落在行首的符号上', ending: 'finished' },
   { title: '结束 · 已改用终端界面', note: '终端上按了 t：页面得知之后连接才断开，不改口成「安装器已退出」；同样没有任何控件', ending: 'switched' },
@@ -692,6 +753,13 @@ const scenes: Scene[] = [
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主', note: '英文的提醒更长：三句都完整显示', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI },
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄的面板、四条提醒', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI, viewport: NARROW },
   { title: '英文 · 结果 · 有 MCP · 三个宿主', ...EN, ...THREE, catalog: withKeyed, commands: 'succeed', drive: inOrder(crowded, pickingMcp('markitdown', 'mistral-ocr', 'grok-search'), toKeys, filling('grok-search', 'GROK_API_URL', 'GROK_API_KEY'), reviewing, finished) },
+  { title: '英文 · 开场引导 · 四个宿主', note: '英文的提问更长：四个勾选和提问一行放不下，照「放不下时」上下排', ...EN, ...FOUR, guide: true },
+  { title: '英文 · 开场引导 · 四个宿主 · 1024×768', ...EN, ...FOUR, guide: true, viewport: NARROW },
+  { title: '英文 · 浏览 · 四个宿主', ...EN, ...FOUR, drive: crowded },
+  { title: '英文 · 浏览 · 四个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、四个宿主', ...EN, ...FOUR, drive: crowded, viewport: NARROW },
+  { title: '英文 · 浏览 · 四个宿主 · MCP 那一区', ...EN, ...FOUR, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
+  { title: '英文 · 汇总 · 四个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi, omp，完整显示', ...EN, ...FOUR, drive: summarized },
+  { title: '英文 · 浏览 · 只检测到 omp', ...EN, ...OMP_ONLY, drive: crowded, reveal: 'markitdown' },
   {
     title: '英文 · 开场引导 · 选了项目 · 1024×768',
     note: '最挤的一格：提问更长，放不下时提问和它的控件上下排；目录那一行在任意处断开；没有滚动条、没有被裁掉的字',

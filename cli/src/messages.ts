@@ -116,6 +116,8 @@ export interface Messages {
   mcpConfigUnreadable: (hosts: string) => string;
   /** 选了项目范围，而这些宿主的 MCP 只能装到全局，连同原因；hosts 已按并列的写法连好 */
   mcpGlobalOnlyNotice: (hosts: string) => string;
+  /** 这个宿主的 MCP 安装器不装，连同出路：how 是在这个宿主里自己添加 MCP 的办法（它里面的一条命令） */
+  mcpNoConfigNotice: (host: string, how: string) => string;
   /** 条目不可选的原因：MCP 和第三方 Skill 是所选的宿主它一个都不支持，工具是它要的宿主一个都没检测到 */
   unsupportedByHosts: string;
   /** 混合列表只有一栏状态时（一个宿主都没检测到，或列表里只有工具和外部项目）那一栏的表头 */
@@ -326,6 +328,7 @@ const zh: Messages = {
   sharedSkillsNotice: 'Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到',
   mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
   mcpGlobalOnlyNotice: (hosts) => `${hosts} 的 MCP 只能装到全局：没有把 MCP 写进项目的命令`,
+  mcpNoConfigNotice: (host, how) => `安装器装不了 ${host} 的 MCP：请在 ${host} 里用 ${how} 添加`,
   unsupportedByHosts: '需要别的 AI Agent',
   statusColumn: '状态',
   toolStatus: { none: '未安装', installed: '已安装' },
@@ -624,6 +627,7 @@ const en: Messages = {
   sharedSkillsNotice: 'Codex, Pi and omp share one skill folder: install for one and the other two see it too',
   mcpConfigUnreadable: (hosts) => `Could not read the ${hosts} config; cannot tell which MCP servers are configured`,
   mcpGlobalOnlyNotice: (hosts) => `${hosts} MCP servers can only be installed globally: there is no command that writes them into a project`,
+  mcpNoConfigNotice: (host, how) => `The installer cannot install ${host} MCP servers: use ${how} in ${host}`,
   unsupportedByHosts: 'needs another AI Agent',
   statusColumn: 'Status',
   toolStatus: { none: 'none', installed: 'installed' },
