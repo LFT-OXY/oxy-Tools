@@ -321,10 +321,18 @@ describe('已回答的提问与下一块之间空一行，连着的几行已回�
     expect(after(lines, '✓ 选择用途 · 推荐', 2)).toEqual(['', '? 装进哪些 AI Agent']);
   });
 
-  it('它回答之后，两行已回答的提问紧挨着，再隔一行才是下一个提问', async () => {
+  it('它回答之后，两行已回答的提问紧挨着，再隔一行才是下一块——选了 Codex，那是共用 skill 目录的说明，它上下各空一行', async () => {
     const lines = await screenOf({ onPath: BOTH_HOSTS, keys: [[HINT, KEY.enter], [PICK_HINT, KEY.enter], [PICK_HINT, KEY.ctrlC]] });
 
-    expect(after(lines, '✓ 选择用途 · 推荐', 4)).toEqual(['✓ 装进哪些 AI Agent · Claude Code、Codex', '✓ 装到哪里 · 全局', '', '? 选择要安装的条目']);
+    expect(after(lines, '✓ 选择用途 · 推荐', 7)).toEqual([
+      '✓ 装进哪些 AI Agent · Claude Code、Codex',
+      '✓ 装到哪里 · 全局',
+      '',
+      '  注意      Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看',
+      '            得到',
+      '',
+      '? 选择要安装的条目',
+    ]);
   });
 
   it('是否题：问的时候与已回答的一行隔一行', async () => {

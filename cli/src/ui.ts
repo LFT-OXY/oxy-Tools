@@ -100,6 +100,8 @@ const REASON_MARK = '\u200b';
 
 export type MenuChoice = 'recommended' | Purpose | 'exit';
 export type InstallDecision = 'install' | 'revise' | 'cancel';
+/** 一项装进哪：一个宿主（MCP），或共用一个 skill 目录的那几个宿主（skill、第三方 Skill），都是名字 */
+type HostCell = { host: string } | { hosts: readonly string[] };
 
 export interface UiOptions {
   out: TerminalOutput;
@@ -188,6 +190,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     const firstWidth = Math.max(...rows.map(([first]) => displayWidth(first))) + GUTTER;
     return rows.flatMap(([first, second]) => hanging('  ', pad(first, firstWidth), second));
   };
+
+  // 宿主那一格：共用一个 skill 目录的几个宿主合成一项，名字照界面上的先后用并列的写法连起来（「Codex、Pi」）
+  const hostCell = (target: HostCell): string => ('hosts' in target ? target.hosts.join(t.listSeparator) : target.host);
 
   // 每一栏取这一栏里最长的一格再加栏间隔
   const columnWidths = (rows: readonly (readonly string[])[]): number[] =>
@@ -383,13 +388,13 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   // 一轮的执行，各类组件共用：targets 进「正在安装」分区，每一项进行中的那一行写的字（doing）和它的结果都由调用方
   // 说成文字；asides 是输出不归呈现层管的那些（工具）的名字，各占一个以名字为标题的分区，排在后面。
   // recap 是这一批已经装完、只把结果补打出来：标题直接是「结果」，没有进行中的那一行
-  const progress = (targets: readonly { name: string; host: string }[], asides: readonly string[], recap = false) => {
+  const progress = (targets: readonly ({ name: string } & HostCell)[], asides: readonly string[], recap = false) => {
     type Target = (typeof targets)[number];
     // verdict 是成功的那一行里先写的结果词（工具的「已可用」）：折行时续行与它后面的字对齐
     type Result = { ok: true; text: string; verdict?: string } | { ok: false; reason: string };
     const [nameWidth = 0] = columnWidths([...targets.map((target) => target.name), ...asides].map((name) => [name]));
     // 没有要装进宿主的行时没有宿主一栏
-    const [hostWidth = 0] = columnWidths(targets.map((target) => [target.host]));
+    const [hostWidth = 0] = columnWidths(targets.map((target) => [hostCell(target)]));
     const lead = (name: string, host = '') => (mark: string): string => `  ${mark}  ${pad(name, nameWidth)}${pad(host, hostWidth)}`;
     const results = tally();
     // 打出去的每一行结果：有 aside 时最后要原样再列一遍
@@ -408,15 +413,15 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     if (targets.length > 0 || (recap && asides.length > 0)) print(...heading(recap ? t.results : t.installing));
     return {
       begin(target: Target, doing: string): (result?: Result) => void {
-        const erase = recap ? (): void => {} : spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
+        const erase = recap ? (): void => {} : spin((mark) => `${lead(target.name, hostCell(target))(mark)}${doing}${dim(symbols.ellipsis)}`);
         return (result) => {
           erase();
-          if (result) settle(rowsOf(lead(target.name, target.host), result));
+          if (result) settle(rowsOf(lead(target.name, hostCell(target)), result));
         };
       },
       // 原因里可以有目录给的名字，长度不由我们定：和失败的原因一样自己折行，行数才数得对
       skip(target: Target, reason: string): void {
-        settle(results.skipped(lead(target.name, target.host), reason));
+        settle(results.skipped(lead(target.name, hostCell(target)), reason));
       },
       // 它自己的输出原样接在 intro 下面，不经过这里；交出结果时上方空一行。没有转动符号：行首重写会和它的输出撞车
       aside(name: string, intro: readonly string[]): (result: Result) => void {
@@ -914,11 +919,12 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 混合列表上方关于 MCP 那几栏的说明，各占一行，两行挨着：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，
-     * 它们那一栏写着不支持，这里说原因；unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
+     * 混合列表上方的说明，各占一行，几行挨着。sharedSkills 是要不要那句共用 skill 目录的说明，排在最前；后面是关于
+     * MCP 那几栏的：globalOnly 是选了项目范围而 MCP 只能装到全局的宿主，它们那一栏写着不支持，这里说原因；
+     * unreadable 是配置读不到的宿主，它们那一栏都是未知。都没有时什么都不打。
      */
-    mcpColumnNotices({ globalOnly, unreadable }: { globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
-      const notices = mcpColumnNoticeTexts(t, { globalOnly, unreadable });
+    listNotices({ sharedSkills, globalOnly, unreadable }: { sharedSkills: boolean; globalOnly: readonly Host[]; unreadable: readonly Host[] }): void {
+      const notices = [...(sharedSkills ? [t.sharedSkillsNotice] : []), ...mcpColumnNoticeTexts(t, { globalOnly, unreadable })];
       if (notices.length > 0) print(...gapAbove(), ...notices.flatMap((notice) => keyValue(t.noticeKey, notice, attention)), '');
     },
 
@@ -960,7 +966,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           title: t.sections.skill.title,
           located: true,
           rows: skills.map((target, index) => ({
-            cells: [once(skills, index), target.host, target.status.kind === 'none' ? t.actions.fresh : paint(attention, t.actions.overwrite)] as const,
+            cells: [once(skills, index), hostCell(target), target.status.kind === 'none' ? t.actions.fresh : paint(attention, t.actions.overwrite)] as const,
             location: target.location,
             note: skillNote(target),
           })),
@@ -969,7 +975,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           title: t.sections.thirdParty.title,
           located: true,
           rows: thirdParty.map((target, index) => ({
-            cells: [once(thirdParty, index), target.host, target.exists ? paint(attention, t.actions.overwrite) : t.actions.fresh] as const,
+            cells: [once(thirdParty, index), hostCell(target), target.exists ? paint(attention, t.actions.overwrite) : t.actions.fresh] as const,
             location: target.location,
             note: target.exists ? t.existingNote : '',
           })),
@@ -978,7 +984,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
           title: t.sections.mcp.title,
           located: false,
           rows: mcps.map((target, index) => ({
-            cells: [once(mcps, index), target.host, mcpAction[target.status]] as const,
+            cells: [once(mcps, index), hostCell(target), mcpAction[target.status]] as const,
             location: '',
             note: mcpNote[target.status],
           })),

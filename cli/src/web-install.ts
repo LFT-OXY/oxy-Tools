@@ -41,7 +41,10 @@ export function summaryId(plan: Plan): string {
   return createHash('sha256').update(JSON.stringify(content)).digest('base64url').slice(0, 22);
 }
 
-/** 把（标过覆盖决定的）计划写成汇总：每个条目一段，段里每个宿主一行。词和终端界面的汇总是同一份 */
+/**
+ * 把（标过覆盖决定的）计划写成汇总：每个条目一段，段里每一项一行——共用一个 skill 目录的几个宿主是一项，宿主那一格
+ * 把它们的名字用并列的写法连起来。词和终端界面的汇总是同一份
+ */
 export function summaryView(t: Messages, plan: Plan): SummaryView {
   const note = ({ status, version }: InstallTarget): string | undefined => {
     switch (status.kind) {
@@ -62,24 +65,24 @@ export function summaryView(t: Messages, plan: Plan): SummaryView {
     const fresh = target.status.kind === 'none';
     const text = note(target);
     const row: SummaryRowView = {
-      host: target.host,
+      host: target.hosts.join(t.listSeparator),
       action: fresh ? t.actions.fresh : t.actions.overwrite,
       ...(fresh ? {} : { overwrites: true as const }),
       location: target.location,
       ...(text === undefined ? {} : { note: text }),
       ...(job.asksOverwrite ? { overwrite: { id: overwriteId(job), agreed: !job.declined } } : {}),
     };
-    // 同一个 skill 在各个宿主下的几项挨着
+    // 同一个 skill 在各个 skill 目录下的几项挨着
     const last = entries.at(-1);
     if (last?.name === target.name) last.rows.push(row);
     else entries.push({ name: target.name, type: t.kinds.skill, version: target.version, rows: [row] });
   }
-  // 第三方 Skill 一个条目一段，没有版本（装的是作者当时的最新版）；段里每个要装的 skill 在每个宿主下一行，行带着 skill 的名字
+  // 第三方 Skill 一个条目一段，没有版本（装的是作者当时的最新版）；段里每个要装的 skill 在每个 skill 目录下一行，行带着 skill 的名字
   for (const job of plan.thirdPartyJobs) {
     const { target } = job;
     const row: SummaryRowView = {
       skill: target.name,
-      host: target.host,
+      host: target.hosts.join(t.listSeparator),
       action: target.exists ? t.actions.overwrite : t.actions.fresh,
       ...(target.exists ? { overwrites: true as const, note: t.existingDir, overwrite: { id: replaceId(job), agreed: !job.declined } } : {}),
       location: target.location,
@@ -139,7 +142,7 @@ type RowState =
 /** 工具那一行的结局：成功与否看复核（tool.available），没有跳过这回事 */
 type ToolState = { state: 'waiting' } | { state: 'running' } | { state: 'succeeded' | 'failed'; tool: ToolResult };
 
-/** 一批里的一项：本仓库的 skill、第三方 Skill 里的一个 skill，或一个 MCP，各在一个宿主下；工具不装进宿主，一个一项 */
+/** 一批里的一项：本仓库的 skill、第三方 Skill 里的一个 skill（各在一个 skill 目录下），或一个宿主下的一个 MCP；工具不装进宿主，一个一项 */
 type Row =
   | ({ now: RowState } & ({ kind: 'skill'; target: InstallTarget } | { kind: 'thirdParty'; target: ThirdPartyTarget } | { kind: 'mcp'; target: McpTarget }))
   | { kind: 'tool'; target: ToolTarget; now: ToolState };
@@ -313,7 +316,7 @@ export function runView(t: Messages, platform: NodeJS.Platform, batch: Batch): R
   const row = (one: Row): RunRowView => {
     if (one.kind === 'tool') return toolRow(one.target, one.now);
     const { kind, target, now } = one;
-    const lead = { name: target.name, host: target.host, state: now.state };
+    const lead = { name: target.name, host: 'hosts' in target ? target.hosts.join(t.listSeparator) : target.host, state: now.state };
     switch (now.state) {
       case 'waiting':
         return { ...lead, text: t.waiting };

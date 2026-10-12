@@ -105,6 +105,8 @@ const NO_HOSTS = { onPath: ['pandoc'] };
 // 三个宿主都检测到；只检测到 Pi。主目录照 LIVED_IN：Codex 和 Pi 看的是同一个共用 skill 目录
 const THREE = { onPath: [...THREE_HOSTS, 'pandoc'] };
 const PI_ONLY = { onPath: ['pi', 'pandoc'] };
+// 只检测到 Codex 和 Pi：两个宿主用的是同一个共用 skill 目录
+const CODEX_AND_PI = { onPath: ['codex', 'pi', 'pandoc'] };
 // Pi 的用户级配置里配过 markitdown：MCP 的卡片上 Pi 那一段各看各的配置
 const PI_CONFIGURED = { home: { ...LIVED_IN.home, ...PI_MARKITDOWN_CONFIGURED } };
 
@@ -562,7 +564,7 @@ const scenes: Scene[] = [
   { title: '开场引导 · 只检测到 Pi', note: '没有可勾的宿主：写一句「装进 Pi」，没检测到的两个写在旁边；只有安装范围可选', ...PI_ONLY, guide: true },
   {
     title: '浏览 · 三个宿主',
-    note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；每张卡片底部三段状态，各带宿主的名字。Codex 和 Pi 两段写的一样：它们的 skill 装在同一个目录里',
+    note: '顶上那一条里三个宿主的勾选和安装范围一起在第二行，不拆开；每张卡片底部三段状态，各带宿主的名字，不合并。Codex 和 Pi 两段写的一样：它们的 skill 装在同一个共用 skill 目录里，Skill 那一区上方的「注意」说的就是这件事',
     ...THREE,
     drive: crowded,
   },
@@ -631,11 +633,48 @@ const scenes: Scene[] = [
   },
   {
     title: '汇总 · 三个宿主',
-    note: '每个条目一段，段里每个宿主一行：Claude Code、Codex、Pi。Codex 和 Pi 的位置是同一个共用 skill 目录',
+    note: '每个条目一段，段里两行：Claude Code 一行，共用 skill 目录的「Codex、Pi」一行——两个名字完整显示，不被截断',
     ...THREE,
     drive: summarized,
   },
-  { title: '结果 · 三个宿主', note: '每个条目每个宿主一行，宿主那一格写得下', ...THREE, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
+  { title: '结果 · 三个宿主', note: '每个条目两行：Claude Code 一行，「Codex、Pi」一行，宿主那一格写得下；合计按行算', ...THREE, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
+  {
+    title: '浏览 · 共用 skill 目录的说明 · Codex 和 Pi',
+    note: 'Skill 那一区的小标题下面一行「注意」：三个名字是固定的，不看检测到了哪几个。卡片上仍是每个宿主一段状态，两段写的一样',
+    ...CODEX_AND_PI,
+  },
+  {
+    title: '浏览 · 共用 skill 目录的说明 · 用途下既有 Skill 又有第三方 Skill',
+    note: '只在排在前面的 Skill 那一区说一次，第三方 Skill 那一区不重复',
+    ...CODEX_AND_PI,
+    drive: crowded,
+  },
+  {
+    title: '汇总 · Codex 和 Pi 合成一行',
+    note: '两个宿主用的是同一个共用 skill 目录：每个条目只有一行，宿主那一格写「Codex、Pi」；要逐项决定的覆盖也只有一处',
+    ...CODEX_AND_PI,
+    drive: summarized,
+  },
+  {
+    title: '安装中 · Codex 和 Pi 合成一行',
+    note: '每一项一行，宿主那一格同样是「Codex、Pi」：装好的、正在下载的、还在等的',
+    ...CODEX_AND_PI,
+    catalog: neverFinishes,
+    drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))),
+  },
+  {
+    title: '结果 · Codex 和 Pi 合成一行',
+    note: '每个条目一行结果；合计按行算：三个 skill 是「3 成功」，不是 6',
+    ...CODEX_AND_PI,
+    drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished),
+  },
+  {
+    title: '汇总 · 有第三方 Skill · 三个宿主',
+    note: '第三方 Skill 的每个 skill 两行：Claude Code 一行，「Codex、Pi」一行',
+    ...THREE,
+    drive: thirdPartySummarized,
+  },
+  { title: '汇总 · 有第三方 Skill · 三个宿主 · 1024×768', note: '窄的面板里「Codex、Pi」仍完整显示，位置放不下就在任意处断开', ...THREE, drive: thirdPartySummarized, viewport: NARROW },
   { title: '键盘焦点', note: '按了三下 Tab：焦点是一圈 2px 的前景色描边，离元素 2px，深浅色下都看得见', tabs: 3 },
   { title: '结束 · 已完成', note: '点了「完成」：一个标题、一句说明，没有任何控件；彩色只落在行首的符号上', ending: 'finished' },
   { title: '结束 · 已改用终端界面', note: '终端上按了 t：页面得知之后连接才断开，不改口成「安装器已退出」；同样没有任何控件', ending: 'switched' },
@@ -645,6 +684,8 @@ const scenes: Scene[] = [
   { title: '英文 · 开场引导 · 三个宿主', note: '英文的提问更长：看三个勾选排不排得下', ...EN, ...THREE, guide: true },
   { title: '英文 · 浏览 · 三个宿主', ...EN, ...THREE, drive: crowded },
   { title: '英文 · 浏览 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、三个宿主', ...EN, ...THREE, drive: crowded, viewport: NARROW },
+  { title: '英文 · 汇总 · 三个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi，完整显示', ...EN, ...THREE, drive: summarized },
+  { title: '英文 · 结果 · Codex 和 Pi 合成一行', ...EN, ...CODEX_AND_PI, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
   { title: '英文 · 浏览 · 只检测到 Pi', ...EN, ...PI_ONLY, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
   { title: '英文 · 浏览 · 三个宿主 · 装到项目 · MCP 那一区', ...EN, ...THREE, ...PI_CONFIGURED, catalog: withKeyed, project: KEYED_TO_PROJECT_WITH_PI.project, drive: inOrder(crowded, toProject, pickingMcp('markitdown')), reveal: 'markitdown' },
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主', note: '英文的提醒更长：三句都完整显示', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI },

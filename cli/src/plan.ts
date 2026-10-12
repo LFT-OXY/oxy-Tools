@@ -12,23 +12,26 @@ import { skillStatus, type SkillStatus } from './skill-status.ts';
 import { isPresent, thirdPartyStatus } from './third-party-status.ts';
 import { toolStatus, type ToolStatus } from './tool-status.ts';
 
-/** 一项安装：哪个条目、装进哪个宿主、装到哪（给用户看的路径）、要装的版本、那里现在的状态 */
+/**
+ * 一项安装：哪个条目、装进哪些宿主（名字，照界面上的先后；不止一个时它们共用这个 skill 目录）、装到哪（给用户看的路径）、
+ * 要装的版本、那里现在的状态
+ */
 export interface InstallTarget {
   name: string;
-  host: string;
+  hosts: readonly string[];
   location: string;
   version: string;
   status: SkillStatus;
 }
 
 /**
- * 一项第三方 Skill 安装：哪个 skill（entry 是它所属条目的名字）、装进哪个宿主、装到哪（给用户看的路径）、
- * 那里现在是不是已经有东西
+ * 一项第三方 Skill 安装：哪个 skill（entry 是它所属条目的名字）、装进哪些宿主（名字，照界面上的先后；不止一个时它们
+ * 共用这个 skill 目录）、装到哪（给用户看的路径）、那里现在是不是已经有东西
  */
 export interface ThirdPartyTarget {
   entry: string;
   name: string;
-  host: string;
+  hosts: readonly string[];
   location: string;
   exists: boolean;
 }
@@ -49,6 +52,7 @@ export interface ToolTarget {
 
 export interface SkillJob {
   skill: Skill;
+  /** 用这个 skill 目录的那几个所选宿主里排在最前的；全部的名字在 target.hosts */
   host: Host;
   /** 装进哪个 skill 目录：按所选的安装范围定 */
   skillsDir: string;
@@ -60,8 +64,9 @@ export interface SkillJob {
 }
 
 export interface ThirdPartyJob {
-  /** 要装的那一个 skill 的名字：条目里勾选的每个 skill 在每个支持它的所选宿主下各是一项 */
+  /** 要装的那一个 skill 的名字：条目里勾选的每个 skill 在每个 skill 目录下各是一项 */
   skill: string;
+  /** 用这个 skill 目录的、条目支持的那几个所选宿主里排在最前的：命令照它拼。全部的名字在 target.hosts */
   host: Host;
   /** 装完之后去哪个 skill 目录下复核：按所选的安装范围定 */
   skillsDir: string;
@@ -141,33 +146,44 @@ export interface Plan {
 export function planInstall(machine: Machine, { hosts, scope, skills, thirdParty, mcps, tools, filledKeys }: Selection): Plan {
   // 给用户看的位置：全局的以 ~ 开头，项目的写成相对项目目录的路径
   const located = (path: string): string => (scope === 'project' ? relative(machine.projectDir, path) : homeRelative(machine, path));
-  // 每个 skill 在每个宿主下各是一项，各有自己的结果
+  // 所选的宿主按 skill 目录归组：共用一个目录的几个宿主是一组，同一个 skill 在一组下只装一次。
+  // 组和组里的宿主都照界面上的先后；first 是组里排在最前的那个
+  const groups: { skillsDir: string; first: Host; hosts: Host[] }[] = [];
+  for (const host of hosts) {
+    const skillsDir = skillsDirOf(host, scope);
+    const group = groups.find((candidate) => candidate.skillsDir === skillsDir);
+    if (group) group.hosts.push(host);
+    else groups.push({ skillsDir, first: host, hosts: [host] });
+  }
+  const names = (group: readonly Host[]): string[] => group.map((host) => host.name);
+  // 每个 skill 在每一组下各是一项，各有自己的结果
   const jobs = skills.flatMap((skill) =>
-    hosts.map((host) => {
-      const skillsDir = skillsDirOf(host, scope);
+    groups.map(({ skillsDir, first, hosts: group }) => {
       const status = skillStatus(skill, skillsDir);
       return {
         skill,
-        host,
+        host: first,
         skillsDir,
-        target: { name: skill.name, host: host.name, location: located(join(skillsDir, skill.name)), version: skill.version, status },
+        target: { name: skill.name, hosts: names(group), location: located(join(skillsDir, skill.name)), version: skill.version, status },
         asksOverwrite: status.kind === 'unmanaged',
       };
     }),
   );
-  // 第三方 Skill 里要装的每个 skill，在每个支持这个条目的所选宿主下各是一项，各有一条命令
+  // 第三方 Skill 里要装的每个 skill，在每一组下各是一项，各有一条命令；一组里只算支持这个条目的那些宿主
   const thirdPartyJobs: ThirdPartyJob[] = [];
   for (const { entry, wanted } of thirdParty) {
-    const supporting = hosts.filter((host) => thirdPartyStatus(entry, host, skillsDirOf(host, scope)) !== 'unsupported');
     for (const { name } of entry.skills.filter((skill) => wanted.includes(skill))) {
-      for (const host of supporting) {
-        const skillsDir = skillsDirOf(host, scope);
+      for (const { skillsDir, hosts: group } of groups) {
+        const supporting = group.filter((host) => thirdPartyStatus(entry, host, skillsDir) !== 'unsupported');
+        // 这一组里一个都不支持：没有这一项。命令照支持的里面排在最前的那个拼
+        const [host] = supporting;
+        if (!host) continue;
         const exists = isPresent(skillsDir, name);
         thirdPartyJobs.push({
           skill: name,
           host,
           skillsDir,
-          target: { entry: entry.name, name, host: host.name, location: located(join(skillsDir, name)), exists },
+          target: { entry: entry.name, name, hosts: names(supporting), location: located(join(skillsDir, name)), exists },
           command: skillsCliCommand(entry.source, name, host, scope),
           ...(scope === 'project' ? { cwd: machine.projectDir } : {}),
           asksOverwrite: exists,

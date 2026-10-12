@@ -1,6 +1,6 @@
 // 终端界面的交互流程：主菜单、「推荐」与各个用途的画面怎么走。只决定“显示什么、问什么”，样式交给呈现层；
 // 列表里有什么、条目的状态、要装的各项和怎么装，都经两套界面共用的那几块。
-import { listingStatus, mcpColumnHosts } from './availability.ts';
+import { listingStatus, mcpColumnHosts, sharedSkillsNoted } from './availability.ts';
 import type { App, Catalog, Mcp, Skill, SourcedSkill, ThirdPartySkill, Tool } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import { purposeCounts, purposeListing, recommendedListing, sizeOf, type Listing } from './listing.ts';
@@ -83,7 +83,7 @@ async function planEntries(
   for (;;) {
     // 状态每次进列表都现探测
     const status = listingStatus(session, listing, hosts, scope);
-    ui.mcpColumnNotices(mcpColumnHosts(hosts, status.mcps));
+    ui.listNotices({ sharedSkills: sharedSkillsNoted(hosts, listing), ...mcpColumnHosts(hosts, status.mcps) });
     picked = await prompter.checkbox(ui.mixedPicker({ hosts, ...status, apps: listing.apps, checked: picked, marksRecommended: listing.marksRecommended }));
     if (picked.length === 0) return 'back';
     const apps = listing.apps.filter((app) => picked.includes(app));

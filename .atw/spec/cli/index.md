@@ -8,7 +8,7 @@
 
 `cli/` 是一个自成一体的 npm 包：交互式安装器，从目录里挑选条目装进宿主。为什么放在本仓库、要守哪三条规矩，见 [ADR-0001](../../../docs/adr/0001-installer-lives-in-skill-repo.md)；目录为什么运行时现拉，见 [ADR-0002](../../../docs/adr/0002-catalog-fetched-at-runtime.md)。
 
-本层写的都是已经落地的做法：启动、定下用哪个界面（缺省是网页界面：页面第一次打开先经开场引导选一次装进哪些宿主、装到全局还是项目，然后在页面上逛目录——这两样在页面顶上照旧能改——装本仓库的 skill、第三方 Skill、MCP（要 key 的在页面上填）和工具（在页面上勾选、命令在终端里跑）；页面关了自己退出，终端上按 `t` 改用终端界面。带了 `--terminal`、远程连接、没有桌面时直接用终端界面，浏览器打不开时退回它；为什么这样定见 [ADR-0004](../../../docs/adr/0004-web-ui-by-default-terminal-ui-as-fallback.md)）、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、三个宿主（Claude Code、Codex、Pi）与宿主选择、把 skill 装进宿主、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code、Pi 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
+本层写的都是已经落地的做法：启动、定下用哪个界面（缺省是网页界面：页面第一次打开先经开场引导选一次装进哪些宿主、装到全局还是项目，然后在页面上逛目录——这两样在页面顶上照旧能改——装本仓库的 skill、第三方 Skill、MCP（要 key 的在页面上填）和工具（在页面上勾选、命令在终端里跑）；页面关了自己退出，终端上按 `t` 改用终端界面。带了 `--terminal`、远程连接、没有桌面时直接用终端界面，浏览器打不开时退回它；为什么这样定见 [ADR-0004](../../../docs/adr/0004-web-ui-by-default-terminal-ui-as-fallback.md)）、问语言、读目录、按用途进入的主菜单（第一行是「推荐」）、三个宿主（Claude Code、Codex、Pi）与宿主选择、把 skill 装进宿主（Codex 和 Pi 共用一个 skill 目录：同时选了它们时同一个 skill 只装一次、汇总和结果里合成一行，列表的说明里多一句）、skill 的状态探测与覆盖确认、选择安装范围（全局或项目：本仓库的 skill、第三方 Skill 和 Claude Code、Pi 的 MCP 可以装到项目，Codex 的 MCP 只能装到全局）、第三方 Skill 的安装（调用 skills CLI）、MCP 的安装（含带 API key 的）、工具的安装、按用途进入后几种类型一起勾选一起装、列出外部项目的说明与链接、出错、界面设计、目录校验命令与 CI。
 
 ```
 cli/
@@ -19,7 +19,7 @@ cli/
 │   ├── bin.ts            # 把真实依赖接到入口上，别的什么都不做
 │   ├── installer.ts      # 入口 runInstaller，也是测试的主接缝
 │   ├── catalog.ts        # 目录：来源（含把 skill 的文件取下来）、读取、校验
-│   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录（全局的和项目范围的各一个）、怎么拼添加和移除 MCP 的命令、去哪看 MCP 配没配过（用户级的一份，项目范围的可选的一份；宿主也可以没有 MCP 配置，那就是它的 MCP 安装器不装）
+│   ├── hosts.ts          # 宿主适配：每个宿主一份，回答在不在、skill 装到哪个目录（全局的和项目范围的各一个；是不是共用 skill 目录）、怎么拼添加和移除 MCP 的命令、去哪看 MCP 配没配过（用户级的一份，项目范围的可选的一份；宿主也可以没有 MCP 配置，那就是它的 MCP 安装器不装）
 │   ├── install-skill.ts  # 安装 skill：只认“条目 + 目标目录”
 │   ├── skill-status.ts   # 状态探测：一个 skill 在某个 skill 目录下的现状，只看目标目录
 │   ├── install-third-party.ts  # 安装第三方 Skill：拼出 skills CLI 的那条命令，执行后看目标位置有没有 SKILL.md
@@ -30,8 +30,8 @@ cli/
 │   ├── tool-status.ts    # 状态探测：一个工具装没装，只照检查方式看一眼
 │   ├── run-command.ts    # 外部命令执行器的正式实现：不经 shell 的，和整行交给 shell 的
 │   ├── listing.ts        # 两套界面共用：「推荐」和各个用途的列表里有什么、怎么排
-│   ├── availability.ts   # 两套界面共用：列表里每个条目在所选宿主和安装范围下的状态、可不可选与原因；MCP 那几栏哪些宿主要另作说明
-│   ├── plan.ts           # 两套界面共用：算计划——把勾选算成要装的每一项
+│   ├── availability.ts   # 两套界面共用：列表里每个条目在所选宿主和安装范围下的状态、可不可选与原因；MCP 那几栏哪些宿主要另作说明；要不要那句共用 skill 目录的说明
+│   ├── plan.ts           # 两套界面共用：算计划——把勾选算成要装的每一项（skill 和第三方 Skill 按 skill 目录归组，共用一个目录的几个宿主是一项）
 │   ├── run-plan.ts       # 两套界面共用：执行——照计划逐项去装，把进度报给接收方
 │   ├── status-text.ts    # 两套界面共用：状态和不可选的原因写成哪个词、是什么含义
 │   ├── notice-text.ts    # 两套界面共用：汇总后面的提醒、列表里 MCP 那几栏的说明写成哪几句、什么先后；给用户看的一条完整命令怎么写
@@ -122,11 +122,11 @@ cli/
 | 模块 | 管什么 | 给它什么 | 它给出什么 |
 |------|--------|----------|------------|
 | `listing.ts` | 列表里有什么、怎么排 | 目录（和一个用途） | `recommendedListing`、`purposeListing`：一张列表里的条目，按类型分好、排好先后；`purposeCounts`：有条目的用途连同条目数，一行都没有的用途不在里面 |
-| `availability.ts` | 每个条目的状态、可不可选与原因 | 本机的事实（`Machine`）、一张列表、所选的宿主、安装范围 | `listingStatus`：每个组件在每个所选宿主下的状态；不可选的另带原因 `Unavailable`（一个宿主都没有、需要别的宿主、只能装到全局、不支持当前系统）。原因是一个种类，写成哪句话由界面照文案定。`mcpColumnHosts`：MCP 那几栏里要另作说明的宿主——选了项目而它的 MCP 只能装到全局的、配置读不到的 |
-| `plan.ts` | 算计划 | 本机的事实、所选的宿主、安装范围、勾选（含第三方 Skill 里挑了哪几个 skill）、填过的 key 的**变量名** | `planInstall`：要装的每一项——每个组件在每个宿主下一项，连同位置、状态、将执行的命令、要不要另问覆盖（`asksOverwrite`）、缺哪个必填的 key（`missingVariable`），以及汇总要提醒的事（`notices`） |
+| `availability.ts` | 每个条目的状态、可不可选与原因 | 本机的事实（`Machine`）、一张列表、所选的宿主、安装范围 | `listingStatus`：每个组件在每个所选宿主下的状态；不可选的另带原因 `Unavailable`（一个宿主都没有、需要别的宿主、只能装到全局、不支持当前系统）。原因是一个种类，写成哪句话由界面照文案定。`mcpColumnHosts`：MCP 那几栏里要另作说明的宿主——选了项目而它的 MCP 只能装到全局的、配置读不到的。`sharedSkillsNoted`：这张列表要不要那句共用 skill 目录的说明——所选的宿主里有用共用 skill 目录的（`host.sharedSkills`），且列表里有本仓库的 skill 或第三方 Skill |
+| `plan.ts` | 算计划 | 本机的事实、所选的宿主、安装范围、勾选（含第三方 Skill 里挑了哪几个 skill）、填过的 key 的**变量名** | `planInstall`：要装的每一项——本仓库的 skill 和第三方 Skill 在每个 skill 目录下一项（所选的宿主按 skill 目录归组，共用一个目录的几个宿主合成一项，`target.hosts` 是它们的名字），MCP 在每个装得了它的宿主下一项，连同位置、状态、将执行的命令、要不要另问覆盖（`asksOverwrite`）、缺哪个必填的 key（`missingVariable`），以及汇总要提醒的事（`notices`） |
 | `run-plan.ts` | 执行 | 计划、进度的接收方（`Progress`），和执行要的外部依赖（目录来源、外部命令执行器、临时目录、中断信号、填过的 key） | `runPlan`：照本仓库的 skill、第三方 Skill、MCP、工具的先后逐项去装，每一项的开始、结局、跳过都报给接收方 |
 | `status-text.ts` | 状态和不可选的原因怎么说 | 一份文案（`Messages`）和一个状态，或一个不可选的原因 | `skillStatusText`、`thirdPartyStatusText`、`mcpStatusText`、`toolStatusText`：那个词（`text`）、它的含义（`tone`：就绪、留意、退后、不上色）、词后面不上色的一段（`rest`：版本、装了几个）；`unavailableReason`：原因的那句话。**终端界面照含义上样式码（`ui.ts` 的 `statusCell`），网页界面原样放进画面状态**——两套界面的词因此不会各说各的 |
-| `notice-text.ts` | 汇总后面的提醒、列表里 MCP 那几栏的说明怎么说，命令怎么写成一行 | 一份文案和计划里的 `PlanNotices`（终端界面另给 `placeholders`）；或 `mcpColumnHosts` 给出的那两组宿主 | `noticeTexts`：提醒的那几句，照固定的先后（覆盖、第三方 Skill、占位符、明文 key、要批准、缺 key、要登录）；`mcpColumnNoticeTexts`：MCP 那几栏的说明，只能装到全局的在前、配置读不到的在后；`commandLine`：给用户看的一条完整命令，key 的位置是占位符 |
+| `notice-text.ts` | 汇总后面的提醒、列表里 MCP 那几栏的说明怎么说，命令怎么写成一行（共用 skill 目录的那句说明是一句固定的文案 `sharedSkillsNotice`，不经这里拼） | 一份文案和计划里的 `PlanNotices`（终端界面另给 `placeholders`）；或 `mcpColumnHosts` 给出的那两组宿主 | `noticeTexts`：提醒的那几句，照固定的先后（覆盖、第三方 Skill、占位符、明文 key、要批准、缺 key、要登录）；`mcpColumnNoticeTexts`：MCP 那几栏的说明，只能装到全局的在前、配置读不到的在后；`commandLine`：给用户看的一条完整命令，key 的位置是占位符 |
 
 要守的几条：
 
@@ -145,6 +145,7 @@ cli/
 export interface Machine { hosts: readonly Host[]; env: Environment; platform: NodeJS.Platform; homeDir: string; projectDir: string } // hosts 是认识的全部宿主
 export type Unavailable = { kind: 'no-host' } | { kind: 'hosts' } | { kind: 'global-only' } | { kind: 'os'; os: ToolOs };
 export function listingStatus(machine: Machine, listing: Pick<Listing, 'skills' | 'thirdParty' | 'mcps' | 'tools'>, hosts: readonly Host[], scope: Scope): ListingStatus;
+export function sharedSkillsNoted(hosts: readonly Host[], listing: Pick<Listing, 'skills' | 'thirdParty'>): boolean; // 列表里要不要那句共用 skill 目录的说明
 // ListingStatus 的每一行：{ skill | entry | mcp, statuses（与 hosts 一一对应）, unavailable? }；工具是 { tool, status, unavailable? }
 
 // cli/src/plan.ts
@@ -155,6 +156,10 @@ export interface Selection {
   filledKeys: ReadonlyMap<string, ReadonlySet<string>>;                              // MCP 的名字 → 填过的变量名，没有值
 }
 export interface Plan { jobs: SkillJob[]; thirdPartyJobs: ThirdPartyJob[]; mcpJobs: McpJob[]; toolJobs: ToolJob[]; notices: PlanNotices }
+// 一项的目标里装进哪：skill 和第三方 Skill 是 hosts（共用这个 skill 目录的那几个所选宿主的名字，照界面上的先后），MCP 是 host（一个）
+export interface InstallTarget { name: string; hosts: readonly string[]; location: string; version: string; status: SkillStatus }
+export interface ThirdPartyTarget { entry: string; name: string; hosts: readonly string[]; location: string; exists: boolean }
+export interface McpTarget { name: string; host: string; status: InstallableMcpStatus }
 export function planInstall(machine: Machine, selection: Selection): Plan;
 export function homeRelative(machine: Pick<Machine, 'homeDir'>, path: string): string; // 给用户看的路径：主目录写成 ~
 
@@ -168,6 +173,7 @@ export class Interrupted extends Error {}
 | 情形 | 共用的部分怎么办 |
 |------|------------------|
 | 所选的宿主是空的 | `listingStatus`：skill、第三方 Skill、MCP 每一行都是 `no-host`（它排在别的原因前面）；`planInstall`：这三类没有任何一项 |
+| 所选的宿主里有几个用同一个 skill 目录（Codex 和 Pi） | `planInstall`：同一个 skill 在这个目录下只有一项，`target.hosts` 是这几个宿主的名字；第三方 Skill 的那一项只算条目支持的那些宿主，命令照其中排在最前的拼，一个都不支持就没有这一项。`listingStatus` 不合并：仍是每个所选的宿主一个状态。规矩见 [安装 skill](./skill-install.md) 的「按 skill 目录归组」 |
 | 勾了的工具装不了（没有检测到宿主、系统不支持、要的宿主不在） | 不进 `toolJobs` |
 | MCP 必填的 key 不在 `filledKeys` 里 | 它在每个装得了的宿主下各有一项 `steps` 为空、带 `missingVariable` 的；`notices.missingKeys` 里说一次；执行时 `skip` |
 | `SkillJob` / `ThirdPartyJob` 带着 `declined` | 执行时 `skip`，不下载、不执行命令；本仓库的 skill 全都 `declined` 时不向 GitHub 查询 |
@@ -178,14 +184,14 @@ export class Interrupted extends Error {}
 加网页界面时逐样挪进共用部分的（一批可以跨用途之后才有的问题；以后再有两套界面都要的东西，同样挪过来，不要在页面那边另写一遍）：
 
 - **一批跨几张列表时各类的先后**：`Selection` 照给的先后装，终端界面给的是列表里的先后（一批只来自一张列表）。网页界面的一批可以跨用途：**本仓库的 skill 按名字**（工单 07 定的，用的是 `listing.ts` 的 `byName`；终端界面的两种列表里它们也都是按名字，所以两套界面装同样的东西先后一样）；**第三方 Skill 的条目也按名字**（工单 09 定的，同样用 `byName`；条目里的各个 skill 照条目里的先后，和终端界面一样——终端界面的列表里条目是「带推荐的在前、其余按名字」，跨用途时没有现成的先后，网页界面不照推荐标记排）。**MCP 的条目也按名字**（工单 10 定的，同样用 `byName`：问 key 的先后不在这里——填 key 的对话框照勾选的先后列）。**工具也按名字**（工单 12 定的，同样用 `byName`）。
-- **汇总里提醒的话**（`PlanNotices` 写成哪几句、什么先后）：**已经在共用的 `notice-text.ts` 里**（工单 09 挪的）——`noticeTexts(t, notices, placeholders)`，终端界面的 `summaryNotices` 和网页界面的 `summaryView` 都调它；给用户看的一条完整命令怎么写（`commandLine`）也在那里。**列表里 MCP 那几栏的说明**（哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了）也已经是共用的（工单 10 挪的）：数出是哪几个宿主的是 `availability.ts` 的 `mcpColumnHosts`，写成哪两句的是 `notice-text.ts` 的 `mcpColumnNoticeTexts`；终端界面打在列表上方，网页界面放进 MCP 那一区的 `notices`。
+- **汇总里提醒的话**（`PlanNotices` 写成哪几句、什么先后）：**已经在共用的 `notice-text.ts` 里**（工单 09 挪的）——`noticeTexts(t, notices, placeholders)`，终端界面的 `summaryNotices` 和网页界面的 `summaryView` 都调它；给用户看的一条完整命令怎么写（`commandLine`）也在那里。**列表里 MCP 那几栏的说明**（哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了）也已经是共用的（工单 10 挪的）：数出是哪几个宿主的是 `availability.ts` 的 `mcpColumnHosts`，写成哪两句的是 `notice-text.ts` 的 `mcpColumnNoticeTexts`；终端界面打在列表上方，网页界面放进 MCP 那一区的 `notices`。**共用 skill 目录的那句说明**（任务 `10-12-installer-add-pi-omp-hosts` 工单 03）同样是共用的：显不显示问 `availability.ts` 的 `sharedSkillsNoted`，话是文案的 `sharedSkillsNotice`；终端界面打在列表上方、排在 MCP 那几栏的说明之前，网页界面放进 `Skill` 和「第三方 Skill」两区里排在前面的那一区的 `notices`。
 - **`notices` 里没有「key 以占位符显示」**：那一条说的是终端界面展示的命令，由 `flow.ts` 自己加（`placeholders`，`noticeTexts` 的第三个参数，网页界面不给）；网页界面的汇总不列命令，没有它。
 
 **网页界面怎么用它们**（`web-view.ts`，工单 04 之后）：左栏的行来自 `recommendedListing` 和 `purposeCounts`；正在看的那张列表先 `listingStatus`（宿主和安装范围是页面上选的，起初是检测到的全部、全局，记在 `web-ui.ts` 的 `Session` 里——工单 08；开场引导和顶上那一条改的是这同一份，不另立——工单 16），再经 `status-text.ts` 把每个状态写成词和含义、把不可选的种类写成那句话。每算一次画面状态都重新探测一遍。
 
 装的那一半（`web-ui.ts`、`web-install.ts`，工单 07 之后）：一个条目勾不勾得上问的是 `listingStatus`（带着不可选原因的勾不上）；汇总是 `planInstall` 的结果写成的，要逐项决定的覆盖（`asksOverwrite` 的那些）没同意的先标上 `declined`，再从这份标过的计划算出汇总的标识；确认时重算一遍，标识对得上才 `runPlan(runtime, plan, progress)`——**网页界面的进度接收方把每一项的结局记进一批的进度，每变一次推一次画面状态**。入口把执行要的东西整理成一份 `Runtime`，两套界面拿到的是同一份（钉住的来源、填过的 key 都在里面）。**网页界面填的 key 记进的就是这份 `Runtime.keys`**（工单 10）：交给 `planInstall` 的只有填过的变量名，值到 `runPlan` 执行时才取出来——和终端界面一字不差的一条路，所以「值不许去的地方」只多出网页这一边的几处（见 [安装 MCP](./mcp-install.md)）。意料之外的错写成出错说明用的是 `run-plan.ts` 的 `unexpected`，入口的收尾和网页界面的结果用的是同一个。
 
-**终端界面怎么用它们**（`flow.ts`）：主菜单的行来自 `recommendedListing` 和 `purposeCounts`；进入一张列表后，每一轮先 `listingStatus` 再画混合列表，勾完之后问第三方 Skill 里要哪几个、问 key，然后 `planInstall`，照计划画汇总、将执行的命令和提醒，确认后逐项另问覆盖（`asksOverwrite` 的那些），最后 `runPlan(session, plan, session.ui)`——**终端界面的进度接收方就是呈现层**。外部项目不在计划里：终端界面勾了它们，装完之后自己列出说明与链接。
+**终端界面怎么用它们**（`flow.ts`）：主菜单的行来自 `recommendedListing` 和 `purposeCounts`；进入一张列表后，每一轮先 `listingStatus`、打出列表上方的说明（`ui.listNotices`：共用 skill 目录的那一句和 MCP 那几栏的）再画混合列表，勾完之后问第三方 Skill 里要哪几个、问 key，然后 `planInstall`，照计划画汇总、将执行的命令和提醒，确认后逐项另问覆盖（`asksOverwrite` 的那些），最后 `runPlan(session, plan, session.ui)`——**终端界面的进度接收方就是呈现层**。外部项目不在计划里：终端界面勾了它们，装完之后自己列出说明与链接。
 
 ---
 
@@ -194,7 +200,7 @@ export class Interrupted extends Error {}
 | 文档 | 内容 |
 |------|------|
 | [入口与测试](./installer-entry.md) | `runInstaller` 的签名与可替换依赖、启动顺序与定下用哪个界面（缺省网页界面，`--terminal`、远程连接、没有桌面时用终端界面）、链接打开器的契约（只用来打开网页界面）、退出状态、主菜单与流程、目录读取与校验的契约（含外部项目条目的字段，用途清单、条目的用途与推荐标记、本仓库 skill 的用途）、测试架子的用法 |
-| [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、按安装范围装到全局还是项目的哪个目录、skill 的四种状态、覆盖与单独确认、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵；第二个 Scenario 是第三方 Skill：`catalog.json` 的条目与校验、skills CLI 那条命令的写法与环境变量、状态只看目录在不在、成败看复核、覆盖前另问、清单 |
+| [安装 skill](./skill-install.md) | 宿主适配与探测、装进哪些宿主、按安装范围装到全局还是项目的哪个目录、几个宿主共用一个 skill 目录时按目录归组（一组一项、宿主那一格写几个名字）与那句共用 skill 目录的说明、skill 的四种状态、覆盖与单独确认、钉住来源与按提交下载、临时目录与整体替换、安装标记、出错矩阵；第二个 Scenario 是第三方 Skill：`catalog.json` 的条目与校验、skills CLI 那条命令的写法与环境变量、状态只看目录在不在、成败看复核、覆盖前另问、清单 |
 | [安装 MCP](./mcp-install.md) | `catalog.json` 的 MCP 条目与校验（含环境变量）、三个宿主的命令与配置文件（Claude Code、Codex、Pi；全局的和项目范围的）、三种状态加「不支持」、已配置与状态未知时怎么装、带 key 的 MCP 怎么问怎么传、key 的值不许去的地方、外部命令执行器的契约、Codex 添加远程地址时当场登录的提醒、出错矩阵 |
 | [安装工具](./tool-install.md) | `catalog.json` 的工具条目与校验、安装命令是一整行 shell、按系统选命令、两种检查方式与两种状态、哪些条目不可选、它在混合流程里排在哪、成功与否只看复核的结论矩阵、外部命令执行器的 shell 模式与手动核对的办法、已知的限制 |
 | [界面设计](./ui-design.md) | **只管终端界面。** 画面该长什么样：视觉方向「账本」、版式的总规则、颜色与符号的含义、状态的写法、标题区、各类画面的版式要点、深浅色与不显示颜色和没有 Unicode 时的要求、界面预览页的生成命令和用法、还没经维护者确认的画法 |
@@ -213,7 +219,7 @@ export class Interrupted extends Error {}
 - [ ] 要往终端上打任何东西 → [终端输出](./terminal-output.md)：只能经呈现层
 - [ ] 要给本机的网页加一条路径、一种意图、画面状态里的一个字段，或动任何一个答复头 → [网页界面的契约](./web-ui-contract.md)：先改那份文档；口令不进静态文件和任何答复，意图里没有会被原样执行的东西，不发允许跨来源访问的头；要动填 key（意图 `key`、画面状态里的 `keys`、页面的输入框）→ 同一份文档的「MCP 与填 key」和 [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」：值只走那一个请求的正文，画面状态里只有填了没有，`web-mcp.test.ts` 里「整份去搜」的那一组要跟着走一遍
 - [ ] 要动列表里有什么、怎么排，条目的状态与可不可选，状态或不可选的原因写成哪个词，勾选怎么算成要装的各项，或执行的先后与一项失败之后怎么办 → 上面「两套界面共用的部分」：改在那几块里，不在 `flow.ts`、`ui.ts` 或页面里另写一遍；它们不提问、不往终端上打东西
-- [ ] 要动下载、落盘、宿主探测、状态探测、覆盖前问不问、安装范围（装到全局还是项目、各落在哪个目录），加一个宿主，或加一种装不上的原因 → [安装 skill](./skill-install.md)
+- [ ] 要动下载、落盘、宿主探测、状态探测、覆盖前问不问、安装范围（装到全局还是项目、各落在哪个目录）、按 skill 目录归组或那句共用 skill 目录的说明，加一个宿主，或加一种装不上的原因 → [安装 skill](./skill-install.md)
 - [ ] 要加一种提问 → [终端输出](./terminal-output.md) 的「是否题」「隐藏输入」「待命的提问」：先读交互库的源码，主题要盖全，按键提示和出错的句子要本地化；正式的实现和预设应答的替身（`test/harness.ts`）都要有
 - [ ] 要动网页界面什么时候收场（页面关了、点了「完成」、改用终端界面）、那时终端上打什么，或在网页界面开着时往终端上打任何东西 → [网页界面的契约](./web-ui-contract.md) 的「生命周期」和 [终端输出](./terminal-output.md) 的「网页界面开着时与退回终端界面」「待命的提问」：待命的提问问着的时候终端归它，要打东西先把它收回并等它了结
 - [ ] 要碰用户输入的 key（问、记、传、报错）→ [安装 MCP](./mcp-install.md) 的「带 key 的 MCP」：值只进内存、命令参数和宿主的配置，不进呈现层、不进错误的原因、不进任何文件

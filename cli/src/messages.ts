@@ -107,6 +107,11 @@ export interface Messages {
    * 所选的安装范围，第三方 Skill 也用这个词
    */
   mcpStatus: { none: string; configured: string; unknown: string; unsupported: string };
+  /**
+   * 共用 skill 目录的说明：所选的宿主里有用它的、列表里有 skill 或第三方 Skill 时显示。三个名字是写死的——说的是
+   * 这个目录有哪些宿主会读，不看检测到了、选了其中哪几个
+   */
+  sharedSkillsNotice: string;
   /** 读不到这些宿主的配置；hosts 已按并列的写法连好 */
   mcpConfigUnreadable: (hosts: string) => string;
   /** 选了项目范围，而这些宿主的 MCP 只能装到全局，连同原因；hosts 已按并列的写法连好 */
@@ -318,6 +323,7 @@ const zh: Messages = {
   nameColumn: '名称',
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
+  sharedSkillsNotice: 'Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到',
   mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
   mcpGlobalOnlyNotice: (hosts) => `${hosts} 的 MCP 只能装到全局：没有把 MCP 写进项目的命令`,
   unsupportedByHosts: '需要别的 AI Agent',
@@ -615,6 +621,7 @@ const en: Messages = {
   nameColumn: 'Name',
   skillStatus: { none: 'none', installed: 'installed', unmanaged: 'unmanaged' },
   mcpStatus: { none: 'none', configured: 'configured', unknown: 'unknown', unsupported: 'unsupported' },
+  sharedSkillsNotice: 'Codex, Pi and omp share one skill folder: install for one and the other two see it too',
   mcpConfigUnreadable: (hosts) => `Could not read the ${hosts} config; cannot tell which MCP servers are configured`,
   mcpGlobalOnlyNotice: (hosts) => `${hosts} MCP servers can only be installed globally: there is no command that writes them into a project`,
   unsupportedByHosts: 'needs another AI Agent',

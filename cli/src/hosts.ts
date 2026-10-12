@@ -54,6 +54,8 @@ export interface Host {
   skillsDir: string;
   /** 项目范围的 skill 目录：项目目录下的那一个，装在这里只对这个项目生效 */
   projectSkillsDir: string;
+  /** 上面两个是不是共用 skill 目录：别的宿主也读它，装进去的 skill 它们都看得到 */
+  sharedSkills: boolean;
   /**
    * 第三方 Skill 经通用的 skill 安装程序（skills CLI）装进这个宿主时：agent 是它那边指代这个宿主的名字，
    * env 是要另外带上的环境变量——带上了它才把全局的 skill 装到 skillsDir
@@ -86,6 +88,7 @@ const claudeCode: HostAdapter = (env, homeDir, projectDir) => ({
   detected: isOnPath('claude', env),
   skillsDir: join(homeDir, '.claude', 'skills'),
   projectSkillsDir: join(projectDir, '.claude', 'skills'),
+  sharedSkills: false,
   // skills CLI 认 CLAUDE_CONFIG_DIR（装到它下面的 skills），本安装器的 skill 目录不认：清空它，两边才是同一个目录
   skillsCli: { agent: 'claude-code', env: { CLAUDE_CONFIG_DIR: '' } },
   mcp: {
@@ -124,8 +127,13 @@ function claudeMcpCommands(claudeScope: 'user' | 'project'): Pick<McpConfig, 'ad
   };
 }
 
+// 共用 skill 目录（.agents/skills）：几个宿主都读的那一个，全局的在主目录下，项目范围的在项目目录下
+function sharedSkillsDirs(homeDir: string, projectDir: string): Pick<Host, 'skillsDir' | 'projectSkillsDir' | 'sharedSkills'> {
+  return { skillsDir: join(homeDir, '.agents', 'skills'), projectSkillsDir: join(projectDir, '.agents', 'skills'), sharedSkills: true };
+}
+
 /**
- * Codex：以 codex 命令是否可用判断在不在。它自己的 .codex/skills 已被标为废弃，skill 装到 .agents/skills。
+ * Codex：以 codex 命令是否可用判断在不在。它自己的 .codex/skills 已被标为废弃，skill 装到共用 skill 目录（.agents/skills）。
  * 用户级的 MCP 记在 config.toml 的 mcp_servers 表里，这个文件缺省在主目录的 .codex 下，可由 CODEX_HOME 改到别处；
  * 它的添加和移除命令只管用户级配置，没有范围可选：项目目录里那份 .codex/config.toml 它读（只对受信任的项目），
  * 却没有往里写的命令，所以它的 MCP 只能装到全局。远程地址的服务器支持 OAuth 时，添加命令写完配置会接着走浏览器登录。
@@ -134,8 +142,7 @@ const codex: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'codex',
   name: 'Codex',
   detected: isOnPath('codex', env),
-  skillsDir: join(homeDir, '.agents', 'skills'),
-  projectSkillsDir: join(projectDir, '.agents', 'skills'),
+  ...sharedSkillsDirs(homeDir, projectDir),
   skillsCli: { agent: 'codex', env: {} },
   mcp: {
     configuredMcps: () => namesIn(join(env['CODEX_HOME'] || join(homeDir, '.codex'), 'config.toml'), parseToml, 'mcp_servers'),
@@ -166,8 +173,7 @@ const pi: HostAdapter = (env, homeDir, projectDir) => ({
   id: 'pi',
   name: 'Pi',
   detected: isOnPath('pi', env),
-  skillsDir: join(homeDir, '.agents', 'skills'),
-  projectSkillsDir: join(projectDir, '.agents', 'skills'),
+  ...sharedSkillsDirs(homeDir, projectDir),
   skillsCli: { agent: 'pi', env: {} },
   mcp: {
     configuredMcps: () => namesIn(join(piAgentDir(env, homeDir), 'mcp.json'), JSON.parse, 'mcpServers'),

@@ -42,6 +42,14 @@ export function mcpColumnHosts(hosts: readonly Host[], mcps: ListingStatus['mcps
   return { globalOnly: withStatus('global-only'), unreadable: withStatus('unknown') };
 }
 
+/**
+ * 列表里要不要那句共用 skill 目录的说明：所选的宿主里有用共用 skill 目录的，而且这张列表里有本仓库的 skill 或
+ * 第三方 Skill——装给它的 skill，读这个目录的别的宿主也看得到
+ */
+export function sharedSkillsNoted(hosts: readonly Host[], listing: Pick<Listing, 'skills' | 'thirdParty'>): boolean {
+  return hosts.some((host) => host.sharedSkills) && listing.skills.length + listing.thirdParty.length > 0;
+}
+
 /** 这个宿主按安装范围定的那个 skill 目录：状态、位置、安装、复核都从它来 */
 export const skillsDirOf = (host: Host, scope: Scope): string => (scope === 'project' ? host.projectSkillsDir : host.skillsDir);
 

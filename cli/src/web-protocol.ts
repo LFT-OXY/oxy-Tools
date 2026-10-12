@@ -119,7 +119,10 @@ export interface SectionView {
   title: string;
   /** 标题后面的一句说明 */
   note?: string;
-  /** 这一区上方的提醒，只有 MCP 那一区有：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了 */
+  /**
+   * 这一区上方的提醒。MCP 那一区的：哪个宿主的 MCP 只能装到全局、哪个宿主的配置读不了。Skill 和第三方 Skill 这两区里
+   * 排在前面的那一区的：共用 skill 目录的那句说明（所选的宿主里有用它的才有，只出现一次）
+   */
   notices?: string[];
   entries: ComponentView[];
 }
@@ -244,14 +247,20 @@ export interface SummaryEntryView {
   type: string;
   /** 要装的版本；第三方 Skill（装的是作者当时的最新版）、MCP 和工具没有 */
   version?: string;
-  /** 每个宿主一行；第三方 Skill 是每个要装的 skill 在每个支持它的所选宿主下一行，MCP 是每个装得了它的所选宿主一行，工具只有一行 */
+  /**
+   * 每一项一行：本仓库的 skill 是每个 skill 目录一行（各用各的目录时就是每个宿主一行；共用一个目录的几个宿主合成一行），
+   * 第三方 Skill 是每个要装的 skill 在每个 skill 目录下一行，MCP 是每个装得了它的所选宿主一行，工具只有一行
+   */
   rows: SummaryRowView[];
 }
 
 export interface SummaryRowView {
   /** 第三方 Skill 才有：这一行是条目里的哪个 skill。页面把 skill 相同的相邻几行归成一小组 */
   skill?: string;
-  /** 工具的行没有：它不装进宿主 */
+  /**
+   * 宿主那一格的字：一个宿主的名字；共用一个 skill 目录的几个宿主合成一行时，是它们的名字照界面上的先后、用这种语言
+   * 并列的写法连起来的一段（「Codex、Pi」，英文是 Codex, Pi）。工具的行没有：它不装进宿主
+   */
   host?: string;
   /** 操作：新装、覆盖；MCP 的状态未知时是添加；工具是执行安装命令 */
   action: string;
@@ -283,7 +292,7 @@ export interface RunView {
 
 export interface RunRowView {
   name: string;
-  /** 工具的行没有：它不装进宿主 */
+  /** 宿主那一格的字，和汇总的行是同一种写法（可以是连起来的几个名字）。工具的行没有：它不装进宿主 */
   host?: string;
   state: 'waiting' | 'running' | 'succeeded' | 'failed' | 'skipped';
   /**

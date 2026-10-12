@@ -1,6 +1,6 @@
 // 把目录和本机的现状写成画面状态里的那几块：左栏的行、正在看的那张列表。
 // 列表里有什么、怎么排、每条的状态与可不可选，都经两套界面共用的那几块；说法是和终端界面同一份文案。
-import { listingStatus, mcpColumnHosts, type Machine, type Unavailable } from './availability.ts';
+import { listingStatus, mcpColumnHosts, sharedSkillsNoted, type Machine, type Unavailable } from './availability.ts';
 import type { Catalog, Mcp, SourcedSkill, ThirdPartySkill } from './catalog.ts';
 import type { Host, Scope } from './hosts.ts';
 import { purposeCounts, purposeListing, recommendedListing, sizeOf, type Listing } from './listing.ts';
@@ -88,7 +88,7 @@ export function listingView(
   // 要 key 的 MCP 的标记：说的是条目，不随填没填变
   const keyTag = ({ env }: Mcp): { key?: string } =>
     env.length === 0 ? {} : { key: env.some((variable) => variable.required) ? t.keyTags.required : t.keyTags.optional };
-  const sections: SectionView[] = [
+  const all: SectionView[] = [
     {
       kind: 'skill' as const,
       ...t.sections.skill,
@@ -120,7 +120,11 @@ export function listingView(
       // 工具只有一个状态，与宿主无关
       entries: status.tools.map(({ tool, status: one, unavailable }) => component(tool, tool.recommended, [toolStatusText(t, one)], unavailable)),
     },
-  ].filter((section) => section.entries.length > 0);
+  ];
+  const shown = all.filter((section) => section.entries.length > 0);
+  // 共用 skill 目录的那句说明：和终端界面列表上方的是同一句，放在 Skill 和第三方 Skill 这两区里排在前面的那一区上方，只说一次
+  const noted = sharedSkillsNoted(hosts, listing) ? shown.find((section) => section.kind === 'skill' || section.kind === 'thirdParty') : undefined;
+  const sections = shown.map((section) => (section === noted ? { ...section, notices: [t.sharedSkillsNotice] } : section));
   const apps = listing.apps.map((app) => ({ name: app.name, about: app.description[lang], url: app.url, ...marked(app.recommended) }));
   return { id, sections, ...(apps.length > 0 ? { apps: { ...t.sections.app, entries: apps } } : {}) };
 }
