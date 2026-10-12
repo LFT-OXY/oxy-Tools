@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 04, 06, 07, 08
 **Status:** ready-for-agent
-**Impl:** doing
+**Impl:** done
 
 - [ ] `README.md` 和 `cli/README.md`（中英两段）：支持的宿主、需要事先装好哪一个、各宿主 skill 装到哪、MCP 能装到哪些范围（Codex 只能全局，Pi 全局和项目，omp 不装）。
 - [ ] `.atw/spec/cli/` 下的规范与实现一致：通读前面各张工单（01–04、06–08）改过的各节，过时的示例照界面预览页重取。
