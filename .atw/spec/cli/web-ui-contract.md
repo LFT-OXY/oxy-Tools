@@ -255,7 +255,6 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 **MCP 与填 key**（工单 10）
 
 - 勾得上的类型多了 `mcp`：`pick` 的 `kind` 是它、`name` 是条目的名字。可不可选仍由 `availability.ts` 定：所选的宿主一个都不支持它是「需要别的 AI Agent」；选了项目、而所选的宿主里支持它的都只能把 MCP 装到全局是「只能装到全局」；只有一部分装不了的仍可选，只装进装得了的那些。卡片上的 `statuses` 每个所选的宿主一段，词和终端界面同一张表（未配置、已配置、未知、不支持），看的是所选安装范围下的那一份配置——规矩在 [安装 MCP](./mcp-install.md)。
-- **共用 skill 目录的那句说明**（任务 `10-12-installer-add-pi-omp-hosts` 工单 03）随正在看的那张列表发给页面：所选的宿主里有用共用 skill 目录的（Codex、Pi），且这张列表里有本仓库的 skill 或第三方 Skill 时，`listing.sections` 里 `Skill` 和「第三方 Skill」这两区中**排在前面的那一区**带着 `notices`，里面是那一句（文案 `sharedSkillsNotice`：「Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到」）。只出现一次：两区都有时在 `Skill` 那一区，只有第三方 Skill 时在它那一区。显不显示和终端界面问的是同一处（`availability.ts` 的 `sharedSkillsNoted`）；宿主改成只剩 Claude Code，重发的画面状态里就没有它了。它不和 MCP 那一区的提醒放在一起：那一区可能根本不在这张列表里。
 - **MCP 那一区的 `notices`** 是终端界面列表上方那两行「注意」的话（`mcpGlobalOnlyNotice`、`mcpConfigUnreadable`），先后也一样，两套界面经同一处算出来（`availability.ts` 的 `mcpColumnHosts`、`notice-text.ts` 的 `mcpColumnNoticeTexts`）：选了项目而哪个宿主的 MCP 只能装到全局（这张列表里至少有一个条目本身支持它）；哪个宿主的配置读不了。都没有时没有这个字段。
 - 要 key 的 MCP 卡片上带 `key`：有必填的变量是「要填 key」，只有可选的是「可选的 key」（文案 `keyTags`）。它说的是这个条目，不随填没填变。
 - 已选里 MCP 一项（`type` 是「MCP」）。要 key 的带 `key`：必填的还有没填的是「要填 key」（`tone` 是 `attention`），都填了、或填了哪个可选的是「key 已填」（`ready`）；只有可选的而一个都没填时没有。装不了的（改了宿主或范围之后）带 `unavailable`、不进汇总，和别的类型走同一条路（`web-ui.ts` 的 `idleOf`）。**必填的 key 没填不算装不了**：它留在会装的那一边，才到得了填 key。
@@ -359,7 +358,8 @@ export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation
 
 - `menu` 是左栏的行：「推荐」（里面有条目时，带 `recommended: true`）在最前，然后是有条目的各个用途，照目录里的先后；**没有条目的用途不在里面**。数量和终端界面的主菜单是同一种数法（`listing.ts` 的 `recommendedListing`、`purposeCounts`）。`id` 是交回给安装器的标识，页面不去解读它（现在「推荐」是 `recommended`，用途是 `purpose:<用途的 id>`——加一段前缀，免得哪个用途恰好叫 `recommended`）。
 - `listing` 是正在看的那张列表。页面刚打开时是 `menu` 的第一行：有「推荐」就是它，否则是第一个有条目的用途；目录里一个条目都没有时 `menu` 是空的、没有 `listing`。
-- `listing.sections` 是组件，按类型分开，先后是 Skill、第三方 Skill、MCP、工具，**没有条目的类型不在里面**；每个分区的 `title` 和 `note` 是文案里那一份（`messages.ts` 的 `sections`）。条目的先后取自 `listing.ts`：用途的列表里带推荐标记的在前、其余按名字，「推荐」里只按名字。
+- `listing.sections` 是组件，按类型分开，先后是 Skill、第三方 Skill、MCP、工具，**没有条目的类型不在里面**；每个分区的 `title` 和 `note` 是文案里那一份（`messages.ts` 的 `sections`）。条目的先后取自 `listing.ts`：用途的列表里带推荐标记的在前、其余按名字，「推荐」里只按名字。一个分区还可以带 `notices`：它上方的提醒，每条一句，页面照给的先后画在小标题下面，没有时没有这个字段。现在有两样：共用 skill 目录的那句说明（下一条），和 MCP 那一区的两句（见「MCP 与填 key」）。
+- **共用 skill 目录的那句说明**（任务 `10-12-installer-add-pi-omp-hosts` 工单 03）随正在看的那张列表发给页面：所选的宿主里有用共用 skill 目录的（Codex、Pi），且这张列表里有本仓库的 skill 或第三方 Skill 时，`listing.sections` 里 `Skill` 和「第三方 Skill」这两区中**排在前面的那一区**带着 `notices`，里面是那一句（文案 `sharedSkillsNotice`：「Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到」）。只出现一次：两区都有时在 `Skill` 那一区，只有第三方 Skill 时在它那一区。显不显示和终端界面问的是同一处（`availability.ts` 的 `sharedSkillsNoted`）；宿主改成只剩 Claude Code，重发的画面状态里就没有它了。它不和 MCP 那一区的提醒放在一起：那一区可能根本不在这张列表里。
 - 条目的 `mark` 是「推荐」的标记（文案里的 `recommendedMark`）：用途的列表里带推荐标记的条目有，本仓库的 skill 都算；「推荐」那张列表里每一条都是推荐的，都没有。
 - 条目的 `statuses` 每个要装进的宿主一段，与 `target.hosts` 一一对应，各带宿主的名字；工具只有一段、没有 `host`。词和含义来自 `status-text.ts`，和终端界面是同一张表：
 

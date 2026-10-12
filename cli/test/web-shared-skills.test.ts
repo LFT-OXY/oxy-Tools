@@ -24,7 +24,7 @@ const CODEX_AND_PI = ['codex', 'pi'];
 const ALL_HOSTS = ['claude', 'codex', 'pi'];
 const SHARED_SKILLS = '.agents/skills';
 const CLAUDE_SKILLS = '.claude/skills';
-const NOTICE = 'Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到';
+const NOTICE = 'Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到';
 const NOTICE_EN = 'Codex, Pi and omp share one skill folder: install for one and the other two see it too';
 
 // 正常收场：点「完成」，等安装器把连接收掉

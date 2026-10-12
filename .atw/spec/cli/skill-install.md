@@ -134,10 +134,11 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 
 所选的宿主里只要有一个的 skill 目录是共用 skill 目录（`host.sharedSkills`），且这张列表里有本仓库的 skill 或第三方 Skill，列表的说明里就多一句固定的话（`availability.ts` 的 `sharedSkillsNoted` 定显不显示，文案是 `messages.ts` 的 `sharedSkillsNotice`）：
 
-- 中文：「Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到」；英文：`Codex, Pi and omp share one skill folder: install for one and the other two see it too`。
+- 中文：「Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到」；英文：`Codex, Pi and omp share one skill folder: install for one and the other two see it too`。
+- **中文的这一句是维护者 2026-10-12 改短的**：任务规格里的原文是「…装给其中一个，另外两个也看得到」，在终端界面接在「注意」后面是 82 列，折成两行、第二行只剩「得到」；去掉「其中」之后连键 78 列，一行放得下。规格里的原文因此改了；英文那一句没有动。
 - **三个名字是写死在文案里的**，不看检测到了、选了其中哪几个——只选了 Codex 的用户也会看到没装的 Pi 和 omp。这是「文案里不写死宿主的名字」的唯一例外：这句话说的是这个目录有哪些宿主会读，不是这次装进哪些。omp 这个宿主是工单 04 才加的，这句话现在就这样写。
 - 只选了 Claude Code 时不显示；列表里只有 MCP、工具、外部项目时不显示。
-- **终端界面**：和 MCP 那几栏的说明打在同一处（混合列表上方的「注意」，`ui.listNotices`），这一句排在最前，几行挨着；比 80 列长时照「注意」的规矩折行。
+- **终端界面**：和 MCP 那几栏的说明打在同一处（混合列表上方的「注意」，`ui.listNotices`），这一句排在最前，几行挨着：共用 skill 目录、只能装到全局、读不到配置。中文的一行放得下，英文的比 80 列长，照「注意」的规矩折行。
 - **网页界面**：随正在看的那张列表发给页面——放在 `Skill` 和「第三方 Skill」这两区里排在前面的那一区的 `notices` 里，只出现一次。见 [网页界面的契约](./web-ui-contract.md)。
 
 **skill 的状态（`skillStatus`）**
@@ -251,7 +252,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
 - Good：同时选了 Codex 和 Pi，勾了 `alpha` → `~/.agents/skills/alpha` 只写一次，汇总一行、进行中一行、结果一行，宿主那一格是「Codex、Pi」，合计「1 成功」；主目录下只多出 `.agents`。
 - Good：三个宿主都选了，勾了 `alpha` → 两行：Claude Code 一行，「Codex、Pi」一行；两个目录各有内容和各自的标记，合计「2 成功」。
 - Base：同时选了 Codex 和 Pi，`~/.agents/skills/alpha` 是用户自己放的 → 汇总一行「覆盖 … 非本工具安装，另行确认」，只问一次，直接回车（否）→ 一行「跳过」，合计「0 成功 · 0 失败 · 1 跳过」。
-- Base：只选了 Pi（或只选了 Codex），列表里有 skill → 列表上方一行「注意  Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到」；只选 Claude Code 时没有，列表里只有 MCP、工具、外部项目时没有。
+- Base：只选了 Pi（或只选了 Codex），列表里有 skill → 列表上方一行「注意  Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到」；只选 Claude Code 时没有，列表里只有 MCP、工具、外部项目时没有。
 - Base：`wizard` 的一个文件答复 503 → `wizard` 那一行是「失败 下载中断（HTTP 503），目标目录未改动」，原先的 `~/.claude/skills/wizard` 一个字节都没变，临时目录是空的；`pr` 照常装上；退出状态 0。
 - Base：选了 Claude Code 和 Codex，主目录里的 `.agents` 是个文件 → Codex 那一行「失败 写入失败（…）」，Claude Code 那一行照常「已安装」；退出状态 0。
 - Good：`~/.claude/skills/beta-pack` 是本工具装的 2.0，清单里是 2.3 → 列表里写 `2.0 → 2.3`，汇总里是「覆盖」加同样的备注和一行「注意」，不另问；装完后旧文件不在了，标记是 2.3，结果写「已安装 2.0 → 2.3」。
@@ -287,7 +288,7 @@ export class SkillInstallError extends Error { readonly problem: SkillInstallPro
   - 覆盖：共用 skill 目录里有不是本工具装的同名 skill → 只问一次（**预设的应答里只排一个**，多问就会失败），`accept()` 证明缺省不覆盖、一行「跳过」；`yes()` 整目录替换；三个宿主、两个目录里都有时问两次，各问各的路径。网页界面是汇总里只有一处 `overwrite`。
   - 第三方 Skill：记录到的命令是**字面值**——一条，`--agent codex`，不另带环境变量；三个宿主时两条（Claude Code 的带 `CLAUDE_CONFIG_DIR: ''`）；条目的 `hosts` 是 `['pi']` 时一条 `--agent pi`、宿主那一格只写「Pi」；`hosts` 是 `['claude-code']`、三个宿主都选了时没有共用 skill 目录的那一行；已有同名目录只问一次、没同意的不执行命令；装到项目时不带 `--global`、`cwd` 是项目目录。网页界面记录到的命令与终端界面逐条相同。
   - 列表里的状态不合并：三个宿主三栏，Codex 和 Pi 两栏写的一样。
-  - 那句说明：只选 Pi、只选 Codex（Pi 没检测到）时有；三个都选了只说一次；只选 Claude Code（只检测到它，或在宿主选择上只留它）时没有；列表里只有第三方 Skill 时有；只有 MCP、工具、外部项目时没有；和「读不到配置」那一行同时出现时它在前、两行之间没有空行；英文的那一句。中文的这一句比 80 列长、会折行，**断言前把空白去掉再比**。网页界面断言的是各区的 `notices`：在 `Skill` 那一区，只有第三方 Skill 时在它那一区，MCP 那一区的提醒照旧在它自己那里。
+  - 那句说明：只选 Pi、只选 Codex（Pi 没检测到）时有；三个都选了只说一次；只选 Claude Code（只检测到它，或在宿主选择上只留它）时没有；列表里只有第三方 Skill 时有；只有 MCP、工具、外部项目时没有；和「读不到配置」那一行同时出现时它在前、两行之间没有空行；英文的那一句。和「只能装到全局」「读不到配置」三句同时出现时依次是它、只能装到全局、读不到配置（装到项目的那一条）。中文的这一句连行首的键只占一行、不超出第 79 列（80 列的那一条整行去比，再看它下面是空行）；英文的会折行，所以找这句话时**把空白去掉再比**。网页界面断言的是各区的 `notices`：在 `Skill` 那一区，只有第三方 Skill 时在它那一区，MCP 那一区的提醒照旧在它自己那里。
   - **不要写会被工单 04 推翻的断言**：omp 这个宿主那时才加，「Codex、Pi、omp」这一格、四个宿主时的行数都留给它；这句说明里的 omp 是文案里写死的，现在就可以断言。
 - 宿主：`onPath` 给 `['codex']`、`['claude', 'codex']`、`[]` 各一组。断言「AI Agent」一行、缺一个时的「注意」、问没问「装进哪些 AI Agent」；装进两个宿主时两处的文件和各自的标记、主目录里只多出这两个目录；只选一个时另一个目录不存在；一个宿主那边失败时另一个照常；默认全选用 `accept()` 走一遍落盘；一个都不勾的两条返回路径；一个都没有时「推荐」照常进得去、不问宿主，skill 的行不可选并写着「需要 AI Agent」，以及真实交互库下在那一行上按空格勾不上（`recommended.test.ts`、`prompts.test.ts`）。
 

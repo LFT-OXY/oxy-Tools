@@ -323,7 +323,7 @@ const zh: Messages = {
   nameColumn: '名称',
   skillStatus: { none: '未装', installed: '已装', unmanaged: '非本工具安装' },
   mcpStatus: { none: '未配置', configured: '已配置', unknown: '未知', unsupported: '不支持' },
-  sharedSkillsNotice: 'Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到',
+  sharedSkillsNotice: 'Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到',
   mcpConfigUnreadable: (hosts) => `读不到 ${hosts} 的配置，无法判断哪些 MCP 已配置`,
   mcpGlobalOnlyNotice: (hosts) => `${hosts} 的 MCP 只能装到全局：没有把 MCP 写进项目的命令`,
   unsupportedByHosts: '需要别的 AI Agent',

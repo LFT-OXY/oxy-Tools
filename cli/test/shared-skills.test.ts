@@ -303,9 +303,9 @@ describe('同时选了 Codex 和 Pi：第三方 Skill 只执行一条命令', ()
   });
 });
 
-const NOTICE = 'Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看得到';
+const NOTICE = 'Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到';
 const NOTICE_EN = 'Codex, Pi and omp share one skill folder: install for one and the other two see it too';
-// 那句说明比一行长，照「注意」的规矩折行：把空白都去掉再比
+// 英文的那句说明比一行长，照「注意」的规矩折行：把空白都去掉再比
 const squash = (text: string): string => text.replace(/\s+/g, '');
 // 列表上方的那一段：列表的提问之前的十来行
 const aboveList = (output: string, list = LIST): string => squash(output.slice(0, output.indexOf(list)).split('\n').slice(-12).join('\n'));
@@ -376,6 +376,27 @@ describe('共用 skill 目录的那句说明', () => {
     expect(lines.slice(shared, unreadable).every((line) => /\S/.test(line))).toBe(true);
   });
 
+  it('装到项目：排在「只能装到全局」那一句之前；三句都有时依次是它、只能装到全局、读不到配置，几行挨着', async () => {
+    const result = await run({
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, mcps: underWebSearch(...SAMPLE_MCPS), skillPurposes: { alpha: 'web-search' } } }),
+      onPath: ALL_HOSTS,
+      // 项目里 Claude Code 的那份配置读不了：它那一栏是未知；Codex 的 MCP 装不到项目
+      project: { '.mcp.json': '这不是 JSON' },
+      answersScope: true,
+      answers: [choose(WEB_SEARCH), accept(), choose('项目'), pick(), pick(), choose('退出')],
+    });
+    const lines = result.output.split('\n');
+    const shared = lines.findIndex((line) => line.includes('共用同一个'));
+    const globalOnly = lines.findIndex((line) => line.includes('Codex 的 MCP 只能装到全局'));
+    const unreadable = lines.findIndex((line) => line.includes('读不到 Claude Code 的配置'));
+
+    expect(shared).toBeGreaterThan(-1);
+    expect(globalOnly).toBe(shared + 1);
+    expect(unreadable).toBe(shared + 2);
+    // 这一块的上下各空一行
+    expect([lines[shared - 1], lines[unreadable + 1]]).toEqual(['', '']);
+  });
+
   it('英文界面有对应的一句', async () => {
     const result = await run({ argv: ['--lang', 'en'], onPath: ['pi'], answers: [choose('Recommended'), pick(), choose('Exit')] });
 
@@ -401,7 +422,7 @@ describe('80 列：那句说明和合成一行的行', () => {
     return at === -1 ? [] : all.slice(at, at + lines);
   };
 
-  it('三个宿主：带「Codex、Pi」的每一行、那句说明折成的两行，都不超出第 79 列', async () => {
+  it('三个宿主：带「Codex、Pi」的每一行不超出第 79 列；那句说明连行首的键只占一行、不超出第 79 列', async () => {
     const result = await run({
       catalog: everything(),
       onPath: ALL_HOSTS,
@@ -410,14 +431,14 @@ describe('80 列：那句说明和合成一行的行', () => {
       answers: [choose(WEB_SEARCH), accept(), pick('alpha', 'beta-pack', 'paper-kit', 'solo-notes'), pick('paper-reader', 'paper-comic'), choose('开始安装'), choose('退出')],
     });
     const rows = joined(result.screen, 'Codex、Pi');
+    // 那句说明和它下面的一行：下面是空行，说明没有折到第二行
     const notice = noticeLines(result.screen, 'Codex、Pi、omp', 2);
 
     // 汇总和结果里各有：两个本仓库的 skill、三个第三方的 skill
     expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(10);
     expect(Math.max(...rows.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
-    // 说明照「注意」的规矩折行：续行与话的左缘对齐
-    expect(notice).toEqual(['  注意      Codex、Pi、omp 共用同一个 skill 文件夹：装给其中一个，另外两个也看', '            得到']);
-    expect(Math.max(...notice.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
+    expect(notice).toEqual(['  注意      Codex、Pi、omp 共用同一个 skill 文件夹：装给一个，另外两个也看得到', '']);
+    expect(displayWidth(notice[0] ?? '')).toBeLessThanOrEqual(79);
   });
 
   it('英文界面也是', async () => {
@@ -441,6 +462,7 @@ describe('80 列：那句说明和合成一行的行', () => {
 
     expect(rows.filter((line) => !line.includes('omp') && !line.includes('·')).length).toBe(10);
     expect(Math.max(...rows.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
+    // 英文的更长，照「注意」的规矩折行：续行与话的左缘对齐
     expect(notice).toEqual(['  Notice    Codex, Pi and omp share one skill folder: install for one and the', '            other two see it too']);
   });
 });

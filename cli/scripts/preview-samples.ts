@@ -7,6 +7,8 @@ import { EMPTY_CATALOG } from '../test/fixtures.ts';
 
 export const BOTH_HOSTS = ['claude', 'codex'];
 export const THREE_HOSTS = [...BOTH_HOSTS, 'pi'];
+// 只检测到 Codex 和 Pi：它们用的是同一个共用 skill 目录
+export const CODEX_AND_PI = ['codex', 'pi'];
 
 // ── 样例目录 ──────────────────────────────────────────────────────────────────
 

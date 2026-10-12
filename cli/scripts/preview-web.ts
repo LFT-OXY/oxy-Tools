@@ -13,6 +13,7 @@ import { buildWeb } from './build-web.ts';
 import { findChrome, launchChrome, type Chrome } from './chrome.ts';
 import {
   BOTH_HOSTS,
+  CODEX_AND_PI,
   DOCUMENT_MCPS,
   DOCUMENT_THIRD_PARTY,
   DOCUMENT_TOOLS,
@@ -106,7 +107,7 @@ const NO_HOSTS = { onPath: ['pandoc'] };
 const THREE = { onPath: [...THREE_HOSTS, 'pandoc'] };
 const PI_ONLY = { onPath: ['pi', 'pandoc'] };
 // 只检测到 Codex 和 Pi：两个宿主用的是同一个共用 skill 目录
-const CODEX_AND_PI = { onPath: ['codex', 'pi', 'pandoc'] };
+const SHARING = { onPath: [...CODEX_AND_PI, 'pandoc'] };
 // Pi 的用户级配置里配过 markitdown：MCP 的卡片上 Pi 那一段各看各的配置
 const PI_CONFIGURED = { home: { ...LIVED_IN.home, ...PI_MARKITDOWN_CONFIGURED } };
 
@@ -641,31 +642,31 @@ const scenes: Scene[] = [
   {
     title: '浏览 · 共用 skill 目录的说明 · Codex 和 Pi',
     note: 'Skill 那一区的小标题下面一行「注意」：三个名字是固定的，不看检测到了哪几个。卡片上仍是每个宿主一段状态，两段写的一样',
-    ...CODEX_AND_PI,
+    ...SHARING,
   },
   {
     title: '浏览 · 共用 skill 目录的说明 · 用途下既有 Skill 又有第三方 Skill',
     note: '只在排在前面的 Skill 那一区说一次，第三方 Skill 那一区不重复',
-    ...CODEX_AND_PI,
+    ...SHARING,
     drive: crowded,
   },
   {
     title: '汇总 · Codex 和 Pi 合成一行',
     note: '两个宿主用的是同一个共用 skill 目录：每个条目只有一行，宿主那一格写「Codex、Pi」；要逐项决定的覆盖也只有一处',
-    ...CODEX_AND_PI,
+    ...SHARING,
     drive: summarized,
   },
   {
     title: '安装中 · Codex 和 Pi 合成一行',
     note: '每一项一行，宿主那一格同样是「Codex、Pi」：装好的、正在下载的、还在等的',
-    ...CODEX_AND_PI,
+    ...SHARING,
     catalog: neverFinishes,
     drive: inOrder(summarized, installing((run) => run.rows.some((row) => row.state === 'running'))),
   },
   {
     title: '结果 · Codex 和 Pi 合成一行',
     note: '每个条目一行结果；合计按行算：三个 skill 是「3 成功」，不是 6',
-    ...CODEX_AND_PI,
+    ...SHARING,
     drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished),
   },
   {
@@ -685,7 +686,7 @@ const scenes: Scene[] = [
   { title: '英文 · 浏览 · 三个宿主', ...EN, ...THREE, drive: crowded },
   { title: '英文 · 浏览 · 三个宿主 · 1024×768', note: '最挤的一格：英文、窄窗口、三个宿主', ...EN, ...THREE, drive: crowded, viewport: NARROW },
   { title: '英文 · 汇总 · 三个宿主', note: '宿主那一格用英文的并列写法 Codex, Pi，完整显示', ...EN, ...THREE, drive: summarized },
-  { title: '英文 · 结果 · Codex 和 Pi 合成一行', ...EN, ...CODEX_AND_PI, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
+  { title: '英文 · 结果 · Codex 和 Pi 合成一行', ...EN, ...SHARING, drive: inOrder(picking('archify', 'explanation', 'onetake'), reviewing, finished) },
   { title: '英文 · 浏览 · 只检测到 Pi', ...EN, ...PI_ONLY, ...PI_CONFIGURED, drive: crowded, reveal: 'markitdown' },
   { title: '英文 · 浏览 · 三个宿主 · 装到项目 · MCP 那一区', ...EN, ...THREE, ...PI_CONFIGURED, catalog: withKeyed, project: KEYED_TO_PROJECT_WITH_PI.project, drive: inOrder(crowded, toProject, pickingMcp('markitdown')), reveal: 'markitdown' },
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 三个宿主', note: '英文的提醒更长：三句都完整显示', ...EN, ...THREE, ...KEYED_TO_PROJECT_WITH_PI },

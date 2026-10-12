@@ -15,6 +15,7 @@ import { buildWeb } from './build-web.ts';
 import {
   BOTH_HOSTS,
   CLAUDE_SKILLS,
+  CODEX_AND_PI,
   CODEX_SKILLS,
   THREE_HOSTS,
   PI_MARKITDOWN_CONFIGURED,
@@ -406,8 +407,6 @@ const PROJECT_WITH_PI: Pick<Scene, 'project' | 'answersScope'> = {
   ...PROJECT,
   project: { ...PROJECT.project, '.pi/mcp.json': JSON.stringify({ mcpServers: { 'mistral-ocr': { command: 'npx', args: ['-y', 'mistral-ocr-mcp'] } } }) },
 };
-// 只检测到 Codex 和 Pi：它们用的是同一个共用 skill 目录
-const CODEX_AND_PI = ['codex', 'pi'];
 // Pi 的用户级配置写坏了，读不出里面有哪些 MCP
 const PI_UNREADABLE = { '.pi/agent/mcp.json': '{ "mcpServers": ' };
 // 假装执行命令：pi 这个命令起不来，别的都成功
@@ -600,7 +599,7 @@ const scenes: Scene[] = [
   { title: '结果 · 装到项目的 MCP · 三个宿主', note: '每个 MCP 有 Claude Code 和 Pi 两行；结果里同样没有 key 的值', ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...toProjectMcpSummary, KEY.enter] },
   { title: '汇总确认 · 装到项目 · 带 key 的 MCP · 只检测到 Pi', note: '不问装进哪个宿主。命令带 -l；提醒里的文件是 .pi/mcp.json，启动命令是 pi', ...PI_ONLY_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...toMixedDocuments(), KEY.down, KEY.enter, ...toMcpSummary] },
   { title: '结果 · MCP · Pi 的命令没能运行', note: 'pi 这个命令起不来（或是没有 pi mcp 的旧版，那时是「添加命令退出状态 1」）：Pi 的那一行是失败和原因，别的宿主照常', ...THREE_HOSTS_FIVE_KINDS, home: { ...FIVE_KINDS.home }, commands: piCannotStart, keys: [...toMixedDocuments(true), ...down(6), KEY.space, KEY.enter, KEY.enter] },
-  { title: 'skill 多选列表 · 共用 skill 目录的说明 · 选了 Codex 和 Pi', note: '列表上方一行「注意」：三个名字是固定的，不看检测到了哪几个；比一行长，照「注意」的规矩折行。列表里仍是每个宿主一栏，两栏写的一样', onPath: CODEX_AND_PI, ...MIXED, keys: twoHosts(pickThree) },
+  { title: 'skill 多选列表 · 共用 skill 目录的说明 · 选了 Codex 和 Pi', note: '列表上方一行「注意」：三个名字是固定的，不看检测到了哪几个；连行首的键 78 列，一行放得下。列表里仍是每个宿主一栏，两栏写的一样', onPath: CODEX_AND_PI, ...MIXED, keys: twoHosts(pickThree) },
   { title: 'skill 多选列表 · 共用 skill 目录的说明 · 只检测到 Codex', note: '只选了三个里的一个也有这一句：装给 Codex 的 skill，Pi 和 omp 也看得到', onPath: ['codex'], keys: pickTwo },
   { title: '汇总确认 · Codex 和 Pi 合成一行', note: '两个宿主用的是同一个共用 skill 目录：每个 skill 只有一行，宿主那一格写「Codex、Pi」，位置只有一个', onPath: CODEX_AND_PI, keys: twoHosts(toSummary) },
   { title: '正在安装 · Codex 和 Pi 合成一行', note: '进行中的那一行也只有一行，宿主那一格同样是「Codex、Pi」', onPath: CODEX_AND_PI, catalog: withPin(downloads({ hangs: ['wizard'] })), keys: twoHosts(install) },
@@ -678,7 +677,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · 混合列表 · 装到项目 · 三个宿主', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: [...intoProject, ...down(6)] },
   { title: '英文界面 · 汇总确认 · 装到项目 · 带 key 的 MCP · 三个宿主', note: '英文的提醒更长，照规矩折行，每一行都不折出第 80 列', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, ...PROJECT_WITH_PI, keys: toProjectMcpSummary },
   { title: '英文界面 · MCP 的汇总与结果 · 只检测到 Pi', argv: ['--lang', 'en'], ...PI_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...toMcpSummary, KEY.enter] },
-  { title: '英文界面 · Codex 和 Pi 合成一行的汇总与结果', note: '宿主那一格用英文的并列写法 Codex, Pi；列表上方的说明是英文的那一句', argv: ['--lang', 'en'], onPath: CODEX_AND_PI, keys: twoHosts(install) },
+  { title: '英文界面 · Codex 和 Pi 合成一行的汇总与结果', note: '宿主那一格用英文的并列写法 Codex, Pi；列表上方的说明是英文的那一句，比一行长，照「注意」的规矩折成两行', argv: ['--lang', 'en'], onPath: CODEX_AND_PI, keys: twoHosts(install) },
   { title: '英文界面 · 四种类型的汇总与结果', argv: ['--lang', 'en'], ...FOUR_KINDS, keys: [...toMixedDocuments(true), ...toFourKindsSummary, KEY.enter] },
   { title: '英文界面 · 混合列表 · 只有工具', argv: ['--lang', 'en'], ...TOOLS, keys: pickTools },
   { title: '英文界面 · 工具的汇总与结果', argv: ['--lang', 'en'], ...TOOLS, keys: runTools },
