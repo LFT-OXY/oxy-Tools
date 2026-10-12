@@ -6,6 +6,8 @@
   --side: #fafafa;
   --card: #ffffff;
   --raised: #f2f2f2;
+  /* 只给左栏里当前的用途：比抬一档再深一档，压在侧栏底色上才认得出是哪一行 */
+  --current: #e6e6e6;
   --ink: #111111;
   --secondary: #5c5f66;
   --faint: #8a8f98;
@@ -29,6 +31,7 @@
     --side: #0d0e0f;
     --card: #101112;
     --raised: #1a1b1d;
+    --current: #26282c;
     --ink: #f7f8f8;
     --secondary: #a2a6ad;
     --faint: #6c7078;
@@ -214,12 +217,14 @@ input[type='checkbox']:checked::after {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 6px 8px;
+  /* 用途名只占一行时这一行正好 36px 高；折成两行的行跟着高 */
+  padding: 9px 8px;
   border: 0;
   background: none;
   color: var(--secondary);
   font-weight: 400;
-  line-height: 1.4;
+  /* 写成整像素：1.4 是 18.2px，每行的零头攒起来，1024×768、英文界面下左栏会多出一像素、冒出滚动条 */
+  line-height: 18px;
   text-align: left;
   /* 用途名放不下就折成两行，条目数留在第一行右边 */
   white-space: normal;
@@ -228,7 +233,7 @@ input[type='checkbox']:checked::after {
   color: var(--ink);
 }
 .menu button[aria-current='true'] {
-  background: var(--raised);
+  background: var(--current);
   color: var(--ink);
   font-weight: 500;
 }
