@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CatalogError, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller } from '../src/installer.ts';
-import type { Prompter } from '../src/prompter.ts';
+import { PromptAborted } from '../src/prompter.ts';
 import { openPage, type Page } from '../test/browser.ts';
 import { buildWeb } from './build-web.ts';
 import { findChrome, launchChrome, type Chrome } from './chrome.ts';
@@ -60,10 +60,10 @@ interface Scene extends World {
    */
   intro?: number | 'skipped' | 'reduced-motion';
   /**
-   * 页面画出来之后让它走到哪种结束画面：finished 是发了「完成」，exited 是安装器退出、页面重连不上，
-   * denied 是拿着不对的口令打开
+   * 页面画出来之后让它走到哪种结束画面：finished 是发了「完成」，switched 是终端上按了 t 改用终端界面，
+   * exited 是安装器退出、页面重连不上，denied 是拿着不对的口令打开
    */
-  ending?: 'finished' | 'exited' | 'denied';
+  ending?: 'finished' | 'switched' | 'exited' | 'denied';
   /** 页面画出来之后按几下 Tab：看键盘焦点 */
   tabs?: number;
   /** 页面画出来之后把名字是它的那张卡片滚到窗口中间 */
@@ -475,6 +475,7 @@ const scenes: Scene[] = [
   },
   { title: '键盘焦点', note: '按了三下 Tab：焦点是一圈 2px 的前景色描边，离元素 2px，深浅色下都看得见', tabs: 3 },
   { title: '结束 · 已完成', note: '点了「完成」：一个标题、一句说明，没有任何控件；彩色只落在行首的符号上', ending: 'finished' },
+  { title: '结束 · 已改用终端界面', note: '终端上按了 t：页面得知之后连接才断开，不改口成「安装器已退出」；同样没有任何控件', ending: 'switched' },
   { title: '结束 · 安装器已退出', note: '终端上按了 Ctrl+C，页面重连几次连不上', ending: 'exited' },
   { title: '结束 · 口令不对', note: '拿着不对的口令打开：没有画面状态，照浏览器的语言说', ending: 'denied' },
   { title: '英文 · 浏览 ·「推荐」', ...EN },
@@ -511,6 +512,7 @@ const scenes: Scene[] = [
   { title: '英文 · 填 key', note: '英文的词长：必填的后果那一句折成两行也读得通', ...EN, catalog: withKeyed, drive: KEYS_FILLED },
   { title: '英文 · 汇总 · 带 key 的 MCP、装到项目 · 1024×768', note: 'overwrite 和备注在窄的面板里放得下', ...EN, ...KEYED_TO_PROJECT, viewport: NARROW },
   { title: '英文 · 结束 · 已完成', ...EN, ending: 'finished' },
+  { title: '英文 · 结束 · 已改用终端界面', ...EN, ending: 'switched' },
   { title: '英文 · 结束 · 安装器已退出', ...EN, ending: 'exited' },
   { title: '英文 · 结束 · 口令不对', ...EN, ending: 'denied' },
 ];
@@ -601,7 +603,6 @@ const target = fileURLToPath(new URL('../.preview/web/', import.meta.url));
 
 // 网页界面不在终端上提问；问了就是退回了终端界面，场景写错了
 const refuse = (): Promise<never> => Promise.reject(new Error('网页界面的预览里安装器不该在终端上提问'));
-const noQuestions: Prompter = { select: refuse, checkbox: refuse, confirm: refuse, password: refuse };
 // 终端上的输出不要：预览只看页面
 const quiet = { isTTY: true, write: (): void => {} };
 
@@ -612,6 +613,8 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
   const interrupt = new AbortController();
   let opened = (_url: string): void => {};
   const link = new Promise<string>((resolve) => (opened = resolve));
+  let pressT = (): void => {};
+  let switched = false;
   const exited = runInstaller({
     argv: ['--lang', lang],
     env: { LANG: 'zh_CN.UTF-8', TERM: 'xterm-256color', PATH: bin, OXY_TOOLS_WEB: '1' },
@@ -625,10 +628,27 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
     projectDir: project,
     tempDir: scratchDir('tmp'),
     webDir: builtWeb,
+    // 预览里安装器的页面（扮演的那一个）一直连着，用不上这个时限
+    pageGraceMs: 5000,
     interrupt: interrupt.signal,
     // 预览从不真的执行命令，也不真的打开浏览器：链接打开器只记下网页界面的网址
     runCommand: () => (scene.commands === 'succeed' ? Promise.resolve({ exitCode: 0 }) : Promise.reject(new Error('网页界面的预览不执行命令'))),
-    prompter: noQuestions,
+    prompter: {
+      // 改用了终端界面之后的第一问（主菜单）上按 Ctrl+C：页面已经得知了，安装器到此为止
+      select: () => (switched ? Promise.reject(new PromptAborted()) : refuse()),
+      checkbox: refuse,
+      confirm: refuse,
+      password: refuse,
+      // 终端上待命的那一行：收回就了结；场景要「已改用终端界面」时由 pressT 按下 t
+      standby: (question, withdraw) =>
+        new Promise((resolve) => {
+          withdraw.addEventListener('abort', () => resolve(undefined));
+          pressT = (): void => {
+            switched = true;
+            resolve(question.answers['t']);
+          };
+        }),
+    },
     openLink: async (url) => opened(url),
   });
   // 这一格开了什么，收场时照相反的先后收掉；哪一样收不掉都不耽误后面的
@@ -662,6 +682,7 @@ async function shoot(chrome: Chrome, scene: Scene, builtWeb: string, prefix: str
       await tab.evaluate(vanishes('.intro'));
     }
     if (scene.ending === 'finished') await page.send({ type: 'finish' });
+    if (scene.ending === 'switched') pressT();
     if (scene.ending === 'exited') interrupt.abort();
     if (scene.ending) await tab.evaluate(appears('.ended'));
     for (let pressed = 0; pressed < (scene.tabs ?? 0); pressed++) await tab.press('Tab');

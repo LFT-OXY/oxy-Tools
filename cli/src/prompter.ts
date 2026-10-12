@@ -88,6 +88,15 @@ export interface PasswordQuestion {
   theme: PromptTheme;
 }
 
+/** 待命：不问什么，只画出一行按键提示，等其中一个键。 */
+export interface StandbyQuestion<Value> {
+  /** 按键提示里的各项，照先后；交给主题的 keysHelpTip 画 */
+  hint: [key: string, action: string][];
+  /** 认的按键：按了哪个就回答什么，别的键不理。提示里的 Ctrl+C 不在这里：它和别的提问一样以 PromptAborted 拒绝 */
+  answers: Readonly<Record<string, Value>>;
+  theme: PromptTheme;
+}
+
 export interface Prompter {
   /** 单选。用户按 Ctrl+C 时以 PromptAborted 拒绝。 */
   select<Value>(question: SelectQuestion<Value>): Promise<Value>;
@@ -100,6 +109,11 @@ export interface Prompter {
    * 结局由呈现层另写一行。用户按 Ctrl+C 时以 PromptAborted 拒绝。
    */
   password(question: PasswordQuestion): Promise<string>;
+  /**
+   * 待命。withdraw 触发时把它收回：回答是 undefined。无论怎么结束，画出来的那一行都从屏幕上擦掉，
+   * 要说什么由呈现层另写。用户按 Ctrl+C 时以 PromptAborted 拒绝。
+   */
+  standby<Value>(question: StandbyQuestion<Value>, withdraw: AbortSignal): Promise<Value | undefined>;
 }
 
 export class PromptAborted extends Error {

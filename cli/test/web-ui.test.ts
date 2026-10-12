@@ -63,16 +63,22 @@ describe('网页界面：骨架', () => {
     expect(closing?.stage).toBe('finished');
   });
 
-  it('终端上不问语言；本机信息之后是一个块：网页界面已在浏览器打开、整条网址、Ctrl+C 退出', async () => {
-    const result = await run({ page: done });
+  it('终端上不问语言；本机信息之后是一个块：网页界面已在浏览器打开、整条网址、空一行、按键提示', async () => {
+    let screen = '';
+    const result = await run({
+      page: async (page, { terminal }) => {
+        screen = terminal.screen();
+        await done(page);
+      },
+    });
 
     expect(result.output).not.toContain(LANGUAGE_QUESTION);
-    const lines = result.screen.split('\n');
+    const lines = screen.split('\n');
     const block = lines.findIndex((line) => /^\s*网页界面\s+已在浏览器打开$/.test(line));
     expect(block).toBeGreaterThan(lines.findIndex((line) => /^\s*目录\s+2 Skill$/.test(line)));
     // 网址单独占一行，整条都在，没有被截断或折开
     expect(lines[block + 1]?.trim()).toBe(result.opened[0]);
-    expect(lines.slice(block + 2, block + 4)).toEqual(['', expect.stringMatching(/^\s+Ctrl\+C 退出$/)]);
+    expect(lines.slice(block + 2)).toEqual(['', expect.stringMatching(/^\s+t 改用终端界面 · Ctrl\+C 退出$/)]);
   });
 
   it('网址指向这台机器的回环地址，带着这次运行的口令；它在终端上的那一行在 79 列以内', async () => {
@@ -101,7 +107,8 @@ describe('网页界面：骨架', () => {
     });
 
     expect(result.screen).toMatch(/^\s*Web UI\s+opened in your browser$/m);
-    expect(result.screen).toMatch(/^\s+Ctrl\+C quit$/m);
+    // 按键提示只在等按键的时候在画面上，收场时擦掉了：在记下的全部输出里找
+    expect(result.output).toMatch(/^\s+t use the terminal UI · Ctrl\+C quit/m);
     expect(state).toMatchObject({ lang: 'en', machine: { hosts: [{ name: 'Claude Code' }, { name: 'Codex', status: 'not detected' }], catalog: ['2 skills'] } });
   });
 

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import xterm from '@xterm/headless';
 import { CatalogError, type CatalogFailure, type CatalogSource } from '../src/catalog.ts';
 import { runInstaller, type CommandRunner } from '../src/installer.ts';
+import { openPage } from '../test/browser.ts';
 import { EMPTY_CATALOG } from '../test/fixtures.ts';
 import { buildWeb } from './build-web.ts';
 import {
@@ -40,6 +41,8 @@ const down = (times: number): string[] => Array<string>(times).fill(KEY.down);
 const PASTED_KEY = 'exa-live-7c1e09b4a2f85d36';
 // 网页界面的网址每次运行都不同（端口是系统挑的，口令是随机的）：画面上换成这一个，两次生成才逐字节相同
 const SAMPLE_WEB_URL = 'http://127.0.0.1:51234/?token=Jc3kTq0xW8nL2vRb7ZyGf4HsPd6MuA1e';
+// 页面全都断开之后等多久才当作页面关了：正式运行是 5 秒，预览里不等那么久
+const PAGE_GRACE_MS = 100;
 const WEB_URL = /http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/g;
 
 interface Scene extends World {
@@ -69,10 +72,12 @@ interface Scene extends World {
   /** 终端只有这么多行，画面只取还在屏幕上的部分；缺省是够高的终端，连同滚上去的都取 */
   rows?: number;
   /**
-   * 走网页界面（打开临时开关）：opens 是浏览器打开了，画面停在终端上的那个块；no-browser 是链接打开器拒绝，
-   * no-server 是页面的静态文件读不到——后两种退回终端界面。不给就是终端界面，链接打开器不会被调用
+   * 走网页界面（打开临时开关）：opens 是浏览器打开了，画面停在终端上的那个块（keys 里给 t 就是改用终端界面）；
+   * finished 是页面连上之后点了「完成」，closed 是页面连上之后关了，closed-installing 是页面勾了两个 skill、
+   * 确认安装之后关了——这三种由脚本拿着网址扮演页面，安装器自己退出；no-browser 是链接打开器拒绝，
+   * no-server 是页面的静态文件读不到——这两种退回终端界面。不给就是终端界面，链接打开器不会被调用
    */
-  web?: 'opens' | 'no-browser' | 'no-server';
+  web?: 'opens' | 'finished' | 'closed' | 'closed-installing' | 'no-browser' | 'no-server';
 }
 
 /** 一条假装执行的工具安装命令 */
@@ -559,11 +564,17 @@ const scenes: Scene[] = [
   { title: '帮助', note: 'npx oxy-tools --help', argv: ['--help'] },
   { title: '网页界面 · 已在浏览器打开', note: '带着临时开关 OXY_TOOLS_WEB：终端上不问语言，本机信息下面多一个块——已在浏览器打开、整条写在一行上的网址、按键提示。网址是样例：真实的每次运行各有各的端口和口令', web: 'opens' },
   { title: '网页界面 · 已在浏览器打开 · 检测到两个宿主、有条目被跳过', note: '本机信息照旧，那个块接在通栏横线下面', web: 'opens', onPath: BOTH_HOSTS, catalog: withBrokenEntry },
+  { title: '网页界面 · 点了「完成」', note: '按键提示那一行收掉了，原处是一行说明；安装器随后退出', web: 'finished' },
+  { title: '网页界面 · 页面关了', note: '页面全都断开满了时限（正式运行是 5 秒）：同一个画法，另一句话', web: 'closed' },
+  { title: '网页界面 · 安装中页面关了', note: '这一批照样装完：一行说明，然后是「结果」分区——和终端界面装完之后的是同一份结果行和合计，标题直接是「结果」', web: 'closed-installing', catalog: oneFails },
+  { title: '网页界面 · 按 t 改用终端界面', note: '一行说明，下面空一行，然后从语言提问接着走终端界面；本机信息不重打', web: 'opens', keys: ['t'] },
   { title: '退回终端界面 · 浏览器打不开', note: '链接打开器拒绝：一行「注意」说明原因，下面空一行，然后从语言提问接着走终端界面；本机信息不重打', web: 'no-browser' },
   { title: '退回终端界面 · 本机的网页起不来', note: '页面的静态文件读不到：同一个画法，另一句原因；没有去打开浏览器', web: 'no-server' },
   { title: '退回终端界面 · 语言提问中', note: '原因下面空一行才是提问', web: 'no-browser', answersLanguage: true },
   { title: '英文界面 · 主菜单', note: 'npx oxy-tools --lang en · 给了 --lang 就不问语言', argv: ['--lang', 'en'] },
   { title: '英文界面 · 网页界面 · 已在浏览器打开', argv: ['--lang', 'en'], web: 'opens' },
+  { title: '英文界面 · 网页界面 · 安装中页面关了', argv: ['--lang', 'en'], web: 'closed-installing', catalog: oneFails },
+  { title: '英文界面 · 网页界面 · 按 t 改用终端界面', note: '给了 --lang 就不问语言：说明下面空一行直接是主菜单', argv: ['--lang', 'en'], web: 'opens', keys: ['t'] },
   { title: '英文界面 · 退回终端界面', note: '给了 --lang 就不问语言：「注意」下面空一行直接是主菜单', argv: ['--lang', 'en'], web: 'no-browser' },
   { title: '英文界面 · 退回终端界面 · 本机的网页起不来', argv: ['--lang', 'en'], web: 'no-server' },
   { title: '英文界面 · skill 多选列表', argv: ['--lang', 'en'], keys: pickTwo },
@@ -608,6 +619,7 @@ const scenes: Scene[] = [
   { title: '不显示颜色 · 装到项目 · 带 key 的 MCP 的汇总', note: '设置了 NO_COLOR：提醒靠行首的「注意」认，占位符靠尖括号认', env: { NO_COLOR: '1' }, ...FIVE_KINDS, ...PROJECT, keys: toProjectMcpSummary },
   { title: '不显示颜色 · 语言提问', note: '设置了 NO_COLOR：光标靠 ▸ 认，不靠颜色', env: { NO_COLOR: '1' }, answersLanguage: true },
   { title: '不显示颜色 · 主菜单', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' } },
+  { title: '不显示颜色 · 网页界面 · 已在浏览器打开', note: '设置了 NO_COLOR：按键提示里的动作词不再暗淡', env: { NO_COLOR: '1' }, web: 'opens' },
   { title: '不显示颜色 · skill 多选列表', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, keys: pickTwo },
   { title: '不显示颜色 · 汇总与结果', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, catalog: oneFails, keys: install },
   { title: '不显示颜色 · 选择宿主', note: '设置了 NO_COLOR', env: { NO_COLOR: '1' }, onPath: BOTH_HOSTS, keys: toRecommended },
@@ -636,6 +648,7 @@ const scenes: Scene[] = [
   { title: '没有 Unicode · 选择安装范围', note: '光标退成 >，按键提示里的按键改用文字', ...FIVE_KINDS, ...PROJECT, ...LEGACY_CONSOLE, keys: toScope },
   { title: '没有 Unicode · 语言提问', note: '光标退成 >，按键提示里的按键改用文字；三段固定的字不变', ...LEGACY_CONSOLE, answersLanguage: true },
   { title: '没有 Unicode · 主菜单', note: '按键提示里的按键改用文字', ...LEGACY_CONSOLE, catalog: withBrokenEntry },
+  { title: '没有 Unicode · 网页界面 · 已在浏览器打开', note: '按键提示里的分隔退成 -', ...LEGACY_CONSOLE, web: 'opens' },
   { title: '没有 Unicode · skill 多选列表', ...LEGACY_CONSOLE, keys: pickTwo },
   { title: '没有 Unicode · 汇总与结果', ...LEGACY_CONSOLE, catalog: oneFails, keys: install },
   { title: '没有 Unicode · 选择宿主', ...LEGACY_CONSOLE, onPath: BOTH_HOSTS, keys: toRecommended },
@@ -701,9 +714,27 @@ async function play(scene: Scene): Promise<Cell[][]> {
   };
 
   const { keyboard, prompter } = keyboardPrompter(write, rows, scene.answersLanguage, scene.answersScope);
+  // 扮演页面的那几种场景：连上之后在页面上做什么，然后页面关掉（点了「完成」的是安装器把它关掉的）
+  let visit: Promise<void> | undefined;
+  const visiting = async (url: string): Promise<void> => {
+    const page = await openPage(url);
+    try {
+      // 等待命的那一行按键提示画出来再动：它被收掉的样子才是真的
+      await settle();
+      if (scene.web === 'finished') await page.send({ type: 'finish' });
+      if (scene.web === 'closed-installing') {
+        for (const name of ['archify', 'wizard']) await page.send({ type: 'pick', kind: 'skill', name, on: true });
+        await page.send({ type: 'review' });
+        const { summary } = await page.until((state) => state.summary !== undefined);
+        await page.send({ type: 'install', summary: summary?.id ?? '' });
+      }
+    } finally {
+      page.dispose();
+    }
+  };
   const tty = scene.tty ?? true;
   const { bin, home, project } = stageWorld(scene, scratchDir);
-  // 网页界面开着时不在提问里：收场靠这个信号
+  // 网页界面正在装的时候不在提问里：收场除了按 Ctrl+C 还靠这个信号
   const interrupt = new AbortController();
   const finished = runInstaller({
     argv: scene.argv ?? [],
@@ -718,6 +749,7 @@ async function play(scene: Scene): Promise<Cell[][]> {
     projectDir: project,
     tempDir: scratchDir('tmp'),
     webDir: scene.web === 'no-server' ? join(scratch, 'no-such-web') : builtWeb,
+    pageGraceMs: PAGE_GRACE_MS,
     interrupt: interrupt.signal,
     runCommand: async (command, args, options) => {
       if (!options?.shell) {
@@ -746,10 +778,26 @@ async function play(scene: Scene): Promise<Cell[][]> {
     },
     prompter,
     // 预览页从不真的打开浏览器：网页界面的场景里它只是兑现或拒绝；走终端界面的场景不带临时开关，它不会被调用
-    openLink: () => (scene.web === 'opens' ? Promise.resolve() : Promise.reject(new Error('the installer must not open a browser'))),
+    openLink: async (url) => {
+      if (scene.web === undefined || scene.web.startsWith('no-')) throw new Error('the installer must not open a browser');
+      if (scene.web !== 'opens') {
+        visit = visiting(url);
+        // 出了错留到下面等它的地方再报，不当成没人接的拒绝
+        visit.catch(() => undefined);
+      }
+    },
   });
 
   await settle();
+  // 扮演页面的场景里安装器是自己退出的：等它退出，画面才是收场之后的样子
+  if (scene.web === 'finished' || scene.web === 'closed' || scene.web === 'closed-installing') {
+    const deadline = Date.now() + 5000;
+    while (!visit && Date.now() < deadline) await sleep(10);
+    const exited = await Promise.race([Promise.all([visit, finished]).then(() => true), sleep(5000).then(() => false)]);
+    if (!exited) throw new Error(`「${scene.title}」：页面收场之后安装器一直没有退出`);
+  }
+  // 待命刚画出来的那一小会儿不认按键：等它过去再按
+  if (scene.web === 'opens' && scene.keys) await sleep(150);
   for (const key of scene.keys ?? []) {
     keyboard.write(key);
     await settle();

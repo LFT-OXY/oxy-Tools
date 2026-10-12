@@ -7,10 +7,10 @@ import type { Command, Environment, Host, Scope } from './hosts.ts';
 import type { ThirdPartyResult } from './install-third-party.ts';
 import type { ToolResult } from './install-tool.ts';
 import type { McpStatus } from './mcp-status.ts';
-import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebUnavailable } from './messages.ts';
+import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Failure, type KeyOutcome, type Lang, type WebEnding, type WebUnavailable } from './messages.ts';
 import { commandLine, mcpColumnNoticeTexts, noticeTexts } from './notice-text.ts';
 import type { InstallTarget, McpTarget, PlanNotices, ThirdPartyTarget, ToolTarget } from './plan.ts';
-import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion } from './prompter.ts';
+import type { CheckboxQuestion, ConfirmQuestion, PasswordQuestion, PromptTheme, SelectQuestion, StandbyQuestion } from './prompter.ts';
 import type { InstallOutcome, McpOutcome } from './run-plan.ts';
 import type { SkillStatus } from './skill-status.ts';
 import {
@@ -381,8 +381,9 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
   };
 
   // 一轮的执行，各类组件共用：targets 进「正在安装」分区，每一项进行中的那一行写的字（doing）和它的结果都由调用方
-  // 说成文字；asides 是输出不归呈现层管的那些（工具）的名字，各占一个以名字为标题的分区，排在后面
-  const progress = (targets: readonly { name: string; host: string }[], asides: readonly string[]) => {
+  // 说成文字；asides 是输出不归呈现层管的那些（工具）的名字，各占一个以名字为标题的分区，排在后面。
+  // recap 是这一批已经装完、只把结果补打出来：标题直接是「结果」，没有进行中的那一行
+  const progress = (targets: readonly { name: string; host: string }[], asides: readonly string[], recap = false) => {
     type Target = (typeof targets)[number];
     // verdict 是成功的那一行里先写的结果词（工具的「已可用」）：折行时续行与它后面的字对齐
     type Result = { ok: true; text: string; verdict?: string } | { ok: false; reason: string };
@@ -403,10 +404,10 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
       settled.push(rows);
       print(...rows);
     };
-    if (targets.length > 0) print(...heading(t.installing));
+    if (targets.length > 0) print(...heading(recap ? t.results : t.installing));
     return {
       begin(target: Target, doing: string): (result?: Result) => void {
-        const erase = spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
+        const erase = recap ? (): void => {} : spin((mark) => `${lead(target.name, target.host)(mark)}${doing}${dim(symbols.ellipsis)}`);
         return (result) => {
           erase();
           if (result) settle(rowsOf(lead(target.name, target.host), result));
@@ -429,7 +430,7 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         if (asides.length > 0) {
           // 前面的结果早被它们的输出顶出屏幕了：不止一行时集中再列一遍。标题不回头改写——不知道那些输出占了几行
           if (settled.length > 1) print(...heading(t.results), ...settled.flat());
-        } else {
+        } else if (!recap) {
           // 标题还在屏幕上、且没有哪一行被终端折开时，回到标题那一行把它改写掉
           const up = lines + 1;
           if (up < (out.rows ?? 24) && (out.columns ?? WIDTH) >= WIDTH) {
@@ -515,8 +516,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
     },
 
     /**
-     * 网页界面开着时本机信息下面的那个块：已在浏览器打开、整条写在一行上的网址（浏览器没有弹出来时照着复制）、
-     * 按键提示。
+     * 网页界面开着时本机信息下面的那个块：已在浏览器打开、整条写在一行上的网址（浏览器没有弹出来时照着复制）。
+     * 下面空一行；再下面的按键提示由待命的提问画。
      */
     webOpened(url: string): void {
       print(
@@ -525,8 +526,27 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
         // 网址不截断也不折行，独占一行
         `  ${' '.repeat(KEY_WIDTH)}${url}`,
         '',
-        theme.style.keysHelpTip([['Ctrl+C', 'quit']]),
       );
+    },
+
+    /**
+     * 网页界面开着时的待命：按键提示那一行由它画，等 t（改用终端界面）或 Ctrl+C。它结束时那一行擦掉、不收成一行，
+     * 画面回到问之前的样子，所以不碰 spaced。
+     */
+    standby(): StandbyQuestion<'terminal'> {
+      return {
+        hint: [
+          ['t', 'terminal'],
+          ['Ctrl+C', 'quit'],
+        ],
+        answers: { t: 'terminal' },
+        theme,
+      };
+    },
+
+    /** 网页界面这边收场时的那一行说明。改用终端界面的下面空一行：后面接着是语言提问或主菜单。 */
+    webEnded(how: WebEnding): void {
+      print(...gapAbove(), ...keyValue(t.webUi.key, t.webUi.ended[how]), ...(how === 'terminal' ? [''] : []));
     },
 
     /** 进入网页界面之后才知道它用不了：说明一句原因，调用方接着走终端界面。 */
@@ -988,8 +1008,8 @@ export function createUi({ out, err, lang, env, platform, continued = false }: U
      * 全部结束后 finish 打出合计：没有工具时把「正在安装」的标题换成「结果」；有工具时标题不动，结果不止一行就先用
      * 一个「结果」分区把每一行再列一遍——前面的早被命令的输出顶出屏幕了。
      */
-    installation(skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[]) {
-      const rows = progress([...skills, ...thirdParty, ...mcps], tools.map((target) => target.name));
+    installation(skills: readonly InstallTarget[], thirdParty: readonly ThirdPartyTarget[], mcps: readonly McpTarget[], tools: readonly ToolTarget[], recap = false) {
+      const rows = progress([...skills, ...thirdParty, ...mcps], tools.map((target) => target.name), recap);
       return {
         skill: {
           begin(target: InstallTarget): (outcome?: InstallOutcome) => void {

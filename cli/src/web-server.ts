@@ -25,6 +25,8 @@ export interface WebServerOptions {
   state: () => ViewState;
   /** 页面发来的意图，还没有验过形状；认不出来就返回 false */
   intent: (raw: unknown) => boolean;
+  /** 连着的长连接的条数变了：每连上、断开一条调一次。「页面还开着」看的就是它 */
+  pages: (count: number) => void;
 }
 
 const LOOPBACK = '127.0.0.1';
@@ -52,7 +54,7 @@ const CLOSE_GRACE_MS = 250;
 const digest = (text: string): Buffer => createHash('sha256').update(text).digest();
 
 /** 起本机的网页：只监听回环地址，端口由系统挑。静态文件读不到、监听不了时拒绝。 */
-export async function startWebServer({ webDir, token, state, intent }: WebServerOptions): Promise<WebServer> {
+export async function startWebServer({ webDir, token, state, intent, pages }: WebServerOptions): Promise<WebServer> {
   // 启动时读进内存：缺了哪个当场就知道，之后也不再碰磁盘
   const files = new Map(Object.entries(STATIC_FILES).map(([path, { file, type }]) => [path, { type, content: readFileSync(join(webDir, file)) }]));
   const expected = digest(token);
@@ -112,7 +114,11 @@ export async function startWebServer({ webDir, token, state, intent }: WebServer
           response.writeHead(200, { ...COMMON_HEADERS, 'Content-Type': 'text/event-stream; charset=utf-8' });
           response.write(`data: ${JSON.stringify(state())}\n\n`);
           streams.add(response);
-          response.on('close', () => streams.delete(response));
+          pages(streams.size);
+          response.on('close', () => {
+            streams.delete(response);
+            pages(streams.size);
+          });
         });
       }
       if (pathname === '/api/intent') return routed(request, response, 'POST', () => receiveIntent(request, response));

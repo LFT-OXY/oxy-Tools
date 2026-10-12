@@ -8,6 +8,7 @@ import { noticeTexts } from './notice-text.ts';
 import type { InstallTarget, McpTarget, Plan, SkillJob, ThirdPartyJob, ThirdPartyTarget } from './plan.ts';
 import type { InstallOutcome, Progress } from './run-plan.ts';
 import { versionChange } from './status-text.ts';
+import type { Ui } from './ui.ts';
 import type { FailureView, RunRowView, RunView, SummaryEntryView, SummaryRowView, SummaryView } from './web-protocol.ts';
 import { ARROW } from './web-view.ts';
 
@@ -226,6 +227,35 @@ export function settleBatch(batch: Batch, failure?: Failure): void {
   batch.loading = false;
   if (failure) batch.failure = failure;
   batch.done = true;
+}
+
+/**
+ * 把装完的一批的结局照先后重报给呈现层：安装中页面关了，结果打在终端上，和终端界面装完之后的「结果」分区是同一份。
+ * 这一批里出过的错（向 GitHub 查询失败）照旧先说
+ */
+export function reportBatch(batch: Batch, ui: Pick<Ui, 'failure' | 'installation'>): void {
+  if (batch.failure) ui.failure(batch.failure);
+  if (batch.rows.length === 0) return;
+  const report = ui.installation(
+    batch.rows.flatMap((row) => (row.kind === 'skill' ? [row.target] : [])),
+    batch.rows.flatMap((row) => (row.kind === 'thirdParty' ? [row.target] : [])),
+    batch.rows.flatMap((row) => (row.kind === 'mcp' ? [row.target] : [])),
+    [],
+    true,
+  );
+  for (const { kind, target, now } of batch.rows) {
+    if (kind === 'skill') {
+      if ('version' in now) report.skill.begin(target)({ ok: true, version: now.version });
+      else if ('outcome' in now) report.skill.begin(target)(now.outcome);
+      else report.skill.skip(target);
+    } else if (kind === 'thirdParty') {
+      if ('result' in now) report.thirdParty.begin(target)(now.result);
+      else report.thirdParty.skip(target);
+    } else if ('problem' in now) report.mcp.begin(target)({ ok: false, problem: now.problem });
+    else if (now.state === 'skipped') report.mcp.skip(target, now.missing ?? '');
+    else report.mcp.begin(target)({ ok: true });
+  }
+  report.finish();
 }
 
 /** 把一批的进度写成画面状态里的那一块。每一行的词和终端界面的结果行是同一份 */

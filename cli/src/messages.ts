@@ -21,6 +21,12 @@ export type ToolEvidence = { command: string } | { path: string };
 /** 进入网页界面之后才知道它用不了的原因：本机的网页起不来、浏览器打不开 */
 export type WebUnavailable = 'server' | 'browser';
 
+/**
+ * 网页界面这边怎么收的场：页面上点了「完成」、页面关了、页面关了而这一批的结果没有页面看到（接着把结果打在终端上）、
+ * 终端上按了 t 改用终端界面
+ */
+export type WebEnding = 'finished' | 'closed' | 'closedUnseen' | 'terminal';
+
 // 语言提问的三段字是固定的，不随界面语言变：还没选之前，读哪种语言的人都要认得出自己的那一项。
 // 终端界面的语言提问和网页界面上切换语言的控件用的是同一份
 export const LANGUAGE_QUESTION = 'Language / 语言';
@@ -68,8 +74,8 @@ export interface Messages {
   counts: (counts: { skills: number; mcps: number; tools: number; apps: number }) => string[];
   noEntries: string;
   skipped: (count: number) => string;
-  /** 网页界面开着时终端上的那个块，和退回终端界面时说明的那一句原因 */
-  webUi: { key: string; opened: string; unavailable: Record<WebUnavailable, string> };
+  /** 网页界面开着时终端上的那个块、它收场时的那一行，和退回终端界面时说明的那一句原因 */
+  webUi: { key: string; opened: string; ended: Record<WebEnding, string>; unavailable: Record<WebUnavailable, string> };
   pickPurpose: string;
   /** 「推荐」：主菜单的第一行，也是列表下方「类型」一行里跟在类型后面的那个词 */
   recommended: string;
@@ -280,6 +286,12 @@ const zh: Messages = {
   webUi: {
     key: '网页界面',
     opened: '已在浏览器打开',
+    ended: {
+      finished: '页面上点了「完成」，安装器退出',
+      closed: '页面已关闭，安装器退出',
+      closedUnseen: '页面已关闭；这一批照样装完了，结果如下',
+      terminal: '已改用终端界面',
+    },
     unavailable: { server: '本机的网页起不来，改用终端界面', browser: '浏览器打不开，改用终端界面' },
   },
   pickPurpose: '选择用途',
@@ -425,7 +437,7 @@ const zh: Messages = {
   totalKey: '合计',
   totalWords: TOTAL_WORDS.zh,
   totals: tallied(TOTAL_WORDS.zh),
-  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）', quit: '退出' },
+  keys: { navigate: '移动', select: '选择', all: '全选', invert: '反选', submit: '确认（不选则返回）', submitOrSkip: '确认（不选则不装这一条）', terminal: '改用终端界面', quit: '退出' },
   keyWords: { space: '空格' },
   keyNames: { '↑↓': '上下键', '⏎': '回车' },
   errorPrefix: '出错：',
@@ -562,6 +574,12 @@ const en: Messages = {
   webUi: {
     key: 'Web UI',
     opened: 'opened in your browser',
+    ended: {
+      finished: 'Done was clicked on the page; quitting',
+      closed: 'The page was closed; quitting',
+      closedUnseen: 'The page was closed; this batch still finished, results below',
+      terminal: 'Switched to the terminal UI',
+    },
     unavailable: {
       server: 'Could not start the local web page; using the terminal UI instead',
       browser: 'Could not open a browser; using the terminal UI instead',
@@ -717,7 +735,7 @@ const en: Messages = {
   totalKey: 'Total',
   totalWords: TOTAL_WORDS.en,
   totals: tallied(TOTAL_WORDS.en),
-  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)', quit: 'quit' },
+  keys: { navigate: 'move', select: 'select', all: 'all', invert: 'invert', submit: 'confirm (none = back)', submitOrSkip: 'confirm (none = skip)', terminal: 'use the terminal UI', quit: 'quit' },
   keyWords: { space: 'space' },
   keyNames: { '↑↓': 'up/down', '⏎': 'enter' },
   errorPrefix: 'Error: ',

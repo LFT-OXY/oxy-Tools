@@ -56,6 +56,8 @@ export interface InstallerOptions {
   tempDir: string;
   /** 网页界面的静态文件所在的目录 */
   webDir: string;
+  /** 网页界面的页面全都断开之后，等多久才当作页面关了 */
+  pageGraceMs: number;
   /** 用户在提问之外按 Ctrl+C 时触发。触发后进程随即退出，所以监听它的收尾只能是同步的 */
   interrupt: AbortSignal;
   runCommand: CommandRunner;
@@ -130,10 +132,21 @@ export async function runInstaller(options: InstallerOptions): Promise<number> {
       keys: new Map(),
     };
     if (web) {
-      const outcome = await runWebUi({ lang: startingLang, version: VERSION, catalog, runtime, counts, webDir: options.webDir, ui, openLink: options.openLink });
-      if (outcome === 'finished') return 0;
-      // 进来之后才知道网页界面用不了：说明一句原因，从语言提问接着走终端界面。目录不重读
-      ui.webUnavailable(outcome.unavailable);
+      const outcome = await runWebUi({
+        lang: startingLang,
+        version: VERSION,
+        catalog,
+        runtime,
+        counts,
+        webDir: options.webDir,
+        pageGraceMs: options.pageGraceMs,
+        ui,
+        prompter: options.prompter,
+        openLink: options.openLink,
+      });
+      if (outcome === 'finished' || outcome === 'closed') return 0;
+      // 进来之后才知道网页界面用不了：说明一句原因。它和用户按 t 改用终端界面一样，从语言提问接着走终端界面，目录不重读
+      if (outcome !== 'terminal') ui.webUnavailable(outcome.unavailable);
       await askLanguage();
     }
     await mainMenu({ ...runtime, catalog, ui, prompter: options.prompter });

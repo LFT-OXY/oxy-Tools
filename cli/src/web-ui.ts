@@ -1,4 +1,4 @@
-// 网页界面这一边的流程：起本机的网页、交给浏览器打开、等到用户点「完成」。
+// 网页界面这一边的流程：起本机的网页、交给浏览器打开、等到它收场——用户点了「完成」、页面关了，或在终端上按了 t。
 // 画面状态在这里，页面发来的意图在这里变成状态；页面只是它的一个显示。
 import { randomBytes } from 'node:crypto';
 import { listingStatus, type Machine, type Unavailable } from './availability.ts';
@@ -8,10 +8,11 @@ import type { LinkOpener } from './installer.ts';
 import { LANGUAGE_QUESTION, LANGUAGES, MESSAGES, type Lang, type Messages, type WebUnavailable } from './messages.ts';
 import { byName } from './listing.ts';
 import { homeRelative, planInstall, type Plan } from './plan.ts';
+import type { Prompter } from './prompter.ts';
 import { Interrupted, runPlan, unexpected, type Runtime } from './run-plan.ts';
 import { unavailableReason } from './status-text.ts';
 import type { Ui } from './ui.ts';
-import { asksOverwrite, decided, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
+import { asksOverwrite, decided, reportBatch, runView, settleBatch, summaryId, summaryView, trackBatch, type Batch } from './web-install.ts';
 import type { Intent, PickableKind, ViewState } from './web-protocol.ts';
 import { startWebServer, type WebServer } from './web-server.ts';
 import { listingView, menuOf } from './web-view.ts';
@@ -26,14 +27,20 @@ export interface WebUiOptions {
   /** 目录里各类条目的数量，和本机信息里数的是同一份 */
   counts: { skills: number; mcps: number; tools: number; apps: number };
   webDir: string;
+  /** 页面全都断开之后，等多久才当作页面关了 */
+  pageGraceMs: number;
   ui: Ui;
+  /** 只用来问待命的提问：网页界面开着时终端上等按键的那一行 */
+  prompter: Prompter;
   openLink: LinkOpener;
 }
 
-/** finished 是用户在页面上点了「完成」；unavailable 是进来之后才知道网页界面用不了，调用方接着走终端界面 */
-export type WebUiOutcome = 'finished' | { unavailable: WebUnavailable };
+/** 网页界面这边收场的三种：页面上点了「完成」、页面关了（这两种安装器随后退出）、终端上按了 t 改用终端界面 */
+type Ending = 'finished' | 'closed' | 'terminal';
+/** unavailable 是进来之后才知道网页界面用不了；它和 terminal 一样，调用方接着走终端界面 */
+export type WebUiOutcome = Ending | { unavailable: WebUnavailable };
 
-/** 被 Ctrl+C 打断时抛 Interrupted，抛之前已经把本机的网页关掉。 */
+/** 被 Ctrl+C 打断时抛 Interrupted（在待命的提问上按的是 PromptAborted），抛之前已经把本机的网页关掉。 */
 export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
   const { catalog, runtime } = options;
   const { interrupt } = runtime;
@@ -54,15 +61,68 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
     agreed: new Set(),
     renewed: false,
   };
-  let finish = (): void => {};
-  const finished = new Promise<void>((resolve) => (finish = resolve));
+  // 网页界面这边收场了：只认第一次，之后的意图都不照办
+  let ending: Ending | undefined;
+  let settle = (how: Ending): void => {};
+  const ended = new Promise<Ending>((resolve) => (settle = resolve));
+  const end = (how: Ending): void => {
+    ending ??= how;
+    settle(ending);
+  };
 
   let server: WebServer;
   const push = (): void => server.push(viewOf(options, session));
+
+  // 「页面还开着」就是有长连接连着。连上过之后全都断开满了时限，才当作页面关了；时限内又连上（刷新）就当没断过
+  let connected = 0;
+  let grace: NodeJS.Timeout | undefined;
+  let deserted = false;
+  // 这一批装完的时候没有页面连着，之后也没有页面连上过：它的结果没有人看到
+  let unseen = false;
+  const pages = (count: number): void => {
+    // 收场时本机的网页关掉，长连接也是这样一条条断开的：那不是页面关了
+    if (ending) return;
+    connected = count;
+    clearTimeout(grace);
+    if (count > 0) {
+      deserted = false;
+      unseen = false;
+      return;
+    }
+    grace = setTimeout(() => {
+      deserted = true;
+      // 正在装的这一批要装完，装完再走
+      if (session.step !== 'installing') end('closed');
+    }, options.pageGraceMs);
+    // 被 Ctrl+C 打断时本机的网页是当场关的，长连接随后才断开：不让这个时限拖着进程不退出
+    grace.unref();
+  };
+
+  // 待命的提问：网页界面开着、没有在安装时一直问着。在它上面按了 Ctrl+C 就从 aborted 出去
+  let standing: { withdraw: AbortController; settled: Promise<void> } | undefined;
+  let aborted = (error: unknown): void => {};
+  const stand = (): void => {
+    const withdraw = new AbortController();
+    const settled = options.prompter.standby(options.ui.standby(), withdraw.signal).then((answer) => {
+      // 按键和「确认安装」同时到、意图先办了的话不照办：这一批要装完
+      if (answer === 'terminal' && session.step !== 'installing') end('terminal');
+    }, aborted);
+    standing = { withdraw, settled };
+  };
+  // 收回之后要等它了结才能往终端上打东西：它擦掉自己那一行是在了结的同一拍里
+  const withdrawStandby = async (): Promise<void> => {
+    const current = standing;
+    standing = undefined;
+    current?.withdraw.abort();
+    await current?.settled;
+  };
+
   // 照计划去装，进度每变一次推一次画面状态。它不往外抛：意料之外的错变成这一批的出错说明
   const install = async (plan: Plan): Promise<void> => {
     const { batch, progress } = trackBatch(plan, push);
     session.batch = batch;
+    // 安装进行中终端上没有待命的提问：工具的安装命令要接管终端的输入输出
+    await withdrawStandby();
     let failure: unknown;
     try {
       await runPlan(runtime, plan, progress);
@@ -73,6 +133,10 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
     }
     settleBatch(batch, failure === undefined ? undefined : unexpected(failure));
     session.step = 'results';
+    unseen = connected === 0;
+    // 安装中页面关了：这一批装完了，该走了
+    if (deserted) return end('closed');
+    stand();
     push();
   };
   try {
@@ -80,9 +144,10 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
       webDir: options.webDir,
       token,
       state: () => viewOf(options, session),
+      pages,
       intent: (raw) => {
         const intent = parseIntent(raw);
-        if (!intent) return false;
+        if (!intent || ending) return false;
         switch (intent.type) {
           case 'finish':
             // 正在装的这一批要装完
@@ -190,7 +255,7 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
             break;
         }
         push();
-        if (session.stage === 'finished') finish();
+        if (session.stage === 'finished') end('finished');
         return true;
       },
     });
@@ -209,6 +274,10 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
       server.closeNow();
       reject(new Interrupted());
     };
+    aborted = (error): void => {
+      server.closeNow();
+      reject(error);
+    };
   });
   interrupt.addEventListener('abort', interrupted, { once: true });
 
@@ -220,10 +289,22 @@ export async function runWebUi(options: WebUiOptions): Promise<WebUiOutcome> {
       return { unavailable: 'browser' };
     }
     options.ui.webOpened(url);
-    await Promise.race([finished, interruption]);
+    stand();
+    const how = await Promise.race([ended, interruption]);
+    await withdrawStandby();
+    if (how === 'terminal') {
+      // 页面得知已改用终端界面，之后连接断开不再改口
+      session.stage = 'terminal';
+      push();
+    }
     await server.close();
-    return 'finished';
+    if (how === 'closed' && unseen && session.batch) {
+      options.ui.webEnded('closedUnseen');
+      reportBatch(session.batch, options.ui);
+    } else options.ui.webEnded(how);
+    return how;
   } finally {
+    clearTimeout(grace);
     interrupt.removeEventListener('abort', interrupted);
   }
 }

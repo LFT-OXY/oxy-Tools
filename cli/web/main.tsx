@@ -78,8 +78,8 @@ function App() {
           setScreen({ kind: 'live', state });
         }).catch(() => 'closed' as const);
         if (end === 'denied') return setScreen({ kind: 'denied' });
-        // 用户点了「完成」：连接是安装器自己收掉的，画面不再改口
-        if (last?.stage === 'finished') return;
+        // 用户点了「完成」，或在终端上改用了终端界面：连接是安装器自己收掉的，画面不再改口
+        if (last && last.stage !== 'open') return;
         if (++failures > RETRIES) return setScreen({ kind: 'exited' });
         await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
       }
@@ -102,6 +102,7 @@ function App() {
   if (screen.kind === 'denied') return <Ended mark="✗" tone="failed" {...t.denied} />;
   if (screen.kind === 'exited') return <Ended mark="–" tone="quiet" {...t.exited} />;
   if (screen.state.stage === 'finished') return <Ended mark="✓" tone="ready" {...t.finished} />;
+  if (screen.state.stage === 'terminal') return <Ended mark="–" tone="quiet" {...t.switched} />;
   const { keys, summary, run } = screen.state;
   return (
     <>

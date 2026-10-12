@@ -387,17 +387,71 @@ keysHelpTip: (keys) => `${underCursor === undefined ? '' : `${description(underC
 
 ## 网页界面开着时与退回终端界面
 
-用网页界面时终端上多出来的只有两样，都经呈现层（画法见 [界面设计](./ui-design.md) 的「网页界面开着时」）：
+用网页界面时终端上多出来的只有这几样，都经呈现层（画法见 [界面设计](./ui-design.md) 的「网页界面开着时」）：
 
 | 方法 | 什么时候 | 打什么 |
 |------|----------|--------|
-| `ui.webOpened(url)` | 链接打开器兑现之后 | 一个键值行（`t.webUi.key`、`t.webUi.opened`）；网址单独一行，照出错说明里 `location` 的写法——缩进到值的左缘，不截断也不折行；空一行；按键提示 |
+| `ui.webOpened(url)` | 链接打开器兑现之后 | 一个键值行（`t.webUi.key`、`t.webUi.opened`）；网址单独一行，照出错说明里 `location` 的写法——缩进到值的左缘，不截断也不折行；空一行。**按键提示不在里面**：它由待命的提问画 |
+| `ui.standby()` | 网页界面开着、没有在安装时一直问着 | 做成待命的提问（见下一节），交给提问器 |
+| `ui.webEnded(how)` | 网页界面这边收场：点了「完成」（`finished`）、页面关了（`closed`）、页面关了而这一批的结果没有页面看到（`closedUnseen`）、按了 `t`（`terminal`） | 一个键值行（`t.webUi.key`、`t.webUi.ended[how]`）；`terminal` 的下面空一行（后面是语言提问或主菜单），其余的不空 |
+| `ui.installation(…, [], true)` | 安装中页面关了，这一批装完之后（紧跟在 `webEnded('closedUnseen')` 后面） | 「结果」分区：最后一个参数是「这一批已经装完，只把结果补打出来」——标题直接是「结果」，没有转动的那一行，不回头改写标题；结果行和合计仍是 `tally()` 的那一份 |
 | `ui.webUnavailable(reason)` | 本机的网页起不来（`server`），或链接打开器拒绝（`browser`） | 一行「注意」（`t.webUi.unavailable[reason]`），下面空一行 |
 
-- 两样都写到**标准输出**：后一种不是出错，安装器接着走终端界面。
-- 按键提示用的是提问主题里的那一个函数（`theme.style.keysHelpTip([['Ctrl+C', 'quit']])`），动作词在 `t.keys` 里：和提问下方的按键提示同一个画法、同一套本地化。这一行现在由呈现层自己打——网页界面开着时没有提问在问；工单 11 把它换成待命的提问。
-- `webUnavailable` 以空行收尾，`spaced` 因此是「是」：紧接着的语言提问上方不另空，回答之后收成的那一行与「注意」之间隔着这一行空行。带了 `--lang` 不问语言时，隔开的是「注意」与主菜单。
-- 原因是一个种类（`WebUnavailable`，在 `messages.ts`），写成哪句话照文案；别的模块里不写给用户看的句子。
+- 都写到**标准输出**：没有一样是出错。
+- `webUnavailable`、`webEnded('terminal')` 以空行收尾，`spaced` 因此是「是」：紧接着的语言提问上方不另空，回答之后收成的那一行与上面那一行之间隔着这一行空行。带了 `--lang` 不问语言时，隔开的是它与主菜单。
+- 原因和收场的情形都是一个种类（`WebUnavailable`、`WebEnding`，在 `messages.ts`），写成哪句话照文案；别的模块里不写给用户看的句子。
+- 网页界面开着时终端上不重复页面上的内容：一批安装的进度不打在终端上（工具的分区除外，工单 12）。例外只有上面第四行——页面关了，结果没有别处可看。
+
+---
+
+## 待命的提问
+
+网页界面开着时终端在等一个按键（`t` 改用终端界面、Ctrl+C 退出）。它是**提问器的一种提问**，不是另一条读键盘的路（任务 `10-11-installer-web-ui` 工单 11）：
+
+```ts
+// cli/src/prompter.ts
+export interface StandbyQuestion<Value> {
+  hint: [key: string, action: string][];      // 按键提示里的各项，照先后；交给主题的 keysHelpTip 画
+  answers: Readonly<Record<string, Value>>;   // 认的按键：按了哪个就回答什么。别的键不理；Ctrl+C 不在这里
+  theme: PromptTheme;
+}
+export interface Prompter {
+  /** 待命：只画出一行按键提示，等其中一个键。withdraw 触发时收回：回答是 undefined。无论怎么结束，画出来的那一行都擦掉 */
+  standby<Value>(question: StandbyQuestion<Value>, withdraw: AbortSignal): Promise<Value | undefined>;
+}
+```
+
+| 项 | 约定 |
+|----|------|
+| 画什么 | 只有一行按键提示：`theme.style.keysHelpTip(question.hint)`——和提问下方的按键提示同一个函数、同一套本地化（动作词在 `t.keys` 里：`terminal`、`quit`）。没有提问标记、没有提问的文字。等按键的时候光标不显示 |
+| 结束的三种 | 按了 `answers` 里的键：兑现成那个值；`withdraw` 触发：兑现成 `undefined`；Ctrl+C：和别的提问一样以 `PromptAborted` 拒绝 |
+| 结束之后 | **那一行擦掉，不收成一行**（`clearPromptOnDone`）：光标回到它原来所在那一行的行首，后面要说什么由呈现层另打。所以它和隐藏输入一样不碰 `spaced`：它前面的 `webOpened` 以空行收尾，它擦掉之后画面回到那时的样子 |
+| 可以被收回 | 网页界面这边结束（点了「完成」、页面关了）、一批安装开始时，调用方触发 `withdraw`，**等它兑现之后再往终端上打东西**——交互库的收尾（擦掉那一行、放开键盘）是在兑现的同一拍里做的，没等就打会被它擦掉 |
+| 安装进行中 | 不在：工具的安装命令要接管终端的输入输出（工单 12）。装完再问一次 |
+| 别的键 | 不理，也不回显：每次按键都把输入行清掉（`rl.clearLine(0)`） |
+| 早先敲的键 | **待命画出来之后的头 100 毫秒里收到的键不算数**（`STALE_KEYS_MS`）。没有提问在听的时候敲的键留在终端那头，下一个提问一画出来就送到——在伪终端里实测晚 0–1 毫秒；不挡的话，一批安装进行中敲的 `t` 会在装完的那一刻把网页界面切到终端界面，页面上的结果就看不到了。人看到提示再按，快不过 100 毫秒。Ctrl+C 不受这一条管：它不经这个按键处理，交互库自己接 |
+
+正式的实现（`inquirer-prompter.ts`）是用交互库的 `createPrompt` 写的一个小提示：`useKeypress` 里认按键，`context` 给 `{ signal: withdraw, clearPromptOnDone: true }`；被收回时交互库以 `AbortPromptError` 拒绝，这里把它变成 `undefined`。**它画的只有主题给的那一行**，没有用交互库自带的任何样式（不调 `makeTheme`、`usePrefix`），所以没有会漏出来的青色；`prompts.test.ts` 的「真实的画面：待命」照样把原始输出查一遍。
+
+`createPrompt` 来自 `@inquirer/core`。它本来就随另外四个 `@inquirer/*` 一起装着（它们都依赖它），工单 11 把它**写进了 `package.json` 的 `dependencies`**（版本范围和那四个包要的一样，`^12.0.4`）：直接引用一个没声明的包，在按包隔离依赖的安装方式下（pnpm）会找不到。用户装下来的包一个都没多。
+
+预设应答的替身（`cli/test/harness.ts`）：把那一行按键提示记进 `output`（行尾不换行），结束时照真实的样子擦掉（`\r\x1b[2K`），所以 `result.screen` 里它不留着；按键由页面的脚本来按（`terminal.press('t')`），见 [入口与测试](./installer-entry.md)。替身没有「头 100 毫秒不算数」这回事：它只认页面的脚本按的键。
+
+已知的限制：
+
+- **没有提问在听的时候敲的字会被终端自己回显**（一批安装进行中）：那时终端不在原始模式。敲的 `t` 不起作用（上表），但那个字留在按键提示重新画出来的那一行行首。和任何命令行程序在忙的时候敲键盘一样，没有处理。
+- **从外面给进程发中断信号**（不是在终端上按 Ctrl+C）而这时待命正问着：`bin.ts` 随即退出，交互库来不及把它藏起来的光标放回来。在终端上按的 Ctrl+C 不走这条路——待命问着时终端在原始模式，它是交互库自己接的，收尾是完整的。
+
+```ts
+// 错：收回了待命紧接着就往终端上打。交互库擦掉那一行是在它了结的那一拍里做的，这一行会被它擦掉
+standing.withdraw.abort();
+ui.webEnded('finished');
+
+// 对：等它了结
+standing.withdraw.abort();
+await standing.settled;
+ui.webEnded('finished');
+```
 
 ---
 
@@ -532,6 +586,6 @@ cd cli && npm run preview   # 生成 cli/.preview/index.html
 - 场景里的下载是假的：`downloads({ fails, hangs })` 让某个 skill 失败或一直下不完，`queryFails(failure)` 让查询以某种出错失败。每个场景有自己的临时主目录，结束时一并删掉；预览页不碰真实的主目录和网络。
 - 生成物不提交（`cli/.gitignore`），也不随 npm 包发布（`package.json` 的 `files` 只有 `dist`）。
 - **场景缺省也替用户在安装范围的提问上按回车**（全局），`keys` 里不用写它：加这一问之前写的按键序列照旧成立。要拍这一问或装到项目的画面，给 `answersScope: true`（`...PROJECT` 带着它，另在项目目录里放了几样东西），这时它由 `keys` 来按：`toScope` 停在提问上，`intoProject` 下移到「项目」再回车进列表，`pickIntoProject`、`toProjectSummary` 接着勾选到汇总。`...PROJECT` 的项目目录里还有一份配过 `markitdown` 的 `.mcp.json`（全局配过的是 `excel`），MCP 的状态按范围读才看得出来；`toProjectMcpSummary` 勾上 `markitdown` 和带 key 的 `mistral-ocr` 停在汇总上（明文和批准的两行提醒），`intoProjectCodexOnly` 在宿主选择上去掉 Claude Code 再进项目范围的列表（MCP 不可选）。场景的项目目录是临时主目录下的 `work/my-app`（画面上是 `~/work/my-app`），事先有什么用 `project: { 相对路径: 内容 }` 给；假的 skills CLI 照真的来——带 `--global` 的装到主目录下，不带的装到它的运行目录下。
-- **要画出网页界面开着时终端上的那个块，或退回终端界面的那一行原因**，场景给 `web`：`'opens'` 是浏览器打开了，画面停在那个块上；`'no-browser'` 是链接打开器拒绝，`'no-server'` 是页面的静态文件读不到，这两种退回终端界面（语言提问照旧由假键盘代答，要停在它上面就给 `answersLanguage: true`）。给了 `web` 的场景自己带上临时开关 `OXY_TOOLS_WEB`；预览页开头把页面打一遍（`buildWeb()`），本机的网页是真的起来的，但**预览页从不真的打开浏览器**——链接打开器只是兑现或拒绝。网址每次运行都不同（端口是系统挑的，口令是随机的），画面上一律换成 `SAMPLE_WEB_URL`，两次生成才逐字节相同。场景收场时除了按 Ctrl+C 还触发 `interrupt`：网页界面开着时没有提问在问，靠它把本机的网页关掉。没给 `web` 的场景不带临时开关，走的是终端界面，链接打开器不会被调用。
+- **要画出网页界面开着时终端上的那个块、网页界面结束时的那一行，或退回终端界面的那一行原因**，场景给 `web`：`'opens'` 是浏览器打开了，画面停在那个块上（按键提示是待命的提问画的，`keys` 里给 `t` 就是改用终端界面）；`'finished'` 是页面连上之后点了「完成」，`'closed'` 是页面连上之后关了，`'closed-installing'` 是页面勾了两个 skill、确认安装之后关了——这三种由脚本拿着网址扮演页面（`cli/test/browser.ts` 的 `openPage`），安装器自己退出；`'no-browser'` 是链接打开器拒绝，`'no-server'` 是页面的静态文件读不到，这两种退回终端界面（语言提问照旧由假键盘代答，要停在它上面就给 `answersLanguage: true`）。给了 `web` 的场景自己带上临时开关 `OXY_TOOLS_WEB`；预览页开头把页面打一遍（`buildWeb()`），本机的网页是真的起来的，但**预览页从不真的打开浏览器**——链接打开器只是兑现或拒绝。网址每次运行都不同（端口是系统挑的，口令是随机的），画面上一律换成 `SAMPLE_WEB_URL`，两次生成才逐字节相同。`'opens'` 的场景收场时按 Ctrl+C（落在待命的提问上）并触发 `interrupt`（正在装的时候没有提问在问，靠它把本机的网页关掉）；`keys` 里的 `t` 要等待命画出来 100 毫秒之后才按（见「待命的提问」的「早先敲的键」），脚本自己等。扮演页面的三种里安装器是自己退出的：脚本等它退出才读画面，5 秒还没退出就报错停下；预览里页面断开之后的时限是 100 毫秒（`PAGE_GRACE_MS`）。没给 `web` 的场景不带临时开关，走的是终端界面，链接打开器不会被调用。
 - **两份预览都用得上的样例在 `cli/scripts/preview-samples.ts`**（工单 `10-11-installer-web-ui` 的 05 分出去的）：样例条目（`SHOWCASE_SKILLS`、`SHOWCASE_PURPOSES`、`SHOWCASE_APPS`、`MIXED_CATALOG`，「文档处理」下的 `DOCUMENT_MCPS`、`DOCUMENT_TOOLS`、`DOCUMENT_THIRD_PARTY`，`LONG_NAME_MCP`，写一个带 key 的环境变量的 `keyed`）；拼目录来源的 `catalogOf` 与 `downloads`；这台机器事先的样子（`BOTH_HOSTS`，两个宿主的 skill 目录 `CLAUDE_SKILLS`、`CODEX_SKILLS`，`installedSkill`，四种状态都有的 `MIXED`，配过 excel 的 `EXCEL_CONFIGURED`，装过两条第三方 Skill 的 `THIRD_PARTY_INSTALLED`）；场景里「这台机器」那几个字段的类型 `World`，和照它布置出临时的可执行路径、主目录、项目目录的 `stageWorld`。只有终端界面的预览用的（`with*` 那些拼好的目录、按键序列、假的命令）留在 `preview.ts`。网页界面的预览要用哪一样，就把它搬过去，不抄一份。
 - 预览页和测试架子共用 `cli/test/terminal.ts` 的假键盘，连同它替用户应答语言提问和安装范围提问的做法：假键盘等那一问最后一个选项的名字画出来才按回车。

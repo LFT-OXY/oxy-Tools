@@ -1,5 +1,5 @@
 // 页面自己的文字：只有版式上固定的那些——栏名、按钮、空状态的话、还没连上时的那一句、
-// 几种结束画面的标题和说明（没有画面状态时也得说得出来），和终端界面里没有的那几句（汇总里逐项决定覆盖的、
+// 几种结束画面的标题和说明（没有画面状态时也得说得出来；已完成、已改用终端界面和它们是同一种画面，放在一处），和终端界面里没有的那几句（汇总里逐项决定覆盖的、
 // 安装中的提醒、填 key 的对话框里的）。状态的词、原因、标记、数量、提醒、汇总与结果里每一行的话、结果里的下一步都随画面状态从安装器来
 import type { ViewState } from '../src/web-protocol.ts';
 
@@ -37,8 +37,9 @@ export const TEXT = {
     change: '换一个',
     keysDone: '好了',
     close: '关闭',
-    keepTerminal: '装完之前请不要关掉终端。',
+    keepTerminal: '装完之前请不要关掉终端。关掉这一页，这一批也会装完，结果打在终端里。',
     finished: { title: '已完成', body: <>安装器已退出，可以关掉这一页了。</> },
+    switched: { title: '已改用终端界面', body: <>请回到终端继续。这一页已经失效，可以关掉了。</> },
     exited: { title: '安装器已退出', body: <>这一页已经失效，可以关掉了。要继续的话，在终端里重新运行 {COMMAND}。</> },
     denied: { title: '口令不对', body: <>这个网址里的口令不对。请回到终端，用那里写着的网址重新打开。</> },
   },
@@ -70,8 +71,9 @@ export const TEXT = {
     change: 'Change',
     keysDone: 'Continue',
     close: 'Close',
-    keepTerminal: 'Keep your terminal open until this finishes.',
+    keepTerminal: 'Keep your terminal open until this finishes. If you close this page, this batch still finishes and its results are printed in your terminal.',
     finished: { title: 'All done', body: <>The installer has quit. You can close this page.</> },
+    switched: { title: 'Switched to the terminal UI', body: <>Go back to your terminal to continue. This page no longer works and can be closed.</> },
     exited: { title: 'The installer has quit', body: <>This page no longer works and can be closed. To continue, run {COMMAND} again in your terminal.</> },
     denied: { title: 'Wrong token', body: <>The token in this address is wrong. Go back to your terminal and open the address shown there.</> },
   },

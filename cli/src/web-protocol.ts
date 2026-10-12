@@ -48,8 +48,8 @@ export interface ViewState {
   lang: Lang;
   /** 切换语言的控件：它的名字和各项是终端界面语言提问的那一份文案，不随语言变 */
   language: { label: string; options: { id: Lang; name: string }[] };
-  /** open 是开着；finished 是用户点了「完成」，安装器随后退出 */
-  stage: 'open' | 'finished';
+  /** open 是开着；finished 是用户点了「完成」，安装器随后退出；terminal 是终端上按了 t，改用终端界面，本机的网页随后关掉 */
+  stage: 'open' | 'finished' | 'terminal';
   version: string;
   /** 开场动画这次运行里播过没有：刷新、重连、再开一个标签页都不重播 */
   introSeen: boolean;

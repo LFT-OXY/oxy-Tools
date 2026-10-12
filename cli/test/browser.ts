@@ -29,8 +29,10 @@ export interface Page {
   send(intent: Intent): Promise<void>;
   /** 再开一条长连接（刷新，或再开一个标签页），给出它收到的第一份画面状态 */
   reload(): Promise<ViewState>;
-  /** 页面的长连接断开时兑现 */
-  closed: Promise<void>;
+  /** 页面最近开的那条长连接断开时兑现 */
+  readonly closed: Promise<void>;
+  /** 关掉这一页：收掉它开着的每一条长连接。之后 reload() 就是重新打开 */
+  close(): void;
   /** 不经页面直接发一个请求：用来扮演别的网站、别的机器 */
   request(path: string, options?: PageRequest): Promise<PageResponse>;
   /** 这一页到现在为止从安装器收到的全部东西：每个答复的状态、头和正文，长连接上每一份画面状态的原文。用来整份去搜不该出现的字 */
@@ -110,8 +112,11 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
     return { first, closed };
   };
 
-  const main = listen();
-  await main.first;
+  let current = listen();
+  await current.first;
+  const close = (): void => {
+    for (const stream of streams.splice(0)) stream.destroy();
+  };
   return {
     url,
     token,
@@ -131,12 +136,13 @@ export async function openPage(url: string): Promise<Page & { dispose(): void }>
       });
       if (response.status !== 204) throw new Error(`意图 ${intent.type} 被拒绝：${response.status}`);
     },
-    reload: () => listen().first,
-    closed: main.closed,
+    reload: () => (current = listen()).first,
+    get closed() {
+      return current.closed;
+    },
+    close,
     request: send,
     received: () => transcript.join('\n'),
-    dispose: () => {
-      for (const stream of streams) stream.destroy();
-    },
+    dispose: close,
   };
 }

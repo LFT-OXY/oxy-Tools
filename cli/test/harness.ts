@@ -18,7 +18,7 @@ import {
 } from '../src/prompter.ts';
 import { openPage, type Page } from './browser.ts';
 import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_SKILLS } from './fixtures.ts';
-import { LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
+import { KEY, LANGUAGE_QUESTION, SCOPE_QUESTIONS, keyboardPrompter } from './terminal.ts';
 
 export {
   EMPTY_CATALOG,
@@ -78,6 +78,17 @@ export function catalogDir(files: { index?: unknown; catalog?: unknown; content?
   write('catalog.json', files.catalog === undefined ? EMPTY_CATALOG : files.catalog);
   writeTree(dir, files.content ?? SAMPLE_FILES);
   return dir;
+}
+
+/**
+ * 一个会卡在向 GitHub 查询上的本地目录来源，release() 之后照常装：用来停在一批装到一半的地方。
+ * dir 缺省是 catalogDir()
+ */
+export function heldCatalog(dir = catalogDir()): { catalog: CatalogSource; release: () => void } {
+  const local = localCatalogSource(dir);
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  return { catalog: { ...local, pin: async (options) => (await held, local.pin(options)) }, release };
 }
 
 type ListQuestion = SelectQuestion<unknown> | CheckboxQuestion<unknown>;
@@ -171,11 +182,32 @@ export function interrupt(): Answer {
 const plain = stripVTControlCharacters;
 const firstCell = (text: string): string => plain(text).trim().split(/\s{2,}/)[0] ?? '';
 const ERASE_LINE = '\r\x1b[2K';
+// 最后留在画面上的字：被擦掉重写的行只算最后一次
+const screenOf = (raw: string): string =>
+  raw
+    .split('\n')
+    .map((line) => (line.includes(ERASE_LINE) ? line.slice(line.lastIndexOf(ERASE_LINE) + ERASE_LINE.length) : line))
+    .join('\n');
 const ROWS = 40;
 // 页面的静态文件是构建产物：全部测试之前由 globalSetup（build-web.ts）打一遍
 const BUILT_WEB = fileURLToPath(new URL('../dist/web/', import.meta.url));
 // 页面的脚本跑完之后，等安装器退出最多这么久
 const EXIT_PATIENCE_MS = 2000;
+// 页面全都断开之后等多久才当作页面关了：正式运行是 5 秒，测试里不等那么久
+const PAGE_GRACE_MS = 150;
+
+/** 用户面前的终端：页面的脚本里用它做终端上的事 */
+export interface Terminal {
+  /**
+   * 在待命的提问上按一个键（KEY.ctrlC 是按 Ctrl+C）。预设应答的提问器下，这时没有待命的提问在等就失败；
+   * 用真实的交互库时（给了 keys）键直接写进假键盘，按早了会丢：先等按键提示画出来
+   */
+  press(key: string): void;
+  /** 这一刻留在画面上的文字，和 RunResult.screen 同一种算法 */
+  screen(): string;
+  /** 到这一刻为止终端收到的原始输出：交给 screenLines 还原真实的画面 */
+  raw(): string;
+}
 
 interface Streams {
   stdin?: boolean;
@@ -236,9 +268,11 @@ export interface RunOptions {
   /**
    * 在页面上做什么。给了它就走网页界面（架子打开临时开关）：架子拿着链接打开器记下的网址，经真实的本机 HTTP
    * 扮演浏览器，收到第一份画面状态之后跑这段脚本。脚本跑完时安装器应当已经在退出了。不给就走终端界面。
-   * world 是这次运行的主目录和项目目录：页面开着的时候要改机器上的东西就往那里写
+   * world 是这次运行的主目录和项目目录（页面开着的时候要改机器上的东西就往那里写），和用户面前的终端
    */
-  page?: (page: Page, world: { home: string; project: string }) => Promise<void>;
+  page?: (page: Page, world: { home: string; project: string; terminal: Terminal }) => Promise<void>;
+  /** 网页界面的页面全都断开之后等多久才当作页面关了，缺省 150 毫秒；要在时限内重连的用例给一个长些的 */
+  pageGraceMs?: number;
   /** 浏览器打不打得开，缺省打得开；false 时链接打开器记下网址之后拒绝 */
   browserOpens?: boolean;
   /** 网页界面的静态文件所在的目录，缺省是构建出来的那一份；给一个不存在的目录就是本机的网页起不来 */
@@ -331,11 +365,31 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
     return answer(question, prompt);
   };
+  // 待命的提问在等按键时，把一个键交给它
+  let standingBy: ((key: string) => void) | undefined;
   const scripted: Prompter = {
     select: async <Value>(question: SelectQuestion<Value>) => ask('select', question, question.default) as Value,
     checkbox: async <Value>(question: CheckboxQuestion<Value>) => ask('checkbox', question) as Value[],
     confirm: async (question) => ask('confirm', question) as boolean,
     password: async (question) => ask('password', question) as string,
+    // 待命：那一行按键提示记进输出，行尾不换行；结束时照真实的样子擦掉。它不吃预设的应答：按键由页面的脚本来按
+    standby: (question, withdraw) =>
+      new Promise((resolve, reject) => {
+        record('stdout')(question.theme.style.keysHelpTip(question.hint));
+        const settle = (finish: () => void): void => {
+          record('stdout')(ERASE_LINE);
+          standingBy = undefined;
+          withdraw.removeEventListener('abort', withdrawn);
+          finish();
+        };
+        const withdrawn = (): void => settle(() => resolve(undefined));
+        if (withdraw.aborted) return withdrawn();
+        withdraw.addEventListener('abort', withdrawn);
+        standingBy = (key) => {
+          if (key === KEY.ctrlC) settle(() => reject(new PromptAborted()));
+          else if (key in question.answers) settle(() => resolve(question.answers[key]));
+        };
+      }),
   };
 
   const rows = options.rows ?? ROWS;
@@ -369,6 +423,16 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     }
   };
 
+  const terminal: Terminal = {
+    press(key) {
+      if (options.keys) return void keyboard.write(key);
+      if (!standingBy) throw new Error(`终端上没有待命的提问，按下的 ${JSON.stringify(key)} 没有人接`);
+      standingBy(key);
+    },
+    screen: () => plain(screenOf(textOf())),
+    raw: () => textOf(),
+  };
+
   // 架子自己也要能中断安装器：页面的脚本出了错，或跑完了安装器却没有退出
   const stopping = new AbortController();
   const stop = (): void => stopping.abort();
@@ -380,7 +444,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     let page: Awaited<ReturnType<typeof openPage>> | undefined;
     try {
       page = await openPage(url);
-      await script(page, { home, project });
+      await script(page, { home, project, terminal });
       let patience: NodeJS.Timeout | undefined;
       const exited = await Promise.race([
         installer.then(() => true),
@@ -409,6 +473,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
     projectDir: project,
     tempDir: tmp,
     webDir: options.webDir ?? BUILT_WEB,
+    pageGraceMs: options.pageGraceMs ?? PAGE_GRACE_MS,
     interrupt: stopping.signal,
     runCommand: (command, args, runOptions) => {
       const cwd = runOptions?.shell ? undefined : runOptions?.cwd;
@@ -437,17 +502,13 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   if (unanswered !== undefined) throw new Error(`没有为提问「${unanswered}」预设应答`);
   if (answers.length > 0) throw new Error(`还有 ${answers.length} 个预设应答没有用上`);
   const raw = textOf();
-  const screen = raw
-    .split('\n')
-    .map((line) => (line.includes(ERASE_LINE) ? line.slice(line.lastIndexOf(ERASE_LINE) + ERASE_LINE.length) : line))
-    .join('\n');
   return {
     exitCode,
     output: plain(raw),
     raw,
     stdout: plain(textOf('stdout')),
     stderr: plain(textOf('stderr')),
-    screen: plain(screen),
+    screen: plain(screenOf(raw)),
     commands,
     opened,
     home,
