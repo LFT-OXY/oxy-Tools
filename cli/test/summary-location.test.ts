@@ -2,7 +2,7 @@
 // 「操作」为止，位置在下一行整条写出；放得下的行照旧。汇总别的规矩在 skill-status.test.ts、third-party.test.ts、mixed.test.ts。
 import { describe, expect, it } from 'vitest';
 import { displayWidth } from '../src/text.ts';
-import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_MCPS, SAMPLE_SKILLS, accept, catalogDir, choose, pick, run, underWebSearch } from './harness.ts';
+import { EMPTY_CATALOG, SAMPLE_FILES, SAMPLE_MCPS, SAMPLE_SKILLS, SAMPLE_THIRD_PARTY, accept, catalogDir, choose, pick, run, underWebSearch } from './harness.ts';
 
 const WEB_SEARCH = '联网搜索与文档检索';
 const WEB_SEARCH_EN = 'Web search & docs retrieval';
@@ -91,6 +91,46 @@ describe('汇总里位置放不下时另起一行', () => {
 
     for (const name of [LONG_SKILL, ...LONG_THIRD_PARTY]) expect(tables.join('\n')).toMatch(new RegExp(`^ +${shared} +${fresh}\\n +~\\S+${name}$`, 'm'));
     expect(Math.max(...tables.map((line) => displayWidth(line)))).toBeLessThanOrEqual(79);
+  });
+
+  // 样例里的名字都短（最长 12 列），全是新装：英文、三个和四个宿主下每一行连位置都放得下
+  it.each([
+    ['三个宿主', ['claude', 'codex', 'pi'], 'Codex, Pi'],
+    ['四个宿主', ALL_HOSTS, 'Codex, Pi, omp'],
+  ])('英文界面、%s、名字短：放得下的行位置仍在同一行', async (_label, onPath, shared) => {
+    const result = await run({
+      argv: ['--lang', 'en'],
+      catalog: catalogDir({ catalog: { ...EMPTY_CATALOG, thirdPartySkills: SAMPLE_THIRD_PARTY, skillPurposes: { 'beta-pack': 'web-search' } } }),
+      onPath,
+      answers: [choose(WEB_SEARCH_EN), accept(), pick('beta-pack', 'paper-kit', 'solo-notes'), pick('paper-reader', 'paper-comic'), choose('Cancel'), choose('Exit')],
+    });
+    // 一行一个元素：这里的正则跨不了行
+    const tables = tableLines(result.output);
+
+    for (const name of ['beta-pack', 'paper-reader', 'paper-comic', 'note-taker']) {
+      expect(tables.filter((line) => new RegExp(`^ +${name} +Claude Code +new +~\\S+${name}$`).test(line))).toHaveLength(1);
+      expect(tables.filter((line) => new RegExp(`^ +${shared} +new +~\\S+${name}$`).test(line))).toHaveLength(1);
+    }
+  });
+
+  it('恰好写到第 79 列的行留在行内，再长一列的另起：中文、四个宿主', async () => {
+    // 工单点名的那两行：宿主那一格是「Codex、Pi、omp」时，17 列的名字连位置是 80 列。旁边放一个只短一列的名字（造的），它那两行正好 79 列
+    const [edge, over] = ['drawio-skill-pro', 'guizang-ppt-skill'];
+    const result = await run({
+      catalog: catalogDir({
+        catalog: {
+          ...EMPTY_CATALOG,
+          thirdPartySkills: [{ ...SAMPLE_THIRD_PARTY[0], skills: [edge, over].map((name) => ({ name, description: about('样例', 'A sample') })) }],
+        },
+      }),
+      onPath: ALL_HOSTS,
+      answers: [choose(WEB_SEARCH), accept(), pick('paper-kit'), pick(edge, over), choose('取消'), choose('退出')],
+    });
+    const tables = tableLines(result.output);
+    const inline = tables.filter((line) => new RegExp(` +(Claude Code|Codex、Pi、omp) +新装 +~\\S+${edge}$`).test(line));
+
+    expect(inline.map((line) => displayWidth(line))).toEqual([79, 79]);
+    expect(tables.join('\n')).toMatch(new RegExp(`^ +${over} +Claude Code +新装\\n +~\\S+${over}\\n +Codex、Pi、omp +新装\\n +~\\S+${over}$`, 'm'));
   });
 
   it('路径本身就比一行长：仍然整条写在一行上，不截断、不拆开', async () => {

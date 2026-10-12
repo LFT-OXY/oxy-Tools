@@ -207,29 +207,49 @@ const withHostLimitedThirdParty = catalogOf(
     tools: DOCUMENT_TOOLS,
   },
 );
-// 名字最长的样例：在 withFiveKinds 之上多一条名字 27 列的第三方 Skill（名字取自真实目录里只含一个 skill 的条目中最长的那一个，
-// 说明是为预览写的）。汇总里它那几行连位置放不下一行
-const LONGEST_NAME = 'nuyoah-image-reverse-prompt';
-const LONGEST_NAME_ABOUT = { zh: '把一张图反推成生成它的提示词', en: 'Work out the prompt that would generate a given image' };
-const withLongestName = catalogOf(
-  { version: 1, skills: SHOWCASE_SKILLS },
-  {
-    ...MIXED_CATALOG,
-    thirdPartySkills: [
-      ...DOCUMENT_THIRD_PARTY,
-      {
-        name: LONGEST_NAME,
-        source: `nuyoah-ai-works/${LONGEST_NAME}`,
-        description: LONGEST_NAME_ABOUT,
-        url: `https://github.com/nuyoah-ai-works/${LONGEST_NAME}`,
-        purpose: 'documents',
-        skills: [{ name: LONGEST_NAME, description: LONGEST_NAME_ABOUT }],
-      },
-    ],
-    mcps: DOCUMENT_MCPS,
-    tools: DOCUMENT_TOOLS,
-  },
-);
+// 名字最长的样例：在 withFiveKinds 之上多一条第三方 Skill，里面有真实目录里名字最长的那个 skill（28 列；条目和 skill 的名字、
+// 来源取自真实目录，只留了两个 skill，说明是为预览写的）。汇总里它那几行连位置放不下一行
+const LONGEST_REAL_NAME = 'find-animation-opportunities';
+const withFiveKindsAnd = (entry: { name: string; source: string; zh: string; en: string; skills: { name: string; zh: string; en: string }[] }): CatalogSource =>
+  catalogOf(
+    { version: 1, skills: SHOWCASE_SKILLS },
+    {
+      ...MIXED_CATALOG,
+      thirdPartySkills: [
+        ...DOCUMENT_THIRD_PARTY,
+        {
+          name: entry.name,
+          source: entry.source,
+          description: { zh: entry.zh, en: entry.en },
+          url: `https://github.com/${entry.source}`,
+          purpose: 'documents',
+          skills: entry.skills.map(({ name, zh, en }) => ({ name, description: { zh, en } })),
+        },
+      ],
+      mcps: DOCUMENT_MCPS,
+      tools: DOCUMENT_TOOLS,
+    },
+  );
+const withLongestRealName = withFiveKindsAnd({
+  name: 'emilkowalski-skills',
+  source: 'emilkowalski/skills',
+  zh: '一组界面与动效设计 skill：做动画、找出该加动效的地方',
+  en: 'A set of interface and motion design skills: build animations and find where motion is missing',
+  skills: [
+    { name: 'animation-vocabulary', zh: '说清楚一段动效要用的词', en: 'The vocabulary for describing a piece of motion' },
+    { name: LONGEST_REAL_NAME, zh: '找出界面里该加动效的地方', en: 'Find where an interface is missing motion' },
+  ],
+});
+// 比真实目录里的都长的名字（造的，29 列）：真实目录里最长的是 28 列，另起的位置到「AI Agent」一栏的左缘为止都放得下；
+// 再长一列就退到条目一栏的左缘——那一档真实目录走不到，只有造一个才看得到
+const MADE_UP_LONGER_NAME = 'made-up-name-twenty-nine-cols';
+const withMadeUpLongerName = withFiveKindsAnd({
+  name: MADE_UP_LONGER_NAME,
+  source: `example-labs/${MADE_UP_LONGER_NAME}`,
+  zh: '名字比真实目录里的都长的样例',
+  en: 'A sample whose name is longer than any in the real catalog',
+  skills: [{ name: MADE_UP_LONGER_NAME, zh: '名字比真实目录里的都长的样例', en: 'A sample whose name is longer than any in the real catalog' }],
+});
 const withPin = (pin: CatalogSource['pin']): CatalogSource => ({ ...sample, pin });
 const queryFails = (failure: CatalogFailure): CatalogSource => withPin(() => Promise.reject(new CatalogError(failure)));
 const oneFails = withPin(downloads({ fails: { wizard: 'HTTP 503' } }));
@@ -439,14 +459,20 @@ const FOUR_HOSTS_FIVE_KINDS = { ...THREE_HOSTS_FIVE_KINDS, onPath: [...FOUR_HOST
 // 只检测到 omp：不问装进哪个宿主
 const OMP_ONLY_FIVE_KINDS = { ...THREE_HOSTS_FIVE_KINDS, onPath: ['omp', 'pandoc'] };
 // 名字最长的那份样例、四个宿主：guizang-ppt-skill 在 Claude Code 下已有同名目录——位置另起一行的行上也有备注
-const LONGEST_NAMES = {
+const LONGEST_REAL_NAMES = {
   ...FOUR_HOSTS_FIVE_KINDS,
-  catalog: withLongestName,
+  catalog: withLongestRealName,
   home: { ...FOUR_HOSTS_FIVE_KINDS.home, [`${CLAUDE_SKILLS}/guizang-ppt-skill/SKILL.md`]: '# guizang-ppt-skill\n' },
 };
-// withLongestName 的「文档处理」里第三方 Skill 依次是 drawio-skill、guizang-ppt-skill、nuyoah-image-reverse-prompt、paper-craft-skills：
-// 勾上 pr（名字短，中文界面里它的行放得下）、guizang-ppt-skill 和 nuyoah-image-reverse-prompt，确认就到汇总（没勾含多个 skill 的那一条，不出清单）
-const toLongestNamesSummary = [...down(2), KEY.space, ...down(2), KEY.space, KEY.down, KEY.space, KEY.enter];
+// 造的那个更长的名字：主目录照上面那一份
+const MADE_UP_LONGER_NAMES = { ...LONGEST_REAL_NAMES, catalog: withMadeUpLongerName };
+// 「文档处理」里第三方 Skill 按名字排，多出来的那一条在两份样例里都紧挨着 guizang-ppt-skill（emilkowalski-skills 在它前面，
+// made-up-name-twenty-nine-cols 在它后面）：勾上 pr（名字短，中文界面里它的行放得下）和挨着的这两条，再确认
+const pickLongNames = [...down(2), KEY.space, ...down(2), KEY.space, KEY.down, KEY.space, KEY.enter];
+// emilkowalski-skills 含两个 skill，确认列表之后是它的清单：两个都勾上，再确认就到汇总
+const toLongestRealNamesSummary = [...pickLongNames, KEY.space, KEY.down, KEY.space, KEY.enter];
+// 造的那一条只含一个 skill，不出清单：确认列表就到汇总
+const toMadeUpLongerNameSummary = pickLongNames;
 // Pi 的用户级配置写坏了，读不出里面有哪些 MCP
 const PI_UNREADABLE = { '.pi/agent/mcp.json': '{ "mcpServers": ' };
 // 假装执行命令：pi 这个命令起不来，别的都成功
@@ -671,8 +697,9 @@ const scenes: Scene[] = [
   { title: '汇总与结果 · 只检测到 omp', note: '汇总和结果里宿主写的是 omp，位置在共用 skill 目录', onPath: ['omp'], keys: install },
   { title: '汇总与结果 · 第三方 Skill · 只检测到 omp', note: 'skills CLI 不认识 omp：展示和执行的命令里 agent 名借用 pi（--agent pi），它落的正是共用 skill 目录', ...OMP_ONLY_FIVE_KINDS, keys: [...toMixedDocuments(), ...down(4), KEY.space, KEY.down, KEY.space, KEY.enter, KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter] },
   { title: '汇总与结果 · Codex、Pi、omp 合成一行', note: '三个宿主用的是同一个共用 skill 目录：每个 skill 只有一行，宿主那一格写「Codex、Pi、omp」；合计按行算', onPath: SHARED_THREE, keys: twoHosts(install) },
-  { title: '汇总确认 · 位置另起一行 · 四个宿主', note: '一行连位置超出第 79 列时，这一行到操作为止，位置在下一行整条写出，这一行的备注再排在它下面；放得下的行（pr 的两行）照旧，备注仍在它的位置下面。名字 27 列时另起的几行与「AI Agent」一栏的左缘对齐', ...LONGEST_NAMES, keys: [...toMixedDocuments(true), ...toLongestNamesSummary] },
-  { title: '汇总确认 · 位置另起一行 · 只检测到 Claude Code', note: '只有一个宿主时同一个画法：名字长的两行位置另起一行，pr 那一行放得下、照旧', ...LONGEST_NAMES, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...toLongestNamesSummary] },
+  { title: '汇总确认 · 位置另起一行 · 四个宿主', note: '一行连位置超出第 79 列时，这一行到操作为止，位置在下一行整条写出，这一行的备注再排在它下面；放得下的行（pr 的两行）照旧，备注仍在它的位置下面。样例里有真实目录里最长的名字（28 列）：另起的几行与「AI Agent」一栏的左缘对齐', ...LONGEST_REAL_NAMES, keys: [...toMixedDocuments(true), ...toLongestRealNamesSummary] },
+  { title: '汇总确认 · 位置另起一行 · 只检测到 Claude Code', note: '只有一个宿主时同一个画法：名字长的三行位置另起一行，pr 那一行放得下、照旧', ...LONGEST_REAL_NAMES, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...toLongestRealNamesSummary] },
+  { title: '汇总确认 · 位置另起一行 · 名字比真实目录里的都长', note: '这个名字是造的（29 列；真实目录里最长的是 28 列，走不到这一档）：另起的位置在「AI Agent」一栏的左缘也放不下，退到条目一栏的左缘，和名字从同一列起；同一个分区里 guizang-ppt-skill 另起的位置和备注跟着退到那里。pr 的两行放得下、照旧', ...MADE_UP_LONGER_NAMES, keys: [...toMixedDocuments(true), ...toMadeUpLongerNameSummary] },
   { title: '结果 · 工具 · 一项成功一项失败', note: '结论以复核为准，不看命令的退出状态，紧跟在各自的输出后面；装了不止一个时，合计之前再用「结果」分区集中列一遍', ...TOOLS, keys: runTools },
   { title: '结果 · 工具 · 全部成功', note: '两种检查方式各有各的说法：在 PATH 中找到了命令、主目录下的那个路径已存在', catalog: withTools, shell: allInstall, keys: runUvAndBun },
   { title: '结果 · 工具 · 命令非零退出但复核通过', note: '以复核为准：bun 本来就装着，算已可用；退出状态照实写在后面。只装一个工具时不重复「结果」分区', ...TOOLS, shell: () => ({ output: 'error: Failed to download bun (HTTP 503)\n', exitCode: 1 }), keys: runBun },
@@ -751,7 +778,7 @@ const scenes: Scene[] = [
   { title: '英文界面 · skill 多选列表 · 四种状态并存 · 四个宿主', argv: ['--lang', 'en'], onPath: FOUR_HOSTS, ...MIXED, keys: twoHosts(pickThree) },
   { title: '英文界面 · 混合列表 · 五种类型 · 四个宿主', note: '那句关于 omp 的 MCP 的说明连行首的键一行放得下', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...down(6)] },
   { title: '英文界面 · 四个宿主的汇总与结果', note: '宿主那一格用英文的并列写法 Codex, Pi, omp；第三方 Skill 的六行连位置都放不下，位置各另起一行', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...installThirdParty] },
-  { title: '英文界面 · 汇总确认 · 位置另起一行 · 四个宿主', note: '英文的栏更宽，放不下的行更多：pr 的两行也另起了，这一格里每一行的位置都在下一行', argv: ['--lang', 'en'], ...LONGEST_NAMES, keys: [...toMixedDocuments(true), ...toLongestNamesSummary] },
+  { title: '英文界面 · 汇总确认 · 位置另起一行 · 四个宿主', note: '英文的栏更宽，放不下的行更多：pr 的两行也另起了，这一格里每一行的位置都在下一行', argv: ['--lang', 'en'], ...LONGEST_REAL_NAMES, keys: [...toMixedDocuments(true), ...toLongestRealNamesSummary] },
   { title: '英文界面 · 含第三方 Skill 的汇总 · 只检测到 Claude Code', note: 'guizang-ppt-skill、paper-analyzer 两行连位置放不下：位置另起一行，与 Action 一栏的左缘对齐；paper-comic 那一行放得下、照旧', argv: ['--lang', 'en'], ...FIVE_KINDS, onPath: ['claude', 'pandoc'], keys: [...toMixedDocuments(), ...toThirdPartySummary] },
   { title: '英文界面 · 第三方 Skill 的清单 · 四个宿主', note: '栏名用英文的并列写法 Codex, Pi, omp', argv: ['--lang', 'en'], ...FOUR_HOSTS_FIVE_KINDS, keys: [...toMixedDocuments(true), ...pickFromChecklist] },
   { title: '英文界面 · 混合列表 · 五种类型 · 选了 Codex 和 Pi', argv: ['--lang', 'en'], ...THREE_HOSTS_FIVE_KINDS, onPath: [...CODEX_AND_PI, 'pandoc'], keys: [...toMixedDocuments(true), ...down(6)] },
