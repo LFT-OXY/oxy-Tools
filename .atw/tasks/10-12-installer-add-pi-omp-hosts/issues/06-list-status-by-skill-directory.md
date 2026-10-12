@@ -8,7 +8,7 @@
 
 **Blocked by:** 04
 **Status:** ready-for-agent
-**Impl:** ready
+**Impl:** doing
 
 - [ ] 先改规范：`.atw/spec/cli/` 里写明列表的状态按 skill 目录归组的规矩（和算计划时是同一种归组）、栏名的写法、MCP 的栏怎么定、终端界面里 MCP 的栏名写在哪、网页界面的契约里卡片的状态怎么表示一组宿主；原先「状态栏不合并」「omp 那一栏写不支持」的说法和示例换掉。
 - [ ] Skill 的状态一组一栏：选了 Codex 和 Pi 是一栏「Codex、Pi」；选了 Claude Code、Codex、Pi 是「Claude Code」「Codex、Pi」两栏；四个都选是「Claude Code」「Codex、Pi、omp」两栏；只选 Claude Code、选了 Claude Code 和 Codex 时和改动前一样。归组看的是目录，不是写死的宿主名字；装到项目时同样归组。
