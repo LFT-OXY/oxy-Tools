@@ -1,6 +1,6 @@
 # oxy-Tools
 
-维护者策展的 AI 工具链目录，以及把目录中的组件装进宿主（Claude Code、Codex）的安装器。
+维护者策展的 AI 工具链目录，以及把目录中的组件装进宿主（Claude Code、Codex、Pi、omp）的安装器。
 
 ## 这个仓库的两个用途
 
@@ -24,7 +24,9 @@
 
 **按用途找。** 本仓库的 skill 都在「推荐」里；其余的条目各归在一个用途下（联网搜索与文档检索、文档处理……一共 10 个，清单在 `catalog.json` 里）。安装器不按类型分：最前面是「推荐」，下面是各个用途；一个用途下各种类型的条目在同一张列表里，可以一次勾选、一起装。
 
-**装到全局或项目。** Skill 和 MCP 可以装到全局（对这台机器上的所有项目生效，缺省），也可以装到项目（只对运行安装器时所在的目录生效）。工具没有这个选择；Codex 的 MCP 只能装到全局。
+**装到全局或项目。** Skill 和 MCP 可以装到全局（对这台机器上的所有项目生效，缺省），也可以装到项目（只对运行安装器时所在的目录生效）。工具没有这个选择。MCP 能装到哪因宿主而异：Claude Code 和 Pi 全局、项目都能装，Codex 只能装到全局，omp 的 MCP 安装器不装（要在 omp 里用 `/mcp add` 自己添加）。
+
+**Codex、Pi、omp 共用同一个 skill 目录。** Claude Code 的 skill 装进它自己的 `.claude/skills`；Codex、Pi、omp 的都装进 `.agents/skills`（全局是主目录下的，项目是当前目录下的）——共用 skill 目录。所以装给这三个里的一个，另外两个也看得到；同时选了其中几个时，同一个 skill 只装一次。为什么这样定见 [ADR-0005](./docs/adr/0005-pi-and-omp-skills-go-to-shared-skill-directory.md)。
 
 **安装器**——`cli/` 下发布到 npm 的 `oxy-tools`。它每次运行时从本仓库现拉目录，把选中的 skill、MCP、工具装进宿主；外部项目只列出说明和官方链接。目录不编译进 npm 包，所以增删条目只需要提交本仓库。
 
@@ -40,7 +42,7 @@ npx oxy-tools
 npx oxy-tools --terminal
 ```
 
-需要 Node.js 22.13 及以上的 22.x 或 23.5 及以上、一个交互式终端，以及已经装好的 Claude Code 或 Codex；用网页界面还要这台机器上有能打开的浏览器。参数、环境变量和它具体做什么，见 [`cli/README.md`](./cli/README.md)。
+需要 Node.js 22.13 及以上的 22.x 或 23.5 及以上、一个交互式终端，以及已经装好的宿主——Claude Code、Codex、Pi、omp 里至少一个；用网页界面还要这台机器上有能打开的浏览器。参数、环境变量和它具体做什么，见 [`cli/README.md`](./cli/README.md)。
 
 ## 许可证
 
