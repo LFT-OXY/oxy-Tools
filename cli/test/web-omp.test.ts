@@ -185,18 +185,22 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
 
   it('Codex、Pi、omp 都选了：汇总一行、安装中一行、结果一行，宿主那一格是「Codex、Pi、omp」，合计 1 成功', async () => {
     let summary: SummaryView | undefined;
+    let installing: RunView | undefined;
     let batch: RunView | undefined;
     const result = await run({
       onPath: SHARED_THREE,
       page: async (page) => {
         await tick(page, 'skill', 'alpha');
         summary = await review(page);
-        batch = await install(page, summary);
+        await page.send({ type: 'install', summary: summary.id });
+        installing = (await page.until((state) => state.run !== undefined)).run;
+        batch = (await page.until((state) => state.run?.done === true)).run;
         await done(page);
       },
     });
 
     expect(rows(summary)).toEqual(['alpha · Skill · 1.0.0', `  Codex、Pi、omp | 新装 | ${join('~', SHARED_SKILLS, 'alpha')}`]);
+    expect(installing?.rows.map((row) => [row.name, row.host])).toEqual([['alpha', 'Codex、Pi、omp']]);
     expect(outcomes(batch)).toEqual(['alpha Codex、Pi、omp 已安装 1.0.0']);
     expect(totals(batch)).toBe('1 成功 · 0 失败 · 0 跳过');
     expect(filesUnder(join(result.home, SHARED_SKILLS, 'alpha'))).toEqual(ALPHA_FILES);
@@ -207,6 +211,7 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
   it('四个宿主都选了：每个 skill 两行——Claude Code 一行，「Codex、Pi、omp」一行；卡片上仍是四段状态', async () => {
     let first: ViewState | undefined;
     let summary: SummaryView | undefined;
+    let installing: RunView | undefined;
     let batch: RunView | undefined;
     const result = await run({
       onPath: ALL_HOSTS,
@@ -214,7 +219,9 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
         first = page.state();
         await tick(page, 'skill', 'alpha');
         summary = await review(page);
-        batch = await install(page, summary);
+        await page.send({ type: 'install', summary: summary.id });
+        installing = (await page.until((state) => state.run !== undefined)).run;
+        batch = (await page.until((state) => state.run?.done === true)).run;
         await done(page);
       },
     });
@@ -224,6 +231,10 @@ describe('网页界面：把本仓库的 skill 装给 omp', () => {
       'alpha · Skill · 1.0.0',
       `  Claude Code | 新装 | ${join('~', CLAUDE_SKILLS, 'alpha')}`,
       `  Codex、Pi、omp | 新装 | ${join('~', SHARED_SKILLS, 'alpha')}`,
+    ]);
+    expect(installing?.rows.map((row) => [row.name, row.host])).toEqual([
+      ['alpha', 'Claude Code'],
+      ['alpha', 'Codex、Pi、omp'],
     ]);
     expect(outcomes(batch)).toEqual(['alpha Claude Code 已安装 1.0.0', 'alpha Codex、Pi、omp 已安装 1.0.0']);
     expect(totals(batch)).toBe('2 成功 · 0 失败 · 0 跳过');

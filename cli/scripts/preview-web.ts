@@ -716,6 +716,18 @@ const scenes: Scene[] = [
     reveal: 'markitdown',
   },
   {
+    title: '浏览 · 只检测到 omp · Skill 那一区',
+    note: '同一张列表的开头：只有一个宿主，卡片底部一段状态、不带宿主的名字，看的是共用 skill 目录；Skill 那一区上方的「注意」是共用 skill 目录的那一句',
+    ...OMP_ONLY,
+    drive: crowded,
+  },
+  {
+    title: '汇总 · 只检测到 omp',
+    note: '每个条目一行，宿主那一格写「omp」，位置在共用 skill 目录（~/.agents/skills）',
+    ...OMP_ONLY,
+    drive: summarized,
+  },
+  {
     title: '汇总 · 四个宿主',
     note: '每个条目一段，段里两行：Claude Code 一行，共用 skill 目录的「Codex、Pi、omp」一行——三个名字完整显示，不被截断',
     ...FOUR,
